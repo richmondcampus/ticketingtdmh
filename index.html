@@ -49,6 +49,8 @@
         input[type="email"],
         select,
         input[type="radio"],
+        input[type="text"],
+        textarea,
         input[type="submit"] {
             width: 100%;
             padding: 0.75rem;
@@ -62,6 +64,10 @@
         input[type="radio"] {
             width: auto;
             margin-right: 10px;
+        }
+        textarea {
+            resize: vertical;
+            height: 100px;
         }
         input[type="submit"] {
             background-color: #ff5722;
@@ -157,6 +163,10 @@
                     Others
                 </label>
             </div>
+
+            <!-- Specify Issues/Concern Textbox -->
+            <label for="concern">Please specify Issues/Concern:</label>
+            <textarea id="concern" name="concern" required></textarea>
 
             <input type="submit" value="Submit">
         </form>
