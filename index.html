@@ -6,8 +6,9 @@
     <title>Support Form</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
+            font-family: 'Arial', sans-serif;
+            background-color: #121212;
+            color: #ffffff;
             margin: 0;
             padding: 0;
             display: flex;
@@ -16,21 +17,21 @@
             height: 100vh;
         }
         .container {
-            background-color: white;
+            background-color: #1e1e1e;
             padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             max-width: 500px;
             width: 100%;
         }
         h2 {
             text-align: center;
-            color: #333;
+            color: #ff5722;
         }
         label {
             display: block;
             margin-bottom: 0.5rem;
-            color: #555;
+            color: #b3b3b3;
         }
         input[type="email"],
         select,
@@ -39,21 +40,25 @@
             width: 100%;
             padding: 0.75rem;
             margin-bottom: 1rem;
-            border: 1px solid #ddd;
+            border: 1px solid #444;
             border-radius: 4px;
             box-sizing: border-box;
+            background-color: #333;
+            color: #ffffff;
         }
         input[type="radio"] {
             width: auto;
+            margin-right: 10px;
         }
         input[type="submit"] {
-            background-color: #28a745;
+            background-color: #ff5722;
             color: white;
             border: none;
             cursor: pointer;
+            transition: background-color 0.3s ease;
         }
         input[type="submit"]:hover {
-            background-color: #218838;
+            background-color: #e64a19;
         }
         .radio-group {
             display: flex;
@@ -61,6 +66,8 @@
         }
         .radio-group label {
             margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
         }
     </style>
 </head>
@@ -115,20 +122,26 @@
             <!-- Category of Issue Radio Buttons -->
             <label>Category of Issue:</label>
             <div class="radio-group">
-                <input type="radio" id="hardware" name="issue" value="Hardware Issues" required>
-                <label for="hardware">Hardware Issues</label>
-
-                <input type="radio" id="software" name="issue" value="Software Issues">
-                <label for="software">Software Issues</label>
-
-                <input type="radio" id="network" name="issue" value="Network Issues">
-                <label for="network">Network Issues</label>
-
-                <input type="radio" id="agimat" name="issue" value="Agimat Account Creation">
-                <label for="agimat">Agimat Account Creation</label>
-
-                <input type="radio" id="others" name="issue" value="Others">
-                <label for="others">Others</label>
+                <label for="hardware">
+                    <input type="radio" id="hardware" name="issue" value="Hardware Issues" required>
+                    Hardware Issues
+                </label>
+                <label for="software">
+                    <input type="radio" id="software" name="issue" value="Software Issues">
+                    Software Issues
+                </label>
+                <label for="network">
+                    <input type="radio" id="network" name="issue" value="Network Issues">
+                    Network Issues
+                </label>
+                <label for="agimat">
+                    <input type="radio" id="agimat" name="issue" value="Agimat Account Creation">
+                    Agimat Account Creation
+                </label>
+                <label for="others">
+                    <input type="radio" id="others" name="issue" value="Others">
+                    Others
+                </label>
             </div>
 
             <input type="submit" value="Submit">
