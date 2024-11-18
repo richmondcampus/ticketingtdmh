@@ -1,10 +1,73 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>My Website</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Form</title>
 </head>
 <body>
-    <h1>Welcome to My Website</h1>
-    <p>This is a simple website hosted on GitHub Pages.</p>
+    <h2>Support Form</h2>
+    <form>
+        <!-- Email Field -->
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email" required>
+        <br><br>
+
+        <!-- Department Dropdown Menu -->
+        <label for="department">Department:</label>
+        <select id="department" name="department" required>
+            <option value="Accounting">Accounting</option>
+            <option value="Admin">Admin</option>
+            <option value="Admitting">Admitting</option>
+            <option value="APE">APE</option>
+            <option value="Billing">Billing</option>
+            <option value="Cardio">Cardio</option>
+            <option value="Canteen">Canteen</option>
+            <option value="Cashier">Cashier</option>
+            <option value="CT-Scan">CT-Scan</option>
+            <option value="CSR">CSR</option>
+            <option value="E-Konsulta">E-Konsulta</option>
+            <option value="ER">ER</option>
+            <option value="HMO">HMO</option>
+            <option value="HOMES">HOMES</option>
+            <option value="Laboratory">Laboratory</option>
+            <option value="Medical Records">Medical Records</option>
+            <option value="NICU">NICU</option>
+            <option value="NSO">NSO</option>
+            <option value="OPD">OPD</option>
+            <option value="OPD-Encoder">OPD-Encoder</option>
+            <option value="OPD-HMO">OPD-HMO</option>
+            <option value="OPD-Screener">OPD-Screener</option>
+            <option value="OR">OR</option>
+            <option value="Pharmacy">Pharmacy</option>
+            <option value="Philhealth">Philhealth</option>
+            <option value="Purchasing">Purchasing</option>
+            <option value="Releasing">Releasing</option>
+            <option value="Security">Security</option>
+            <option value="Social Service">Social Service</option>
+            <option value="Station 3">Station 3</option>
+            <option value="Station 4B">Station 4B</option>
+            <option value="Station 5A">Station 5A</option>
+            <option value="Station 5B">Station 5B</option>
+            <option value="Ultrasound">Ultrasound</option>
+            <option value="XRAY">XRAY</option>
+        </select>
+        <br><br>
+
+        <!-- Category of Issue Radio Buttons -->
+        <label>Category of Issue:</label><br>
+        <input type="radio" id="hardware" name="issue" value="Hardware Issues" required>
+        <label for="hardware">Hardware Issues</label><br>
+        <input type="radio" id="software" name="issue" value="Software Issues">
+        <label for="software">Software Issues</label><br>
+        <input type="radio" id="network" name="issue" value="Network Issues">
+        <label for="network">Network Issues</label><br>
+        <input type="radio" id="agimat" name="issue" value="Agimat Account Creation">
+        <label for="agimat">Agimat Account Creation</label><br>
+        <input type="radio" id="others" name="issue" value="Others">
+        <label for="others">Others</label><br><br>
+
+        <input type="submit" value="Submit">
+    </form>
 </body>
 </html>
