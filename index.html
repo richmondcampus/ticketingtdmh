@@ -49,7 +49,6 @@
         input[type="email"],
         select,
         input[type="radio"],
-        input[type="text"],
         textarea,
         input[type="submit"] {
             width: 100%;
@@ -102,6 +101,7 @@
             <!-- Department Dropdown Menu -->
             <label for="department">Department:</label>
             <select id="department" name="department" required>
+                <option value="">Select Department</option>
                 <option value="Accounting">Accounting</option>
                 <option value="Admin">Admin</option>
                 <option value="Admitting">Admitting</option>
@@ -147,19 +147,19 @@
                     Hardware Issues
                 </label>
                 <label for="software">
-                    <input type="radio" id="software" name="issue" value="Software Issues">
+                    <input type="radio" id="software" name="issue" value="Software Issues" required>
                     Software Issues
                 </label>
                 <label for="network">
-                    <input type="radio" id="network" name="issue" value="Network Issues">
+                    <input type="radio" id="network" name="issue" value="Network Issues" required>
                     Network Issues
                 </label>
                 <label for="agimat">
-                    <input type="radio" id="agimat" name="issue" value="Agimat Account Creation">
+                    <input type="radio" id="agimat" name="issue" value="Agimat Account Creation" required>
                     Agimat Account Creation
                 </label>
                 <label for="others">
-                    <input type="radio" id="others" name="issue" value="Others">
+                    <input type="radio" id="others" name="issue" value="Others" required>
                     Others
                 </label>
             </div>
