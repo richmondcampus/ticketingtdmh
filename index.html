@@ -11,27 +11,10 @@
             color: #ffffff;
             margin: 0;
             padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            flex-direction: column;
-        }
-        .container {
-            background-color: #1e1e1e;
-            padding: 2rem;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-            max-width: 500px;
-            width: 100%;
             position: relative;
         }
-        h2 {
-            text-align: center;
-            color: #ff5722;
-        }
         .login-btn {
-            position: absolute;
+            position: fixed;
             top: 10px;
             right: 10px;
             background-color: #ff5722;
@@ -44,6 +27,19 @@
         }
         .login-btn:hover {
             background-color: #e64a19;
+        }
+        .container {
+            background-color: #1e1e1e;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            max-width: 500px;
+            width: 100%;
+            margin: 100px auto 0 auto;
+        }
+        h2 {
+            text-align: center;
+            color: #ff5722;
         }
         label {
             display: block;
@@ -89,8 +85,8 @@
     </style>
 </head>
 <body>
+    <button class="login-btn">Log in</button>
     <div class="container">
-        <button class="login-btn">Log in</button>
         <h2>Support Form</h2>
         <form>
             <!-- Email Field -->
