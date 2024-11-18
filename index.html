@@ -11,24 +11,7 @@
             color: #ffffff;
             margin: 0;
             padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            flex-direction: column;
-        }
-        .container {
-            background-color: #1e1e1e;
-            padding: 2rem;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-            max-width: 500px;
-            width: 100%;
             position: relative;
-        }
-        h2 {
-            text-align: center;
-            color: #ff5722;
         }
         .login-btn {
             position: absolute;
@@ -44,6 +27,19 @@
         }
         .login-btn:hover {
             background-color: #e64a19;
+        }
+        .container {
+            background-color: #1e1e1e;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            max-width: 500px;
+            width: 100%;
+            margin: 100px auto 0 auto;
+        }
+        h2 {
+            text-align: center;
+            color: #ff5722;
         }
         label {
             display: block;
@@ -89,8 +85,8 @@
     </style>
 </head>
 <body>
+    <button class="login-btn">Log in</button>
     <div class="container">
-        <button class="login-btn">Log in</button>
         <h2>Support Form</h2>
         <form>
             <!-- Email Field -->
@@ -107,63 +103,4 @@
                 <option value="Billing">Billing</option>
                 <option value="Cardio">Cardio</option>
                 <option value="Canteen">Canteen</option>
-                <option value="Cashier">Cashier</option>
-                <option value="CT-Scan">CT-Scan</option>
-                <option value="CSR">CSR</option>
-                <option value="E-Konsulta">E-Konsulta</option>
-                <option value="ER">ER</option>
-                <option value="HMO">HMO</option>
-                <option value="HOMES">HOMES</option>
-                <option value="Laboratory">Laboratory</option>
-                <option value="Medical Records">Medical Records</option>
-                <option value="NICU">NICU</option>
-                <option value="NSO">NSO</option>
-                <option value="OPD">OPD</option>
-                <option value="OPD-Encoder">OPD-Encoder</option>
-                <option value="OPD-HMO">OPD-HMO</option>
-                <option value="OPD-Screener">OPD-Screener</option>
-                <option value="OR">OR</option>
-                <option value="Pharmacy">Pharmacy</option>
-                <option value="Philhealth">Philhealth</option>
-                <option value="Purchasing">Purchasing</option>
-                <option value="Releasing">Releasing</option>
-                <option value="Security">Security</option>
-                <option value="Social Service">Social Service</option>
-                <option value="Station 3">Station 3</option>
-                <option value="Station 4B">Station 4B</option>
-                <option value="Station 5A">Station 5A</option>
-                <option value="Station 5B">Station 5B</option>
-                <option value="Ultrasound">Ultrasound</option>
-                <option value="XRAY">XRAY</option>
-            </select>
-
-            <!-- Category of Issue Radio Buttons -->
-            <label>Category of Issue:</label>
-            <div class="radio-group">
-                <label for="hardware">
-                    <input type="radio" id="hardware" name="issue" value="Hardware Issues" required>
-                    Hardware Issues
-                </label>
-                <label for="software">
-                    <input type="radio" id="software" name="issue" value="Software Issues">
-                    Software Issues
-                </label>
-                <label for="network">
-                    <input type="radio" id="network" name="issue" value="Network Issues">
-                    Network Issues
-                </label>
-                <label for="agimat">
-                    <input type="radio" id="agimat" name="issue" value="Agimat Account Creation">
-                    Agimat Account Creation
-                </label>
-                <label for="others">
-                    <input type="radio" id="others" name="issue" value="Others">
-                    Others
-                </label>
-            </div>
-
-            <input type="submit" value="Submit">
-        </form>
-    </div>
-</body>
-</html>
+                <option value="
