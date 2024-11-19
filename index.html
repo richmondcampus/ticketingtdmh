@@ -107,25 +107,7 @@
         }
     </style>
     <script>
-        async function handleSubmit(event) {
-            event.preventDefault();
-            console.log('Form submit initiated...');
-            const form = event.target;
-            const formData = new FormData(form);
-            const loadingMessage = document.querySelector('.loading');
-            const successMessage = document.querySelector('.success');
-            const errorMessage = document.querySelector('.error');
-
-            loadingMessage.style.display = 'block';
-            successMessage.style.display = 'none';
-            errorMessage.style.display = 'none';
-
-            const data = {};
-            formData.forEach((value, key) => {
-                data[key] = value;
-            });
-
-           async function handleSubmit(event) {
+      async function handleSubmit(event) {
     event.preventDefault();
     console.log('Form submit initiated...');
     const form = event.target;
@@ -143,6 +125,8 @@
         data[key] = value;
     });
 
+    console.log('Sending data:', data);
+
     try {
         const response = await fetch('https://script.google.com/macros/s/AKfycbwVtSSprrM4mb_urC7vouEN_CO1KhI1p95WPdyRNICIfldU9eiafs_3A5aGeP5tcJpW/exec', {
             method: 'POST',
@@ -153,11 +137,14 @@
             body: JSON.stringify(data)
         });
 
+        console.log('Response received:', response);
+
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const result = await response.json();
+        console.log('Result:', result);
         loadingMessage.style.display = 'none';
 
         if (result.result === 'success') {
@@ -173,6 +160,7 @@
         errorMessage.style.display = 'block';
     }
 }
+
 
         }
     </script>
