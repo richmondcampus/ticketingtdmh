@@ -1,10 +1,70 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT TDMH Helpdesk</title>
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
     />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Roboto', sans-serif;
+        background: linear-gradient(135deg, #1f1f1f, #2b2b2b);
+        color: #fff;
+      }
+      .hero.is-primary {
+        background: linear-gradient(135deg, #0099ff, #66ccff);
+        color: white;
+      }
+      .hero-body .container .title {
+        font-size: 3rem;
+        font-weight: bold;
+      }
+      .field {
+        margin-bottom: 1.5rem;
+      }
+      .button {
+        transition: background-color 0.3s ease, transform 0.3s ease;
+      }
+      .button:hover {
+        transform: translateY(-3px);
+      }
+      .button.is-primary {
+        background-color: #0099ff;
+        border-color: #0099ff;
+      }
+      .button.is-danger {
+        background-color: #ff3860;
+        border-color: #ff3860;
+      }
+      .button.is-primary:hover,
+      .button.is-danger:hover {
+        background-color: #005f99;
+      }
+      .field .control .input,
+      .field .control .textarea,
+      .field .control .select select {
+        background-color: #2b2b2b;
+        border-color: #444;
+        color: #fff;
+      }
+      .field .control .input:focus,
+      .field .control .textarea:focus,
+      .field .control .select select:focus {
+        border-color: #0099ff;
+      }
+      .container {
+        max-width: 800px;
+        margin: 2rem auto;
+        padding: 2rem;
+        background-color: #1f1f1f;
+        border-radius: 8px;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+      }
+    </style>
   </head>
   <body>
     <section class="hero is-primary is-bold">
@@ -14,207 +74,106 @@
         </div>
       </div>
     </section>
-     <form id="form" class="container m-4 pl-4" method="POST">
- <!--     <div class="field">
-        <label class="label">Client Name</label>
-        <div class="control">
-          <input
-            class="input"
-            type="text"
-            placeholder="Your Client Name"
-            name="Client Name"
-          />
+    <div class="container">
+      <form id="form" method="POST">
+        <div class="field">
+          <label class="label">Email</label>
+          <div class="control">
+            <input class="input" type="email" placeholder="Your Email" name="Email" required />
+          </div>
         </div>
-      </div> -->
-
-      <!-- <div class="field">
-        <label class="label">Last Name</label>
-        <div class="control">
-          <input
-            class="input"
-            type="text"
-            placeholder="Your Last Name"
-            name="Last Name"
-          />
-        </div>
-      </div> -->
-
-      <div class="field">
-        <label class="label">Email</label>
-        <div class="control">
-          <input
-            class="input"
-            type="email"
-            placeholder="Your Email"
-            name="Email"
-          />
-        </div>
-        
-       <div class="field">
-    <label class="label">Department</label>
-    <div class="control">
-        <div class="select">
-            <select name="Department">
+        <div class="field">
+          <label class="label">Department</label>
+          <div class="control">
+            <div class="select">
+              <select name="Department" required>
+                <option value="">Select Department</option>
                 <option value="Accounting">Accounting</option>
                 <option value="Admin">Admin</option>
                 <option value="Others">Others</option>
-            </select>
+              </select>
+            </div>
+          </div>
         </div>
-    </div>
-</div>
-
-        
-      </div>
-
-   <!--   <div class="field">
-        <label class="label">Password</label>
-        <div class="control">
-          <input
-            class="input"
-            type="password"
-            placeholder="Your Password"
-            name="Password"
-          />
-        </div>
-      </div> 
-
-      <div class="field">
-        <label class="label">Date of Birth</label>
-        <div class="control">
-          <input
-            class="input"
-            type="date"
-            placeholder="Your Date of Birth"
-            name="DOB"
-          />
-        </div>
-      </div> -->
-
-     <div class="field">
-         <label class="label">Category of Issue</label>
-    <div class="control">
-        <div class="select">
-            <select name="Category of Issue">
+        <div class="field">
+          <label class="label">Category of Issue</label>
+          <div class="control">
+            <div class="select">
+              <select name="Category of Issue" required>
+                <option value="">Select Category</option>
                 <option value="Hardware Issues">Hardware Issues</option>
                 <option value="Software Issues">Software Issues</option>
                 <option value="Others">Others</option>
-            </select>
+              </select>
+            </div>
+          </div>
         </div>
-      </div>
-
-  <!--    <div class="field">
-        <label class="label">Agree to Terms</label>
-        <div class="control">
-          <label class="checkbox">
-            <input type="checkbox" name="Agree To Terms" value="yes" /> I agree
-            to the terms and conditions
-          </label>
+        <div class="field">
+          <label class="label">Please specify Issues/Concern</label>
+          <div class="control">
+            <textarea class="textarea" placeholder="Please specify Issues/Concern" name="Please specify Issues/Concern" required></textarea>
+          </div>
         </div>
-      </div>  -->
-
-      <div class="field">
-        <label class="label">Please specify Issues/Concern</label>
-        <div class="control">
-          <textarea
-            class="textarea"
-            placeholder="Please specify Issues/Concern"
-            name="Please specify Issues/Concern"
-          ></textarea>
+        <div class="field is-grouped">
+          <div class="control">
+            <button class="button is-primary" type="submit" id="submit-button">Submit</button>
+          </div>
+          <div class="control">
+            <a href="agimat.html" class="button is-danger">Cancel</a>
+          </div>
         </div>
-      </div>
-
-      <div class="field is-grouped">
-        <div class="control">
-          <button class="button is-primary" type="submit" id="submit-button">
-            Submit
-          </button>
-        </div>
- <!--       <div class="control">
-  <a href="agimat.html">
-    <button class="button is-danger">Cancel</button>
-  </a>
-</div>
-        <div class="control">
-  <a href="agimat.html">
-    <button class="button">Agimat</button>
-  </a>
-</div> -->
-
-
-      </div>
-    </form>
-    <div
-      id="message"
-      style="
-        display: none;
-        margin: 20px;
-        font-weight: bold;
-        color: green;
-        padding: 8px;
-        background-color: beige;
-        border-radius: 4px;
-        border-color: aquamarine;
-      "
-    ></div>
-
+      </form>
+      <div id="message" style="display: none; margin: 20px; font-weight: bold; padding: 8px; background-color: beige; border-radius: 4px; border-color: aquamarine; color: green;"></div>
+    </div>
     <script>
       document.getElementById("form").addEventListener("submit", function (e) {
         e.preventDefault(); // Prevent the default form submission
         document.getElementById("message").textContent = "Submitting..";
         document.getElementById("message").style.display = "block";
         document.getElementById("submit-button").disabled = true;
-
         // Collect the form data
         var formData = new FormData(this);
         var keyValuePairs = [];
         for (var pair of formData.entries()) {
           keyValuePairs.push(pair[0] + "=" + pair[1]);
         }
-
         var formDataString = keyValuePairs.join("&");
-
         // Send a POST request to your Google Apps Script
-        fetch(
-          "https://script.google.com/macros/s/AKfycbzAXQ6aHlwgchcsn3_-6mkE9rMVTAe3p0Zq1KZUf4W0QWPq99pMOG5FpAIije7xtaKAFw/exec",
-          {
-            redirect: "follow",
-            method: "POST",
-            body: formDataString,
-            headers: {
-              "Content-Type": "text/plain;charset=utf-8",
-            },
+        fetch("https://script.google.com/macros/s/AKfycbzAXQ6aHlwgchcsn3_-6mkE9rMVTAe3p0Zq1KZUf4W0QWPq99pMOG5FpAIije7xtaKAFw/exec", {
+          redirect: "follow",
+          method: "POST",
+          body: formDataString,
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8",
+          },
+        })
+        .then(function (response) {
+          // Check if the request was successful
+          if (response) {
+            return response.json(); // Assuming your script returns JSON response
+          } else {
+            throw new Error("Failed to submit the form.");
           }
-        )
-          .then(function (response) {
-            // Check if the request was successful
-            if (response) {
-              return response; // Assuming your script returns JSON response
-            } else {
-              throw new Error("Failed to submit the form.");
-            }
-          })
-          .then(function (data) {
-            // Display a success message
-            document.getElementById("message").textContent =
-              "Data submitted successfully!";
-            document.getElementById("message").style.display = "block";
-            document.getElementById("message").style.backgroundColor = "green";
-            document.getElementById("message").style.color = "beige";
-            document.getElementById("submit-button").disabled = false;
-            document.getElementById("form").reset();
-
-            setTimeout(function () {
-              document.getElementById("message").textContent = "";
-              document.getElementById("message").style.display = "none";
-            }, 2600);
-          })
-          .catch(function (error) {
-            // Handle errors, you can display an error message here
-            console.error(error);
-            document.getElementById("message").textContent =
-              "An error occurred while submitting the form.";
-            document.getElementById("message").style.display = "block";
-          });
+        })
+        .then(function (data) {
+          // Display a success message
+          document.getElementById("message").textContent = "Data submitted successfully!";
+          document.getElementById("message").style.display = "block";
+          document.getElementById("message").style.backgroundColor = "green";
+          document.getElementById("message").style.color = "beige";
+          document.getElementById("submit-button").disabled = false;
+          document.getElementById("form").reset();
+          setTimeout(function () {
+            document.getElementById("message").textContent = "";
+            document.getElementById("message").style.display = "none";
+          }, 2600);
+        })
+        .catch(function (error) {
+          // Handle errors, you can display an error message here
+          console.error(error);
+          document.getElementById("message").textContent = "An error occurred while submitting the form.";
+          document.getElementById("message").style.display = "block";
+        });
       });
     </script>
   </body>
