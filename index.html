@@ -55,7 +55,6 @@
         <div class="control">
           <button class="button is-primary" type="submit" id="submit-button">Submit</button>
         </div>
-        <!-- Add the link to agimat.html here -->
         <div class="control">
           <a href="agimat.html" class="button is-link">Go to Agimat</a>
         </div>
@@ -124,6 +123,7 @@
             setTimeout(function () {
               document.getElementById("message").textContent = "";
               document.getElementById("message").style.display = "none";
+              window.location.href = "thankyou.html"; // Redirect to thankyou.html
             }, 2600);
           })
           .catch(function (error) {
