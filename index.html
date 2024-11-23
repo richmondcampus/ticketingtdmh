@@ -15,26 +15,12 @@
         color: #e0e0e0;
         font-family: 'Roboto', sans-serif;
       }
-      .main-container {
-        display: flex;
-        max-width: 1200px;
-        width: 100%;
-      }
-      .form-container {
-        flex: 1;
+      .container {
+        max-width: 600px;
         padding: 2rem;
         background-color: #1e1e1e;
         border-radius: 8px;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-        margin-right: 1rem;
-      }
-      .verse-container {
-        flex: 0 0 300px;
-        padding: 1rem;
-        background-color: #1e1e1e;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-        text-align: center;
       }
       .hero {
         background-color: #333;
@@ -42,15 +28,14 @@
         padding: 1rem;
         border-radius: 8px 8px 0 0;
         text-align: center;
-        margin-bottom: 1rem;
       }
-      .btn-primary {
+      .button-primary {
         background-color: #007bff;
         border-color: #007bff;
         color: white;
         margin: 1rem 0;
       }
-      .btn-primary:hover {
+      .button-primary:hover {
         background-color: #0056b3;
         border-color: #0056b3;
       }
@@ -80,55 +65,49 @@
     </style>
   </head>
   <body>
-    <div class="main-container">
-      <div class="form-container">
-        <div class="hero">
-          <h1 class="title">IT TDMH Helpdesk</h1>
+    <div class="container">
+      <div class="hero">
+        <h1 class="title">IT TDMH Helpdesk</h1>
+      </div>
+      <form id="form" method="POST">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" class="form-control" id="email" placeholder="Your Email" name="Email" required />
         </div>
-        <form id="form" method="POST">
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input type="email" class="form-control" id="email" placeholder="Your Email" name="Email" required />
-          </div>
-          <div class="form-group">
-            <label for="department">Department</label>
-            <select class="form-control" id="department" name="Department" required>
-              <option value="" disabled selected>Select your department</option>
-              <option value="Accounting">Accounting</option>
-              <option value="Admin">Admin</option>
-              <option value="Others">Others</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="category">Category of Issue</label>
-            <select class="form-control" id="category" name="Category of Issue" required>
-              <option value="" disabled selected>Select issue category</option>
-              <option value="Hardware Issues">Hardware Issues</option>
-              <option value="Software Issues">Software Issues</option>
-              <option value="Others">Others</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="issues">Please specify Issues/Concern</label>
-            <textarea class="form-control" id="issues" rows="3" placeholder="Please specify Issues/Concern" name="Please specify Issues/Concern" required></textarea>
-          </div>
-          <div class="form-group">
-            <button type="submit" class="btn btn-primary" id="submit-button">Submit</button>
-          </div>
-          <div class="form-group">
-            <a href="agimat.html" class="btn btn-link">Go to Agimat</a>
-          </div>
-        </form>
-        <div
-          id="message"
-          class="alert alert-success"
-          style="display: none; margin-top: 20px;"
-        ></div>
-      </div>
-      <div class="verse-container">
-        <h2 class="title">Verse of the Day</h2>
-        <img id="votd-img" src="" alt="Verse of the Day" style="width: 100%; height: auto;" />
-      </div>
+        <div class="form-group">
+          <label for="department">Department</label>
+          <select class="form-control" id="department" name="Department" required>
+            <option value="" disabled selected>Select your department</option>
+            <option value="Accounting">Accounting</option>
+            <option value="Admin">Admin</option>
+            <option value="Others">Others</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="category">Category of Issue</label>
+          <select class="form-control" id="category" name="Category of Issue" required>
+            <option value="" disabled selected>Select issue category</option>
+            <option value="Hardware Issues">Hardware Issues</option>
+            <option value="Software Issues">Software Issues</option>
+            <option value="Others">Others</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="issues">Please specify Issues/Concern</label>
+          <textarea class="form-control" id="issues" rows="3" placeholder="Please specify Issues/Concern" name="Please specify Issues/Concern" required></textarea>
+        </div>
+        <div class="form-group">
+          <button type="submit" class="btn button-primary" id="submit-button">Submit</button>
+        </div>
+        <div class="form-group">
+          <a href="agimat.html" class="btn btn-link">Go to Agimat</a>
+        </div>
+      </form>
+      <div
+        id="message"
+        class="alert alert-success"
+        style="display: none; margin-top: 20px;"
+      ></div>
     </div>
     <script>
       document.getElementById("form").addEventListener("submit", function (e) {
@@ -161,7 +140,7 @@
           .then(function (response) {
             // Check if the request was successful
             if (response) {
-              return response.json(); // Assuming your script returns JSON response
+              return response; // Assuming your script returns JSON response
             } else {
               throw new Error("Failed to submit the form.");
             }
@@ -179,14 +158,6 @@
             document.getElementById("message").classList.add("alert-danger");
           });
       });
-
-      // Fetch and display Verse of the Day
-      fetch('https://beta.ourmanna.com/api/v1/get/?format=json')
-        .then(response => response.json())
-        .then(data => {
-          document.getElementById('votd-img').src = data.contents.image;
-        })
-        .catch(error => console.error('Error fetching Verse of the Day:', error));
     </script>
   </body>
 </html>
