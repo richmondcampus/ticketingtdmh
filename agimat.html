@@ -3,108 +3,112 @@
   <head>
     <link
       rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
     />
+    <style>
+      body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #121212;
+        color: #e0e0e0;
+        font-family: 'Roboto', sans-serif;
+      }
+      .container {
+        max-width: 800px;
+        padding: 2rem;
+        background-color: #1e1e1e;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+      }
+      .hero {
+        background-color: #333;
+        color: white;
+        padding: 1rem;
+        border-radius: 8px 8px 0 0;
+        text-align: center;
+      }
+      .btn-primary {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white;
+        margin: 1rem 0;
+      }
+      .btn-primary:hover {
+        background-color: #0056b3;
+        border-color: #0056b3;
+      }
+      .form-control {
+        background-color: #2c2c2c;
+        border: 1px solid #444;
+        color: #e0e0e0;
+      }
+      .form-control:focus {
+        background-color: #2c2c2c;
+        border-color: #007bff;
+        color: #e0e0e0;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+      }
+      .form-group label {
+        color: #e0e0e0;
+      }
+      #message {
+        display: none;
+        margin-top: 20px;
+        padding: 10px;
+        border-radius: 4px;
+        background-color: #007bff;
+        color: white;
+        text-align: center;
+      }
+    </style>
   </head>
   <body>
-    <section class="hero is-primary is-bold">
-      <div class="hero-body">
-        <div class="container">
-          <h1 class="title">IT TDMH Helpdesk - Agimat Account Creation</h1>
-        </div>
+    <div class="container">
+      <div class="hero">
+        <h1 class="title">IT TDMH Helpdesk - Agimat Account Creation</h1>
       </div>
-    </section>
-     <form id="form" class="container m-4 pl-4" method="POST">
-
-      <div class="field">
-        <label class="label">Email</label>
-        <div class="control">
-          <input
-            class="input"
-            type="email"
-            placeholder="Your Email"
-            name="Email"
-          />
+      <form id="form" method="POST">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" class="form-control" id="email" placeholder="Your Email" name="Email" required />
         </div>
-         </div>
-
-             <div class="field">
-        <label class="label">Department</label>
-        <div class="control">
-          <div class="select">
-            <select name="Department">
-              <option value="Accounting">Accounting</option>
-              <option value="Admin">Admin</option>
-              <option value="Others">Others</option>
-            </select>
-          </div>
+        <div class="form-group">
+          <label for="department">Department</label>
+          <select class="form-control" id="department" name="Department" required>
+            <option value="" disabled selected>Select your department</option>
+            <option value="Accounting">Accounting</option>
+            <option value="Admin">Admin</option>
+            <option value="Others">Others</option>
+          </select>
         </div>
-      </div>
-       
-   <div class="field">
-        <label class="label">First Name</label>
-        <div class="control">
-          <textarea
-            class="textarea"
-            placeholder="First Name"
-            name="First Name"
-          ></textarea>
+        <div class="form-group">
+          <label for="firstName">First Name</label>
+          <textarea class="form-control" id="firstName" rows="1" placeholder="First Name" name="First Name" required></textarea>
         </div>
-      </div>
-
-       
-     
-
-
-     <div class="field">
-         <label class="label">Category of Issue</label>
-    <div class="control">
-        <div class="select">
-            <select name="Category of Issue">
-                <option value="Hardware Issues">Hardware Issues</option>
-                <option value="Software Issues">Software Issues</option>
-                <option value="Others">Others</option>
-            </select>
+        
+       <div class="form-group">
+          <label for="middleName">Middle Name</label>
+          <textarea class="form-control" id="middleName" rows="1" placeholder="Middle Name" name="Middle Name" required></textarea>
         </div>
-      </div>
 
-      <div class="field">
-        <label class="label">Please specify Issues/Concern</label>
-        <div class="control">
-          <textarea
-            class="textarea"
-            placeholder="Please specify Issues/Concern"
-            name="Please specify Issues/Concern"
-          ></textarea>
+
+        
+        <div class="form-group">
+          <button type="submit" class="btn btn-primary" id="submit-button">Submit</button>
         </div>
-      </div>
-
-      <div class="field is-grouped">
-        <div class="control">
-          <button class="button is-primary" type="submit" id="submit-button">
-            Submit
-          </button>
-        </div>
-      </div>
-    </form>
-    <div
-      id="message"
-      style="
-        display: none;
-        margin: 20px;
-        font-weight: bold;
-        color: green;
-        padding: 8px;
-        background-color: beige;
-        border-radius: 4px;
-        border-color: aquamarine;
-      "
-    ></div>
-
+      </form>
+      <div
+        id="message"
+        class="alert alert-success"
+        style="display: none; margin-top: 20px;"
+      ></div>
+    </div>
     <script>
       document.getElementById("form").addEventListener("submit", function (e) {
         e.preventDefault(); // Prevent the default form submission
-        document.getElementById("message").textContent = "Submitting..";
+        document.getElementById("message").textContent = "Submitting...";
         document.getElementById("message").style.display = "block";
         document.getElementById("submit-button").disabled = true;
 
@@ -138,19 +142,8 @@
             }
           })
           .then(function (data) {
-            // Display a success message
-            document.getElementById("message").textContent =
-              "Data submitted successfully!";
-            document.getElementById("message").style.display = "block";
-            document.getElementById("message").style.backgroundColor = "green";
-            document.getElementById("message").style.color = "beige";
-            document.getElementById("submit-button").disabled = false;
-            document.getElementById("form").reset();
-
-            setTimeout(function () {
-              document.getElementById("message").textContent = "";
-              document.getElementById("message").style.display = "none";
-            }, 2600);
+            // Redirect to thank you page
+            window.location.href = "thankyou.html";
           })
           .catch(function (error) {
             // Handle errors, you can display an error message here
@@ -158,6 +151,7 @@
             document.getElementById("message").textContent =
               "An error occurred while submitting the form.";
             document.getElementById("message").style.display = "block";
+            document.getElementById("message").classList.add("alert-danger");
           });
       });
     </script>
