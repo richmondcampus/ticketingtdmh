@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <!--<link
+    <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
-    /> -->
+    />
     <style>
       body {
         display: flex;
         justify-content: center;
         align-items: center;
         height: 100vh;
-        background-color: #f5f5f5;
+        background: linear-gradient(135deg, #ececec, #f5f5f5);
         font-family: 'Roboto', sans-serif;
       }
       .container {
@@ -22,7 +22,7 @@
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
       }
       .hero.is-primary {
-        background-color: #00d1b2 !important; /* Match the color of the Agimat button */
+        background-color: #00d1b2 !important;
       }
       .button.is-primary {
         background-color: #00d1b2;
@@ -33,9 +33,32 @@
         border-color: #00c4a7;
       }
       .input,
-      .textarea {
+      .textarea,
+      .select select {
         max-width: 100%;
-        width: 300px; /* Make text fields shorter */
+        width: 300px;
+        margin-bottom: 1rem;
+      }
+      .field.is-grouped {
+        justify-content: space-between;
+      }
+      .label {
+        font-weight: bold;
+      }
+      .field .control .input:focus,
+      .field .control .textarea:focus,
+      .field .control .select select:focus {
+        border-color: #00d1b2;
+        box-shadow: 0 0 0 0.125em rgba(0, 209, 178, 0.25);
+      }
+      #message {
+        display: none;
+        margin-top: 20px;
+        padding: 10px;
+        border-radius: 4px;
+        background-color: #00d1b2;
+        color: white;
+        text-align: center;
       }
     </style>
   </head>
@@ -44,7 +67,7 @@
       <section class="hero is-primary is-bold">
         <div class="hero-body">
           <div class="container">
-            <h1 class="title" style="color: white;">IT TDMH Helpdesk</h1> <!-- Ensure the text is visible -->
+            <h1 class="title" style="color: white;">IT TDMH Helpdesk</h1>
           </div>
         </div>
       </section>
@@ -52,14 +75,15 @@
         <div class="field">
           <label class="label">Email</label>
           <div class="control">
-            <input class="input" type="email" placeholder="Your Email" name="Email" />
+            <input class="input" type="email" placeholder="Your Email" name="Email" required />
           </div>
         </div>
         <div class="field">
           <label class="label">Department</label>
           <div class="control">
             <div class="select">
-              <select name="Department">
+              <select name="Department" required>
+                <option value="" disabled selected>Select your department</option>
                 <option value="Accounting">Accounting</option>
                 <option value="Admin">Admin</option>
                 <option value="Others">Others</option>
@@ -71,7 +95,8 @@
           <label class="label">Category of Issue</label>
           <div class="control">
             <div class="select">
-              <select name="Category of Issue">
+              <select name="Category of Issue" required>
+                <option value="" disabled selected>Select issue category</option>
                 <option value="Hardware Issues">Hardware Issues</option>
                 <option value="Software Issues">Software Issues</option>
                 <option value="Others">Others</option>
@@ -82,33 +107,19 @@
         <div class="field">
           <label class="label">Please specify Issues/Concern</label>
           <div class="control">
-            <textarea class="textarea" placeholder="Please specify Issues/Concern" name="Please specify Issues/Concern"></textarea>
+            <textarea class="textarea" placeholder="Please specify Issues/Concern" name="Please specify Issues/Concern" required></textarea>
           </div>
         </div>
         <div class="field is-grouped">
           <div class="control">
             <button class="button is-primary" type="submit" id="submit-button">Submit</button>
           </div>
-        </div>
-        <div class="field">
           <div class="control">
             <a href="agimat.html" class="button is-link">Agimat Account Creation</a>
           </div>
         </div>
       </form>
-      <div
-        id="message"
-        style="
-          display: none;
-          margin: 20px;
-          font-weight: bold;
-          color: green;
-          padding: 8px;
-          background-color: beige;
-          border-radius: 4px;
-          border-color: aquamarine;
-        "
-      ></div>
+      <div id="message">Data submitted successfully!</div>
     </div>
     <script>
       document.getElementById("form").addEventListener("submit", function (e) {
@@ -141,7 +152,7 @@
           .then(function (response) {
             // Check if the request was successful
             if (response) {
-              return response; // Assuming your script returns JSON response
+              return response.json(); // Assuming your script returns JSON response
             } else {
               throw new Error("Failed to submit the form.");
             }
@@ -152,7 +163,7 @@
               "Data submitted successfully!";
             document.getElementById("message").style.display = "block";
             document.getElementById("message").style.backgroundColor = "green";
-            document.getElementById("message").style.color = "beige";
+            document.getElementById("message").style.color = "white";
             document.getElementById("submit-button").disabled = false;
             document.getElementById("form").reset();
 
@@ -168,6 +179,8 @@
             document.getElementById("message").textContent =
               "An error occurred while submitting the form.";
             document.getElementById("message").style.display = "block";
+            document.getElementById("message").style.backgroundColor = "red";
+            document.getElementById("message").style.color = "white";
           });
       });
     </script>
