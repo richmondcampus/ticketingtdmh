@@ -5,6 +5,7 @@
       rel="stylesheet"
       href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
     />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
     <style>
       body {
         display: flex;
@@ -21,6 +22,7 @@
         background-color: #1e1e1e;
         border-radius: 8px;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+        animation: fadeIn 1s ease-in-out;
       }
       .hero {
         background-color: #333;
@@ -34,15 +36,18 @@
         border-color: #007bff;
         color: white;
         margin: 1rem 0;
+        transition: background-color 0.3s, transform 0.3s;
       }
       .button-primary:hover {
         background-color: #0056b3;
         border-color: #0056b3;
+        transform: scale(1.05);
       }
       .form-control {
         background-color: #2c2c2c;
         border: 1px solid #444;
         color: #e0e0e0;
+        transition: border-color 0.3s, box-shadow 0.3s;
       }
       .form-control:focus {
         background-color: #2c2c2c;
@@ -62,11 +67,19 @@
         color: white;
         text-align: center;
       }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
     </style>
   </head>
   <body>
-    <div class="container">
-      <div class="hero">
+    <div class="container animate__animated animate__fadeIn">
+      <div class="hero animate__animated animate__bounceInDown">
         <h1 class="title">IT TDMH Helpdesk</h1>
       </div>
       <form id="form" method="POST">
@@ -97,7 +110,7 @@
           <textarea class="form-control" id="issues" rows="3" placeholder="Please specify Issues/Concern" name="Please specify Issues/Concern" required></textarea>
         </div>
         <div class="form-group">
-          <button type="submit" class="btn button-primary" id="submit-button">Submit</button>
+          <button type="submit" class="btn button-primary animate__animated animate__pulse" id="submit-button">Submit</button>
         </div>
         <div class="form-group">
           <a href="agimat.html" class="btn btn-link">Go to Agimat</a>
@@ -105,7 +118,7 @@
       </form>
       <div
         id="message"
-        class="alert alert-success"
+        class="alert alert-success animate__animated animate__fadeInUp"
         style="display: none; margin-top: 20px;"
       ></div>
     </div>
