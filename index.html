@@ -127,8 +127,7 @@
       </div>
       <div class="verse-container">
         <h2 class="title">Verse of the Day</h2>
-        <div id="votd"></div>
-        <script src="https://www.youversion.com/widget/votd"></script>
+        <img id="votd-img" src="" alt="Verse of the Day" style="width: 100%; height: auto;" />
       </div>
     </div>
     <script>
@@ -162,7 +161,7 @@
           .then(function (response) {
             // Check if the request was successful
             if (response) {
-              return response; // Assuming your script returns JSON response
+              return response.json(); // Assuming your script returns JSON response
             } else {
               throw new Error("Failed to submit the form.");
             }
@@ -180,6 +179,14 @@
             document.getElementById("message").classList.add("alert-danger");
           });
       });
+
+      // Fetch and display Verse of the Day
+      fetch('https://youversionapi.glowstudent.workers.dev/v1/verse?lang=en')
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('votd-img').src = data.image;
+        })
+        .catch(error => console.error('Error fetching Verse of the Day:', error));
     </script>
   </body>
 </html>
