@@ -5,6 +5,13 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
     />
+    <style>
+      .agimat-button {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+      }
+    </style>
   </head>
   <body>
     <section class="hero is-primary is-bold">
@@ -14,6 +21,9 @@
         </div>
       </div>
     </section>
+
+    <a href="agimat.html" class="button is-link agimat-button">Agimat Account Creation</a>
+
     <form id="form" class="container m-4 pl-4" method="POST">
       <div class="field">
         <label class="label">Email</label>
@@ -54,9 +64,6 @@
       <div class="field is-grouped">
         <div class="control">
           <button class="button is-primary" type="submit" id="submit-button">Submit</button>
-        </div>
-        <div class="control">
-          <a href="agimat.html" class="button is-link">Go to Agimat</a>
         </div>
       </div>
     </form>
