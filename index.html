@@ -14,62 +14,50 @@
         </div>
       </div>
     </section>
-     <form id="form" class="container m-4 pl-4" method="POST">
-
+    <form id="form" class="container m-4 pl-4" method="POST">
       <div class="field">
         <label class="label">Email</label>
         <div class="control">
-          <input
-            class="input"
-            type="email"
-            placeholder="Your Email"
-            name="Email"
-          />
+          <input class="input" type="email" placeholder="Your Email" name="Email" />
         </div>
-        
-       <div class="field">
-    <label class="label">Department</label>
-    <div class="control">
-        <div class="select">
+      </div>
+      <div class="field">
+        <label class="label">Department</label>
+        <div class="control">
+          <div class="select">
             <select name="Department">
-                <option value="Accounting">Accounting</option>
-                <option value="Admin">Admin</option>
-                <option value="Others">Others</option>
+              <option value="Accounting">Accounting</option>
+              <option value="Admin">Admin</option>
+              <option value="Others">Others</option>
             </select>
+          </div>
         </div>
-    </div>
-</div>
       </div>
-
-
-     <div class="field">
-         <label class="label">Category of Issue</label>
-    <div class="control">
-        <div class="select">
+      <div class="field">
+        <label class="label">Category of Issue</label>
+        <div class="control">
+          <div class="select">
             <select name="Category of Issue">
-                <option value="Hardware Issues">Hardware Issues</option>
-                <option value="Software Issues">Software Issues</option>
-                <option value="Others">Others</option>
+              <option value="Hardware Issues">Hardware Issues</option>
+              <option value="Software Issues">Software Issues</option>
+              <option value="Others">Others</option>
             </select>
+          </div>
         </div>
       </div>
-
       <div class="field">
         <label class="label">Please specify Issues/Concern</label>
         <div class="control">
-          <textarea
-            class="textarea"
-            placeholder="Please specify Issues/Concern"
-            name="Please specify Issues/Concern"
-          ></textarea>
+          <textarea class="textarea" placeholder="Please specify Issues/Concern" name="Please specify Issues/Concern"></textarea>
         </div>
       </div>
-
       <div class="field is-grouped">
         <div class="control">
-          <button class="button is-primary" type="submit" id="submit-button">
-            Submit
-          </button>
+          <button class="button is-primary" type="submit" id="submit-button">Submit</button>
+        </div>
+        <!-- Add the link to agimat.html here -->
+        <div class="control">
+          <a href="agimat.html" class="button is-link">Go to Agimat</a>
         </div>
       </div>
     </form>
