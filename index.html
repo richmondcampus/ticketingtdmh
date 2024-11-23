@@ -14,14 +14,14 @@
         justify-content: center;
         align-items: center;
         height: 100vh;
-        background: url('https://images.pexels.com/photos/613019/pexels-photo-613019.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=750&w=1260') no-repeat center center/cover;
+        background-color: #121212;
         color: #e0e0e0;
         font-family: 'Roboto', sans-serif;
       }
       .container {
         max-width: 600px;
         padding: 2rem;
-        background-color: rgba(30, 30, 30, 0.9); /* Semi-transparent background */
+        background-color: #1e1e1e;
         border-radius: 8px;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
         animation: fadeIn 1s ease-in-out;
@@ -175,6 +175,7 @@
         // Collect the form data
         var formData = new FormData(this);
         var keyValuePairs = [];
+
         for (var pair of formData.entries()) {
           keyValuePairs.push(pair[0] + "=" + pair[1]);
         }
