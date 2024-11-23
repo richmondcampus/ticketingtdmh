@@ -3,82 +3,92 @@
   <head>
     <link
       rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
     />
+    <style>
+      body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #f5f5f5;
+        font-family: 'Roboto', sans-serif;
+      }
+      .container {
+        max-width: 600px;
+        padding: 2rem;
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+      .hero {
+        background-color: #007bff;
+        color: white;
+        padding: 1rem;
+        border-radius: 8px 8px 0 0;
+        text-align: center;
+      }
+      .button-primary {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white;
+        margin: 1rem 0;
+      }
+      .button-primary:hover {
+        background-color: #0056b3;
+        border-color: #0056b3;
+      }
+    </style>
   </head>
   <body>
-    <section class="hero is-primary is-bold">
-      <div class="hero-body">
-        <div class="container">
-          <h1 class="title">IT TDMH Helpdesk</h1>
-        </div>
+    <div class="container">
+      <div class="hero">
+        <h1 class="title">IT TDMH Helpdesk</h1>
       </div>
-    </section>
-    <form id="form" class="container m-4 pl-4" method="POST">
-      <div class="field">
-        <label class="label">Email</label>
-        <div class="control">
-          <input class="input" type="email" placeholder="Your Email" name="Email" />
+      <form id="form" method="POST">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" class="form-control" id="email" placeholder="Your Email" name="Email" required />
         </div>
-      </div>
-      <div class="field">
-        <label class="label">Department</label>
-        <div class="control">
-          <div class="select">
-            <select name="Department">
-              <option value="Accounting">Accounting</option>
-              <option value="Admin">Admin</option>
-              <option value="Others">Others</option>
-            </select>
-          </div>
+        <div class="form-group">
+          <label for="department">Department</label>
+          <select class="form-control" id="department" name="Department" required>
+            <option value="" disabled selected>Select your department</option>
+            <option value="Accounting">Accounting</option>
+            <option value="Admin">Admin</option>
+            <option value="Others">Others</option>
+          </select>
         </div>
-      </div>
-      <div class="field">
-        <label class="label">Category of Issue</label>
-        <div class="control">
-          <div class="select">
-            <select name="Category of Issue">
-              <option value="Hardware Issues">Hardware Issues</option>
-              <option value="Software Issues">Software Issues</option>
-              <option value="Others">Others</option>
-            </select>
-          </div>
+        <div class="form-group">
+          <label for="category">Category of Issue</label>
+          <select class="form-control" id="category" name="Category of Issue" required>
+            <option value="" disabled selected>Select issue category</option>
+            <option value="Hardware Issues">Hardware Issues</option>
+            <option value="Software Issues">Software Issues</option>
+            <option value="Others">Others</option>
+          </select>
         </div>
-      </div>
-      <div class="field">
-        <label class="label">Please specify Issues/Concern</label>
-        <div class="control">
-          <textarea class="textarea" placeholder="Please specify Issues/Concern" name="Please specify Issues/Concern"></textarea>
+        <div class="form-group">
+          <label for="issues">Please specify Issues/Concern</label>
+          <textarea class="form-control" id="issues" rows="3" placeholder="Please specify Issues/Concern" name="Please specify Issues/Concern" required></textarea>
         </div>
-      </div>
-      <div class="field is-grouped">
-        <div class="control">
-          <button class="button is-primary" type="submit" id="submit-button">Submit</button>
+        <div class="form-group">
+          <button type="submit" class="btn button-primary" id="submit-button">Submit</button>
         </div>
-        <!-- Add the link to agimat.html here -->
-        <div class="control">
-          <a href="agimat.html" class="button is-link">Go to Agimat</a>
+        <div class="form-group">
+          <a href="agimat.html" class="btn btn-link">Go to Agimat</a>
         </div>
-      </div>
-    </form>
-    <div
-      id="message"
-      style="
-        display: none;
-        margin: 20px;
-        font-weight: bold;
-        color: green;
-        padding: 8px;
-        background-color: beige;
-        border-radius: 4px;
-        border-color: aquamarine;
-      "
-    ></div>
-
+      </form>
+      <div
+        id="message"
+        class="alert alert-success"
+        style="display: none; margin-top: 20px;"
+      ></div>
+    </div>
     <script>
       document.getElementById("form").addEventListener("submit", function (e) {
         e.preventDefault(); // Prevent the default form submission
-        document.getElementById("message").textContent = "Submitting..";
+        document.getElementById("message").textContent = "Submitting...";
         document.getElementById("message").style.display = "block";
         document.getElementById("submit-button").disabled = true;
 
@@ -116,8 +126,7 @@
             document.getElementById("message").textContent =
               "Data submitted successfully!";
             document.getElementById("message").style.display = "block";
-            document.getElementById("message").style.backgroundColor = "green";
-            document.getElementById("message").style.color = "beige";
+            document.getElementById("message").classList.add("alert-success");
             document.getElementById("submit-button").disabled = false;
             document.getElementById("form").reset();
 
@@ -132,6 +141,7 @@
             document.getElementById("message").textContent =
               "An error occurred while submitting the form.";
             document.getElementById("message").style.display = "block";
+            document.getElementById("message").classList.add("alert-danger");
           });
       });
     </script>
