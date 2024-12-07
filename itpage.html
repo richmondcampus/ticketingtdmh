@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Tickets</title>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data https://www.gstatic.com https://accounts.google.com;">
     <style>
         table {
             width: 100%;
@@ -57,7 +58,7 @@
 
         function handleCredentialResponse(response) {
             console.log('Encoded JWT ID token: ' + response.credential);
-            // You can also process the token on the server side
+            // Initialize the Google API client
             initClient();
         }
 
@@ -113,16 +114,12 @@
                     spreadsheetId: '1WP1O6SgmGq6llsRI0PgnJIijNLN_AhfqwHxoxmbWXp0',
                     range: 'Sheet1'
                 });
-                const data = await response.json();
-                console.log("Fetched data:", data);
-                const tickets = data.values;
+                const tickets = response.result.values;
 
                 if (!tickets || tickets.length === 0) {
                     console.error("No data found in the spreadsheet.");
                     return;
                 }
-
-                console.log("All tickets:", tickets);
 
                 const filteredTickets = tickets.filter(ticket =>
                     ['New', 'Open', 'On Hold', 'Pending'].includes(ticket[6])
