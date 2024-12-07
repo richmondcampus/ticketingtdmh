@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Tickets</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 15px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <h1>Open Tickets</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Department</th>
+                <th>Category of Issues</th>
+                <th>Please Specify Issues/Concern</th>
+            </tr>
+        </thead>
+        <tbody id="ticketTable">
+            <!-- Tickets will be dynamically inserted here -->
+        </tbody>
+    </table>
+
+    <script>
+        async function fetchTickets() {
+            const response = await fetch('https://sheets.googleapis.com/v4/spreadsheets/1WP1O6SgmGq6llsRI0PgnJIijNLN_AhfqwHxoxmbWXp0/values/Sheet1?key=AIzaSyDUViNXLy3cQovXnI-8NsjkQOMpZpRCytk');
+            const data = await response.json();
+            const tickets = data.values;
+
+            // Filter tickets with the status "New", "Open", "On Hold", "Pending"
+            const filteredTickets = tickets.filter(ticket => 
+                ['New', 'Open', 'On Hold', 'Pending'].includes(ticket[4])
+            );
+
+            const ticketTable = document.getElementById('ticketTable');
+            filteredTickets.forEach(ticket => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${ticket[0]}</td>
+                    <td>${ticket[1]}</td>
+                    <td>${ticket[2]}</td>
+                    <td>${ticket[3]}</td>
+                `;
+                ticketTable.appendChild(row);
+            });
+        }
+
+        window.onload = fetchTickets;
+    </script>
+</body>
+</html>
