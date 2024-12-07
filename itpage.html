@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Tickets</title>
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data https://www.gstatic.com https://accounts.google.com https://apis.google.com;">
     <style>
         table {
             width: 100%;
@@ -22,7 +21,6 @@
         }
     </style>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="https://apis.google.com/js/api.js"></script>
 </head>
 <body>
     <h1>Open Tickets</h1>
@@ -58,8 +56,8 @@
 
         function handleCredentialResponse(response) {
             console.log('Encoded JWT ID token: ' + response.credential);
-            // Initialize the Google API client
-            initClient();
+            // You can also process the token on the server side
+            updateSigninStatus(true);
         }
 
         window.onload = function() {
@@ -74,23 +72,6 @@
                 });
         };
 
-        function initClient() {
-            gapi.load('client:auth2', () => {
-                gapi.client.init({
-                    apiKey: API_KEY,
-                    clientId: CLIENT_ID,
-                    discoveryDocs: DISCOVERY_DOCS,
-                    scope: SCOPES
-                }).then(function () {
-                    gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
-                    updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
-                    signoutButton.onclick = handleSignoutClick;
-                }, function(error) {
-                    console.error(JSON.stringify(error, null, 2));
-                });
-            });
-        }
-
         function updateSigninStatus(isSignedIn) {
             if (isSignedIn) {
                 document.getElementsByClassName('g_id_signin')[0].style.display = 'none';
@@ -99,28 +80,27 @@
             } else {
                 document.getElementsByClassName('g_id_signin')[0].style.display = 'block';
                 signoutButton.style.display = 'none';
-                document.getElementById('ticketTable').innerHTML = '';
             }
         }
 
         function handleSignoutClick() {
-            gapi.auth2.getAuthInstance().signOut();
             google.accounts.id.disableAutoSelect();
             updateSigninStatus(false);
         }
 
         async function fetchTickets() {
             try {
-                const response = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: '1WP1O6SgmGq6llsRI0PgnJIijNLN_AhfqwHxoxmbWXp0',
-                    range: 'Sheet1'
-                });
-                const tickets = response.result.values;
+                const response = await fetch('https://sheets.googleapis.com/v4/spreadsheets/1WP1O6SgmGq6llsRI0PgnJIijNLN_AhfqwHxoxmbWXp0/values/Sheet1?key=' + API_KEY);
+                const data = await response.json();
+                console.log("Fetched data:", data);
+                const tickets = data.values;
 
                 if (!tickets || tickets.length === 0) {
                     console.error("No data found in the spreadsheet.");
                     return;
                 }
+
+                console.log("All tickets:", tickets);
 
                 const filteredTickets = tickets.filter(ticket =>
                     ['New', 'Open', 'On Hold', 'Pending'].includes(ticket[6])
