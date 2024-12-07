@@ -4,162 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Tickets</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
     <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data;">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600&display=swap');
-        
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #121212;
-            color: #e0e0e0;
-            font-family: 'Roboto', sans-serif;
-        }
-        .container {
-            max-width: 1000px;
-            padding: 2rem;
-            background-color: #1e1e1e;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-            animation: fadeIn 1s ease-in-out;
-        }
-        .hero {
-            background-color: #333;
-            color: white;
-            padding: 1rem;
-            border-radius: 8px 8px 0 0;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-        }
-        .hero h1 {
-            font-family: 'Poppins', sans-serif;
-            font-size: 2.5rem;
-            font-weight: 600;
-            letter-spacing: 2px;
-            position: relative;
-            z-index: 1;
-            animation: bounceInDown 1s ease-in-out;
-        }
-        .hero::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 200%;
-            height: 200%;
-            background: rgba(0, 0, 0, 0.3);
-            z-index: 0;
-            animation: shine 3s infinite;
-        }
-        @keyframes shine {
-            0% {
-                transform: translate(-50%, -50%) rotate(0deg);
-            }
-            100% {
-                transform: translate(-50%, -50%) rotate(360deg);
-            }
-        }
-        .button-primary {
-            background-color: #007bff;
-            border-color: #007bff;
-            color: white;
-            margin: 1rem 0;
-            transition: background-color 0.3s, transform 0.3s;
-        }
-        .button-primary:hover {
-            background-color: #0056b3;
-            border-color: #0056b3;
-            transform: scale(1.05);
-        }
-        .form-control {
-            background-color: #2c2c2c;
-            border: 1px solid #444;
-            color: #e0e0e0;
-            transition: border-color 0.3s, box-shadow 0.3s;
-        }
-        .form-control:focus {
-            background-color: #2c2c2c;
-            border-color: #007bff;
-            color: #e0e0e0;
-            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
-        }
-        .form-group label {
-            color: #e0e0e0;
-        }
-        #message {
-            display: none;
-            margin-top: 20px;
-            padding: 10px;
-            border-radius: 4px;
-            background-color: #007bff;
-            color: white;
-            text-align: center;
-        }
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
-        }
-        @keyframes bounceInDown {
-            from {
-                opacity: 0;
-                transform: translateY(-2000px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        table, th, td {
-            border: 1px solid black;
-        }
-        th, td {
-            padding: 15px;
-            text-align: left;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-    </style>
     <script src="https://apis.google.com/js/api.js"></script>
 </head>
 <body>
-    <div class="container animate__animated animate__fadeIn">
-        <div class="hero animate__animated animate__bounceInDown">
-            <h1 class="title">IT TDMH Helpdesk</h1>
-        </div>
-        <button id="authorize_button" class="btn button-primary">Authorize</button>
-        <button id="signout_button" class="btn button-primary" style="display:none;">Sign Out</button>
-        <table class="table table-dark table-striped mt-4">
-            <thead>
-                <tr>
-                    <th>Email</th>
-                    <th>Department</th>
-                    <th>Category of Issues</th>
-                    <th>Please Specify Issues/Concern</th>
-                    <th>Status</th>
-                    <th>Handled By</th>
-                </tr>
-            </thead>
-            <tbody id="ticketTable">
-                <!-- Tickets will be dynamically inserted here -->
-            </tbody>
-        </table>
-        <div id="message" class="alert alert-success animate__animated animate__fadeInUp"></div>
-    </div>
+    <h1>IT TDMH Helpdesk</h1>
+    <button id="authorize_button">Authorize</button>
+    <button id="signout_button" style="display:none;">Sign Out</button>
+    <table>
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Department</th>
+                <th>Category of Issues</th>
+                <th>Please Specify Issues/Concern</th>
+                <th>Status</th>
+                <th>Handled By</th>
+            </tr>
+        </thead>
+        <tbody id="ticketTable">
+            <!-- Tickets will be dynamically inserted here -->
+        </tbody>
+    </table>
     <script>
         const CLIENT_ID = '877547539216-lrkl996uemm8vrial4v32akdjgd3smuj.apps.googleusercontent.com';
         const API_KEY = 'AIzaSyDUViNXLy3cQovXnI-8NsjkQOMpZpRCytk';
@@ -221,15 +87,9 @@
                     return;
                 }
 
-                console.log("All tickets:", tickets);
-
                 const filteredTickets = tickets.filter(ticket =>
                     ['New', 'Open', 'On Hold', 'Pending'].includes(ticket[6])
                 );
-
-                if (filteredTickets.length === 0) {
-                    console.log("No tickets with the specified statuses found.");
-                }
 
                 const ticketTable = document.getElementById('ticketTable');
                 filteredTickets.forEach((ticket, index) => {
@@ -244,59 +104,60 @@
                                 <option value="New" ${ticket[6] === 'New' ? 'selected' : ''}>New</option>
                                 <option value="Open" ${ticket[6] === 'Open' ? 'selected' : ''}>Open</option>
                                 <option value="Ongoing" ${ticket[6] === 'Ongoing' ? 'selected' : ''}>Ongoing</option>
-                        <option value="On Hold" ${ticket[6] === 'On Hold' ? 'selected' : ''}>On Hold</option>
-                        <option value="Closed" ${ticket[6] === 'Closed' ? 'selected' : ''}>Closed</option>
-                        <option value="Reopened" ${ticket[6] === 'Reopened' ? 'selected' : ''}>Reopened</option>
-                        <option value="Escalated" ${ticket[6] === 'Escalated' ? 'selected' : ''}>Escalated</option>
-                        <option value="Pending" ${ticket[6] === 'Pending' ? 'selected' : ''}>Pending</option>
-                        <option value="Cancelled" ${ticket[6] === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
-                    </select>
-                </td>
-                <td>
-                    <select onchange="updateHandler(${index}, this.value)">
-                        <option value="Richmond" ${ticket[7] === 'Richmond' ? 'selected' : ''}>Richmond</option>
-                        <option value="Napoleon" ${ticket[7] === 'Napoleon' ? 'selected' : ''}>Napoleon</option>
-                    </select>
-                </td>
-            `;
-            ticketTable.appendChild(row);
-        });
-    } catch (error) {
-        console.error("Error fetching tickets:", error);
-    }
-}
+                                <option value="Resolved" ${ticket[6] === 'Resolved' ? 'selected' : ''}>Resolved</option>
+                                <option value="On Hold" ${ticket[6] === 'On Hold' ? 'selected' : ''}>On Hold</option>
+                                <option value="Closed" ${ticket[6] === 'Closed' ? 'selected' : ''}>Closed</option>
+                                <option value="Reopened" ${ticket[6] === 'Reopened' ? 'selected' : ''}>Reopened</option>
+                                <option value="Escalated" ${ticket[6] === 'Escalated' ? 'selected' : ''}>Escalated</option>
+                                <option value="Pending" ${ticket[6] === 'Pending' ? 'selected' : ''}>Pending</option>
+                                <option value="Cancelled" ${ticket[6] === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
+                            </select>
+                        </td>
+                        <td>
+                            <select onchange="updateHandler(${index}, this.value)">
+                                <option value="Richmond" ${ticket[7] === 'Richmond' ? 'selected' : ''}>Richmond</option>
+                                <option value="Napoleon" ${ticket[7] === 'Napoleon' ? 'selected' : ''}>Napoleon</option>
+                            </select>
+                        </td>
+                    `;
+                    ticketTable.appendChild(row);
+                });
+            } catch (error) {
+                console.error("Error fetching tickets:", error);
+            }
+        }
 
-async function updateStatus(index, newStatus) {
-    const body = {
-        values: [[newStatus]]
-    };
-    const range = `Sheet1!G${index + 2}`;
-    await gapi.client.sheets.spreadsheets.values.update({
-        spreadsheetId: '1WP1O6SgmGq6llsRI0PgnJIijNLN_AhfqwHxoxmbWXp0',
-        range: range,
-        valueInputOption: 'RAW',
-        resource: body
-    }).then(response => {
-        console.log("Status update response:", response);
-    });
-}
+        async function updateStatus(index, newStatus) {
+            const body = {
+                values: [[newStatus]]
+            };
+            const range = `Sheet1!G${index + 2}`;
+            await gapi.client.sheets.spreadsheets.values.update({
+                spreadsheetId: '1WP1O6SgmGq6llsRI0PgnJIijNLN_AhfqwHxoxmbWXp0',
+                range: range,
+                valueInputOption: 'RAW',
+                resource: body
+            }).then(response => {
+                console.log("Status update response:", response);
+            });
+        }
 
-async function updateHandler(index, newHandler) {
-    const body = {
-        values: [[newHandler]]
-    };
-    const range = `Sheet1!H${index + 2}`;
-    await gapi.client.sheets.spreadsheets.values.update({
-        spreadsheetId: '1WP1O6SgmGq6llsRI0PgnJIijNLN_AhfqwHxoxmbWXp0',
-        range: range,
-        valueInputOption: 'RAW',
-        resource: body
-    }).then(response => {
-        console.log("Handler update response:", response);
-    });
-}
+        async function updateHandler(index, newHandler) {
+            const body = {
+                values: [[newHandler]]
+            };
+            const range = `Sheet1!H${index + 2}`;
+            await gapi.client.sheets.spreadsheets.values.update({
+                spreadsheetId: '1WP1O6SgmGq6llsRI0PgnJIijNLN_AhfqwHxoxmbWXp0',
+                range: range,
+                valueInputOption: 'RAW',
+                resource: body
+            }).then(response => {
+                console.log("Handler update response:", response);
+            });
+        }
 
-gapi.load('client:auth2', handleClientLoad);
-</script>
+        gapi.load('client:auth2', handleClientLoad);
+    </script>
 </body>
 </html>
