@@ -30,6 +30,8 @@
                 <th>Department</th>
                 <th>Category of Issues</th>
                 <th>Please Specify Issues/Concern</th>
+                <th>Status</th>
+                <th>Handled By</th>
             </tr>
         </thead>
         <tbody id="ticketTable">
@@ -71,6 +73,18 @@
                         <td>${ticket[3]}</td>
                         <td>${ticket[4]}</td>
                         <td>${ticket[5]}</td>
+                        <td>
+                            <select>
+                                <option value="Open">Open</option>
+                                <option value="Ongoing">Ongoing</option>
+                            </select>
+                        </td>
+                        <td>
+                            <select>
+                                <option value="Richmond">Richmond</option>
+                                <option value="Napoleon">Napoleon</option>
+                            </select>
+                        </td>
                     `;
                     ticketTable.appendChild(row);
                 });
