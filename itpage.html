@@ -82,7 +82,7 @@
                     updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
                     signoutButton.onclick = handleSignoutClick;
                 }, function(error) {
-                    console.error(JSON.stringify(error, null, 2));
+                    console.error("Error initializing Google API client: ", JSON.stringify(error, null, 2));
                 });
             });
         }
@@ -104,10 +104,12 @@
 
         async function fetchTickets() {
             try {
+                console.log("Fetching tickets...");
                 const response = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: '1WP1O6SgmGq6llsRI0PgnJIijNLN_AhfqwHxoxmbWXp0',
                     range: 'Sheet1'
                 });
+                console.log("API response: ", response);
                 const tickets = response.result.values;
 
                 if (!tickets || tickets.length === 0) {
@@ -119,7 +121,12 @@
                     ['New', 'Open', 'On Hold', 'Pending'].includes(ticket[6])
                 );
 
+                if (filteredTickets.length === 0) {
+                    console.log("No tickets with the specified statuses found.");
+                }
+
                 const ticketTable = document.getElementById('ticketTable');
+                ticketTable.innerHTML = '';  // Clear previous rows
                 filteredTickets.forEach((ticket, index) => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
@@ -151,7 +158,7 @@
                     ticketTable.appendChild(row);
                 });
             } catch (error) {
-                console.error("Error fetching tickets:", error);
+                console.error("Error fetching tickets: ", error);
             }
         }
 
@@ -166,7 +173,7 @@
                 valueInputOption: 'RAW',
                 resource: body
             }).then(response => {
-                console.log("Status update response:", response);
+                console.log("Status update response: ", response);
             });
         }
 
@@ -181,7 +188,7 @@
                 valueInputOption: 'RAW',
                 resource: body
             }).then(response => {
-                console.log("Handler update response:", response);
+                console.log("Handler update response: ", response);
             });
         }
 
