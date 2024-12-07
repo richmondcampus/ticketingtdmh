@@ -50,14 +50,17 @@
                     return;
                 }
 
+                // Log all tickets to check data structure
+                console.log("All tickets:", tickets);
+
                 // Filter tickets with the status "New", "Open", "On Hold", "Pending"
-                const filteredTickets = tickets.filter(ticket => 
-                    ['New', 'Open', 'On Hold', 'Pending'].includes(ticket[6])
-                );
+                const filteredTickets = tickets.filter(ticket => {
+                    console.log("Checking ticket status:", ticket[6]); // Log each ticket's status
+                    return ['New', 'Open', 'On Hold', 'Pending'].includes(ticket[6]);
+                });
 
                 if (filteredTickets.length === 0) {
                     console.log("No tickets with the specified statuses found.");
-                    return;
                 }
 
                 const ticketTable = document.getElementById('ticketTable');
