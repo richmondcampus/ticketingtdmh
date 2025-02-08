@@ -7,54 +7,6 @@
 </head>
 <body>
     <!-- Embed the Google Apps Script Web App using an iframe -->
-    <iframe src="https://script.google.com/macros/s/AKfycbyXQS9jtSAUFDZybFD9DBTKZKLrYDobRHjbyfWo1o692hLfh3Hk8igwEc62TX8BegRl4w/exec"></iframe>
-</body>
-</html>
-
-    <script>
-        function showInForm() {
-            document.getElementById('inForm').style.display = 'block';
-            document.getElementById('outForm').style.display = 'none';
-        }
-
-        function showOutForm() {
-            document.getElementById('inForm').style.display = 'none';
-            document.getElementById('outForm').style.display = 'block';
-        }
-
-        function captureIn() {
-            var plateNumber = document.getElementById('inPlateNumber').value;
-            var timestamp = new Date().toISOString();
-            google.script.run.withSuccessHandler(function(response) {
-                alert(response);
-                document.getElementById('inForm').style.display = 'none';
-            }).addData(plateNumber, timestamp, 'IN');
-        }
-
-        function captureOut() {
-            var plateNumber = document.getElementById('outPlateNumber').value;
-            var timestamp = new Date().toISOString();
-            google.script.run.withSuccessHandler(function(response) {
-                alert(response);
-                document.getElementById('outForm').style.display = 'none';
-            }).addData(plateNumber, timestamp, 'OUT');
-        }
-    </script>
-</head>
-<body>
-    <button onclick="showInForm()">IN</button>
-    <button onclick="showOutForm()">OUT</button>
-
-    <div id="inForm" style="display: none;">
-        <label for="inPlateNumber">Plate Number:</label>
-        <input type="text" id="inPlateNumber">
-        <button onclick="captureIn()">Capture IN</button>
-    </div>
-
-    <div id="outForm" style="display: none;">
-        <label for="outPlateNumber">Plate Number:</label>
-        <input type="text" id="outPlateNumber">
-        <button onclick="captureOut()">Capture OUT</button>
-    </div>
+    <iframe src="https://script.google.com/macros/s/AKfycbyXQS9jtSAUFDZybFD9DBTKZKLrYDobRHjbyfWo1o692hLfh3Hk8igwEc62TX8BegRl4w/exec" width="100%" height="600"></iframe>
 </body>
 </html>
