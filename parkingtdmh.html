@@ -1,1 +1,28 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parking System</title>
+    <script src="https://apis.google.com/js/api.js"></script>
+</head>
+<body>
+    <button id="inButton">IN</button>
+    <button id="outButton">OUT</button>
+
+    <div id="inputForm" style="display: none;">
+        <label for="plateNumber">Plate Number:</label>
+        <input type="text" id="plateNumber">
+        <button id="captureButton">Capture</button>
+    </div>
+
+    <div id="outForm" style="display: none;">
+        <label for="outPlateNumber">Plate Number:</label>
+        <input type="text" id="outPlateNumber">
+        <button id="processOutButton">Process OUT</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
