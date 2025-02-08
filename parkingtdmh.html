@@ -1,28 +1,53 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parking System</title>
-    <script src="https://apis.google.com/js/api.js"></script>
+    <script>
+        function showInForm() {
+            document.getElementById('inForm').style.display = 'block';
+            document.getElementById('outForm').style.display = 'none';
+        }
+
+        function showOutForm() {
+            document.getElementById('inForm').style.display = 'none';
+            document.getElementById('outForm').style.display = 'block';
+        }
+
+        function captureIn() {
+            var plateNumber = document.getElementById('inPlateNumber').value;
+            var timestamp = new Date().toISOString();
+            google.script.run.withSuccessHandler(function(response) {
+                alert(response);
+                document.getElementById('inForm').style.display = 'none';
+            }).addData(plateNumber, timestamp, 'IN');
+        }
+
+        function captureOut() {
+            var plateNumber = document.getElementById('outPlateNumber').value;
+            var timestamp = new Date().toISOString();
+            google.script.run.withSuccessHandler(function(response) {
+                alert(response);
+                document.getElementById('outForm').style.display = 'none';
+            }).addData(plateNumber, timestamp, 'OUT');
+        }
+    </script>
 </head>
 <body>
-    <button id="inButton">IN</button>
-    <button id="outButton">OUT</button>
+    <button onclick="showInForm()">IN</button>
+    <button onclick="showOutForm()">OUT</button>
 
-    <div id="inputForm" style="display: none;">
-        <label for="plateNumber">Plate Number:</label>
-        <input type="text" id="plateNumber">
-        <button id="captureButton">Capture</button>
+    <div id="inForm" style="display: none;">
+        <label for="inPlateNumber">Plate Number:</label>
+        <input type="text" id="inPlateNumber">
+        <button onclick="captureIn()">Capture IN</button>
     </div>
 
     <div id="outForm" style="display: none;">
         <label for="outPlateNumber">Plate Number:</label>
         <input type="text" id="outPlateNumber">
-        <button id="processOutButton">Process OUT</button>
+        <button onclick="captureOut()">Capture OUT</button>
     </div>
-
-    <script src="script.js"></script>
 </body>
 </html>
