@@ -4,14 +4,64 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parking Ticket System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 10px;
+        }
+        h1 {
+            text-align: center;
+        }
+        label, input, button {
+            margin: 10px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        #message {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
     <h1>Parking Ticket System</h1>
-    <label for="plateNumber">Enter Plate Number for Exit:</label>
-    <input type="text" id="plateNumber">
-    <button onclick="processExit()">Exit Parking</button>
+
+    <label for="plateNumber">Enter Plate Number:</label>
+    <input type="text" id="plateNumber" placeholder="ABC1234">
+    
+    <button onclick="processEntry()">Car Entry</button>
+    <button onclick="processExit()">Car Exit</button>
+
+    <div id="message"></div>
 
     <script>
+        async function processEntry() {
+            const plateNumber = document.getElementById('plateNumber').value;
+            if (!plateNumber) {
+                alert('Please enter a plate number');
+                return;
+            }
+
+            // URL of the Google Apps Script Web App (Entry URL)
+            const url = 'https://script.google.com/macros/s/YOUR_ENTRY_SCRIPT_URL/exec';  // Replace with your entry URL
+            const params = new URLSearchParams();
+            params.append('plateNumber', plateNumber);
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: params
+                });
+
+                const result = await response.text();
+                document.getElementById('message').innerText = result;
+            } catch (error) {
+                document.getElementById('message').innerText = 'Error processing entry. Please try again.';
+            }
+        }
+
         async function processExit() {
             const plateNumber = document.getElementById('plateNumber').value;
             if (!plateNumber) {
@@ -19,18 +69,22 @@
                 return;
             }
 
-            // Call the Apps Script web app for exit processing
-            const url = 'https://script.google.com/macros/s/AKfycbzEHgLG6Ay39mgUSjSA2-YBo9nYAPenMptsOpdp0zOpUd1ZqlQeMZLVSFKCUSKYx2uthg/exec';  // Replace with your URL
+            // URL of the Google Apps Script Web App (Exit URL)
+            const url = 'https://script.google.com/macros/s/YOUR_EXIT_SCRIPT_URL/exec';  // Replace with your exit URL
             const params = new URLSearchParams();
             params.append('plateNumber', plateNumber);
 
-            const response = await fetch(url, {
-                method: 'POST',
-                body: params
-            });
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: params
+                });
 
-            const result = await response.text();
-            alert(result); // Display the result (amount due)
+                const result = await response.text();
+                document.getElementById('message').innerText = result;
+            } catch (error) {
+                document.getElementById('message').innerText = 'Error processing exit. Please try again.';
+            }
         }
     </script>
 </body>
