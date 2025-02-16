@@ -3,75 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parking Ticketing System</title>
+    <title>Parking Ticket System</title>
 </head>
 <body>
-    <button onclick="enterParking()">IN</button>
-    <button onclick="exitParking()">OUT</button>
-
-    <!-- For Plate Number input -->
-    <div id="inputContainer" style="display:none;">
-        <label>Enter Plate Number:</label>
-        <input type="text" id="plateNumber">
-        <button onclick="captureImage()">Capture Image</button>
-    </div>
-
-    <!-- For capturing image -->
-    <div id="cameraContainer" style="display:none;">
-        <video id="video" width="320" height="240" autoplay></video>
-        <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
-        <button onclick="takePicture()">Capture Picture</button>
-    </div>
+    <h1>Parking Ticket System</h1>
+    <label for="plateNumber">Enter Plate Number for Exit:</label>
+    <input type="text" id="plateNumber">
+    <button onclick="processExit()">Exit Parking</button>
 
     <script>
-        let video = document.getElementById('video');
-        let canvas = document.getElementById('canvas');
-        let plateNumberInput = document.getElementById('plateNumber');
+        async function processExit() {
+            const plateNumber = document.getElementById('plateNumber').value;
+            if (!plateNumber) {
+                alert('Please enter a plate number');
+                return;
+            }
 
-        function enterParking() {
-            // Display input for plate number and capture image
-            document.getElementById('inputContainer').style.display = 'block';
-        }
+            // Call the Apps Script web app for exit processing
+            const url = 'https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec';  // Replace with your URL
+            const params = new URLSearchParams();
+            params.append('plateNumber', plateNumber);
 
-        function captureImage() {
-            // Activate camera to capture the image
-            document.getElementById('cameraContainer').style.display = 'block';
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then((stream) => {
-                    video.srcObject = stream;
-                })
-                .catch((err) => {
-                    console.log("Error accessing camera: " + err);
-                });
-        }
-
-        function takePicture() {
-            // Capture the image from the video stream
-            let context = canvas.getContext('2d');
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            let dataURL = canvas.toDataURL();
-            // Upload this image to the server (or save to storage)
-            saveImage(dataURL);
-        }
-
-        function saveImage(imageData) {
-            // Send image to server or save in database
-            console.log("Image Captured:", imageData);
-        }
-
-        function exitParking() {
-            // Prompt for the plate number and process exit
-            let plateNumber = prompt("Enter Plate Number for exit:");
-            // Call backend API to process exit and calculate fee
-            fetch('/processExit', {
+            const response = await fetch(url, {
                 method: 'POST',
-                body: JSON.stringify({ plateNumber: plateNumber }),
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log("Exit Processed:", data);
+                body: params
             });
+
+            const result = await response.text();
+            alert(result); // Display the result (amount due)
         }
     </script>
 </body>
