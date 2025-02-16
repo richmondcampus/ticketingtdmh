@@ -1,159 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parking Ticket System</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            padding: 10px;
-        }
-        h1 {
-            text-align: center;
-        }
-        label, input, button {
-            margin: 10px;
-            padding: 10px;
-            font-size: 16px;
-        }
-        #message {
-            margin-top: 20px;
-            font-size: 18px;
-            font-weight: bold;
-        }
-        #camera {
-            margin-top: 20px;
-            display: none;
-        }
-        #snapshot {
-            margin-top: 20px;
-            display: none;
-        }
-    </style>
-</head>
-<body>
-    <h1>Parking Ticket System</h1>
-
-    <label for="plateNumber">Enter Plate Number:</label>
-    <input type="text" id="plateNumber" placeholder="ABC1234">
-    
-    <button onclick="startCamera()">Car Entry</button>
-    <button onclick="processExit()">Car Exit</button>
-
-    <div id="message"></div>
-
-    <!-- Camera section -->
-    <div id="camera">
-        <video id="video" width="320" height="240" autoplay></video>
-        <button onclick="capturePhoto()">Capture Photo</button>
-    </div>
-    <canvas id="canvas" style="display:none;"></canvas>
-    <img id="snapshot" width="320" height="240" style="display:none;" />
+<html>
+  <head>
+    <title>Parking Entry</title>
+  </head>
+  <body>
+    <h1>Enter Parking Details</h1>
+    <form id="entryForm">
+      Plate Number: <input type="text" id="plateNumber" required><br>
+      <button type="button" onclick="captureAndSubmit()">Submit</button>
+    </form>
 
     <script>
-        let cameraStream;
-        let photoDataUrl;
+      async function captureAndSubmit() {
+        const plateNumber = document.getElementById("plateNumber").value;
 
-        // Start the camera for car entry
-        function startCamera() {
-            const plateNumber = document.getElementById('plateNumber').value;
-            if (!plateNumber) {
-                alert('Please enter a plate number');
-                return;
-            }
-
-            document.getElementById('message').innerText = 'Starting camera...';
-
-            // Set up the video stream for capturing a photo
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(function (stream) {
-                    cameraStream = stream;
-                    document.getElementById('video').srcObject = stream;
-                    document.getElementById('camera').style.display = 'block';
-                })
-                .catch(function (err) {
-                    console.log("Error: " + err);
-                    document.getElementById('message').innerText = 'Error accessing the camera.';
-                });
+        if (!plateNumber) {
+          alert("Please enter a plate number.");
+          return;
         }
 
-        // Capture the photo and stop the camera
-        function capturePhoto() {
-            const canvas = document.getElementById('canvas');
-            const video = document.getElementById('video');
-            const snapshot = document.getElementById('snapshot');
+        // Capture photo logic (in practice, you'd capture from a webcam or use an existing photo)
+        const photoDataUrl = 'data:image/png;base64,...'; // Use actual base64 photo here
 
-            // Draw the video frame on canvas
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const entryUrl = 'https://script.google.com/macros/s/AKfycbxezh_NW0iw6aUXa6IVZiZaHTyEga5pgxTy06i-VnWfTUi_Q-b29VfErlB_L_fDcvIUlA/exec'; // Replace with your actual entry URL
 
-            // Get the photo as a data URL
-            photoDataUrl = canvas.toDataURL('image/jpeg');
-
-            // Show the captured image in the snapshot element
-            snapshot.src = photoDataUrl;
-            snapshot.style.display = 'block';
-
-            // Stop the camera
-            cameraStream.getTracks().forEach(track => track.stop());
-
-            document.getElementById('message').innerText = 'Photo captured. Now submitting...';
-
-            // Call the backend function to upload the image and plate number
-            processEntry(photoDataUrl);
-        }
-
-        // Send the plate number and photo to the Google Apps Script backend
-        async function processEntry(photoDataUrl) {
-            const plateNumber = document.getElementById('plateNumber').value;
-
-            // URL of the Google Apps Script Web App (Entry URL)
-            const url = 'https://script.google.com/macros/s/AKfycbxXs6h_Zd67A-FwOkrLIyhagigYpJ5WdpYIpAibDUt8TBEE0u_ZyvsmBB6NmG4dPeOcSA/exec';  // Replace with your entry URL
-            const params = new URLSearchParams();
-            params.append('plateNumber', plateNumber);
-            params.append('photo', photoDataUrl);  // Send the captured image as data URL
-
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    body: params
-                });
-
-                const result = await response.text();
-                document.getElementById('message').innerText = result;
-            } catch (error) {
-                document.getElementById('message').innerText = 'Error processing entry. Please try again.';
-            }
-        }
-
-        // Process the exit (this remains the same as before)
-        async function processExit() {
-            const plateNumber = document.getElementById('plateNumber').value;
-            if (!plateNumber) {
-                alert('Please enter a plate number');
-                return;
-            }
-
-            // URL of the Google Apps Script Web App (Exit URL)
-            const url = 'https://script.google.com/macros/s/AKfycbzEHgLG6Ay39mgUSjSA2-YBo9nYAPenMptsOpdp0zOpUd1ZqlQeMZLVSFKCUSKYx2uthg/exec';  // Replace with your exit URL
-            const params = new URLSearchParams();
-            params.append('plateNumber', plateNumber);
-
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    body: params
-                });
-
-                const result = await response.text();
-                document.getElementById('message').innerText = result;
-            } catch (error) {
-                document.getElementById('message').innerText = 'Error processing exit. Please try again.';
-            }
-        }
+        const response = await fetch(entryUrl, {
+          method: 'POST',
+          body: new URLSearchParams({
+            plateNumber: plateNumber,
+            photo: photoDataUrl
+          })
+        });
+        const result = await response.json();
+        alert(result.message);  // Show the result message
+      }
     </script>
-</body>
+  </body>
 </html>
