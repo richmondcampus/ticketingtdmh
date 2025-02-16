@@ -1,46 +1,83 @@
 <!DOCTYPE html>
-<html>
-  <head>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login</title>
-  </head>
-  <body>
-    <h1>Parking System Login</h1>
+</head>
+<body>
 
-    <form id="loginForm">
-      Username: <input type="text" id="username" required><br><br>
-      Password: <input type="password" id="password" required><br><br>
-      <button type="button" onclick="submitLogin()">Login</button>
+    <h1>Login Form</h1>
+
+    <form id="form">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required><br><br>
+
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required><br><br>
+
+        <button id="submit-button" type="submit">Submit</button>
     </form>
 
+    <p id="message" style="display:none;"></p>
+
     <script>
-      async function submitLogin() {
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
+      document.getElementById("form").addEventListener("submit", function (e) {
+        e.preventDefault(); // Prevent the default form submission
 
-        if (!username || !password) {
-          alert('Please fill in both fields!');
-          return;
+        document.getElementById("message").textContent = "Submitting...";
+        document.getElementById("message").style.display = "block";
+        document.getElementById("submit-button").disabled = true;
+
+        // Collect the form data
+        var formData = new FormData(this);
+        var keyValuePairs = [];
+
+        for (var pair of formData.entries()) {
+          keyValuePairs.push(pair[0] + "=" + pair[1]);
         }
 
-        // Make a POST request to the Google Apps Script
-        const loginUrl = 'https://script.google.com/macros/s/https://script.google.com/macros/s/AKfycbxd2RZqWd-LeyjtZKaHBaThuPnnfVJCixqDkrUbvDXRyEr_ssQ-htToiSfSRFQWIX-LSQ/exec';  // Replace with your script URL
-        const response = await fetch(loginUrl, {
-          method: 'POST',
-          body: new URLSearchParams({
-            username: username,
-            password: password
+        var formDataString = keyValuePairs.join("&");
+
+        // Send a POST request to your Google Apps Script
+        fetch(
+          "https://script.google.com/macros/s/AKfycbxd2RZqWd-LeyjtZKaHBaThuPnnfVJCixqDkrUbvDXRyEr_ssQ-htToiSfSRFQWIX-LSQ/exec",  // Replace with your script URL
+          {
+            redirect: "follow",
+            method: "POST",
+            body: formDataString,
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",  // Correct content type for sending form data
+            },
+          }
+        )
+          .then(function (response) {
+            // Check if the request was successful
+            if (response.ok) {
+              return response.json(); // Assuming your script returns JSON response
+            } else {
+              throw new Error("Failed to submit the form.");
+            }
           })
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-          // Redirect to the main parking system page on successful login
-          window.location.href = 'main.html';  // Replace with your main system page
-        } else {
-          alert(result.message);  // Show error message if login fails
-        }
-      }
+          .then(function (data) {
+            // Redirect to thank you page if successful
+            if (data.success) {
+              window.location.href = "thankyou.html";  // Replace with your page
+            } else {
+              document.getElementById("message").textContent = data.message;
+              document.getElementById("message").style.display = "block";
+              document.getElementById("message").classList.add("alert-danger");
+            }
+          })
+          .catch(function (error) {
+            // Handle errors
+            console.error(error);
+            document.getElementById("message").textContent = "An error occurred while submitting the form.";
+            document.getElementById("message").style.display = "block";
+            document.getElementById("message").classList.add("alert-danger");
+          });
+      });
     </script>
-  </body>
+
+</body>
 </html>
