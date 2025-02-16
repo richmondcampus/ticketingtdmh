@@ -1,60 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html>
+  <head>
     <title>Login</title>
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data https://www.gstatic.com https://accounts.google.com https://apis.google.com;">
-    <style>
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #f7f7f7;
-            font-family: Arial, sans-serif;
-        }
-        .container {
-            text-align: center;
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-    </style>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-</head>
-<body>
-    <div class="container">
-        <h1>Login</h1>
-        <div id="g_id_onload"
-             data-client_id="877547539216-lrkl996uemm8vrial4v32akdjgd3smuj.apps.googleusercontent.com"
-             data-callback="handleCredentialResponse"
-             data-auto_prompt="false">
-        </div>
-        <div class="g_id_signin" data-type="standard"></div>
-    </div>
+  </head>
+  <body>
+    <h1>Parking System Login</h1>
+
+    <form id="loginForm">
+      Username: <input type="text" id="username" required><br><br>
+      Password: <input type="password" id="password" required><br><br>
+      <button type="button" onclick="submitLogin()">Login</button>
+    </form>
 
     <script>
-        const CLIENT_ID = '877547539216-lrkl996uemm8vrial4v32akdjgd3smuj.apps.googleusercontent.com';
+      async function submitLogin() {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
 
-        function handleCredentialResponse(response) {
-            console.log('Encoded JWT ID token: ' + response.credential);
-            // Redirect to main page after successful login
-            window.location.href = "itpage.html";
+        if (!username || !password) {
+          alert('Please fill in both fields!');
+          return;
         }
 
-        window.onload = function() {
-            google.accounts.id.initialize({
-                client_id: CLIENT_ID,
-                callback: handleCredentialResponse
-            });
+        // Make a POST request to the Google Apps Script
+        const loginUrl = 'https://script.google.com/macros/s/AKfycbxd2RZqWd-LeyjtZKaHBaThuPnnfVJCixqDkrUbvDXRyEr_ssQ-htToiSfSRFQWIX-LSQ/exec';  // Replace with your script URL
+        const response = await fetch(loginUrl, {
+          method: 'POST',
+          body: new URLSearchParams({
+            username: username,
+            password: password
+          })
+        });
 
-            google.accounts.id.renderButton(
-                document.getElementsByClassName('g_id_signin')[0], {
-                    theme: "outline", size: "large"
-                });
-        };
+        const result = await response.json();
+
+        if (result.success) {
+          // Redirect to the main parking system page on successful login
+          window.location.href = 'main.html';  // Replace with your main system page
+        } else {
+          alert(result.message);  // Show error message if login fails
+        }
+      }
     </script>
-</body>
+  </body>
 </html>
