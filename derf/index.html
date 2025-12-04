@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Defective Equipment Report - TDMH</title>
+    
+    <!-- Tailwind CSS (Styling) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM (Core Logic) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (To understand React code in browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Tailwind Config for Custom Colors/Fonts if needed -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        tdmhBlue: '#1e40af',
+                        tdmhGreen: '#16a34a',
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        /* Custom Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        .cursor-wait {
+            cursor: wait;
+        }
+    </style>
+</head>
+<body class="bg-gray-200">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- ICONS (Inline SVGs to avoid dependency issues) ---
+        const Camera = ({ size = 24, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+        );
+        const ChevronRight = ({ size = 24, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m9 18 6-6-6-6"/></svg>
+        );
+        const CheckCircle = ({ size = 24, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        );
+        const ArrowLeft = ({ size = 24, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+        );
+        const AlertCircle = ({ size = 24, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+        );
+
+        // --- MAIN APP COMPONENT ---
+        function App() {
+            // --- STATE MANAGEMENT ---
+            const [step, setStep] = useState(0); 
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [logoError, setLogoError] = useState(false);
+            
+            // Form Data State
+            const [department, setDepartment] = useState('');
+            const [formData, setFormData] = useState({
+                email: '',
+                dateReported: new Date().toISOString().split('T')[0],
+                timeReported: '',
+                userDept: '', 
+                location: '',
+                brand: '',
+                serialNo: '',
+                defect: '',
+                dateIssued: '',
+                reportedBy: '',
+                imageBase64: '',
+                imageName: ''
+            });
+
+            // --- CONFIGURATION ---
+            const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbznzGubiJ_zmQ77FiQn8nd5JIyQUWT7wztY_s7UqMv-PdYkblw5Xzd30kefUsf9D8Yu/exec"; 
+            const LOGO_URL = "https://drive.google.com/thumbnail?id=1O3MDwv9ASot6R_NjpeZR8dIP-s2zAueF&sz=w1000"; 
+            const BG_URL = "https://drive.google.com/thumbnail?id=1M4jvbq7qMI2wILd-txSBQlnq-g9mHJct&sz=w1000";
+
+            // --- HANDLERS ---
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({ ...prev, [name]: value }));
+            };
+
+            const handleFileChange = (e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setFormData(prev => ({
+                            ...prev,
+                            imageBase64: reader.result.split(',')[1],
+                            imageName: file.name
+                        }));
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleNextStep = () => {
+                if (!department) {
+                    alert("Please select a department.");
+                    return;
+                }
+                setStep(1);
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setIsSubmitting(true);
+
+                const payload = { department: department, ...formData };
+
+                try {
+                    await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                        mode: 'no-cors', 
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+                    setStep(2);
+                } catch (error) {
+                    console.error("Error submitting:", error);
+                    alert("There was an error submitting. Please check your internet connection.");
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            // --- COMPONENTS ---
+            const Header = () => (
+                <div className="flex flex-col items-center mb-6 w-full">
+                    {!logoError ? (
+                        <img 
+                            src={LOGO_URL} 
+                            alt="Taytay Doctors Multispecialty Hospital" 
+                            className="h-28 md:h-32 object-contain mb-4 drop-shadow-sm hover:scale-105 transition-transform duration-300"
+                            onError={() => setLogoError(true)}
+                            referrerPolicy="no-referrer" 
+                        />
+                    ) : (
+                        <div className="flex flex-col items-center justify-center mb-2">
+                           <div className="flex items-center gap-2">
+                             <div className="h-10 w-10 border-4 border-blue-700 rounded-tr-xl rounded-bl-xl flex items-center justify-center">
+                                <div className="h-6 w-1 bg-green-600"></div>
+                                <div className="h-1 w-6 bg-green-600 absolute"></div>
+                             </div>
+                             <div className="text-left leading-none">
+                               <h1 className="text-2xl font-black tracking-wide">
+                                 <span className="text-green-600">TAYTAY</span> <span className="text-blue-800">DOCTORS</span>
+                               </h1>
+                               <h2 className="text-xs font-bold text-green-600 tracking-[0.2em] uppercase mt-0.5">
+                                 Multispecialty Hospital
+                               </h2>
+                             </div>
+                           </div>
+                        </div>
+                    )}
+                    <div className="h-1.5 w-32 bg-gradient-to-r from-green-500 to-blue-600 rounded-full mt-1"></div>
+                </div>
+            );
+
+            // STEP 0: Department Selection
+            const renderStep0 = () => (
+                <div className="w-full max-w-md bg-white/95 p-8 rounded-xl shadow-2xl border-t-4 border-blue-600 backdrop-blur-sm animate-fade-in">
+                    <Header />
+                    <h3 className="text-center text-xl font-bold text-gray-800 mb-6 uppercase tracking-tight">
+                        Defective Equipment Report
+                    </h3>
+                    <div className="space-y-6">
+                        <div>
+                            <label className="block text-gray-700 text-sm font-bold mb-2">
+                                Which department are you reporting to?
+                            </label>
+                            <div className="relative">
+                                <select 
+                                    value={department}
+                                    onChange={(e) => setDepartment(e.target.value)}
+                                    className="w-full bg-gray-50 text-gray-900 border border-gray-300 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none transition shadow-sm cursor-pointer hover:bg-white"
+                                >
+                                    <option value="" disabled>Select Department</option>
+                                    <option value="IT">IT (Computer / Electronic Equipment)</option>
+                                    <option value="GSD">GSD (Medical Equipment)</option>
+                                    <option value="Maintenance">Maintenance (Facilities & Utilities)</option>
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                    <ChevronRight className="rotate-90" size={20} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {(department === 'IT' || department === 'GSD') && (
+                            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded animate-fade-in shadow-sm">
+                                <div className="flex gap-3">
+                                    <AlertCircle className="text-yellow-600 min-w-[24px]" size={24} />
+                                    <p className="text-sm text-yellow-800 font-medium leading-relaxed">
+                                        <strong>Note:</strong> If Defective Equipment is light, proceed to bring it to the specific department office. If not, kindly note it on Question "DEFECT / PROBLEM".
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={handleNextStep}
+                            className="w-full bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-800 hover:to-blue-700 text-white font-bold py-3.5 px-4 rounded-lg shadow-lg hover:shadow-xl transition duration-200 flex items-center justify-center gap-2 transform hover:-translate-y-0.5"
+                        >
+                            Next <ChevronRight size={20} />
+                        </button>
+                    </div>
+                </div>
+            );
+
+            // STEP 1: The Form
+            const renderStep1 = () => (
+                <div className="w-full max-w-3xl bg-white/95 p-6 md:p-10 rounded-xl shadow-2xl border-t-4 border-blue-600 relative animate-fade-in">
+                    <div className="flex items-center justify-between mb-8 border-b pb-4">
+                        <button onClick={() => setStep(0)} className="text-gray-500 hover:text-blue-700 flex items-center gap-1 text-sm font-medium transition group">
+                            <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform"/> Back
+                        </button>
+                        <div className="text-right">
+                            <span className="block text-xs text-gray-400 uppercase tracking-wider">Target Dept</span>
+                            <span className="text-blue-800 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{department}</span>
+                        </div>
+                    </div>
+
+                    <Header />
+
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Email</label>
+                                <input required name="email" type="email" value={formData.email} onChange={handleInputChange} 
+                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" placeholder="your@email.com" />
+                            </div>
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Reported By</label>
+                                <input required name="reportedBy" type="text" value={formData.reportedBy} onChange={handleInputChange} 
+                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" placeholder="Full Name" />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Reported Date</label>
+                                <input required name="dateReported" type="date" value={formData.dateReported} onChange={handleInputChange} 
+                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" />
+                            </div>
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Time Reported</label>
+                                <input required name="timeReported" type="time" value={formData.timeReported} onChange={handleInputChange} 
+                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Department (Yours)</label>
+                                <input required name="userDept" value={formData.userDept} onChange={handleInputChange} type="text" placeholder="e.g., Nursing, HR" 
+                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" />
+                            </div>
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Location / Room</label>
+                                <input required name="location" type="text" value={formData.location} onChange={handleInputChange} 
+                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" placeholder="e.g. Room 304" />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Brand</label>
+                                <input required name="brand" type="text" value={formData.brand} onChange={handleInputChange} 
+                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" />
+                            </div>
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Serial / Control No.</label>
+                                <input required name="serialNo" type="text" value={formData.serialNo} onChange={handleInputChange} 
+                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Defect / Problem</label>
+                            <textarea required name="defect" rows={3} value={formData.defect} onChange={handleInputChange} 
+                                className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition hover:bg-white" placeholder="Describe the issue..."></textarea>
+                            {(department === 'IT' || department === 'GSD') && (
+                                <p className="text-xs text-yellow-600 mt-2 italic flex items-center gap-1">
+                                    <AlertCircle size={12}/> *If equipment is heavy, please note it here. If light, bring to office.
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Date Issued (If known)</label>
+                                <input name="dateIssued" type="date" value={formData.dateIssued} onChange={handleInputChange} 
+                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" />
+                            </div>
+                            
+                            <div className="relative group">
+                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Upload Image</label>
+                                <div className="relative group">
+                                    <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" id="file-upload" />
+                                    <label htmlFor="file-upload" className="flex items-center justify-center w-full p-3 bg-white border-2 border-dashed border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 hover:border-blue-500 text-blue-500 transition group-hover:text-blue-700 group-hover:scale-[1.01] duration-200">
+                                        <Camera size={20} className="mr-2" /> 
+                                        {formData.imageName ? <span className="truncate max-w-[150px] font-medium text-gray-700">{formData.imageName}</span> : <span className="font-medium">Tap to Upload Photo</span>}
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={isSubmitting}
+                            className={`w-full mt-8 bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-800 hover:to-blue-700 text-white font-bold py-4 px-6 rounded-lg shadow-lg transition duration-200 flex items-center justify-center gap-2 transform active:scale-[0.99] ${isSubmitting ? 'opacity-70 cursor-wait' : 'hover:-translate-y-0.5'}`}
+                        >
+                            {isSubmitting ? 'Submitting Report...' : 'SUBMIT REPORT'}
+                        </button>
+                    </form>
+                </div>
+            );
+
+            // STEP 2: Success
+            const renderStep2 = () => (
+                <div className="w-full max-w-md bg-white/95 p-8 rounded-xl shadow-2xl border-t-4 border-green-500 text-center backdrop-blur-sm animate-fade-in">
+                    <div className="mb-6 flex justify-center">
+                        <CheckCircle className="text-green-500 w-24 h-24 animate-bounce" />
+                    </div>
+                    <h2 className="text-3xl font-bold text-gray-800 mb-2">Report Submitted!</h2>
+                    <p className="text-gray-600 mb-8">
+                        Thank you. The <strong>{department}</strong> team has been notified.
+                        <br/><br/>
+                        You will receive an email update when the status changes to:
+                        <br/>
+                        <span className="text-xs font-mono bg-gray-100 p-1.5 rounded mt-1 inline-block border border-gray-200 text-gray-600 font-bold">Repaired / For Evaluation / etc.</span>
+                    </p>
+                    <button
+                        onClick={() => {
+                            setFormData({
+                                email: '', dateReported: new Date().toISOString().split('T')[0], timeReported: '', userDept: '',
+                                location: '', brand: '', serialNo: '', defect: '', dateIssued: '', reportedBy: '',
+                                imageBase64: '', imageName: ''
+                            });
+                            setDepartment('');
+                            setStep(0);
+                        }}
+                        className="bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-8 rounded-lg shadow transition transform hover:-translate-y-0.5"
+                    >
+                        Submit Another Report
+                    </button>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gray-200 relative overflow-hidden font-sans">
+                    <div className="absolute inset-0 z-0">
+                        <img 
+                            src={BG_URL} 
+                            alt="Hospital Background" 
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                                console.log("Background image loading issue - using fallback color");
+                                e.currentTarget.style.display = 'none';
+                            }}
+                            referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-white/75 backdrop-blur-[1px]"></div>
+                    </div>
+
+                    <div className="z-10 w-full flex justify-center">
+                        {step === 0 && renderStep0()}
+                        {step === 1 && renderStep1()}
+                        {step === 2 && renderStep2()}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
