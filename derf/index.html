@@ -81,6 +81,7 @@
                 timeReported: '',
                 userDept: '', 
                 location: '',
+                equipmentItem: '',
                 brand: '',
                 serialNo: '',
                 defect: '',
@@ -189,7 +190,7 @@
                     <div className="space-y-6">
                         <div>
                             <label className="block text-gray-700 text-sm font-bold mb-2">
-                                Which department are you reporting to?
+                                Select the Category of Defective Equipment
                             </label>
                             <div className="relative">
                                 <select 
@@ -213,7 +214,7 @@
                                 <div className="flex gap-3">
                                     <AlertCircle className="text-yellow-600 min-w-[24px]" size={24} />
                                     <p className="text-sm text-yellow-800 font-medium leading-relaxed">
-                                        <strong>Note:</strong> If Defective Equipment is light, proceed to bring it to the specific department office. If not, kindly note it on Question "DEFECT / PROBLEM".
+                                        <strong>Note:</strong> If Defective Equipment is light in weight, proceed to bring it to the specific department office. If not, kindly note/type it on Question "DEFECT / PROBLEM".
                                     </p>
                                 </div>
                             </div>
@@ -285,10 +286,15 @@
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="relative group">
-                                <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Brand</label>
-                                <input required name="brand" type="text" value={formData.brand} onChange={handleInputChange} 
-                                    className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" />
+    <div className="relative group">
+        <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Equipment / Item</label>
+        <input required name="equipmentItem" type="text" value={formData.equipmentItem} onChange={handleInputChange} className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" placeholder="e.g. Monitor, BP Apparatus" />
+    </div>
+    <div className="relative group">
+        <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Brand</label>
+        <input required name="brand" type="text" value={formData.brand} onChange={handleInputChange} className="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition group-hover:bg-white" />
+    </div>
+</div>
                             </div>
                             <div className="relative group">
                                 <label className="block text-gray-600 text-xs uppercase font-bold mb-1.5 ml-1">Serial / Control No.</label>
