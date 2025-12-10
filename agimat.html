@@ -1,188 +1,295 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <link
-      rel="stylesheet"
-      href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
-    />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agimat Account Creation - TDMH</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+    
     <style>
+      :root {
+        /* Light Theme Config */
+        --primary-gradient: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+        --glass-bg: rgba(255, 255, 255, 0.85);
+        --glass-border: rgba(255, 255, 255, 0.6);
+        --input-bg: #ffffff;
+        --input-border: #cbd5e1;
+        --text-main: #1e293b;
+        --text-label: #475569;
+      }
+
       body {
+        min-height: 100vh;
+        /* Same Building Background */
+        background: url('https://drive.google.com/thumbnail?id=1M4jvbq7qMI2wILd-txSBQlnq-g9mHJct&sz=w1000') no-repeat center center fixed;
+        background-size: cover;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Inter', sans-serif;
+        color: var(--text-main);
+        padding: 20px;
+      }
+      
+      body::before {
+        content: "";
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(240, 249, 255, 0.4);
+        z-index: -1;
+      }
+
+      .glass-card {
+        width: 100%;
+        max-width: 650px;
+        background: var(--glass-bg);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 2.5rem;
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+      }
+
+      /* Logo Styling & Zoom */
+      .logo-link {
+        display: inline-block;
+        transition: transform 0.3s ease;
+        cursor: pointer;
         display: flex;
         justify-content: center;
-        align-items: center;
-        height: 100vh;
-        background-color: #121212;
-        color: #e0e0e0;
-        font-family: 'Roboto', sans-serif;
       }
-      .container {
-        max-width: 800px;
-        padding: 2rem;
-        background-color: #1e1e1e;
+      
+      .logo-link:hover {
+        transform: scale(1.1);
+      }
+
+      .logo-img {
+        max-width: 100%;
+        height: auto;
+        margin-bottom: 1rem;
+        max-height: 100px; 
+        object-fit: contain;
+      }
+
+      h1.title {
+        font-family: 'Poppins', sans-serif;
+        font-weight: 700;
+        font-size: 1.8rem;
+        margin-bottom: 0.5rem;
+        color: #1e3a8a;
+        text-align: center;
+      }
+      
+      .subtitle {
+        color: #64748b;
+        margin-bottom: 2rem;
+        font-size: 0.9rem;
+        text-align: center;
+      }
+
+      .form-label {
+        font-weight: 600;
+        margin-bottom: 0.4rem;
+        color: var(--text-label);
+        font-size: 0.85rem;
+      }
+
+      .form-control, .form-select {
+        background-color: var(--input-bg);
+        border: 1px solid var(--input-border);
+        color: #334155;
         border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+        padding: 10px 12px;
+        font-size: 0.95rem;
       }
-      .hero {
-        background-color: #333;
-        color: white;
-        padding: 1rem;
-        border-radius: 8px 8px 0 0;
-        text-align: center;
-      }
-      .btn-primary {
-        background-color: #007bff;
+
+      .form-control:focus, .form-select:focus {
+        background-color: #fff;
         border-color: #007bff;
+        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15);
+        color: #0f172a;
+      }
+
+      .btn-primary-custom {
+        background: var(--primary-gradient);
+        border: none;
+        width: 100%;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: 600;
+        margin-top: 1.5rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: 0 4px 6px rgba(0, 123, 255, 0.2);
+      }
+
+      .btn-primary-custom:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0, 123, 255, 0.3);
         color: white;
-        margin: 1rem 0;
       }
-      .btn-primary:hover {
-        background-color: #0056b3;
-        border-color: #0056b3;
-      }
-      .btn-secondary {
-        background-color: #6c757d;
-        border-color: #6c757d;
-        color: white;
-      }
-      .btn-secondary:hover {
-        background-color: #5a6268;
-        border-color: #545b62;
-      }
-      .form-control {
-        background-color: #2c2c2c;
-        border: 1px solid #444;
-        color: #e0e0e0;
-      }
-      .form-control:focus {
-        background-color: #2c2c2c;
-        border-color: #007bff;
-        color: #e0e0e0;
-        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
-      }
-      .form-group label {
-        color: #e0e0e0;
-      }
-      #message {
-        display: none;
-        margin-top: 20px;
-        padding: 10px;
-        border-radius: 4px;
-        background-color: #007bff;
-        color: white;
+      
+      .btn-back {
+        background: white;
+        border: 1px solid #cbd5e1;
+        color: #64748b;
+        width: 100%;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: 600;
+        margin-top: 0.5rem;
+        text-decoration: none;
+        display: block;
         text-align: center;
+        transition: all 0.2s;
+      }
+      
+      .btn-back:hover {
+        background: #f1f5f9;
+        color: #334155;
+        border-color: #94a3b8;
+      }
+
+      .animate-fade-up {
+        animation: fadeInUp 0.8s ease-out;
+      }
+      
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <div class="hero">
-        <h1 class="title">IT TDMH Helpdesk - Agimat Account Creation</h1>
-      </div>
+
+    <div class="glass-card animate-fade-up">
+      <!-- Clickable Logo -->
+      <a href="https://m.taytaydoctorshospital.com/" class="logo-link" target="_blank" title="Visit Official Site">
+        <img src="https://drive.google.com/thumbnail?id=1O3MDwv9ASot6R_NjpeZR8dIP-s2zAueF&sz=w1000" alt="Taytay Doctors Logo" class="logo-img">
+      </a>
+      
+      <h1 class="title">Agimat Account Creation</h1>
+      <p class="subtitle">Request a new account for the hospital system</p>
+      
       <form id="form" method="POST">
-        <div class="form-group">
-          <label for="email">Email</label>
-          <input type="email" class="form-control" id="email" placeholder="Your Email" name="Email" required />
+        
+        <div class="mb-3">
+          <label for="email" class="form-label">Email Address</label>
+          <input type="email" class="form-control" id="email" placeholder="e.g., yourname@tdmh.com" name="Email" required />
         </div>
-        <div class="form-group">
-          <label for="department">Department</label>
-          <select class="form-control" id="department" name="Department" required>
+
+        <div class="mb-3">
+          <label for="department" class="form-label">Department</label>
+          <select class="form-select" id="department" name="Department" required>
             <option value="" disabled selected>Select your department</option>
-                                        <option value="Accounting">Accounting</option>
-                    <option value="Admin">Admin</option>
-                    <option value="Admitting">Admitting</option>
-                    <option value="APE">APE</option>
-                    <option value="Billing">Billing</option>
-                    <option value="Cardio">Cardio</option>
-                    <option value="Canteen">Canteen</option>
-                    <option value="Cashier">Cashier</option>
-                    <option value="CT-Scan">CT-Scan</option>
-                    <option value="CSR">CSR</option>
-                    <option value="EKONSULTA">EKONSULTA</option>
-                    <option value="ER">ER</option>
-                    <option value="HMO">HMO</option>
-                    <option value="HR">HR</option>
-                    <option value="HOMES">HOMES</option>
-                    <option value="Information">Information</option>
-                    <option value="Laboratory">Laboratory</option>
-                    <option value="Linen">Linen</option>
-                    <option value="Maintenance">Maintenance</option>
-                    <option value="Medical Records">Medical Records</option>
-                    <option value="NICU">NICU</option>
-                    <option value="NSO">NSO</option>
-                    <option value="OPD">OPD</option>
-                    <option value="OPD-Encoder">OPD-Encoder</option>
-                    <option value="OPD-HMO">OPD-HMO</option>
-                    <option value="OPD-Screener">OPD-Screener</option>
-                    <option value="OR">OR</option>
-                    <option value="Pharmacy">Pharmacy</option>
-                    <option value="Philhealth">Philhealth</option>
-                    <option value="Purchasing">Purchasing</option>
-                    <option value="Releasing">Releasing</option>
-                    <option value="Security">Security</option>
-                    <option value="Social Service">Social Service</option>
-                    <option value="Station 3">Station 3</option>
-                    <option value="Station 4b">Station 4b</option>
-                    <option value="Station 5a">Station 5a</option>
-                    <option value="Station 5b">Station 5b</option>
-                    <option value="Ultrasound">Ultrasound</option>
-                    <option value="Xray">Xray</option>
-                    <option value="Others">Others</option>
+            <option value="Accounting">Accounting</option>
+            <option value="Admin">Admin</option>
+            <option value="Admitting">Admitting</option>
+            <option value="APE">APE</option>
+            <option value="Billing">Billing</option>
+            <option value="Cardio">Cardio</option>
+            <option value="Canteen">Canteen</option>
+            <option value="Cashier">Cashier</option>
+            <option value="CT-Scan">CT-Scan</option>
+            <option value="CSR">CSR</option>
+            <option value="CQI">CQI</option>
+            <option value="EKONSULTA">EKONSULTA</option>
+            <option value="ER">ER</option>
+            <option value="HMO">HMO</option>
+            <option value="HR">HR</option>
+            <option value="HOMES">HOMES</option>
+            <option value="Information">Information</option>
+            <option value="Laboratory">Laboratory</option>
+            <option value="Linen">Linen</option>
+            <option value="Maintenance">Maintenance</option>
+            <option value="Medical Records">Medical Records</option>
+            <option value="NICU">NICU</option>
+            <option value="NSO">NSO</option>
+            <option value="OPD">OPD</option>
+            <option value="OPD-Encoder">OPD-Encoder</option>
+            <option value="OPD-HMO">OPD-HMO</option>
+            <option value="OPD-Screener">OPD-Screener</option>
+            <option value="OR">OR</option>
+            <option value="Pharmacy">Pharmacy</option>
+            <option value="Philhealth">Philhealth</option>
+            <option value="Purchasing">Purchasing</option>
+            <option value="Releasing">Releasing</option>
+            <option value="Security">Security</option>
+            <option value="Social Service">Social Service</option>
+            <option value="Station 3">Station 3</option>
+            <option value="Station 4b">Station 4b</option>
+            <option value="Station 5a">Station 5a</option>
+            <option value="Station 5b">Station 5b</option>
+            <option value="Ultrasound">Ultrasound</option>
+            <option value="Xray">Xray</option>
+            <option value="Others">Others</option>
           </select>
         </div>
-        
-        <div class="form-group">
-          <label for="firstName">First Name</label>
-          <textarea class="form-control" id="firstName" rows="1" placeholder="First Name" name="First Name" required></textarea>
-        </div>
-        
-       <div class="form-group">
-          <label for="middleName">Middle Name</label>
-          <textarea class="form-control" id="middleName" rows="1" placeholder="Middle Name" name="Middle Name" ></textarea>
-        </div>
-        
-        <div class="form-group">
-          <label for="lastName">Last Name</label>
-          <textarea class="form-control" id="lastName" rows="1" placeholder="Last Name" name="Last Name" required></textarea>
-        </div>
-        
-        <div class="form-group">
-          <label for="lastName">Position</label>
-          <textarea class="form-control" id="position" rows="1" placeholder="Position" name="Position" required></textarea>
+
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <label for="firstName" class="form-label">First Name</label>
+                <input type="text" class="form-control" id="firstName" name="First Name" required />
+            </div>
+            <div class="col-md-4 mb-3">
+                <label for="middleName" class="form-label">Middle Name</label>
+                <input type="text" class="form-control" id="middleName" name="Middle Name" />
+            </div>
+            <div class="col-md-4 mb-3">
+                <label for="lastName" class="form-label">Last Name</label>
+                <input type="text" class="form-control" id="lastName" name="Last Name" required />
+            </div>
         </div>
 
-        <div class="form-group">
-          <label for="lastName">PRC License if applicable with expiration date</label>
-          <textarea class="form-control" id="PRCLicenseifapplicablewithexpirationdate" rows="1" placeholder="PRC License if applicable with expiration date" name="PRC License if applicable with expiration date"></textarea>
+        <div class="mb-3">
+          <label for="position" class="form-label">Position / Job Title</label>
+          <input type="text" class="form-control" id="position" name="Position" required />
         </div>
-        
-        <div class="form-group">
-          <button type="submit" class="btn btn-primary" id="submit-button">Submit</button>
-          <a href="index.html" class="btn btn-secondary">Back</a>
+
+        <div class="mb-4">
+          <label for="prc" class="form-label">PRC License (If applicable, include expiration date)</label>
+          <input type="text" class="form-control" id="prc" placeholder="e.g. 1234567 (Exp: 2026)" name="PRC License if applicable with expiration date" />
         </div>
+
+        <div class="d-grid gap-2">
+          <button type="submit" class="btn btn-primary-custom" id="submit-button">Submit Request</button>
+          <a href="index.html" class="btn btn-back">Back to Helpdesk</a>
+        </div>
+
       </form>
+
       <div
         id="message"
-        class="alert alert-success"
-        style="display: none; margin-top: 20px;"
+        class="alert alert-success mt-3 animate__animated animate__fadeInUp"
+        style="display: none;"
       ></div>
     </div>
+
     <script>
       document.getElementById("form").addEventListener("submit", function (e) {
-        e.preventDefault(); // Prevent the default form submission
-        document.getElementById("message").textContent = "Submitting...";
-        document.getElementById("message").style.display = "block";
-        document.getElementById("submit-button").disabled = true;
+        e.preventDefault(); 
+        
+        var msgBox = document.getElementById("message");
+        var btn = document.getElementById("submit-button");
+        
+        msgBox.textContent = "Submitting...";
+        msgBox.style.display = "block";
+        msgBox.className = "alert alert-info mt-3 animate__animated animate__fadeInUp"; 
+        
+        btn.disabled = true;
+        btn.textContent = "Sending...";
 
-        // Collect the form data
         var formData = new FormData(this);
         var keyValuePairs = [];
+
         for (var pair of formData.entries()) {
           keyValuePairs.push(pair[0] + "=" + pair[1]);
         }
 
         var formDataString = keyValuePairs.join("&");
 
-        // Send a POST request to your Google Apps Script
         fetch(
           "https://script.google.com/macros/s/AKfycbxZvDvT5v3yD_Q16QbA_zf1SUHhU31GXQTxtfVu0ltDKpRTqoN0gZ8QoFqLyDG0G9_HgA/exec",
           {
@@ -195,24 +302,22 @@
           }
         )
           .then(function (response) {
-            // Check if the request was successful
             if (response) {
-              return response; // Assuming your script returns JSON response
+              return response; 
             } else {
               throw new Error("Failed to submit the form.");
             }
           })
           .then(function (data) {
-            // Redirect to thank you page
             window.location.href = "thankyou.html";
           })
           .catch(function (error) {
-            // Handle errors, you can display an error message here
             console.error(error);
-            document.getElementById("message").textContent =
-              "An error occurred while submitting the form.";
-            document.getElementById("message").style.display = "block";
-            document.getElementById("message").classList.add("alert-danger");
+            msgBox.textContent = "An error occurred while submitting the form.";
+            msgBox.style.display = "block";
+            msgBox.className = "alert alert-danger mt-3 animate__animated animate__fadeInUp"; 
+            btn.disabled = false;
+            btn.textContent = "Submit";
           });
       });
     </script>
