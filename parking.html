@@ -847,14 +847,19 @@ function TDMHParking(){
         const{data:existing}=await sb.from("slots").select("id").limit(1);
         if(!existing||existing.length===0){
           const allSlots=[];
-          LOCS.forEach(loc=>{(LOC_SLOTS[loc.id]||[]).forEach(({type,total})=>{for(let i=1;i<=total;i++)allSlots.push({id:`${loc.id}-${type}-${i}`,loc_id:loc.id,type,number:i,occupied:false,vehicle:null});});});
+          LOCS.forEach(loc=>{(LOC_SLOTS[loc.id]||[]).forEach(({type,total})=>{for(let i=1;i<=total;i++)allSlots.push({id:`${loc.id}-${type}-${i}`,loc_id:loc.id,type,number:i,occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null});});});
           await sb.from("slots").insert(allSlots);
         }
         // load slots
         const{data:slotsData}=await sb.from("slots").select("*");
         if(slotsData){
           const sd={};LOCS.forEach(l=>{sd[l.id]=[];});
-          slotsData.forEach(s=>{if(sd[s.loc_id])sd[s.loc_id].push({id:s.id,locId:s.loc_id,type:s.type,number:s.number,occupied:s.occupied,vehicle:s.vehicle});});
+          slotsData.forEach(s=>{
+            if(sd[s.loc_id])sd[s.loc_id].push({
+              id:s.id,locId:s.loc_id,type:s.type,number:s.number,occupied:s.occupied,
+              vehicle:s.occupied?{plate:s.v_plate,name:s.v_name,vtype:s.v_vtype,checkin:s.v_checkin,ticketNo:s.v_ticket}:null
+            });
+          });
           LOCS.forEach(l=>{sd[l.id].sort((a,b)=>a.number-b.number);});
           setSlots(sd);
         }
@@ -910,8 +915,8 @@ function TDMHParking(){
     if(!form.plate.trim())return;
     const l=sel.locId;const tix=nextTix();const now=new Date().toISOString();
     const vehicle={plate:form.plate.toUpperCase().trim(),name:form.name.trim()||"—",vtype:form.vtype,checkin:now,ticketNo:tix};
-    // update DB slot
-    const{error}=await sb.from("slots").update({occupied:true,vehicle}).eq("id",sel.id);
+    // update DB slot with flat columns
+    const{error}=await sb.from("slots").update({occupied:true,v_plate:vehicle.plate,v_name:vehicle.name,v_vtype:vehicle.vtype,v_checkin:vehicle.checkin,v_ticket:vehicle.ticketNo}).eq("id",sel.id);
     if(error){toast("Check-in failed: "+error.message,"err");return;}
     // update local
     setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:true,vehicle}:s);return c;});
@@ -930,7 +935,7 @@ function TDMHParking(){
     const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
     if(txnErr){toast("Checkout failed: "+txnErr.message,"err");return;}
     // free slot in DB
-    await sb.from("slots").update({occupied:false,vehicle:null}).eq("id",sel.id);
+    await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null}).eq("id",sel.id);
     // update local state
     setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:false,vehicle:null}:s);return c;});
     setTxns(p=>[txnRow,...p]);
