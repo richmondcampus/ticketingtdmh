@@ -39,7 +39,7 @@ const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
 // ─── ⚙️  SUPABASE CONFIG — paste your values here ──────────────────────────
 const SUPABASE_URL  = "https://rddvjspqlqmyxlyrnbol.supabase.co";   // e.g. https://abcd1234.supabase.co
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkZHZqc3BxbHFteXhseXJuYm9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NzkzNDIsImV4cCI6MjA4ODE1NTM0Mn0.uIm1H4sjzeCMj3-ySLeCX0q50EVp2oZ16YLHspu5SU0";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkZHZqc3BxbHFteXhseXJuYm9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NzkzNDIsImV4cCI6MjA4ODE1NTM0Mn0.uIm1H4sjzeCMj3-ySLeCX0q50EVp2oZ16YLHspu5SU0"; // eyJ...
 // ───────────────────────────────────────────────────────────────────────────
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -63,7 +63,7 @@ const VT = {
 const PERMS = {
   admin:    {earn:true, allLocs:true, act:true, ci:true,co:true,rates:true,users:true, rep:true, search:true},
   cashier:  {earn:true, allLocs:true, act:true, ci:true,co:true,rates:true,users:false,rep:false,search:true},
-  attendant:{earn:false,allLocs:false,act:false,ci:true,co:false,rates:true,users:false,rep:false,search:true},
+  attendant:{earn:false,allLocs:false,act:false,ci:true,co:true,rates:true,users:false,rep:false,search:true},
 };
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -101,13 +101,9 @@ function printThermal(payload){
   const head=`<div style="text-align:center;font-weight:bold;font-size:13px;line-height:1.5">TAYTAY DOCTORS<br>MULTISPECIALTY HOSPITAL<br><span style="font-size:10px;font-weight:normal">Parking Management System</span></div><pre style="margin:4px 0">${line}</pre><div style="text-align:center;font-weight:bold;font-size:12px">${isCheckIn?"★ PARKING TICKET ★":"★ PAYMENT RECEIPT ★"}</div><pre style="margin:4px 0">${line}</pre>`;
   const bodyCI=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\nDATE    : ${fmtFull(checkin)}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\n  RATE INFORMATION\nFirst ${vObj.fh}hrs: ${P(vObj.fr)}\nPer hour : ${P(vObj.sr)}/hr\nOvernight: ${P(vObj.ovr)}\n${line}</pre><div style="text-align:center;margin:8px 0;font-size:11px"><div style="font-weight:bold">PLEASE KEEP THIS TICKET</div><div style="font-size:10px">Present upon exit for payment</div></div><pre style="margin:0;font-size:11px">${dline}\nAttendant: ${cashierName}\nIssued   : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you! Drive safely.</div>`;
   const bodyCO=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\nTIME IN : ${fmtFull(checkin)}\nTIME OUT: ${fmtFull(new Date().toISOString())}\nDURATION: ${dur}\n${dline}\nRATE    : ${overnight?"OVERNIGHT":"REGULAR"}\n${line}</pre><div style="text-align:center;margin:10px 0"><div style="font-size:11px">TOTAL AMOUNT DUE</div><div style="font-size:24px;font-weight:bold;margin:4px 0">${P(fee)}</div>${overnight?`<div style="font-size:10px">🌙 Overnight Rate (10PM-7AM)</div>`:""}</div><pre style="margin:0;font-size:11px">${dline}\nCashier  : ${cashierName}\nPrinted  : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you for parking!<br>Drive safely.</div>`;
-  const autoScript=payload.autoprint
-    ? `<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},500);},300);};<\/script>`
-    : `<div class="np" style="margin-top:14px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">🖨️ Print</button><button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;font-size:13px;margin-left:8px">Close</button><p style="font-size:10px;color:#64748b;margin-top:8px">Select your Bluetooth/POS printer from the print dialog</p></div>`;
-  const html=`<!DOCTYPE html><html><head><title>${isCheckIn?"Ticket":"Receipt"} ${ticketNo}</title><style>@page{margin:2mm;size:58mm auto}body{font-family:'Courier New',monospace;font-size:11px;width:58mm;margin:0;padding:4px;color:#000}pre{font-family:inherit;font-size:11px;white-space:pre-wrap}@media print{.np{display:none}}</style></head><body>${head}${isCheckIn?bodyCI:bodyCO}${autoScript}</body></html>`;
+  const html=`<!DOCTYPE html><html><head><title>${isCheckIn?"Ticket":"Receipt"} ${ticketNo}</title><style>@page{margin:2mm;size:58mm auto}body{font-family:'Courier New',monospace;font-size:11px;width:58mm;margin:0;padding:4px;color:#000}pre{font-family:inherit;font-size:11px;white-space:pre-wrap}@media print{.np{display:none}}</style></head><body>${head}${isCheckIn?bodyCI:bodyCO}<div class="np" style="margin-top:14px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">🖨️ Print</button><button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;font-size:13px;margin-left:8px">Close</button><p style="font-size:10px;color:#64748b;margin-top:8px">Select your Bluetooth/POS printer from the print dialog</p></div></body></html>`;
   const w=window.open("","_blank","width=420,height=620,toolbar=0,menubar=0,scrollbars=1");
-  if(w){w.document.write(html);w.document.close();}
-  else alert("Please allow popups to print tickets.");
+  if(w){w.document.write(html);w.document.close();}else alert("Please allow popups to print tickets.");
 }
 
 // ─── CSS ────────────────────────────────────────────────────────────────────
@@ -911,10 +907,7 @@ function TDMHParking(){
   function openSlot(locId,slot){
     if(!perms.ci&&!perms.co)return;
     setSel(slot);
-    if(slot.occupied){
-      if(!perms.co)return; // attendant: occupied slots are not interactive
-      setModal("checkout");
-    }
+    if(slot.occupied)setModal("checkout");
     else{setForm({plate:"",name:"",vtype:slot.type==="motorcycle"?"motorcycle":"car"});setModal("checkin");}
   }
 
@@ -930,7 +923,7 @@ function TDMHParking(){
     const locName=LOCS.find(x=>x.id===l)?.name;
     addLog(`${vehicle.plate} checked in @ ${locName} · Slot #${sel.number} · ${tix}`,"#10b981");
     toast(`✅ ${vehicle.plate} checked in — ${tix}`,"ok");
-    printThermal({isCheckIn:true,ticketNo:tix,plate:vehicle.plate,name:vehicle.name,vtype:form.vtype,locName,slotNum:sel.number,checkin:now,cashierName:user.name,autoprint:user.role==="attendant"});
+    printThermal({isCheckIn:true,ticketNo:tix,plate:vehicle.plate,name:vehicle.name,vtype:form.vtype,locName,slotNum:sel.number,checkin:now,cashierName:user.name});
     setModal(null);
   }
 
