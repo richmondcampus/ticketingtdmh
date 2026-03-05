@@ -548,7 +548,7 @@ function ReportsPanel({allTxns}){
           </div>
           {filtered.length===0?<div className="nod"><div className="ni">📭</div>No transactions</div>:(
             <div style={{overflowX:"auto",maxHeight:340,overflowY:"auto"}}><table className="rtbl">
-              <thead><tr><th>Date/Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Dur</th><th>Type</th><th>By</th><th>Amount</th></tr></thead>
+              <thead><tr><th>Date/Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Dur</th><th>Type</th><th>Checked In By</th><th>Checked Out By</th><th>Amount</th></tr></thead>
               <tbody>{[...filtered].sort((a,b)=>new Date(b.checkout_time||b.created_at)-new Date(a.checkout_time||a.created_at)).map((e,i)=>(
                 <tr key={i}>
                   <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_time||e.created_at)}</td>
@@ -558,7 +558,7 @@ function ReportsPanel({allTxns}){
                   <td style={{fontSize:10}}>{LOCS.find(l=>l.id===e.loc_id)?.short}</td>
                   <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur}</td>
                   <td>{e.overnight?<span style={{background:"#ede9fe",color:"#5b21b6",padding:"1px 5px",borderRadius:100,fontSize:9,fontWeight:700}}>🌙</span>:<span style={{background:"#f0f9ff",color:"#0369a1",padding:"1px 5px",borderRadius:100,fontSize:9,fontWeight:700}}>REG</span>}</td>
-                  <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"").split(" ")[0]}</td>
+                  <td style={{fontSize:10,color:"var(--mu)"}}>{(e.checkin_by||"—").split(" ")[0]}</td> <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
                   <td><span className="eam">{P(e.fee)}</span></td>
                 </tr>
               ))}</tbody>
@@ -847,14 +847,19 @@ function TDMHParking(){
         const{data:existing}=await sb.from("slots").select("id").limit(1);
         if(!existing||existing.length===0){
           const allSlots=[];
-          LOCS.forEach(loc=>{(LOC_SLOTS[loc.id]||[]).forEach(({type,total})=>{for(let i=1;i<=total;i++)allSlots.push({id:`${loc.id}-${type}-${i}`,loc_id:loc.id,type,number:i,occupied:false,vehicle:null});});});
+          LOCS.forEach(loc=>{(LOC_SLOTS[loc.id]||[]).forEach(({type,total})=>{for(let i=1;i<=total;i++)allSlots.push({id:`${loc.id}-${type}-${i}`,loc_id:loc.id,type,number:i,occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null});});});
           await sb.from("slots").insert(allSlots);
         }
         // load slots
         const{data:slotsData}=await sb.from("slots").select("*");
         if(slotsData){
           const sd={};LOCS.forEach(l=>{sd[l.id]=[];});
-          slotsData.forEach(s=>{if(sd[s.loc_id])sd[s.loc_id].push({id:s.id,locId:s.loc_id,type:s.type,number:s.number,occupied:s.occupied,vehicle:s.vehicle});});
+          slotsData.forEach(s=>{
+            if(sd[s.loc_id])sd[s.loc_id].push({
+              id:s.id,locId:s.loc_id,type:s.type,number:s.number,occupied:s.occupied,
+              vehicle:s.occupied?{plate:s.v_plate,name:s.v_name,vtype:s.v_vtype,checkin:s.v_checkin,ticketNo:s.v_ticket,checkinBy:s.v_checkin_by}:null
+            });
+          });
           LOCS.forEach(l=>{sd[l.id].sort((a,b)=>a.number-b.number);});
           setSlots(sd);
         }
@@ -909,9 +914,18 @@ function TDMHParking(){
   async function doCheckin(){
     if(!form.plate.trim())return;
     const l=sel.locId;const tix=nextTix();const now=new Date().toISOString();
-    const vehicle={plate:form.plate.toUpperCase().trim(),name:form.name.trim()||"—",vtype:form.vtype,checkin:now,ticketNo:tix};
-    // update DB slot
-    const{error}=await sb.from("slots").update({occupied:true,vehicle}).eq("id",sel.id);
+    const plateUpper=form.plate.toUpperCase().trim();
+// Check if plate is already parked anywhere
+const allOccupied=Object.values(slots).flat().filter(s=>s.occupied);
+const duplicate=allOccupied.find(s=>s.vehicle?.plate===plateUpper);
+if(duplicate){
+  const dupLoc=LOCS.find(l=>l.id===duplicate.locId);
+  toast(`⚠️ ${plateUpper} is already parked at ${dupLoc?.name} — Slot #${duplicate.number}`,"err");
+  return;
+}
+const vehicle={plate:plateUpper,name:form.name.trim()||"—",vtype:form.vtype,checkin:now,ticketNo:tix,checkinBy:user.name};
+    // update DB slot with flat columns
+    const{error}=await sb.from("slots").update({occupied:true,v_plate:vehicle.plate,v_name:vehicle.name,v_vtype:vehicle.vtype,v_checkin:vehicle.checkin,v_ticket:vehicle.ticketNo,v_checkin_by:vehicle.checkinBy}).eq("id",sel.id);
     if(error){toast("Check-in failed: "+error.message,"err");return;}
     // update local
     setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:true,vehicle}:s);return c;});
@@ -926,11 +940,11 @@ function TDMHParking(){
     const v=sel.vehicle;const{fee,dur,overnight}=calcFee(v.checkin,v.vtype);
     const l=sel.locId;const locName=LOCS.find(x=>x.id===l)?.name;const tix=v.ticketNo||nextTix();
     // save transaction to DB
-    const txn={ticket_no:tix,plate:v.plate,name:v.name,vtype:v.vtype,loc_id:l,fee,dur,overnight,cashier:user.name,cashier_id:user.id,checkin_time:v.checkin,checkout_time:new Date().toISOString()};
+    const txn={ticket_no:tix,plate:v.plate,name:v.name,vtype:v.vtype,loc_id:l,slot_number:sel.number,fee,dur,overnight,cashier:user.name,checkin_by:sel.vehicle.checkinBy||"—",checkin_time:v.checkin,checkout_time:new Date().toISOString()};
     const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
     if(txnErr){toast("Checkout failed: "+txnErr.message,"err");return;}
     // free slot in DB
-    await sb.from("slots").update({occupied:false,vehicle:null}).eq("id",sel.id);
+    await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null}).eq("id",sel.id);
     // update local state
     setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:false,vehicle:null}:s);return c;});
     setTxns(p=>[txnRow,...p]);
@@ -1200,7 +1214,11 @@ function TDMHParking(){
           <div className="mo">
             <div className="mh"><h2>🚗 Vehicle Check In</h2><p>{LOCS.find(l=>l.id===sel.locId)?.name} · {sel.type==="motorcycle"?"Motorcycle":"Car"} Slot #{sel.number}</p></div>
             <div className="mb">
-              <div className="fg"><label className="fl">Plate Number *</label><input className="fi" placeholder="e.g. ABC 1234" value={form.plate} onChange={e=>setForm(p=>({...p,plate:e.target.value.toUpperCase()}))} autoFocus/></div>
+              <div className="fg">
+  <label className="fl">Plate Number *</label>
+  <input className="fi" placeholder="e.g. ABC 1234" value={form.plate} onChange={e=>setForm(p=>({...p,plate:e.target.value.toUpperCase()}))} autoFocus/>
+  {(()=>{const found=Object.values(slots).flat().find(s=>s.occupied&&s.vehicle?.plate===form.plate.toUpperCase().trim());if(!found||!form.plate.trim())return null;const loc=LOCS.find(l=>l.id===found.locId);return<div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"7px 10px",fontSize:11,color:"#dc2626",marginTop:5}}>⚠️ This plate is already parked at <b>{loc?.name}</b> — Slot #{found.number}</div>;})()}
+</div>
               <div className="fg"><label className="fl">Driver / Owner Name</label><input className="fi" placeholder="Optional" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/></div>
               <div className="fg">
                 <label className="fl">Vehicle Type</label>
@@ -1211,7 +1229,7 @@ function TDMHParking(){
             </div>
             <div className="mf">
               <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
-              <button className="btn bp" onClick={doCheckin} disabled={!form.plate.trim()}>✓ Check In &amp; Print Ticket</button>
+              <button className="btn bp" onClick={doCheckin} disabled={!form.plate.trim()||!!Object.values(slots).flat().find(s=>s.occupied&&s.vehicle?.plate===form.plate.toUpperCase().trim())}>✓ Check In &amp; Print Ticket</button>
             </div>
           </div>
         </div>
