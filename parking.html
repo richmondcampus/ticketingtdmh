@@ -931,7 +931,7 @@ function TDMHParking(){
     const v=sel.vehicle;const{fee,dur,overnight}=calcFee(v.checkin,v.vtype);
     const l=sel.locId;const locName=LOCS.find(x=>x.id===l)?.name;const tix=v.ticketNo||nextTix();
     // save transaction to DB
-    const txn={ticket_no:tix,plate:v.plate,name:v.name,vtype:v.vtype,loc_id:l,fee,dur,overnight,cashier:user.name,checkin_time:v.checkin,checkout_time:new Date().toISOString()};
+    const txn={ticket_no:tix,plate:v.plate,name:v.name,vtype:v.vtype,loc_id:l,slot_number:sel.number,fee,dur,overnight,cashier:user.name,checkin_time:v.checkin,checkout_time:new Date().toISOString()};
     const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
     if(txnErr){toast("Checkout failed: "+txnErr.message,"err");return;}
     // free slot in DB
