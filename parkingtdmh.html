@@ -917,7 +917,7 @@ function TDMHParking(){
     const plateUpper=form.plate.toUpperCase().trim();
 // Check if plate is already parked anywhere
 const allOccupied=Object.values(slots).flat().filter(s=>s.occupied);
-const duplicate=allOccupied.find(s=>s.vehicle?.plate===plateUpper);
+const duplicate=allOccupied.find(s=>s.vehicle?.plate===plateUpper&&s.id!==sel.id);
 if(duplicate){
   const dupLoc=LOCS.find(l=>l.id===duplicate.locId);
   toast(`⚠️ ${plateUpper} is already parked at ${dupLoc?.name} — Slot #${duplicate.number}`,"err");
@@ -1217,7 +1217,7 @@ const vehicle={plate:plateUpper,name:form.name.trim()||"—",vtype:form.vtype,ch
               <div className="fg">
   <label className="fl">Plate Number *</label>
   <input className="fi" placeholder="e.g. ABC 1234" value={form.plate} onChange={e=>setForm(p=>({...p,plate:e.target.value.toUpperCase()}))} autoFocus/>
-  {(()=>{const found=Object.values(slots).flat().find(s=>s.occupied&&s.vehicle?.plate===form.plate.toUpperCase().trim());if(!found||!form.plate.trim())return null;const loc=LOCS.find(l=>l.id===found.locId);return<div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"7px 10px",fontSize:11,color:"#dc2626",marginTop:5}}>⚠️ This plate is already parked at <b>{loc?.name}</b> — Slot #{found.number}</div>;})()}
+  {(()=>{const found=Object.values(slots).flat().find(s=>s.occupied&&s.vehicle?.plate===form.plate.toUpperCase().trim()&&s.id!==sel?.id);if(!found||!form.plate.trim())return null;const loc=LOCS.find(l=>l.id===found.locId);return<div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"7px 10px",fontSize:11,color:"#dc2626",marginTop:5}}>⚠️ This plate is already parked at <b>{loc?.name}</b> — Slot #{found.number}</div>;})()}
 </div>
               <div className="fg"><label className="fl">Driver / Owner Name</label><input className="fi" placeholder="Optional" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/></div>
               <div className="fg">
@@ -1229,7 +1229,7 @@ const vehicle={plate:plateUpper,name:form.name.trim()||"—",vtype:form.vtype,ch
             </div>
             <div className="mf">
               <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
-              <button className="btn bp" onClick={doCheckin} disabled={!form.plate.trim()||!!Object.values(slots).flat().find(s=>s.occupied&&s.vehicle?.plate===form.plate.toUpperCase().trim())}>✓ Check In &amp; Print Ticket</button>
+              <button className="btn bp" onClick={doCheckin} disabled={!form.plate.trim()||!!Object.values(slots).flat().find(s=>s.occupied&&s.vehicle?.plate===form.plate.toUpperCase().trim()&&s.id!==sel?.id)}>✓ Check In &amp; Print Ticket</button>
             </div>
           </div>
         </div>
