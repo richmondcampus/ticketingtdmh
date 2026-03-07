@@ -37,17 +37,15 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-// ─── ⚙️  SUPABASE CONFIG — paste your values here ──────────────────────────
-const SUPABASE_URL  = "https://rddvjspqlqmyxlyrnbol.supabase.co";   // e.g. https://abcd1234.supabase.co
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkZHZqc3BxbHFteXhseXJuYm9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NzkzNDIsImV4cCI6MjA4ODE1NTM0Mn0.uIm1H4sjzeCMj3-ySLeCX0q50EVp2oZ16YLHspu5SU0"; // eyJ...
-// ───────────────────────────────────────────────────────────────────────────
-
+// ─── SUPABASE CONFIG ────────────────────────────────────────────────────────
+const SUPABASE_URL  = "https://rddvjspqlqmyxlyrnbol.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkZHZqc3BxbHFteXhseXJuYm9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NzkzNDIsImV4cCI6MjA4ODE1NTM0Mn0.uIm1H4sjzeCMj3-ySLeCX0q50EVp2oZ16YLHspu5SU0";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 const LOCS = [
-  {id:"compound",name:"Medina's Compound", short:"Compound", icon:"🏥",color:"#0ea5e9"},
-  {id:"quality",  name:"Quality",           short:"Quality",  icon:"⭐",color:"#10b981"},
+  {id:"compound",name:"Medina's Compound",short:"Compound",icon:"🏥",color:"#0ea5e9"},
+  {id:"quality",  name:"Quality",          short:"Quality", icon:"⭐",color:"#10b981"},
   {id:"motopark", name:"Motorcycle Parking",short:"Moto Park",icon:"🏍️",color:"#8b5cf6"},
 ];
 const LOC_SLOTS = {
@@ -88,10 +86,28 @@ const fmtDT  =iso=>new Date(iso).toLocaleString("en-PH",{month:"short",day:"nume
 const fmtFull=iso=>new Date(iso).toLocaleString("en-PH",{weekday:"short",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 const ago    =iso=>{const m=Math.floor((Date.now()-new Date(iso))/60000);if(m<1)return"just now";if(m<60)return`${m}m ago`;return`${Math.floor(m/60)}h ${m%60}m ago`;};
 const P      =n=>`₱${Number(n).toLocaleString("en-PH")}`;
-const dOnly  =iso=>new Date(iso).toISOString().split("T")[0];
+const dOnly  =iso=>{try{return new Date(iso).toISOString().split("T")[0];}catch{return"";}};
 const todayStr=()=>new Date().toISOString().split("T")[0];
 const dAgo   =n=>{const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};
-let _tix=1000;const nextTix=()=>`TKT-${++_tix}`;
+let _tix=1000;
+const nextTix=()=>`TKT-${++_tix}`;
+async function seedTicketCounter(){
+  try{
+    const{data}=await sb.from("transactions").select("ticket_no").order("id",{ascending:false}).limit(1).maybeSingle();
+    if(data?.ticket_no){
+      const n=parseInt((data.ticket_no||"").replace(/[^0-9]/g,""),10);
+      if(!isNaN(n)&&n>_tix)_tix=n;
+    }
+  }catch(e){console.warn("seedTicketCounter error",e);}
+}
+
+// ─── SLOT MAPPER ────────────────────────────────────────────────────────────
+function mapSlot(s){
+  return{
+    id:s.id,locId:s.loc_id,type:s.type,number:s.number,occupied:s.occupied,
+    vehicle:s.occupied?{plate:s.v_plate,name:s.v_name,vtype:s.v_vtype,checkin:s.v_checkin,ticketNo:s.v_ticket,checkinBy:s.v_checkin_by}:null
+  };
+}
 
 // ─── THERMAL PRINTER ────────────────────────────────────────────────────────
 function printThermal(payload){
@@ -114,15 +130,10 @@ const CSS=`
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:10px}
 .app{max-width:1200px;margin:0 auto;padding:14px 14px 48px}
-/* LOGIN */
 .lp{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;background:linear-gradient(135deg,#0f172a,#1e3a5f,#0c4a6e)}
 .lb{background:#fff;border-radius:22px;padding:32px;width:100%;max-width:390px;box-shadow:0 24px 64px rgba(0,0,0,.25)}
 .ll-logo{width:56px;height:56px;background:linear-gradient(135deg,#0284c7,#0ea5e9);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px;box-shadow:0 6px 20px rgba(14,165,233,.4)}
 .lt{text-align:center;margin-bottom:22px}.lt h1{font-size:16px;font-weight:700;color:#0f172a;line-height:1.3}.lt p{font-size:12px;color:#64748b;margin-top:4px}
-.rg{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:18px}
-.rb2{padding:9px 5px;border-radius:9px;border:1.5px solid #e2e8f0;cursor:pointer;text-align:center;font-size:11px;font-weight:700;transition:all .15s;background:#f8fafc;color:#64748b}
-.rb2.active{border-color:#0ea5e9;background:#e0f2fe;color:#0369a1}
-.rb2 .ri{font-size:19px;display:block;margin-bottom:3px}
 .lf2{margin-bottom:12px}
 .ll2{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#64748b;margin-bottom:4px}
 .li2{width:100%;padding:9px 12px;border-radius:9px;border:1.5px solid #e2e8f0;font-size:13px;font-family:'DM Sans',sans-serif;color:#0f172a;background:#f8fafc;outline:none;transition:border-color .15s}
@@ -131,7 +142,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .lbtn:hover{box-shadow:0 6px 20px rgba(14,165,233,.45)}
 .lbtn:disabled{opacity:.6;cursor:not-allowed}
 .lerr{background:#fee2e2;color:#7f1d1d;border:1px solid #fca5a5;border-radius:8px;padding:7px 11px;font-size:12px;margin-bottom:11px}
-/* HEADER */
 .hdr{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#0c4a6e 100%);border-radius:var(--r);padding:14px 20px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;position:relative;overflow:hidden;box-shadow:var(--sl)}
 .hdr::after{content:'';position:absolute;top:-40px;right:-40px;width:160px;height:160px;background:radial-gradient(circle,rgba(14,165,233,.2),transparent 70%);pointer-events:none}
 .hl{display:flex;align-items:center;gap:11px}
@@ -146,7 +156,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .hck{font-family:'Space Mono',monospace;color:#7dd3fc;font-size:clamp(11px,1.7vw,14px);font-weight:700;letter-spacing:1px}
 .hbtn{padding:5px 12px;border-radius:7px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#cbd5e1;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif}
 .hbtn:hover{background:rgba(255,255,255,.16);color:#fff}
-/* LOC SELECT */
+.rtind{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);font-size:10px;color:#6ee7b7;font-weight:600}
+.rtdot{width:6px;height:6px;border-radius:50%;background:#10b981;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .lsp{min-height:calc(100vh - 110px);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
 .lsb{background:var(--s);border:1px solid var(--bd);border-radius:18px;padding:28px;width:100%;max-width:460px;box-shadow:var(--sl);text-align:center}
 .lsb h2{font-size:17px;font-weight:700;margin-bottom:7px}.lsb p{color:var(--mu);font-size:13px;margin-bottom:22px}
@@ -154,7 +166,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .lo{padding:14px 18px;border-radius:11px;border:1.5px solid var(--bd);cursor:pointer;display:flex;align-items:center;gap:12px;transition:all .2s;background:var(--s2);text-align:left}
 .lo:hover{border-color:var(--ac);background:#f0f9ff;transform:translateX(4px)}
 .lo-ico{font-size:24px;flex-shrink:0}.lo-nm{font-size:13px;font-weight:700}.lo-sub{font-size:11px;color:var(--mu);margin-top:1px}
-/* EARNINGS */
 .eb{background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:var(--r);padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:11px;box-shadow:var(--sl)}
 .ebl h3{color:#7dd3fc;font-size:10px;text-transform:uppercase;letter-spacing:.8px;font-weight:700;margin-bottom:2px}
 .ebt{font-family:'Space Mono',monospace;font-size:clamp(20px,4vw,32px);font-weight:700;color:#fbbf24}
@@ -163,14 +174,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .ebs{text-align:right}.ebsl{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.4px}
 .ebsv{font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:#e2e8f0;margin-top:1px}
 .ebsc{font-size:10px;color:#64748b;margin-top:1px}
-/* STATS */
 .sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:9px;margin-bottom:14px}
 .sc{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px;box-shadow:var(--sh);position:relative;overflow:hidden}
 .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--c,var(--ac))}
 .sl2{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:5px}
 .sv{font-size:clamp(17px,2.5vw,23px);font-weight:700;font-family:'Space Mono',monospace;color:var(--c,var(--tx));line-height:1}
 .ss{font-size:10px;color:var(--mu);margin-top:3px}
-/* RATES */
 .rc{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:13px 15px;margin-bottom:14px;box-shadow:var(--sh)}
 .rc h3{font-size:13px;font-weight:700;margin-bottom:9px}
 .rgd{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:8px}
@@ -179,14 +188,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .rh{display:flex;align-items:center;gap:6px;margin-bottom:6px}.rh .ri{font-size:15px}.rn{font-size:12px;font-weight:700}
 .rr{display:flex;justify-content:space-between;font-size:11px;padding:2px 0;border-bottom:1px solid var(--bd)}.rr:last-child{border:none}
 .rk{color:var(--mu)}.rv{font-family:'Space Mono',monospace;font-weight:700;color:#d97706;font-size:10px}
-/* TABS */
 .tabs{display:flex;gap:5px;margin-bottom:14px;flex-wrap:wrap}
 .tab{padding:6px 13px;border-radius:100px;border:1px solid var(--bd);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;background:var(--s);color:var(--mu);transition:all .2s}
 .tab:hover{border-color:var(--ac);color:var(--ac)}
 .tab.active{background:var(--ac);color:#fff;border-color:var(--ac);box-shadow:0 3px 10px rgba(14,165,233,.3)}
 .tbdg{display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.25);border-radius:100px;padding:1px 6px;font-size:10px;margin-left:4px}
 .tab:not(.active) .tbdg{background:var(--bd);color:var(--tx)}
-/* LOC GRID */
 .lg{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:12px}
 .lc{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);transition:transform .2s,box-shadow .2s}
 .lc:hover{transform:translateY(-2px);box-shadow:var(--sl)}
@@ -212,7 +219,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .lcleg{display:flex;gap:9px;padding:3px 14px 10px;flex-wrap:wrap}
 .leg{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--mu)}
 .lsq{width:7px;height:7px;border-radius:2px}
-/* PANEL */
 .pnl{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:15px;box-shadow:var(--sh)}
 .srow{display:flex;gap:8px;margin-bottom:12px}
 .rl{display:flex;flex-direction:column;gap:7px}
@@ -221,12 +227,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .rsub{font-size:11px;color:var(--mu);margin-top:2px}
 .bdg{padding:2px 7px;border-radius:100px;font-size:10px;font-weight:700;text-transform:uppercase}
 .bdg-c{background:#e0f2fe;color:#0369a1}.bdg-m{background:#ede9fe;color:#5b21b6}.bdg-t{background:#d1fae5;color:#065f46}
-/* ACTIVITY */
 .al{display:flex;flex-direction:column;gap:5px;max-height:400px;overflow-y:auto;margin-top:9px}
 .ai{display:flex;gap:8px;padding:8px 10px;border-radius:7px;background:var(--s2);align-items:flex-start}
 .adot{width:7px;height:7px;border-radius:50%;margin-top:4px;flex-shrink:0}
 .atxt{font-size:12px;color:#334155;line-height:1.4}.atm{font-family:'Space Mono',monospace;font-size:10px;color:var(--mu);margin-top:2px}
-/* EARNINGS TABLE */
 .elg{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:8px;margin-bottom:14px}
 .elc{background:var(--s2);border:1px solid var(--bd);border-radius:9px;padding:12px;position:relative;overflow:hidden}
 .elc::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--lc)}
@@ -239,7 +243,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .etbl tr:last-child td{border:none}.etbl tr:hover td{background:#f8fafc}
 .epl{font-family:'Space Mono',monospace;font-size:11px;font-weight:700}
 .eam{font-family:'Space Mono',monospace;font-weight:700;color:#d97706}
-/* USER MANAGEMENT */
 .um-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
 .um-card{background:var(--s2);border:1px solid var(--bd);border-radius:12px;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;transition:box-shadow .2s}
 .um-card:hover{box-shadow:var(--sh)}
@@ -254,9 +257,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .icon-btn{width:30px;height:30px;border-radius:7px;border:1px solid var(--bd);background:var(--s);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s}
 .icon-btn:hover{border-color:var(--ac);background:#f0f9ff}
 .icon-btn.del:hover{border-color:#ef4444;background:#fef2f2}
-.add-user-btn{display:flex;align-items:center;gap:7px;padding:9px 15px;border-radius:9px;border:1.5px dashed var(--bd);background:var(--s2);cursor:pointer;font-size:13px;font-weight:600;color:var(--mu);transition:all .2s;margin-bottom:14px}
-.add-user-btn:hover{border-color:var(--ac);color:var(--ac);background:#f0f9ff}
-/* MODALS */
 .ov{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
 .mo{background:var(--s);border:1px solid var(--bd);border-radius:18px;width:100%;max-width:420px;box-shadow:var(--sl);animation:su .22s ease}
 @keyframes su{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
@@ -294,7 +294,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .rcd{font-family:'Space Mono',monospace;font-size:10px;color:var(--mu);margin-top:2px}
 .emp{text-align:center;padding:30px 20px;color:var(--mu)}
 .emp .ei{font-size:36px;margin-bottom:7px}.emp p{font-size:12px}
-/* REPORTS */
 .rpl3{display:grid;grid-template-columns:245px 1fr;gap:13px;align-items:start}
 @media(max-width:720px){.rpl3{grid-template-columns:1fr}}
 .rsb{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:14px;box-shadow:var(--sh);position:sticky;top:14px}
@@ -349,14 +348,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .rtbl tr:last-child td{border:none}.rtbl tr:hover td{background:#f8fafc}
 .nod{text-align:center;padding:24px;color:var(--mu);font-size:12px}
 .nod .ni{font-size:30px;margin-bottom:7px}
-/* TOAST */
 .toast-wrap{position:fixed;bottom:20px;right:20px;z-index:999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .toast{padding:10px 16px;border-radius:10px;font-size:12px;font-weight:600;box-shadow:var(--sl);animation:tin .3s ease;max-width:320px;pointer-events:all}
 .toast-ok{background:#0f172a;color:#6ee7b7;border:1px solid rgba(16,185,129,.3)}
 .toast-err{background:#0f172a;color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
 .toast-info{background:#0f172a;color:#7dd3fc;border:1px solid rgba(14,165,233,.3)}
 @keyframes tin{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-/* LOADING SPINNER */
 .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes sp{to{transform:rotate(360deg)}}
 .dbg{background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:9px 11px;font-size:11px;color:#0369a1;margin-top:10px}
@@ -417,12 +414,34 @@ function DonutChart({data,size=110}){
 }
 
 // ─── REPORTS PANEL ───────────────────────────────────────────────────────────
-function ReportsPanel({allTxns}){
+// Fetches its own data directly from Supabase — always shows latest records
+function ReportsPanel(){
   const [from,setFrom]=useState(dAgo(6));
   const [to,setTo]=useState(todayStr());
   const [preset,setPreset]=useState("week");
   const [locF,setLocF]=useState({compound:true,quality:true,motopark:true});
   const [vtF,setVtF]=useState({car:true,motorcycle:true,tricycle:true});
+  const [txns,setTxns]=useState([]);
+  const [fetching,setFetching]=useState(false);
+
+  // fetch whenever date range changes
+  useEffect(()=>{
+    let cancelled=false;
+    async function fetchData(){
+      setFetching(true);
+      try{
+        const{data,error}=await sb.from("transactions")
+          .select("*")
+          .gte("checkout_at",from+"T00:00:00")
+          .lte("checkout_at",to+"T23:59:59")
+          .order("checkout_at",{ascending:false});
+        if(!cancelled&&!error&&data) setTxns(data);
+      }catch(e){console.error("Reports fetch error:",e);}
+      if(!cancelled) setFetching(false);
+    }
+    fetchData();
+    return()=>{cancelled=true;};
+  },[from,to]);
 
   function applyPreset(p){
     setPreset(p);
@@ -432,44 +451,46 @@ function ReportsPanel({allTxns}){
     else if(p==="month"){setFrom(dAgo(29));setTo(todayStr());}
   }
 
-  const filtered=useMemo(()=>allTxns.filter(e=>{
-    const d=dOnly(e.checkout_time||e.created_at);
-    return d>=from&&d<=to&&locF[e.loc_id]&&vtF[e.vtype];
-  }),[allTxns,from,to,locF,vtF]);
+  const filtered=useMemo(()=>txns.filter(e=>{
+    const d=dOnly(e.checkout_at||e.checkout_time||e.checkin_at||e.checkin_time);
+    if(!d)return false;
+    return d>=from&&d<=to&&locF[e.loc_id]!==false&&vtF[e.vtype]!==false;
+  }),[txns,from,to,locF,vtF]);
 
-  const total=filtered.reduce((s,e)=>s+Number(e.fee),0);
+  const total=filtered.reduce((s,e)=>s+Number(e.fee||0),0);
   const cnt=filtered.length;
   const avg=cnt>0?Math.round(total/cnt):0;
   const ovrCnt=filtered.filter(e=>e.overnight).length;
-  const days=new Set(filtered.map(e=>dOnly(e.checkout_time||e.created_at))).size;
+  const days=new Set(filtered.map(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at))).size;
   const avgD=days>0?Math.round(total/days):0;
 
   const dayRange=[];let cur=new Date(from);const end=new Date(to);
   while(cur<=end){dayRange.push(cur.toISOString().split("T")[0]);cur=new Date(cur);cur.setDate(cur.getDate()+1);}
-  const dayMap={};filtered.forEach(e=>{const d=dOnly(e.checkout_time||e.created_at);dayMap[d]=(dayMap[d]||0)+Number(e.fee);});
+  const dayMap={};filtered.forEach(e=>{const d=dOnly(e.checkout_at||e.checkout_time||e.checkin_at);dayMap[d]=(dayMap[d]||0)+Number(e.fee||0);});
   const dayData=dayRange.map(d=>({label:new Date(d).toLocaleDateString("en-PH",{month:"short",day:"numeric"}),val:dayMap[d]||0}));
   const maxDay=Math.max(...dayData.map(d=>d.val),1);
 
-  const byLoc=LOCS.map(l=>{const t=filtered.filter(e=>e.loc_id===l.id).reduce((s,e)=>s+Number(e.fee),0);const c=filtered.filter(e=>e.loc_id===l.id).length;return{...l,total:t,count:c};});
+  const byLoc=LOCS.map(l=>{const t=filtered.filter(e=>e.loc_id===l.id).reduce((s,e)=>s+Number(e.fee||0),0);const c=filtered.filter(e=>e.loc_id===l.id).length;return{...l,total:t,count:c};});
   const maxL=Math.max(...byLoc.map(l=>l.total),1);
-  const byV=Object.entries(VT).map(([k,v])=>{const t=filtered.filter(e=>e.vtype===k).reduce((s,e)=>s+Number(e.fee),0);const c=filtered.filter(e=>e.vtype===k).length;return{key:k,...v,total:t,count:c};});
-  const cashMap={};filtered.forEach(e=>{cashMap[e.cashier]=cashMap[e.cashier]||{name:e.cashier,total:0,count:0};cashMap[e.cashier].total+=Number(e.fee);cashMap[e.cashier].count++;});
+  const byV=Object.entries(VT).map(([k,v])=>{const t=filtered.filter(e=>e.vtype===k).reduce((s,e)=>s+Number(e.fee||0),0);const c=filtered.filter(e=>e.vtype===k).length;return{key:k,...v,total:t,count:c};});
+  const cashMap={};filtered.forEach(e=>{const k=e.cashier||"Unknown";cashMap[k]=cashMap[k]||{name:k,total:0,count:0};cashMap[k].total+=Number(e.fee||0);cashMap[k].count++;});
   const byCash=Object.values(cashMap).sort((a,b)=>b.total-a.total);
   const maxC=Math.max(...byCash.map(c=>c.total),1);
 
   const HOURS=[7,8,9,10,11,12,13,14,15,16,17,18,19,20];
   const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const grid={};HOURS.forEach(h=>DAYS.forEach((_,di)=>{grid[`${h}-${di}`]=0;}));
-  filtered.forEach(e=>{const d=new Date(e.checkout_time||e.created_at);const h=d.getHours();const dow=(d.getDay()+6)%7;if(h>=7&&h<=20)grid[`${h}-${dow}`]=(grid[`${h}-${dow}`]||0)+1;});
+  filtered.forEach(e=>{const d=new Date(e.checkout_at||e.checkout_time||e.checkin_at);const h=d.getHours();const dow=(d.getDay()+6)%7;if(h>=7&&h<=20)grid[`${h}-${dow}`]=(grid[`${h}-${dow}`]||0)+1;});
   const maxP=Math.max(...Object.values(grid),1);
 
-  const plateMap={};filtered.forEach(e=>{plateMap[e.plate]=plateMap[e.plate]||{plate:e.plate,count:0,total:0,vtype:e.vtype};plateMap[e.plate].count++;plateMap[e.plate].total+=Number(e.fee);});
+  const plateMap={};filtered.forEach(e=>{plateMap[e.plate]=plateMap[e.plate]||{plate:e.plate,count:0,total:0,vtype:e.vtype};plateMap[e.plate].count++;plateMap[e.plate].total+=Number(e.fee||0);});
   const topP=Object.values(plateMap).sort((a,b)=>b.count-a.count).slice(0,8);
 
   return(
     <div className="rpl3">
       <div className="rsb">
         <h3>📊 Report Filters</h3>
+        {fetching&&<div style={{background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8,padding:"7px 10px",fontSize:11,color:"#0369a1",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span className="spin" style={{borderTopColor:"#0ea5e9",borderColor:"rgba(14,165,233,.3)"}}/>Fetching…</div>}
         <div className="rsec">
           <div className="rst">Quick Presets</div>
           {[{k:"today",l:"Today"},{k:"yesterday",l:"Yesterday"},{k:"week",l:"Last 7 Days"},{k:"month",l:"Last 30 Days"},{k:"custom",l:"Custom Range"}].map(p=>(
@@ -492,19 +513,20 @@ function ReportsPanel({allTxns}){
           <div className="rchk">{Object.entries(VT).map(([k,v])=>(<label className="rck" key={k}><input type="checkbox" checked={!!vtF[k]} onChange={e=>setVtF(p=>({...p,[k]:e.target.checked}))}/>{v.icon} {v.label}</label>))}</div>
         </div>
         <div style={{padding:"9px 0 3px",borderTop:"1px solid var(--bd)",marginTop:3,fontSize:11,color:"var(--mu)",textAlign:"center"}}>
-          <b style={{color:"var(--tx)"}}>{cnt}</b> transactions
+          <b style={{color:"var(--tx)"}}>{cnt}</b> shown · <b style={{color:"var(--tx)"}}>{txns.length}</b> loaded
         </div>
       </div>
+
       <div className="rmain">
         <div className="rkpis">
           <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Revenue</div><div className="kv">{P(total)}</div><div className="ks">{cnt} txn</div></div>
           <div className="rkpi" style={{"--kc":"#0ea5e9"}}><div className="kl">Daily Average</div><div className="kv">{P(avgD)}</div><div className="ks">{days} day{days!==1?"s":""}</div></div>
           <div className="rkpi" style={{"--kc":"#10b981"}}><div className="kl">Avg/Txn</div><div className="kv">{P(avg)}</div><div className="ks">per vehicle</div></div>
-          <div className="rkpi" style={{"--kc":"#8b5cf6"}}><div className="kl">Overnight</div><div className="kv">{ovrCnt}</div><div className="ks">{P(filtered.filter(e=>e.overnight).reduce((s,e)=>s+Number(e.fee),0))}</div></div>
+          <div className="rkpi" style={{"--kc":"#8b5cf6"}}><div className="kl">Overnight</div><div className="kv">{ovrCnt}</div><div className="ks">{P(filtered.filter(e=>e.overnight).reduce((s,e)=>s+Number(e.fee||0),0))}</div></div>
         </div>
         <div className="rcc">
           <h4>📈 Daily Revenue Trend</h4>
-          {dayData.length===0?<div className="nod"><div className="ni">📭</div>No data</div>:(
+          {fetching?<div className="nod"><div className="ni">⏳</div>Loading…</div>:dayData.length===0?<div className="nod"><div className="ni">📭</div>No data</div>:(
             <div className="dc2">{dayData.map((d,i)=>(<div className="dr" key={i}><div className="dlbl">{d.label}</div><div className="dtr"><div className="dfi" style={{width:`${(d.val/maxDay)*100}%`}}/></div><div className="dv">{d.val>0?P(d.val):"—"}</div></div>))}</div>
           )}
         </div>
@@ -546,20 +568,21 @@ function ReportsPanel({allTxns}){
             <h4 style={{margin:0}}>📄 Transaction Log</h4>
             <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}</span>
           </div>
-          {filtered.length===0?<div className="nod"><div className="ni">📭</div>No transactions</div>:(
-            <div style={{overflowX:"auto",maxHeight:340,overflowY:"auto"}}><table className="rtbl">
+          {fetching?<div className="nod"><div className="ni">⏳</div>Loading transactions…</div>:filtered.length===0?<div className="nod"><div className="ni">📭</div>No transactions found</div>:(
+            <div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table className="rtbl">
               <thead><tr><th>Date/Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Dur</th><th>Type</th><th>Checked In By</th><th>Checked Out By</th><th>Amount</th></tr></thead>
-              <tbody>{[...filtered].sort((a,b)=>new Date(b.checkout_time||b.created_at)-new Date(a.checkout_time||a.created_at)).map((e,i)=>(
+              <tbody>{[...filtered].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).map((e,i)=>(
                 <tr key={i}>
-                  <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_time||e.created_at)}</td>
+                  <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_at||e.checkout_time||e.checkin_at)}</td>
                   <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#7c3aed"}}>{e.ticket_no||"—"}</td>
                   <td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{e.plate}</span></td>
                   <td>{VT[e.vtype]?.icon} {VT[e.vtype]?.label}</td>
-                  <td style={{fontSize:10}}>{LOCS.find(l=>l.id===e.loc_id)?.short}</td>
-                  <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur}</td>
+                  <td style={{fontSize:10}}>{LOCS.find(l=>l.id===e.loc_id)?.short||e.loc_id}</td>
+                  <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur||e.duration||"—"}</td>
                   <td>{e.overnight?<span style={{background:"#ede9fe",color:"#5b21b6",padding:"1px 5px",borderRadius:100,fontSize:9,fontWeight:700}}>🌙</span>:<span style={{background:"#f0f9ff",color:"#0369a1",padding:"1px 5px",borderRadius:100,fontSize:9,fontWeight:700}}>REG</span>}</td>
-                  <td style={{fontSize:10,color:"var(--mu)"}}>{(e.checkin_by||"—").split(" ")[0]}</td> <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
-                  <td><span className="eam">{P(e.fee)}</span></td>
+                  <td style={{fontSize:10,color:"var(--mu)"}}>{(e.checkin_by||"—").split(" ")[0]}</td>
+                  <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
+                  <td><span className="eam">{P(e.fee||0)}</span></td>
                 </tr>
               ))}</tbody>
             </table></div>
@@ -574,7 +597,7 @@ function ReportsPanel({allTxns}){
 function UserManagement({currentUser,toast}){
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [modal,setModal]=useState(null); // null | 'create' | 'edit' | 'passwd' | 'delete'
+  const [modal,setModal]=useState(null);
   const [target,setTarget]=useState(null);
   const [saving,setSaving]=useState(false);
   const [form,setForm]=useState({name:"",username:"",password:"",confirm:"",role:"cashier"});
@@ -610,49 +633,36 @@ function UserManagement({currentUser,toast}){
   }
 
   async function doCreate(){
-    if(!validate("create"))return;
-    setSaving(true);
-    // Check username unique
+    if(!validate("create"))return;setSaving(true);
     const{data:existing}=await sb.from("users").select("id").eq("username",form.username.trim()).maybeSingle();
     if(existing){setErrs({username:"Username already taken"});setSaving(false);return;}
     const{error}=await sb.from("users").insert({name:form.name.trim(),username:form.username.trim(),password:form.password,role:form.role});
-    setSaving(false);
-    if(error){toast("Failed to create user: "+error.message,"err");return;}
-    toast(`✅ User "${form.name.trim()}" created successfully`,"ok");
-    setModal(null);fetchUsers();
+    setSaving(false);if(error){toast("Failed to create user: "+error.message,"err");return;}
+    toast(`✅ User "${form.name.trim()}" created`,"ok");setModal(null);fetchUsers();
   }
 
   async function doEdit(){
-    if(!validate("edit"))return;
-    setSaving(true);
-    // Check username unique (excluding self)
+    if(!validate("edit"))return;setSaving(true);
     const{data:existing}=await sb.from("users").select("id").eq("username",form.username.trim()).neq("id",target.id).maybeSingle();
     if(existing){setErrs({username:"Username already taken"});setSaving(false);return;}
     const{error}=await sb.from("users").update({name:form.name.trim(),username:form.username.trim(),role:form.role}).eq("id",target.id);
-    setSaving(false);
-    if(error){toast("Failed to update: "+error.message,"err");return;}
-    toast(`✅ User "${form.name.trim()}" updated`,"ok");
-    setModal(null);fetchUsers();
+    setSaving(false);if(error){toast("Failed to update: "+error.message,"err");return;}
+    toast(`✅ User "${form.name.trim()}" updated`,"ok");setModal(null);fetchUsers();
   }
 
   async function doPasswd(){
-    if(!validate("passwd"))return;
-    setSaving(true);
+    if(!validate("passwd"))return;setSaving(true);
     const{error}=await sb.from("users").update({password:form.password}).eq("id",target.id);
-    setSaving(false);
-    if(error){toast("Failed to update password: "+error.message,"err");return;}
-    toast(`🔑 Password updated for ${target.name}`,"ok");
-    setModal(null);
+    setSaving(false);if(error){toast("Failed to update password: "+error.message,"err");return;}
+    toast(`🔑 Password updated for ${target.name}`,"ok");setModal(null);
   }
 
   async function doDelete(){
     if(target.id===currentUser.id){toast("You cannot delete your own account","err");setModal(null);return;}
     setSaving(true);
     const{error}=await sb.from("users").delete().eq("id",target.id);
-    setSaving(false);
-    if(error){toast("Failed to delete: "+error.message,"err");return;}
-    toast(`🗑️ User "${target.name}" deleted`,"ok");
-    setModal(null);fetchUsers();
+    setSaving(false);if(error){toast("Failed to delete: "+error.message,"err");return;}
+    toast(`🗑️ User "${target.name}" deleted`,"ok");setModal(null);fetchUsers();
   }
 
   const roleColors={admin:"#fee2e2",cashier:"#d1fae5",attendant:"#ede9fe"};
@@ -661,16 +671,10 @@ function UserManagement({currentUser,toast}){
   return(
     <div className="pnl">
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:9}}>
-        <div>
-          <div style={{fontSize:14,fontWeight:700}}>👥 User Management</div>
-          <div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{users.length} users in system</div>
-        </div>
+        <div><div style={{fontSize:14,fontWeight:700}}>👥 User Management</div><div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>{users.length} users in system</div></div>
         <button className="btn bp" style={{flex:"none",padding:"9px 16px"}} onClick={openCreate}>＋ Add New User</button>
       </div>
-
-      {loading?(
-        <div className="emp"><div className="ei">⏳</div><p>Loading users…</p></div>
-      ):(
+      {loading?<div className="emp"><div className="ei">⏳</div><p>Loading users…</p></div>:(
         <div className="um-grid">
           {users.map(u=>(
             <div className="um-card" key={u.id}>
@@ -678,8 +682,7 @@ function UserManagement({currentUser,toast}){
                 <div className="um-av" style={{background:roleColors[u.role]||"#f1f5f9"}}>{roleIcons[u.role]||"👤"}</div>
                 <div style={{minWidth:0}}>
                   <div className="um-nm" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                    {u.name}
-                    {u.id===currentUser.id&&<span style={{fontSize:9,background:"#d1fae5",color:"#065f46",padding:"1px 5px",borderRadius:100}}>● You</span>}
+                    {u.name}{u.id===currentUser.id&&<span style={{fontSize:9,background:"#d1fae5",color:"#065f46",padding:"1px 5px",borderRadius:100}}>● You</span>}
                   </div>
                   <div className="um-un">@{u.username}</div>
                   <div style={{marginTop:3}}><span className={`urb urb-${u.role}`}>{u.role}</span></div>
@@ -694,125 +697,10 @@ function UserManagement({currentUser,toast}){
           ))}
         </div>
       )}
-
-      {/* CREATE USER MODAL */}
-      {modal==="create"&&(
-        <div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
-          <div className="mo">
-            <div className="mh"><h2>➕ Create New User</h2><p>Add a new staff account to the system</p></div>
-            <div className="mb">
-              <div className="fg">
-                <label className="fl">Full Name *</label>
-                <input className={`fi ${errs.name?"fi-err":""}`} placeholder="e.g. Maria Santos" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
-                {errs.name&&<div className="ferr">{errs.name}</div>}
-              </div>
-              <div className="fg">
-                <label className="fl">Username *</label>
-                <input className={`fi ${errs.username?"fi-err":""}`} placeholder="e.g. maria.santos" value={form.username} onChange={e=>setForm(p=>({...p,username:e.target.value.toLowerCase().replace(/\s/g,"")}))}/>
-                {errs.username&&<div className="ferr">{errs.username}</div>}
-              </div>
-              <div className="fg">
-                <label className="fl">Role *</label>
-                <div className="rrow">
-                  {["admin","cashier","attendant"].map(r=><div key={r} className={`rbt ${form.role===r?"active":""}`} onClick={()=>setForm(p=>({...p,role:r}))}>{roleIcons[r]} {r}</div>)}
-                </div>
-              </div>
-              <div className="fg">
-                <label className="fl">Password *</label>
-                <input className={`fi ${errs.password?"fi-err":""}`} type="password" placeholder="Min 6 characters" value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))}/>
-                {errs.password&&<div className="ferr">{errs.password}</div>}
-              </div>
-              <div className="fg">
-                <label className="fl">Confirm Password *</label>
-                <input className={`fi ${errs.confirm?"fi-err":""}`} type="password" placeholder="Repeat password" value={form.confirm} onChange={e=>setForm(p=>({...p,confirm:e.target.value}))}/>
-                {errs.confirm&&<div className="ferr">{errs.confirm}</div>}
-              </div>
-            </div>
-            <div className="mf">
-              <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
-              <button className="btn bp" onClick={doCreate} disabled={saving}>{saving&&<span className="spin"/>}Create User</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT USER MODAL */}
-      {modal==="edit"&&target&&(
-        <div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
-          <div className="mo">
-            <div className="mh"><h2>✏️ Edit User</h2><p>Update details for {target.name}</p></div>
-            <div className="mb">
-              <div className="fg">
-                <label className="fl">Full Name *</label>
-                <input className={`fi ${errs.name?"fi-err":""}`} value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
-                {errs.name&&<div className="ferr">{errs.name}</div>}
-              </div>
-              <div className="fg">
-                <label className="fl">Username *</label>
-                <input className={`fi ${errs.username?"fi-err":""}`} value={form.username} onChange={e=>setForm(p=>({...p,username:e.target.value.toLowerCase().replace(/\s/g,"")}))}/>
-                {errs.username&&<div className="ferr">{errs.username}</div>}
-              </div>
-              <div className="fg">
-                <label className="fl">Role *</label>
-                <div className="rrow">
-                  {["admin","cashier","attendant"].map(r=><div key={r} className={`rbt ${form.role===r?"active":""}`} onClick={()=>setForm(p=>({...p,role:r}))}>{roleIcons[r]} {r}</div>)}
-                </div>
-              </div>
-              {target.id===currentUser.id&&<div className="dbg">⚠️ You are editing your own account. Changing your role will take effect on next login.</div>}
-            </div>
-            <div className="mf">
-              <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
-              <button className="btn bp" onClick={doEdit} disabled={saving}>{saving&&<span className="spin"/>}Save Changes</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CHANGE PASSWORD MODAL */}
-      {modal==="passwd"&&target&&(
-        <div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
-          <div className="mo">
-            <div className="mh"><h2>🔑 Change Password</h2><p>Set new password for {target.name}</p></div>
-            <div className="mb">
-              <div className="fg">
-                <label className="fl">New Password *</label>
-                <input className={`fi ${errs.password?"fi-err":""}`} type="password" placeholder="Min 6 characters" value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))} autoFocus/>
-                {errs.password&&<div className="ferr">{errs.password}</div>}
-              </div>
-              <div className="fg">
-                <label className="fl">Confirm New Password *</label>
-                <input className={`fi ${errs.confirm?"fi-err":""}`} type="password" placeholder="Repeat password" value={form.confirm} onChange={e=>setForm(p=>({...p,confirm:e.target.value}))}/>
-                {errs.confirm&&<div className="ferr">{errs.confirm}</div>}
-              </div>
-            </div>
-            <div className="mf">
-              <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
-              <button className="btn bp" onClick={doPasswd} disabled={saving}>{saving&&<span className="spin"/>}Update Password</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DELETE CONFIRM MODAL */}
-      {modal==="delete"&&target&&(
-        <div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
-          <div className="mo">
-            <div className="mh"><h2>🗑️ Delete User</h2><p>This action cannot be undone</p></div>
-            <div className="mb">
-              <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:14,textAlign:"center"}}>
-                <div style={{fontSize:28,marginBottom:6}}>{roleIcons[target.role]}</div>
-                <div style={{fontWeight:700,fontSize:14}}>{target.name}</div>
-                <div style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:"var(--mu)",margin:"3px 0"}}>@{target.username}</div>
-                <div style={{fontSize:12,color:"#dc2626",marginTop:8}}>Are you sure you want to permanently delete this user? All their login access will be removed.</div>
-              </div>
-            </div>
-            <div className="mf">
-              <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
-              <button className="btn bd2" onClick={doDelete} disabled={saving}>{saving&&<span className="spin"/>}Yes, Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {modal==="create"&&(<div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}><div className="mo"><div className="mh"><h2>➕ Create New User</h2><p>Add a new staff account</p></div><div className="mb"><div className="fg"><label className="fl">Full Name *</label><input className={`fi ${errs.name?"fi-err":""}`} placeholder="e.g. Maria Santos" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>{errs.name&&<div className="ferr">{errs.name}</div>}</div><div className="fg"><label className="fl">Username *</label><input className={`fi ${errs.username?"fi-err":""}`} placeholder="e.g. maria.santos" value={form.username} onChange={e=>setForm(p=>({...p,username:e.target.value.toLowerCase().replace(/\s/g,"")}))} />{errs.username&&<div className="ferr">{errs.username}</div>}</div><div className="fg"><label className="fl">Role *</label><div className="rrow">{["admin","cashier","attendant"].map(r=><div key={r} className={`rbt ${form.role===r?"active":""}`} onClick={()=>setForm(p=>({...p,role:r}))}>{roleIcons[r]} {r}</div>)}</div></div><div className="fg"><label className="fl">Password *</label><input className={`fi ${errs.password?"fi-err":""}`} type="password" placeholder="Min 6 characters" value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))}/>{errs.password&&<div className="ferr">{errs.password}</div>}</div><div className="fg"><label className="fl">Confirm Password *</label><input className={`fi ${errs.confirm?"fi-err":""}`} type="password" placeholder="Repeat password" value={form.confirm} onChange={e=>setForm(p=>({...p,confirm:e.target.value}))}/>{errs.confirm&&<div className="ferr">{errs.confirm}</div>}</div></div><div className="mf"><button className="btn bg" onClick={()=>setModal(null)}>Cancel</button><button className="btn bp" onClick={doCreate} disabled={saving}>{saving&&<span className="spin"/>}Create User</button></div></div></div>)}
+      {modal==="edit"&&target&&(<div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}><div className="mo"><div className="mh"><h2>✏️ Edit User</h2><p>Update details for {target.name}</p></div><div className="mb"><div className="fg"><label className="fl">Full Name *</label><input className={`fi ${errs.name?"fi-err":""}`} value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>{errs.name&&<div className="ferr">{errs.name}</div>}</div><div className="fg"><label className="fl">Username *</label><input className={`fi ${errs.username?"fi-err":""}`} value={form.username} onChange={e=>setForm(p=>({...p,username:e.target.value.toLowerCase().replace(/\s/g,"")}))} />{errs.username&&<div className="ferr">{errs.username}</div>}</div><div className="fg"><label className="fl">Role *</label><div className="rrow">{["admin","cashier","attendant"].map(r=><div key={r} className={`rbt ${form.role===r?"active":""}`} onClick={()=>setForm(p=>({...p,role:r}))}>{roleIcons[r]} {r}</div>)}</div></div>{target.id===currentUser.id&&<div className="dbg">⚠️ You are editing your own account. Role changes take effect on next login.</div>}</div><div className="mf"><button className="btn bg" onClick={()=>setModal(null)}>Cancel</button><button className="btn bp" onClick={doEdit} disabled={saving}>{saving&&<span className="spin"/>}Save Changes</button></div></div></div>)}
+      {modal==="passwd"&&target&&(<div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}><div className="mo"><div className="mh"><h2>🔑 Change Password</h2><p>Set new password for {target.name}</p></div><div className="mb"><div className="fg"><label className="fl">New Password *</label><input className={`fi ${errs.password?"fi-err":""}`} type="password" placeholder="Min 6 characters" value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))} autoFocus/>{errs.password&&<div className="ferr">{errs.password}</div>}</div><div className="fg"><label className="fl">Confirm New Password *</label><input className={`fi ${errs.confirm?"fi-err":""}`} type="password" placeholder="Repeat password" value={form.confirm} onChange={e=>setForm(p=>({...p,confirm:e.target.value}))}/>{errs.confirm&&<div className="ferr">{errs.confirm}</div>}</div></div><div className="mf"><button className="btn bg" onClick={()=>setModal(null)}>Cancel</button><button className="btn bp" onClick={doPasswd} disabled={saving}>{saving&&<span className="spin"/>}Update Password</button></div></div></div>)}
+      {modal==="delete"&&target&&(<div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}><div className="mo"><div className="mh"><h2>🗑️ Delete User</h2><p>This action cannot be undone</p></div><div className="mb"><div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:14,textAlign:"center"}}><div style={{fontSize:28,marginBottom:6}}>{roleIcons[target.role]}</div><div style={{fontWeight:700,fontSize:14}}>{target.name}</div><div style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:"var(--mu)",margin:"3px 0"}}>@{target.username}</div><div style={{fontSize:12,color:"#dc2626",marginTop:8}}>Are you sure you want to permanently delete this user?</div></div></div><div className="mf"><button className="btn bg" onClick={()=>setModal(null)}>Cancel</button><button className="btn bd2" onClick={doDelete} disabled={saving}>{saving&&<span className="spin"/>}Yes, Delete</button></div></div></div>)}
     </div>
   );
 }
@@ -829,72 +717,129 @@ function TDMHParking(){
   const [sel,setSel]         = useState(null);
   const [form,setForm]       = useState({plate:"",name:"",vtype:"car"});
   const [search,setSearch]   = useState("");
-  const [txns,setTxns]       = useState([]);   // all transactions from DB
+  const [txns,setTxns]       = useState([]);
   const [actLog,setActLog]   = useState([]);
   const [clock,setClock]     = useState(new Date());
   const [receipt,setReceipt] = useState(null);
   const [lf,setLf]           = useState({username:"",password:"",err:"",loading:false});
   const [dbReady,setDbReady] = useState(false);
+  const [rtConnected,setRtConnected] = useState(false);
 
   // clock
   useEffect(()=>{const t=setInterval(()=>setClock(new Date()),1000);return()=>clearInterval(t);},[]);
 
-  // init DB + load slots + load txns
+  // ── ONE-TIME DB SETUP (seed slots if empty) ──────────────────────────────
   useEffect(()=>{
-    async function init(){
+    async function setup(){
       try{
-        // seed slots if empty
         const{data:existing}=await sb.from("slots").select("id").limit(1);
         if(!existing||existing.length===0){
           const allSlots=[];
-          LOCS.forEach(loc=>{(LOC_SLOTS[loc.id]||[]).forEach(({type,total})=>{for(let i=1;i<=total;i++)allSlots.push({id:`${loc.id}-${type}-${i}`,loc_id:loc.id,type,number:i,occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null});});});
+          LOCS.forEach(loc=>{(LOC_SLOTS[loc.id]||[]).forEach(({type,total})=>{for(let i=1;i<=total;i++)allSlots.push({id:`${loc.id}-${type}-${i}`,loc_id:loc.id,type,number:i,occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null,v_checkin_by:null});});});
           await sb.from("slots").insert(allSlots);
         }
-        // load slots
-        const{data:slotsData}=await sb.from("slots").select("*");
-        if(slotsData){
-          const sd={};LOCS.forEach(l=>{sd[l.id]=[];});
-          slotsData.forEach(s=>{
-            if(sd[s.loc_id])sd[s.loc_id].push({
-              id:s.id,locId:s.loc_id,type:s.type,number:s.number,occupied:s.occupied,
-              vehicle:s.occupied?{plate:s.v_plate,name:s.v_name,vtype:s.v_vtype,checkin:s.v_checkin,ticketNo:s.v_ticket,checkinBy:s.v_checkin_by}:null
-            });
-          });
-          LOCS.forEach(l=>{sd[l.id].sort((a,b)=>a.number-b.number);});
-          setSlots(sd);
-        }
-        // load txns (last 90 days)
-        const since=dAgo(89);
-        const{data:txnData}=await sb.from("transactions").select("*").gte("created_at",since+"T00:00:00").order("created_at",{ascending:false});
-        setTxns(txnData||[]);
         document.getElementById("sst").textContent="Ready!";
         setDbReady(true);
       }catch(e){
-        document.getElementById("sst").textContent="Database error — check your Supabase config";
+        document.getElementById("sst").textContent="Database error — check Supabase config";
         console.error(e);
       }
     }
-    init();
+    setup();
   },[]);
 
-  // hide splash when ready
+  // hide splash
   useEffect(()=>{
     if(dbReady){
       setTimeout(()=>{const s=document.getElementById("splash");if(s){s.style.opacity="0";setTimeout(()=>s.remove(),600);}},600);
     }
   },[dbReady]);
 
+  // ── LOAD DATA + REALTIME on every login ─────────────────────────────────
+  useEffect(()=>{
+    if(!user) return;
+
+    async function loadData(){
+      try{
+        // load slots
+        const{data:slotsData}=await sb.from("slots").select("*");
+        if(slotsData){
+          const sd={};LOCS.forEach(l=>{sd[l.id]=[];});
+          slotsData.forEach(s=>{if(sd[s.loc_id])sd[s.loc_id].push(mapSlot(s));});
+          LOCS.forEach(l=>{sd[l.id].sort((a,b)=>a.number-b.number);});
+          setSlots(sd);
+        }
+        // load txns last 90 days
+        const since=dAgo(89);
+        const{data:txnData}=await sb.from("transactions").select("*").gte("checkout_at",since+"T00:00:00").order("checkout_at",{ascending:false});
+        setTxns(txnData||[]);
+        // seed ticket counter from latest ticket in DB so we never duplicate
+        await seedTicketCounter();
+      }catch(e){console.error("Data load error:",e);}
+    }
+    loadData();
+
+    // ── REALTIME: slots ──────────────────────────────────────────────────
+    const slotSub=sb.channel(`slots-${user.id}`)
+      .on("postgres_changes",{event:"*",schema:"public",table:"slots"},payload=>{
+        const s=payload.new;
+        if(!s||!s.loc_id)return;
+        const mapped=mapSlot(s);
+        setSlots(prev=>{
+          const updated={...prev};
+          if(!updated[s.loc_id])updated[s.loc_id]=[];
+          const idx=updated[s.loc_id].findIndex(x=>x.id===s.id);
+          if(idx>=0){
+            const copy=[...updated[s.loc_id]];
+            copy[idx]=mapped;
+            updated[s.loc_id]=copy;
+          }else{
+            updated[s.loc_id]=[...updated[s.loc_id],mapped].sort((a,b)=>a.number-b.number);
+          }
+          return updated;
+        });
+      })
+      .subscribe(status=>{
+        if(status==="SUBSCRIBED"){setRtConnected(true);console.log("✅ Slots realtime connected");}
+      });
+
+    // ── REALTIME: transactions ───────────────────────────────────────────
+    const txnSub=sb.channel(`txns-${user.id}`)
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"transactions"},payload=>{
+        const t=payload.new;
+        if(!t)return;
+        setTxns(prev=>{
+          if(prev.find(x=>x.id===t.id))return prev;
+          return[t,...prev];
+        });
+        // only show toast/log if it came from another device (different cashier or same but different session is fine)
+        const locName=LOCS.find(l=>l.id===t.loc_id)?.name||t.loc_id;
+        addLog(`[RT] ${t.plate} checked out from ${locName} · ${P(t.fee||0)} · by ${t.cashier||"—"}`,"#6366f1");
+        toast(`📡 ${t.plate} checked out — ${P(t.fee||0)}`,"info");
+      })
+      .subscribe(status=>{
+        if(status==="SUBSCRIBED")console.log("✅ Transactions realtime connected");
+      });
+
+    return()=>{
+      sb.removeChannel(slotSub);
+      sb.removeChannel(txnSub);
+      setRtConnected(false);
+      console.log("🔌 Realtime unsubscribed");
+    };
+  },[user]);
+
   const perms   = user ? PERMS[user.role] : {};
   const all     = Object.values(slots).flat();
-  const todayE  = txns.filter(e=>dOnly(e.checkout_time||e.created_at)===todayStr());
-  const todayT  = todayE.reduce((s,e)=>s+Number(e.fee),0);
+  const todayE  = txns.filter(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at)===todayStr());
+  const todayT  = todayE.reduce((s,e)=>s+Number(e.fee||0),0);
   const totOcc  = all.filter(s=>s.occupied).length;
   const searchSlots = (user?.role==="attendant"&&attLoc) ? (slots[attLoc]||[]) : all;
   const sr = search.length>1
     ? searchSlots.filter(s=>s.occupied&&(s.vehicle?.plate?.toLowerCase().includes(search.toLowerCase())||s.vehicle?.name?.toLowerCase().includes(search.toLowerCase()))).map(s=>({...s,locName:LOCS.find(l=>l.id===s.locId)?.name}))
     : [];
 
-  function addLog(msg,color){setActLog(p=>[{id:Date.now(),msg,color,time:new Date().toISOString()},...p.slice(0,99)]);}
+  function addLog(msg,color){setActLog(p=>[{id:Date.now(),msg,color,time:new Date().toISOString()},...p.slice(0,199)]);}
 
   async function doLogin(){
     setLf(p=>({...p,loading:true,err:""}));
@@ -902,7 +847,15 @@ function TDMHParking(){
     if(error||!data){setLf(p=>({...p,loading:false,err:"Invalid username or password."}));return;}
     setUser(data);setTab("overview");setLf(p=>({...p,loading:false}));
   }
-  function doLogout(){if(user?.role==="attendant")setAttLoc(null);setUser(null);setLf({username:"",password:"",err:"",loading:false});}
+
+  function doLogout(){
+    if(user?.role==="attendant")setAttLoc(null);
+    setUser(null);
+    setTxns([]);
+    setActLog([]);
+    setSlots(initSlotsLocal());
+    setLf({username:"",password:"",err:"",loading:false});
+  }
 
   function openSlot(locId,slot){
     if(!perms.ci&&!perms.co)return;
@@ -913,12 +866,23 @@ function TDMHParking(){
 
   async function doCheckin(){
     if(!form.plate.trim())return;
+    const plateUpper=form.plate.toUpperCase().trim();
+    // duplicate plate check — exclude current slot
+    const allOccupied=Object.values(slots).flat().filter(s=>s.occupied);
+    const duplicate=allOccupied.find(s=>s.vehicle?.plate===plateUpper&&s.id!==sel.id);
+    if(duplicate){
+      const dupLoc=LOCS.find(l=>l.id===duplicate.locId);
+      toast(`⚠️ ${plateUpper} is already parked at ${dupLoc?.name} — Slot #${duplicate.number}`,"err");
+      return;
+    }
     const l=sel.locId;const tix=nextTix();const now=new Date().toISOString();
-    const vehicle={plate:form.plate.toUpperCase().trim(),name:form.name.trim()||"—",vtype:form.vtype,checkin:now,ticketNo:tix,checkinBy:user.name};
-    // update DB slot with flat columns
-    const{error}=await sb.from("slots").update({occupied:true,v_plate:vehicle.plate,v_name:vehicle.name,v_vtype:vehicle.vtype,v_checkin:vehicle.checkin,v_ticket:vehicle.ticketNo,v_checkin_by:vehicle.checkinBy}).eq("id",sel.id);
+    const vehicle={plate:plateUpper,name:form.name.trim()||"—",vtype:form.vtype,checkin:now,ticketNo:tix,checkinBy:user.name};
+    const{error}=await sb.from("slots").update({
+      occupied:true,v_plate:vehicle.plate,v_name:vehicle.name,v_vtype:vehicle.vtype,
+      v_checkin:vehicle.checkin,v_ticket:vehicle.ticketNo,v_checkin_by:vehicle.checkinBy
+    }).eq("id",sel.id);
     if(error){toast("Check-in failed: "+error.message,"err");return;}
-    // update local
+    // optimistic local update (realtime will also fire)
     setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:true,vehicle}:s);return c;});
     const locName=LOCS.find(x=>x.id===l)?.name;
     addLog(`${vehicle.plate} checked in @ ${locName} · Slot #${sel.number} · ${tix}`,"#10b981");
@@ -930,15 +894,20 @@ function TDMHParking(){
   async function doCheckout(){
     const v=sel.vehicle;const{fee,dur,overnight}=calcFee(v.checkin,v.vtype);
     const l=sel.locId;const locName=LOCS.find(x=>x.id===l)?.name;const tix=v.ticketNo||nextTix();
-    // save transaction to DB
-    const txn={ticket_no:tix,plate:v.plate,name:v.name,vtype:v.vtype,loc_id:l,slot_number:sel.number,fee,dur,overnight,cashier:user.name,checkin_by:sel.vehicle.checkinBy||"—",checkin_time:v.checkin,checkout_time:new Date().toISOString()};
+    const txn={
+      ticket_no:tix,plate:v.plate,name:v.name,driver_name:v.name,vtype:v.vtype,loc_id:l,
+      slot_number:sel.number,fee,dur,duration:dur,overnight,cashier:user.name,
+      checkin_by:v.checkinBy||"—",
+      checkin_time:v.checkin,checkin_at:v.checkin,
+      checkout_time:new Date().toISOString(),checkout_at:new Date().toISOString(),
+      status:"completed"
+    };
     const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
     if(txnErr){toast("Checkout failed: "+txnErr.message,"err");return;}
-    // free slot in DB
-    await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null}).eq("id",sel.id);
-    // update local state
+    await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null,v_checkin_by:null}).eq("id",sel.id);
+    // optimistic local update
     setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:false,vehicle:null}:s);return c;});
-    setTxns(p=>[txnRow,...p]);
+    setTxns(p=>{if(p.find(x=>x.id===txnRow.id))return p;return[txnRow,...p];});
     setReceipt({v,fee,dur,overnight,slot:sel,loc:LOCS.find(x=>x.id===l),ticketNo:tix});
     addLog(`${v.plate} checked out from ${locName} · ${P(fee)} · ${tix}`,"#f59e0b");
     toast(`💰 ${v.plate} checked out — ${P(fee)}`,"ok");
@@ -949,7 +918,7 @@ function TDMHParking(){
   const visLocs=(user?.role==="attendant"&&attLoc)?LOCS.filter(l=>l.id===attLoc):LOCS;
   const aLoc=attLoc?LOCS.find(l=>l.id===attLoc):null;
 
-  // ── LOGIN ──
+  // ── LOGIN ────────────────────────────────────────────────────────────────
   if(!user)return(
     <><style>{CSS}</style><Toasts/>
     <div className="lp"><div className="lb">
@@ -962,7 +931,7 @@ function TDMHParking(){
     </div></div></>
   );
 
-  // ── ATTENDANT LOC SELECT ──
+  // ── ATTENDANT LOC SELECT ─────────────────────────────────────────────────
   if(user.role==="attendant"&&!attLoc)return(
     <><style>{CSS}</style><Toasts/>
     <div className="app">
@@ -987,7 +956,13 @@ function TDMHParking(){
     </div></>
   );
 
-  // ── MAIN DASHBOARD ──
+  // ── MAIN DASHBOARD ───────────────────────────────────────────────────────
+  // duplicate plate check helper for checkin modal
+  const dupPlate = form.plate.trim().length>0
+    ? Object.values(slots).flat().find(s=>s.occupied&&s.vehicle?.plate===form.plate.toUpperCase().trim()&&s.id!==sel?.id)
+    : null;
+  const dupLoc = dupPlate ? LOCS.find(l=>l.id===dupPlate.locId) : null;
+
   return(
     <><style>{CSS}</style><Toasts/>
     <div className="app">
@@ -1002,6 +977,7 @@ function TDMHParking(){
           </div>
         </div>
         <div className="hr2">
+          {rtConnected&&<div className="rtind"><div className="rtdot"/>Live</div>}
           <div className="hck">{clock.toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div>
           <span className={`rbdg rb-${user.role}`}>{user.role==="admin"?"👑":user.role==="cashier"?"💳":"🅿️"} {user.role}</span>
           {user.role==="attendant"&&<button className="hbtn" onClick={()=>setAttLoc(null)} style={{background:"rgba(139,92,246,.2)",borderColor:"rgba(139,92,246,.4)",color:"#c4b5fd"}}>Change Location</button>}
@@ -1021,7 +997,7 @@ function TDMHParking(){
             {LOCS.map(l=>{const le=todayE.filter(e=>e.loc_id===l.id);return(
               <div className="ebs" key={l.id}>
                 <div className="ebsl">{l.icon} {l.short}</div>
-                <div className="ebsv">{P(le.reduce((s,e)=>s+Number(e.fee),0))}</div>
+                <div className="ebsv">{P(le.reduce((s,e)=>s+Number(e.fee||0),0))}</div>
                 <div className="ebsc">{le.length} txn</div>
               </div>
             );})}
@@ -1074,7 +1050,7 @@ function TDMHParking(){
             const ls=slots[loc.id]||[];const types=[...new Set(ls.map(s=>s.type))];
             const occ=ls.filter(s=>s.occupied).length;const pct=ls.length>0?Math.round(occ/ls.length*100):0;const free=ls.length-occ;
             const avCls=pct<60?"av-ok":pct<85?"av-warn":"av-full";const barC=pct<60?"#10b981":pct<85?"#f59e0b":"#ef4444";
-            const locT=todayE.filter(e=>e.loc_id===loc.id).reduce((s,e)=>s+Number(e.fee),0);
+            const locT=todayE.filter(e=>e.loc_id===loc.id).reduce((s,e)=>s+Number(e.fee||0),0);
             return(
               <div className="lc" key={loc.id}>
                 <div className="lch">
@@ -1155,24 +1131,25 @@ function TDMHParking(){
             {LOCS.map(l=>{const le=todayE.filter(e=>e.loc_id===l.id);return(
               <div className="elc" key={l.id} style={{"--lc":l.color}}>
                 <div className="elnm">{l.icon} {l.name}</div>
-                <div className="elv">{P(le.reduce((s,e)=>s+Number(e.fee),0))}</div>
+                <div className="elv">{P(le.reduce((s,e)=>s+Number(e.fee||0),0))}</div>
                 <div className="elcnt">{le.length} transactions</div>
               </div>
             );})}
           </div>
           {todayE.length===0?<div className="emp"><div className="ei">💸</div><p>No transactions today yet</p></div>:(
             <div style={{overflowX:"auto"}}><table className="etbl">
-              <thead><tr><th>Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Duration</th><th>Cashier</th><th>Amount</th></tr></thead>
-              <tbody>{[...todayE].map((e,i)=>(
+              <thead><tr><th>Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Duration</th><th>Checked In By</th><th>Checked Out By</th><th>Amount</th></tr></thead>
+              <tbody>{[...todayE].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).map((e,i)=>(
                 <tr key={i}>
-                  <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{fmtT(e.checkout_time||e.created_at)}</td>
+                  <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{fmtT(e.checkout_at||e.checkout_time||e.checkin_at)}</td>
                   <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#7c3aed"}}>{e.ticket_no||"—"}</td>
                   <td><span className="epl">{e.plate}</span></td>
                   <td>{VT[e.vtype]?.icon} {VT[e.vtype]?.label}</td>
                   <td style={{fontSize:10}}>{LOCS.find(l=>l.id===e.loc_id)?.short}</td>
-                  <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur}</td>
-                  <td style={{fontSize:10,color:"var(--mu)"}}>{e.cashier}</td>
-                  <td><span className="eam">{P(e.fee)}</span>{e.overnight&&<span style={{fontSize:9,color:"#8b5cf6",marginLeft:3}}>🌙</span>}</td>
+                  <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur||e.duration||"—"}</td>
+                  <td style={{fontSize:10,color:"var(--mu)"}}>{(e.checkin_by||"—").split(" ")[0]}</td>
+                  <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
+                  <td><span className="eam">{P(e.fee||0)}</span>{e.overnight&&<span style={{fontSize:9,color:"#8b5cf6",marginLeft:3}}>🌙</span>}</td>
                 </tr>
               ))}</tbody>
             </table></div>
@@ -1180,15 +1157,15 @@ function TDMHParking(){
         </div>
       )}
 
-      {/* REPORTS */}
-      {tab==="reports"&&perms.rep&&<ReportsPanel allTxns={txns}/>}
+      {/* REPORTS — no props needed, fetches own data */}
+      {tab==="reports"&&perms.rep&&<ReportsPanel/>}
 
       {/* ACTIVITY */}
       {tab==="activity"&&(
         <div className="pnl">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontSize:14,fontWeight:700}}>📋 Activity Log</span>
-            {actLog.length>0&&<span style={{fontSize:11,color:"var(--mu)"}}>{actLog.length} entries</span>}
+            {actLog.length>0&&<span style={{fontSize:11,color:"var(--mu)"}}>{actLog.length} entries this session</span>}
           </div>
           {actLog.length===0?<div className="emp"><div className="ei">📋</div><p>No activity this session</p></div>:(
             <div className="al">{actLog.map(a=>(<div className="ai" key={a.id}><div className="adot" style={{background:a.color}}/><div><div className="atxt">{a.msg}</div><div className="atm">{fmtT(a.time)} · {ago(a.time)}</div></div></div>))}</div>
@@ -1205,7 +1182,11 @@ function TDMHParking(){
           <div className="mo">
             <div className="mh"><h2>🚗 Vehicle Check In</h2><p>{LOCS.find(l=>l.id===sel.locId)?.name} · {sel.type==="motorcycle"?"Motorcycle":"Car"} Slot #{sel.number}</p></div>
             <div className="mb">
-              <div className="fg"><label className="fl">Plate Number *</label><input className="fi" placeholder="e.g. ABC 1234" value={form.plate} onChange={e=>setForm(p=>({...p,plate:e.target.value.toUpperCase()}))} autoFocus/></div>
+              <div className="fg">
+                <label className="fl">Plate Number *</label>
+                <input className="fi" placeholder="e.g. ABC 1234" value={form.plate} onChange={e=>setForm(p=>({...p,plate:e.target.value.toUpperCase()}))} autoFocus/>
+                {dupPlate&&<div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"7px 10px",fontSize:11,color:"#dc2626",marginTop:5}}>⚠️ Already parked at <b>{dupLoc?.name}</b> — Slot #{dupPlate.number}</div>}
+              </div>
               <div className="fg"><label className="fl">Driver / Owner Name</label><input className="fi" placeholder="Optional" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/></div>
               <div className="fg">
                 <label className="fl">Vehicle Type</label>
@@ -1216,7 +1197,7 @@ function TDMHParking(){
             </div>
             <div className="mf">
               <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
-              <button className="btn bp" onClick={doCheckin} disabled={!form.plate.trim()}>✓ Check In &amp; Print Ticket</button>
+              <button className="btn bp" onClick={doCheckin} disabled={!form.plate.trim()||!!dupPlate}>✓ Check In &amp; Print Ticket</button>
             </div>
           </div>
         </div>
@@ -1235,7 +1216,8 @@ function TDMHParking(){
                 <div className="ir"><span className="ik">Plate</span><span className="iv">{sel.vehicle.plate}</span></div>
                 <div className="ir"><span className="ik">Name</span><span className="iv">{sel.vehicle.name}</span></div>
                 <div className="ir"><span className="ik">Type</span><span className="iv">{vt?.icon} {vt?.label}</span></div>
-                <div className="ir"><span className="ik">Check-in</span><span className="iv">{fmtDT(sel.vehicle.checkin)}</span></div>
+                <div className="ir"><span className="ik">Checked In By</span><span className="iv" style={{color:"#7c3aed"}}>{sel.vehicle.checkinBy||"—"}</span></div>
+                <div className="ir"><span className="ik">Check-in Time</span><span className="iv">{fmtDT(sel.vehicle.checkin)}</span></div>
                 <div className="ir"><span className="ik">Duration</span><span className="iv">{dur}</span></div>
                 <div className="fb"><div className="fbl">Total Fee</div><div className="fbv">{P(fee)}</div><div className="fbn">{overnight?"🌙 Overnight rate (10PM–7AM)":"Regular rate applied"}</div></div>
                 <div className="phint">🖨️ Payment receipt will print automatically.</div>
@@ -1265,7 +1247,8 @@ function TDMHParking(){
                 <div className="ir"><span className="ik">Slot #</span><span className="iv">{receipt.slot.number}</span></div>
                 <div className="ir"><span className="ik">Time In</span><span className="iv">{fmtDT(receipt.v.checkin)}</span></div>
                 <div className="ir"><span className="ik">Duration</span><span className="iv">{receipt.dur}</span></div>
-                <div className="ir"><span className="ik">Cashier</span><span className="iv">{user.name}</span></div>
+                <div className="ir"><span className="ik">Checked In By</span><span className="iv">{receipt.v.checkinBy||"—"}</span></div>
+                <div className="ir"><span className="ik">Checked Out By</span><span className="iv">{user.name}</span></div>
               </div>
               <div className="fb"><div className="fbl">Amount Paid</div><div className="fbv">{P(receipt.fee)}</div><div className="fbn">{receipt.overnight?"🌙 Overnight rate":"Regular hourly rate"}</div></div>
             </div>
