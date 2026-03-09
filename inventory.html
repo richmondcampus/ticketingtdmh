@@ -2,7 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="TadocsAsset"/>
+  <meta name="application-name" content="TadocsAsset"/>
+  <meta name="theme-color" content="#0a0f1a"/>
+  <meta name="description" content="Hospital Asset Management — Taytay Doctors Multispecialty Hospital"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icon-192.png"/>
   <title>TadocsAsset — Hospital Asset Management</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏥</text></svg>"/>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -259,12 +268,78 @@
     .export-btn:hover{border-color:var(--ac2);color:var(--ac2)}
 
     @media(max-width:700px){
-      .main{padding:12px 12px 48px}
-      .header{padding:0 14px}
-      .modal{border-radius:18px 18px 0 0;max-width:100%;position:fixed;bottom:0;left:0;right:0;max-height:90vh}
+      /* Layout */
+      .main{padding:10px 10px 32px}
+      .header{padding:0 12px;height:52px}
+      .header-center{display:none}
+      .header-title{font-size:16px}
+      .header-sub{display:none}
+      .header-logo{width:28px;height:28px;font-size:12px}
+      .hbtn{padding:4px 9px;font-size:13px}
+      .live-badge{display:none}
+
+      /* Stats grid — 2 columns on mobile */
+      .stats-grid{grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}
+      .stat-card{padding:10px 12px}
+      .stat-value{font-size:22px}
+      .stat-label{font-size:11px}
+      .stat-sub{font-size:11px}
+
+      /* Toolbar — stack vertically */
+      .toolbar{flex-direction:column;align-items:stretch;gap:8px}
+      .search-wrap{width:100%}
+      .search-input{width:100%}
+      .filter-select{width:100%}
+      .export-btn{width:100%;text-align:center}
+      .add-btn{width:100%;text-align:center}
+
+      /* Category pills — scrollable row */
+      .cat-pills{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+      .cat-pill{white-space:nowrap;flex-shrink:0}
+
+      /* Table — hide less important columns */
+      table th:nth-child(3),
+      table td:nth-child(3),
+      table th:nth-child(5),
+      table td:nth-child(5),
+      table th:nth-child(6),
+      table td:nth-child(6){display:none}
+      .table-scroll{font-size:13px}
+      td,th{padding:8px 10px}
+      .td-name{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .asset-tag-badge{display:none}
+
+      /* Modal — slide up from bottom */
+      .modal{border-radius:18px 18px 0 0;max-width:100%;position:fixed;bottom:0;left:0;right:0;max-height:92vh}
       .modal-overlay{align-items:flex-end;padding:0}
-      .detail-panel{width:100%}
       .modal-grid{grid-template-columns:1fr}
+
+      /* Detail panel — full screen */
+      .detail-panel{width:100%;border-radius:0;border-left:none}
+      .dp-header{padding:14px 16px 12px}
+      .dp-body{padding:14px 16px}
+      .dp-actions{padding:12px 16px}
+      .dp-title{font-size:16px}
+
+      /* Tabs */
+      .tabs{gap:4px}
+      .tab{padding:5px 11px;font-size:13px}
+
+      /* Due banner */
+      .due-banner{flex-direction:column;gap:6px;padding:10px 12px}
+
+      /* Pagination */
+      .hbtn:disabled{opacity:.3}
+
+      /* Users grid */
+      .users-grid{grid-template-columns:1fr}
+    }
+
+    @media(max-width:400px){
+      .stats-grid{grid-template-columns:repeat(2,1fr)}
+      .stat-value{font-size:18px}
+      table th:nth-child(7),
+      table td:nth-child(7){display:none}
     }
   </style>
 </head>
@@ -1213,6 +1288,11 @@ function init(){
   if(s){ s.style.opacity='0'; setTimeout(()=>s.remove(), 400); }
   document.getElementById('app').style.display = 'block';
   render();
+}
+
+// ─── SERVICE WORKER ──────────────────────────────────────────────────────────
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
 
 init();
