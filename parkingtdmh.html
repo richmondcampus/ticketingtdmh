@@ -81,21 +81,31 @@ function initSlotsLocal(){
 }
 function calcFee(iso,vt){
   const v=VT[vt];if(!v)return{fee:0,dur:"0h 0m",overnight:false};
-  const ms=Date.now()-new Date(iso).getTime();const hrs=ms/3600000;
   const cin=new Date(iso);const cout=new Date();
-  // Build the 10PM-7AM window based on check-in date
-  const winStart=new Date(cin);winStart.setHours(22,0,0,0);
-  // If checked in after midnight (0-7AM), window started the previous evening
-  if(cin.getHours()<7){winStart.setDate(winStart.getDate()-1);}
-  const winEnd=new Date(winStart);winEnd.setDate(winEnd.getDate()+1);winEnd.setHours(7,0,0,0);
-  // Calculate how many hours the stay overlaps with the 10PM-7AM window
-  const overlapStart=Math.max(cin.getTime(),winStart.getTime());
-  const overlapEnd=Math.min(cout.getTime(),winEnd.getTime());
-  const overlapHrs=(overlapEnd-overlapStart)/3600000;
-  // Overnight if overlap with 10PM-7AM window is at least 8 hours
-  const isO=overlapHrs>=8;
-  const fee=isO?v.ovr:hrs<=v.fh?v.fr:v.fr+Math.ceil(hrs-v.fh)*v.sr;
+  const ms=cout-cin;const hrs=ms/3600000;
   const tm=Math.floor(ms/60000);
+  // Count how many 10PM-7AM windows the stay covers with at least 8hrs overlap
+  let overnightCount=0;
+  let winStart=new Date(cin);winStart.setHours(22,0,0,0);
+  if(cin.getHours()<7)winStart.setDate(winStart.getDate()-1);
+  while(winStart<cout){
+    const winEnd=new Date(winStart);winEnd.setDate(winEnd.getDate()+1);winEnd.setHours(7,0,0,0);
+    const oStart=Math.max(cin.getTime(),winStart.getTime());
+    const oEnd=Math.min(cout.getTime(),winEnd.getTime());
+    if((oEnd-oStart)/3600000>=8)overnightCount++;
+    winStart=new Date(winEnd);winStart.setHours(22,0,0,0);
+  }
+  const isO=overnightCount>0;
+  let fee;
+  if(isO){
+    // Each overnight window charged at flat rate, remaining hours at regular rate
+    const ovrHrs=overnightCount*9;
+    const regHrs=Math.max(0,hrs-ovrHrs);
+    const regFee=regHrs<=v.fh?v.fr:v.fr+Math.ceil(regHrs-v.fh)*v.sr;
+    fee=(overnightCount*v.ovr)+(regHrs>0?regFee:0);
+  }else{
+    fee=hrs<=v.fh?v.fr:v.fr+Math.ceil(hrs-v.fh)*v.sr;
+  }
   return{fee,dur:`${Math.floor(tm/60)}h ${tm%60}m`,overnight:isO};
 }
 const fmtT   =iso=>new Date(iso).toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit"});
@@ -794,7 +804,20 @@ function TDMHParking(){
         await seedTicketCounter();
       }catch(e){console.error("Data load error:",e);}
     }
+    // Expose to window so Android can trigger refresh on screen wake
+    window.loadData = loadData;
     loadData();
+
+    // Auto-refresh every 5 minutes — safety net for SIM connection drops
+    const autoRefresh = setInterval(()=>{ loadData(); }, 5 * 60 * 1000);
+
+    // Refresh when tab/app becomes visible again
+    const handleVisibility = ()=>{ if(document.visibilityState==='visible') loadData(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Refresh when SIM/internet reconnects after a drop
+    const handleOnline = ()=>{ console.log('Connection restored'); setTimeout(()=>loadData(), 2000); };
+    window.addEventListener('online', handleOnline);
 
     // ── REALTIME: slots ──────────────────────────────────────────────────
     const slotSub=sb.channel(`slots-${user.id}`)
@@ -839,6 +862,9 @@ function TDMHParking(){
       });
 
     return()=>{
+      clearInterval(autoRefresh);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
       sb.removeChannel(slotSub);
       sb.removeChannel(txnSub);
       setRtConnected(false);
