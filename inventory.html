@@ -57,6 +57,9 @@
     .app{display:grid;grid-template-rows:auto 1fr;min-height:100vh}
     .header{background:var(--bg2);border-bottom:1px solid var(--bd);padding:0 24px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
     .header-left{display:flex;align-items:center;gap:12px}
+    .header-center{position:absolute;left:50%;transform:translateX(-50%);pointer-events:none}
+    .header-greeting{font-size:14px;color:var(--tx2);pointer-events:all}
+    .header-greeting strong{color:var(--tx);font-weight:700}
     .header-logo{width:34px;height:34px;background:linear-gradient(135deg,var(--ac),var(--ac2));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
     .header-title{font-family:'DM Serif Display',serif;font-size:18px;color:var(--tx)}
     .header-sub{font-size:14px;color:var(--tx3);margin-top:1px}
@@ -519,21 +522,39 @@ async function autoUpdateStatuses(){
 // ─── EXPORT CSV ──────────────────────────────────────────────────────────────
 async function exportCSV(){
   toast('Preparing export…','info');
-  // Fetch all matching records (no pagination) respecting current filters
-  let q = sb.from('assets').select('*').order(sortCol,{ascending:sortDir==='asc'});
-  if(searchQuery) q = q.or(`name.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%,asset_tag.ilike.%${searchQuery}%,location.ilike.%${searchQuery}%,assigned_to.ilike.%${searchQuery}%`);
-  if(filterCat!=='All') q = q.eq('category',filterCat);
-  if(filterStatus!=='All' && filterStatus!=='Due Soon') q = q.eq('status',filterStatus);
-  const {data} = await q;
+  const BATCH = 1000;
+  let allData = [];
+  let from = 0;
+
+  // Build base query with current filters
+  function buildExportQ(from, to){
+    let q = sb.from('assets').select('*').order(sortCol,{ascending:sortDir==='asc'}).range(from,to);
+    if(searchQuery) q = q.or(`name.ilike.%${searchQuery}%,id.ilike.%${searchQuery}%,asset_tag.ilike.%${searchQuery}%,location.ilike.%${searchQuery}%,assigned_to.ilike.%${searchQuery}%`);
+    if(filterCat!=='All') q = q.eq('category',filterCat);
+    if(filterStatus!=='All' && filterStatus!=='Due Soon') q = q.eq('status',filterStatus);
+    return q;
+  }
+
+  // Paginate through all records in batches of 1000
+  while(true){
+    const {data, error} = await buildExportQ(from, from+BATCH-1);
+    if(error || !data || data.length===0) break;
+    allData = allData.concat(data);
+    if(data.length < BATCH) break; // last page
+    from += BATCH;
+  }
+
+  if(allData.length===0){ toast('No data to export','err'); return; }
+
   const rows = [['ID','Asset Tag','Name','Category','Status','Location','Assigned To','Cost','Purchase Date','Last Maintenance','Next Maintenance','Notes']];
-  (data||[]).forEach(a=>rows.push([a.id,a.asset_tag,a.name,a.category,a.status,a.location,a.assigned_to,a.cost,a.purchase_date,a.last_maintenance,a.next_maintenance,a.notes]));
+  allData.forEach(a=>rows.push([a.id,a.asset_tag,a.name,a.category,a.status,a.location,a.assigned_to,a.cost,a.purchase_date,a.last_maintenance,a.next_maintenance,a.notes]));
   const csv = rows.map(r=>r.map(c=>`"${(c||'').toString().replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv],{type:'text/csv'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href=url;a.download='TadocsAsset-export.csv';a.click();
   URL.revokeObjectURL(url);
-  toast(`CSV exported (${(data||[]).length} rows) ✓`);
+  toast(`CSV exported (${allData.length.toLocaleString()} rows) ✓`);
 }
 
 // ─── RENDER ───────────────────────────────────────────────────────────────────
@@ -555,7 +576,9 @@ function render(){
 }
 
 function renderHeader(){
-  const dueSoon = assets.filter(a=>getEffectiveStatus(a)==='Due Soon');
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const firstName = currentUser.name.split(' ')[0];
   return `
   <div class="header">
     <div class="header-left">
@@ -564,6 +587,9 @@ function renderHeader(){
         <div class="header-title">TadocsAsset</div>
         <div class="header-sub">Taytay Doctors Multispecialty Hospital</div>
       </div>
+    </div>
+    <div class="header-center">
+      <span class="header-greeting">${greeting}, <strong>${firstName}</strong> 👋</span>
     </div>
     <div class="header-right">
       <div class="live-badge"><div class="live-dot"></div>Live</div>
