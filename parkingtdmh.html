@@ -808,8 +808,8 @@ function TDMHParking(){
     window.loadData = loadData;
     loadData();
 
-    // Auto-refresh every 5 minutes — safety net for SIM connection drops
-    const autoRefresh = setInterval(()=>{ loadData(); }, 5 * 60 * 1000);
+    // Auto-refresh every 10 seconds — fast polling for cross-device sync
+    const autoRefresh = setInterval(()=>{ loadData(); }, 10 * 1000);
 
     // Refresh when tab/app becomes visible again
     const handleVisibility = ()=>{ if(document.visibilityState==='visible') loadData(); };
@@ -820,7 +820,7 @@ function TDMHParking(){
     window.addEventListener('online', handleOnline);
 
     // ── REALTIME: slots ──────────────────────────────────────────────────
-    const slotSub=sb.channel(`slots-${user.id}`)
+    const slotSub=sb.channel('slots-global')
       .on("postgres_changes",{event:"*",schema:"public",table:"slots"},payload=>{
         const s=payload.new;
         if(!s||!s.loc_id)return;
@@ -841,10 +841,11 @@ function TDMHParking(){
       })
       .subscribe(status=>{
         if(status==="SUBSCRIBED"){setRtConnected(true);console.log("✅ Slots realtime connected");}
+        if(status==="CLOSED"||status==="CHANNEL_ERROR"){setRtConnected(false);}
       });
 
     // ── REALTIME: transactions ───────────────────────────────────────────
-    const txnSub=sb.channel(`txns-${user.id}`)
+    const txnSub=sb.channel('txns-global')
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"transactions"},payload=>{
         const t=payload.new;
         if(!t)return;
