@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="TDMH Parking"/>
+  <meta name="theme-color" content="#0f172a"/>
+  <meta name="description" content="Taytay Doctors Multispecialty Hospital — Parking Management System"/>
   <title>TDMH Parking System</title>
+  <link rel="manifest" id="pwa-manifest"/>
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f172a'/><text y='.85em' font-size='72' x='14'>🏥</text></svg>"/>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏥</text></svg>"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -74,9 +82,18 @@ function initSlotsLocal(){
 function calcFee(iso,vt){
   const v=VT[vt];if(!v)return{fee:0,dur:"0h 0m",overnight:false};
   const ms=Date.now()-new Date(iso).getTime();const hrs=ms/3600000;
-  const cinH=new Date(iso).getHours()+new Date(iso).getMinutes()/60;
-  const coutH=new Date().getHours()+new Date().getMinutes()/60;
-  const isO=ms>=9*3600000&&cinH<=22&&coutH<=7;
+  const cin=new Date(iso);const cout=new Date();
+  // Build the 10PM-7AM window based on check-in date
+  const winStart=new Date(cin);winStart.setHours(22,0,0,0);
+  // If checked in after midnight (0-7AM), window started the previous evening
+  if(cin.getHours()<7){winStart.setDate(winStart.getDate()-1);}
+  const winEnd=new Date(winStart);winEnd.setDate(winEnd.getDate()+1);winEnd.setHours(7,0,0,0);
+  // Calculate how many hours the stay overlaps with the 10PM-7AM window
+  const overlapStart=Math.max(cin.getTime(),winStart.getTime());
+  const overlapEnd=Math.min(cout.getTime(),winEnd.getTime());
+  const overlapHrs=(overlapEnd-overlapStart)/3600000;
+  // Overnight if overlap with 10PM-7AM window is at least 8 hours
+  const isO=overlapHrs>=8;
   const fee=isO?v.ovr:hrs<=v.fh?v.fr:v.fr+Math.ceil(hrs-v.fh)*v.sr;
   const tm=Math.floor(ms/60000);
   return{fee,dur:`${Math.floor(tm/60)}h ${tm%60}m`,overnight:isO};
@@ -89,7 +106,17 @@ const P      =n=>`₱${Number(n).toLocaleString("en-PH")}`;
 const dOnly  =iso=>{try{return new Date(iso).toISOString().split("T")[0];}catch{return"";}};
 const todayStr=()=>new Date().toISOString().split("T")[0];
 const dAgo   =n=>{const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};
-let _tix=1000;const nextTix=()=>`TKT-${++_tix}`;
+let _tix=1000;
+const nextTix=()=>`TKT-${++_tix}`;
+async function seedTicketCounter(){
+  try{
+    const{data}=await sb.from("transactions").select("ticket_no").order("id",{ascending:false}).limit(1).maybeSingle();
+    if(data?.ticket_no){
+      const n=parseInt((data.ticket_no||"").replace(/[^0-9]/g,""),10);
+      if(!isNaN(n)&&n>_tix)_tix=n;
+    }
+  }catch(e){console.warn("seedTicketCounter error",e);}
+}
 
 // ─── SLOT MAPPER ────────────────────────────────────────────────────────────
 function mapSlot(s){
@@ -763,6 +790,8 @@ function TDMHParking(){
         const since=dAgo(89);
         const{data:txnData}=await sb.from("transactions").select("*").gte("checkout_at",since+"T00:00:00").order("checkout_at",{ascending:false});
         setTxns(txnData||[]);
+        // seed ticket counter from latest ticket in DB so we never duplicate
+        await seedTicketCounter();
       }catch(e){console.error("Data load error:",e);}
     }
     loadData();
@@ -1254,6 +1283,123 @@ function TDMHParking(){
 
 const root=ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(TDMHParking));
+</script>
+
+<script>
+// ─── PWA MANIFEST (injected inline) ─────────────────────────────────────────
+const manifest = {
+  name: "TDMH Parking System",
+  short_name: "TDMH Parking",
+  description: "Taytay Doctors Multispecialty Hospital — Parking Management System",
+  start_url: "./",
+  display: "standalone",
+  orientation: "any",
+  background_color: "#0f172a",
+  theme_color: "#0f172a",
+  icons: [
+    {
+      src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='80' fill='%230f172a'/><text y='.82em' font-size='380' x='66'>🏥</text></svg>",
+      sizes: "512x512",
+      type: "image/svg+xml",
+      purpose: "any maskable"
+    }
+  ]
+};
+const blob = new Blob([JSON.stringify(manifest)], {type:"application/json"});
+const manifestURL = URL.createObjectURL(blob);
+document.getElementById("pwa-manifest").setAttribute("href", manifestURL);
+
+// ─── SERVICE WORKER ──────────────────────────────────────────────────────────
+if("serviceWorker" in navigator){
+  const swCode = `
+const CACHE = "tdmh-parking-v1";
+const PRECACHE = [
+  "https://unpkg.com/react@18/umd/react.production.min.js",
+  "https://unpkg.com/react-dom@18/umd/react-dom.production.min.js",
+  "https://unpkg.com/@babel/standalone/babel.min.js",
+  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
+  "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Space+Mono:wght@400;700&display=swap"
+];
+self.addEventListener("install", e => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll(PRECACHE).catch(()=>{})).then(()=>self.skipWaiting())
+  );
+});
+self.addEventListener("activate", e => {
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
+      .then(()=>self.clients.claim())
+  );
+});
+self.addEventListener("fetch", e => {
+  // Always go network-first for Supabase API calls
+  if(e.request.url.includes("supabase.co")){
+    e.respondWith(fetch(e.request).catch(()=>new Response(JSON.stringify({error:"offline"}),{headers:{"Content-Type":"application/json"}})));
+    return;
+  }
+  // Cache-first for static assets
+  e.respondWith(
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
+      if(res.ok){
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+      }
+      return res;
+    }))
+  );
+});
+  `;
+  const swBlob = new Blob([swCode], {type:"application/javascript"});
+  const swURL = URL.createObjectURL(swBlob);
+  navigator.serviceWorker.register(swURL, {scope:"./"})
+    .then(r => console.log("✅ Service Worker registered", r.scope))
+    .catch(e => console.warn("SW registration failed:", e));
+}
+
+// ─── INSTALL BANNER ──────────────────────────────────────────────────────────
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  showInstallBanner();
+});
+
+function showInstallBanner(){
+  if(document.getElementById("pwa-banner")) return;
+  const banner = document.createElement("div");
+  banner.id = "pwa-banner";
+  banner.innerHTML = `
+    <div style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;background:#0f172a;border:1px solid #334155;border-radius:14px;padding:13px 18px;display:flex;align-items:center;gap:13px;box-shadow:0 8px 32px rgba(0,0,0,.5);max-width:360px;width:calc(100vw - 32px);font-family:'DM Sans',sans-serif;animation:pwaSlide .35s ease">
+      <div style="font-size:28px;flex-shrink:0">🏥</div>
+      <div style="flex:1;min-width:0">
+        <div style="color:#f0f9ff;font-size:13px;font-weight:700;line-height:1.3">Install TDMH Parking</div>
+        <div style="color:#64748b;font-size:11px;margin-top:2px">Add to home screen for quick access</div>
+      </div>
+      <div style="display:flex;gap:7px;flex-shrink:0">
+        <button onclick="installPWA()" style="padding:8px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,#0284c7,#0ea5e9);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Install</button>
+        <button onclick="document.getElementById('pwa-banner').remove()" style="padding:8px 10px;border-radius:8px;border:1px solid #334155;background:transparent;color:#64748b;font-size:12px;cursor:pointer;font-family:inherit">✕</button>
+      </div>
+    </div>
+    <style>@keyframes pwaSlide{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}</style>
+  `;
+  document.body.appendChild(banner);
+}
+
+window.installPWA = async function(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const {outcome} = await deferredPrompt.userChoice;
+  console.log("PWA install:", outcome);
+  deferredPrompt = null;
+  const b = document.getElementById("pwa-banner");
+  if(b) b.remove();
+};
+
+window.addEventListener("appinstalled", () => {
+  console.log("✅ TDMH Parking installed as PWA");
+  const b = document.getElementById("pwa-banner");
+  if(b) b.remove();
+});
 </script>
 </body>
 </html>
