@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="TDMH Parking"/>
+  <meta name="theme-color" content="#0f172a"/>
+  <meta name="description" content="Taytay Doctors Multispecialty Hospital — Parking Management System"/>
   <title>TDMH Parking System</title>
+  <link rel="manifest" id="pwa-manifest"/>
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f172a'/><text y='.85em' font-size='72' x='14'>🏥</text></svg>"/>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏥</text></svg>"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -61,7 +69,7 @@ const VT = {
 const PERMS = {
   admin:    {earn:true, allLocs:true, act:true, ci:true,co:true,rates:true,users:true, rep:true, search:true},
   cashier:  {earn:true, allLocs:true, act:true, ci:true,co:true,rates:true,users:false,rep:false,search:true},
-  attendant:{earn:false,allLocs:false,act:false,ci:true,co:true,rates:true,users:false,rep:false,search:true},
+  attendant:{earn:false,allLocs:false,act:false,ci:true,co:false,rates:true,users:false,rep:false,search:true},
 };
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -73,12 +81,31 @@ function initSlotsLocal(){
 }
 function calcFee(iso,vt){
   const v=VT[vt];if(!v)return{fee:0,dur:"0h 0m",overnight:false};
-  const ms=Date.now()-new Date(iso).getTime();const hrs=ms/3600000;
-  const cinH=new Date(iso).getHours()+new Date(iso).getMinutes()/60;
-  const coutH=new Date().getHours()+new Date().getMinutes()/60;
-  const isO=ms>=9*3600000&&cinH<=22&&coutH<=7;
-  const fee=isO?v.ovr:hrs<=v.fh?v.fr:v.fr+Math.ceil(hrs-v.fh)*v.sr;
+  const cin=new Date(iso);const cout=new Date();
+  const ms=cout-cin;const hrs=ms/3600000;
   const tm=Math.floor(ms/60000);
+  // Count how many 10PM-7AM windows the stay covers with at least 8hrs overlap
+  let overnightCount=0;
+  let winStart=new Date(cin);winStart.setHours(22,0,0,0);
+  if(cin.getHours()<7)winStart.setDate(winStart.getDate()-1);
+  while(winStart<cout){
+    const winEnd=new Date(winStart);winEnd.setDate(winEnd.getDate()+1);winEnd.setHours(7,0,0,0);
+    const oStart=Math.max(cin.getTime(),winStart.getTime());
+    const oEnd=Math.min(cout.getTime(),winEnd.getTime());
+    if((oEnd-oStart)/3600000>=8)overnightCount++;
+    winStart=new Date(winEnd);winStart.setHours(22,0,0,0);
+  }
+  const isO=overnightCount>0;
+  let fee;
+  if(isO){
+    // Each overnight window charged at flat rate, remaining hours at regular rate
+    const ovrHrs=overnightCount*9;
+    const regHrs=Math.max(0,hrs-ovrHrs);
+    const regFee=regHrs<=v.fh?v.fr:v.fr+Math.floor(regHrs-v.fh)*v.sr;
+    fee=(overnightCount*v.ovr)+(regHrs>0?regFee:0);
+  }else{
+    fee=hrs<=v.fh?v.fr:v.fr+Math.floor(hrs-v.fh)*v.sr;
+  }
   return{fee,dur:`${Math.floor(tm/60)}h ${tm%60}m`,overnight:isO};
 }
 const fmtT   =iso=>new Date(iso).toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit"});
@@ -111,13 +138,15 @@ function mapSlot(s){
 
 // ─── THERMAL PRINTER ────────────────────────────────────────────────────────
 function printThermal(payload){
-  const{isCheckIn,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName}=payload;
+  const{isCheckIn,isVoid,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName}=payload;
   const vObj=VT[vtype]||VT.car;
   const line="================================";const dline="--------------------------------";
-  const head=`<div style="text-align:center;font-weight:bold;font-size:13px;line-height:1.5">TAYTAY DOCTORS<br>MULTISPECIALTY HOSPITAL<br><span style="font-size:10px;font-weight:normal">Parking Management System</span></div><pre style="margin:4px 0">${line}</pre><div style="text-align:center;font-weight:bold;font-size:12px">${isCheckIn?"★ PARKING TICKET ★":"★ PAYMENT RECEIPT ★"}</div><pre style="margin:4px 0">${line}</pre>`;
-  const bodyCI=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\nDATE    : ${fmtFull(checkin)}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\n  RATE INFORMATION\nFirst ${vObj.fh}hrs: ${P(vObj.fr)}\nPer hour : ${P(vObj.sr)}/hr\nOvernight: ${P(vObj.ovr)}\n${line}</pre><div style="text-align:center;margin:8px 0;font-size:11px"><div style="font-weight:bold">PLEASE KEEP THIS TICKET</div><div style="font-size:10px">Present upon exit for payment</div></div><pre style="margin:0;font-size:11px">${dline}\nAttendant: ${cashierName}\nIssued   : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you! Drive safely.</div>`;
+  const title=isVoid?"★ VOID / LOSS RECORD ★":isCheckIn?"★ PARKING TICKET ★":"★ PAYMENT RECEIPT ★";
+  const head=`<div style="text-align:center;font-weight:bold;font-size:13px;line-height:1.5">TAYTAY DOCTORS<br>MULTISPECIALTY HOSPITAL<br><span style="font-size:10px;font-weight:normal">Parking Management System</span></div><pre style="margin:4px 0">${line}</pre><div style="text-align:center;font-weight:bold;font-size:12px">${title}</div><pre style="margin:4px 0">${line}</pre>`;
+  const bodyCI=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\nDATE    : ${fmtFull(checkin)}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\n  RATE INFORMATION\nFirst ${vObj.fh}hrs: ${P(vObj.fr)}\nPer hour : ${P(vObj.sr)}/hr\nOvernight: ${P(vObj.ovr)}\n${line}</pre><div style="text-align:center;margin:8px 0;font-size:11px"><div style="font-weight:bold">PLEASE KEEP THIS TICKET</div><div style="font-size:10px">Present upon exit for payment</div><div style="font-size:10px;font-weight:bold;margin-top:3px">Lost Parking Ticket: ₱50.00</div></div><pre style="margin:0;font-size:11px">${dline}\nAttendant: ${cashierName}\nIssued   : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you! Drive safely.</div>`;
   const bodyCO=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\nTIME IN : ${fmtFull(checkin)}\nTIME OUT: ${fmtFull(new Date().toISOString())}\nDURATION: ${dur}\n${dline}\nRATE    : ${overnight?"OVERNIGHT":"REGULAR"}\n${line}</pre><div style="text-align:center;margin:10px 0"><div style="font-size:11px">TOTAL AMOUNT DUE</div><div style="font-size:24px;font-weight:bold;margin:4px 0">${P(fee)}</div>${overnight?`<div style="font-size:10px">🌙 Overnight Rate (10PM-7AM)</div>`:""}</div><pre style="margin:0;font-size:11px">${dline}\nCashier  : ${cashierName}\nPrinted  : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you for parking!<br>Drive safely.</div>`;
-  const html=`<!DOCTYPE html><html><head><title>${isCheckIn?"Ticket":"Receipt"} ${ticketNo}</title><style>@page{margin:2mm;size:58mm auto}body{font-family:'Courier New',monospace;font-size:11px;width:58mm;margin:0;padding:4px;color:#000}pre{font-family:inherit;font-size:11px;white-space:pre-wrap}@media print{.np{display:none}}</style></head><body>${head}${isCheckIn?bodyCI:bodyCO}<div class="np" style="margin-top:14px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">🖨️ Print</button><button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;font-size:13px;margin-left:8px">Close</button><p style="font-size:10px;color:#64748b;margin-top:8px">Select your Bluetooth/POS printer from the print dialog</p></div></body></html>`;
+  const bodyVOID=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\nTIME IN : ${fmtFull(checkin)}\nVOID AT : ${fmtFull(new Date().toISOString())}\nDURATION: ${dur}\n${dline}\nEXP FEE : ${P(fee)}\n${line}</pre><div style="text-align:center;margin:10px 0;border:2px solid #000;padding:8px"><div style="font-size:12px;font-weight:bold">LOST PARKING TICKET</div><div style="font-size:22px;font-weight:bold;margin:4px 0">₱50.00</div><div style="font-size:10px">Lost Parking Ticket Fee</div></div><pre style="margin:0;font-size:11px">${dline}\nVoided by: ${cashierName}\nPrinted  : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">This serves as official void record.</div>`;
+  const html=`<!DOCTYPE html><html><head><title>${isVoid?"Void":isCheckIn?"Ticket":"Receipt"} ${ticketNo}</title><style>@page{margin:2mm;size:58mm auto}body{font-family:'Courier New',monospace;font-size:11px;width:58mm;margin:0;padding:4px;color:#000}pre{font-family:inherit;font-size:11px;white-space:pre-wrap}@media print{.np{display:none}}</style></head><body>${head}${isVoid?bodyVOID:isCheckIn?bodyCI:bodyCO}<div class="np" style="margin-top:14px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">🖨️ Print</button><button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;font-size:13px;margin-left:8px">Close</button><p style="font-size:10px;color:#64748b;margin-top:8px">Select your Bluetooth/POS printer from the print dialog</p></div></body></html>`;
   const w=window.open("","_blank","width=420,height=620,toolbar=0,menubar=0,scrollbars=1");
   if(w){w.document.write(html);w.document.close();}else alert("Please allow popups to print tickets.");
 }
@@ -451,11 +480,14 @@ function ReportsPanel(){
     else if(p==="month"){setFrom(dAgo(29));setTo(todayStr());}
   }
 
-  const filtered=useMemo(()=>txns.filter(e=>{
+  const allFiltered=useMemo(()=>txns.filter(e=>{
     const d=dOnly(e.checkout_at||e.checkout_time||e.checkin_at||e.checkin_time);
     if(!d)return false;
     return d>=from&&d<=to&&locF[e.loc_id]!==false&&vtF[e.vtype]!==false;
   }),[txns,from,to,locF,vtF]);
+  const filtered=useMemo(()=>allFiltered.filter(e=>e.status!=="voided"),[allFiltered]);
+  const voided=useMemo(()=>allFiltered.filter(e=>e.status==="voided"),[allFiltered]);
+  const lossTotal=voided.reduce((s,e)=>s+Number(e.fee||0),0);
 
   const total=filtered.reduce((s,e)=>s+Number(e.fee||0),0);
   const cnt=filtered.length;
@@ -523,6 +555,7 @@ function ReportsPanel(){
           <div className="rkpi" style={{"--kc":"#0ea5e9"}}><div className="kl">Daily Average</div><div className="kv">{P(avgD)}</div><div className="ks">{days} day{days!==1?"s":""}</div></div>
           <div className="rkpi" style={{"--kc":"#10b981"}}><div className="kl">Avg/Txn</div><div className="kv">{P(avg)}</div><div className="ks">per vehicle</div></div>
           <div className="rkpi" style={{"--kc":"#8b5cf6"}}><div className="kl">Overnight</div><div className="kv">{ovrCnt}</div><div className="ks">{P(filtered.filter(e=>e.overnight).reduce((s,e)=>s+Number(e.fee||0),0))}</div></div>
+          <div className="rkpi" style={{"--kc":"#ef4444"}}><div className="kl">⚠️ Voided</div><div className="kv">{voided.length}</div><div className="ks" style={{color:"#ef4444"}}>{P(lossTotal)} lost</div></div>
         </div>
         <div className="rcc">
           <h4>📈 Daily Revenue Trend</h4>
@@ -586,6 +619,28 @@ function ReportsPanel(){
                 </tr>
               ))}</tbody>
             </table></div>
+          )}
+          {voided.length>0&&(
+            <div className="rc" style={{marginTop:12}}>
+              <div className="rch" style={{background:"#fef2f2",borderColor:"#fca5a5"}}>
+                <h4 style={{color:"#991b1b",margin:0}}>⚠️ Voided Transactions — {P(lossTotal)} lost</h4>
+              </div>
+              <div className="rtw"><table className="rt">
+                <thead><tr><th>Time</th><th>Ticket</th><th>Plate</th><th>Type</th><th>Location</th><th>Duration</th><th>Voided By</th><th>Expected Fee</th></tr></thead>
+                <tbody>{voided.map((e,i)=>(
+                  <tr key={i} style={{background:"#fef2f2"}}>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_at||e.checkout_time||e.checkin_at)}</td>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.ticket_no||"—"}</td>
+                    <td><strong>{e.plate}</strong></td>
+                    <td>{VT[e.vtype]?.icon} {VT[e.vtype]?.label||e.vtype}</td>
+                    <td style={{fontSize:11}}>{LOCS.find(l=>l.id===e.loc_id)?.name||e.loc_id}</td>
+                    <td>{e.dur||e.duration||"—"}</td>
+                    <td style={{fontSize:11}}>{e.cashier||"—"}</td>
+                    <td><span style={{color:"#dc2626",fontWeight:700}}>{P(e.fee||0)}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
           )}
         </div>
       </div>
@@ -777,10 +832,23 @@ function TDMHParking(){
         await seedTicketCounter();
       }catch(e){console.error("Data load error:",e);}
     }
+    // Expose to window so Android can trigger refresh on screen wake
+    window.loadData = loadData;
     loadData();
 
+    // Auto-refresh every 10 seconds — fast polling for cross-device sync
+    const autoRefresh = setInterval(()=>{ loadData(); }, 10 * 1000);
+
+    // Refresh when tab/app becomes visible again
+    const handleVisibility = ()=>{ if(document.visibilityState==='visible') loadData(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Refresh when SIM/internet reconnects after a drop
+    const handleOnline = ()=>{ console.log('Connection restored'); setTimeout(()=>loadData(), 2000); };
+    window.addEventListener('online', handleOnline);
+
     // ── REALTIME: slots ──────────────────────────────────────────────────
-    const slotSub=sb.channel(`slots-${user.id}`)
+    const slotSub=sb.channel('slots-global')
       .on("postgres_changes",{event:"*",schema:"public",table:"slots"},payload=>{
         const s=payload.new;
         if(!s||!s.loc_id)return;
@@ -801,10 +869,11 @@ function TDMHParking(){
       })
       .subscribe(status=>{
         if(status==="SUBSCRIBED"){setRtConnected(true);console.log("✅ Slots realtime connected");}
+        if(status==="CLOSED"||status==="CHANNEL_ERROR"){setRtConnected(false);}
       });
 
     // ── REALTIME: transactions ───────────────────────────────────────────
-    const txnSub=sb.channel(`txns-${user.id}`)
+    const txnSub=sb.channel('txns-global')
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"transactions"},payload=>{
         const t=payload.new;
         if(!t)return;
@@ -822,6 +891,9 @@ function TDMHParking(){
       });
 
     return()=>{
+      clearInterval(autoRefresh);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
       sb.removeChannel(slotSub);
       sb.removeChannel(txnSub);
       setRtConnected(false);
@@ -860,7 +932,10 @@ function TDMHParking(){
   function openSlot(locId,slot){
     if(!perms.ci&&!perms.co)return;
     setSel(slot);
-    if(slot.occupied)setModal("checkout");
+    if(slot.occupied){
+      if(!perms.co){toast("⛔ Attendants cannot check out vehicles. Please call a cashier.","error");return;}
+      setModal("checkout");
+    }
     else{setForm({plate:"",name:"",vtype:slot.type==="motorcycle"?"motorcycle":"car"});setModal("checkin");}
   }
 
@@ -913,6 +988,36 @@ function TDMHParking(){
     toast(`💰 ${v.plate} checked out — ${P(fee)}`,"ok");
     printThermal({isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name});
     setModal("receipt");
+  }
+
+  async function doVoid(){
+    const v=sel.vehicle;const l=sel.locId;const locName=LOCS.find(x=>x.id===l)?.name;
+    if(!v){toast("No vehicle data on slot","err");return;}
+    if(!sel.id){toast("No slot ID","err");return;}
+    const{fee,dur,overnight}=calcFee(v.checkin,v.vtype);
+    const tix=v.ticketNo||nextTix();
+    toast("Voiding... clearing slot #"+sel.number,"ok");
+    // Always clear the slot first
+    const{error:slotErr}=await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null,v_checkin_by:null}).eq("id",sel.id);
+    if(slotErr){toast("Slot clear failed: "+slotErr.message,"err");console.error("Slot error:",slotErr);return;}
+    // Update local state immediately
+    setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:false,vehicle:null}:s);return c;});
+    setModal(null);
+    toast(`✅ Slot #${sel.number} cleared`,"ok");
+    // Then try to insert transaction record
+    const txn={
+      ticket_no:tix,plate:v.plate,name:v.name,driver_name:v.name,vtype:v.vtype,loc_id:l,
+      slot_number:sel.number,fee,dur,duration:dur,overnight,cashier:user.name,
+      checkin_by:v.checkinBy||"—",
+      checkin_time:v.checkin,checkin_at:v.checkin,
+      checkout_time:new Date().toISOString(),checkout_at:new Date().toISOString(),
+      status:"voided"
+    };
+    const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
+    if(txnErr){console.error("Void txn error:",txnErr.message);toast("Warning: slot cleared but record not saved: "+txnErr.message,"err");}
+    else if(txnRow) setTxns(p=>{if(p.find(x=>x.id===txnRow.id))return p;return[txnRow,...p];});
+    addLog(`⚠️ VOID: ${v.plate} from ${locName} · lost ${P(fee)} · by ${user.name}`,"#ef4444");
+    printThermal({isVoid:true,isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name});
   }
 
   const visLocs=(user?.role==="attendant"&&attLoc)?LOCS.filter(l=>l.id===attLoc):LOCS;
@@ -1176,6 +1281,32 @@ function TDMHParking(){
       {/* USERS */}
       {tab==="users"&&perms.users&&<UserManagement currentUser={user} toast={toast}/>}
 
+      {/* MODAL: VOID CONFIRMATION */}
+      {modal==="void"&&sel?.vehicle&&(()=>{
+        const{fee,dur}=calcFee(sel.vehicle.checkin,sel.vehicle.vtype);
+        const vt=VT[sel.vehicle.vtype];
+        return(
+          <div className="ov" onClick={e=>e.target===e.currentTarget&&setModal("checkout")}>
+            <div className="mo">
+              <div className="mh" style={{background:"#fef2f2",borderBottom:"1px solid #fca5a5"}}><h2>⚠️ Void Transaction</h2><p style={{color:"#dc2626"}}>This will mark the slot as vacant with no payment collected.</p></div>
+              <div className="mb">
+                <div className="ir"><span className="ik">Plate</span><span className="iv">{sel.vehicle.plate}</span></div>
+                <div className="ir"><span className="ik">Vehicle</span><span className="iv">{vt?.icon} {vt?.label}</span></div>
+                <div className="ir"><span className="ik">Duration</span><span className="iv">{dur}</span></div>
+                <div className="ir"><span className="ik">Expected Fee</span><span className="iv" style={{color:"#dc2626",fontWeight:700}}>{P(fee)}</span></div>
+                <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"10px 12px",fontSize:12,color:"#991b1b",marginTop:8}}>
+                  ⚠️ <strong>{P(fee)}</strong> will be recorded as a <strong>loss</strong> in reports. This action cannot be undone.
+                </div>
+              </div>
+              <div className="mf">
+                <button className="btn bg" onClick={()=>setModal("checkout")}>Back</button>
+                <button className="btn" style={{background:"#dc2626",color:"white",border:"none"}} onClick={doVoid}>Confirm Void</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* MODAL: CHECK IN */}
       {modal==="checkin"&&sel&&(
         <div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
@@ -1224,6 +1355,7 @@ function TDMHParking(){
               </div>
               <div className="mf">
                 <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
+                {perms.co&&user?.role!=="attendant"&&<button className="btn" style={{background:"#fee2e2",color:"#991b1b",border:"1px solid #fca5a5"}} onClick={()=>setModal("void")}>⚠️ Void</button>}
                 <button className="btn bd2" onClick={doCheckout}>Confirm &amp; Print Receipt</button>
               </div>
             </div>
@@ -1266,6 +1398,123 @@ function TDMHParking(){
 
 const root=ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(TDMHParking));
+</script>
+
+<script>
+// ─── PWA MANIFEST (injected inline) ─────────────────────────────────────────
+const manifest = {
+  name: "TDMH Parking System",
+  short_name: "TDMH Parking",
+  description: "Taytay Doctors Multispecialty Hospital — Parking Management System",
+  start_url: "./",
+  display: "standalone",
+  orientation: "any",
+  background_color: "#0f172a",
+  theme_color: "#0f172a",
+  icons: [
+    {
+      src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='80' fill='%230f172a'/><text y='.82em' font-size='380' x='66'>🏥</text></svg>",
+      sizes: "512x512",
+      type: "image/svg+xml",
+      purpose: "any maskable"
+    }
+  ]
+};
+const blob = new Blob([JSON.stringify(manifest)], {type:"application/json"});
+const manifestURL = URL.createObjectURL(blob);
+document.getElementById("pwa-manifest").setAttribute("href", manifestURL);
+
+// ─── SERVICE WORKER ──────────────────────────────────────────────────────────
+if("serviceWorker" in navigator){
+  const swCode = `
+const CACHE = "tdmh-parking-v1";
+const PRECACHE = [
+  "https://unpkg.com/react@18/umd/react.production.min.js",
+  "https://unpkg.com/react-dom@18/umd/react-dom.production.min.js",
+  "https://unpkg.com/@babel/standalone/babel.min.js",
+  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
+  "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Space+Mono:wght@400;700&display=swap"
+];
+self.addEventListener("install", e => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll(PRECACHE).catch(()=>{})).then(()=>self.skipWaiting())
+  );
+});
+self.addEventListener("activate", e => {
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
+      .then(()=>self.clients.claim())
+  );
+});
+self.addEventListener("fetch", e => {
+  // Always go network-first for Supabase API calls
+  if(e.request.url.includes("supabase.co")){
+    e.respondWith(fetch(e.request).catch(()=>new Response(JSON.stringify({error:"offline"}),{headers:{"Content-Type":"application/json"}})));
+    return;
+  }
+  // Cache-first for static assets
+  e.respondWith(
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
+      if(res.ok){
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+      }
+      return res;
+    }))
+  );
+});
+  `;
+  const swBlob = new Blob([swCode], {type:"application/javascript"});
+  const swURL = URL.createObjectURL(swBlob);
+  navigator.serviceWorker.register(swURL, {scope:"./"})
+    .then(r => console.log("✅ Service Worker registered", r.scope))
+    .catch(e => console.warn("SW registration failed:", e));
+}
+
+// ─── INSTALL BANNER ──────────────────────────────────────────────────────────
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  showInstallBanner();
+});
+
+function showInstallBanner(){
+  if(document.getElementById("pwa-banner")) return;
+  const banner = document.createElement("div");
+  banner.id = "pwa-banner";
+  banner.innerHTML = `
+    <div style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;background:#0f172a;border:1px solid #334155;border-radius:14px;padding:13px 18px;display:flex;align-items:center;gap:13px;box-shadow:0 8px 32px rgba(0,0,0,.5);max-width:360px;width:calc(100vw - 32px);font-family:'DM Sans',sans-serif;animation:pwaSlide .35s ease">
+      <div style="font-size:28px;flex-shrink:0">🏥</div>
+      <div style="flex:1;min-width:0">
+        <div style="color:#f0f9ff;font-size:13px;font-weight:700;line-height:1.3">Install TDMH Parking</div>
+        <div style="color:#64748b;font-size:11px;margin-top:2px">Add to home screen for quick access</div>
+      </div>
+      <div style="display:flex;gap:7px;flex-shrink:0">
+        <button onclick="installPWA()" style="padding:8px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,#0284c7,#0ea5e9);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Install</button>
+        <button onclick="document.getElementById('pwa-banner').remove()" style="padding:8px 10px;border-radius:8px;border:1px solid #334155;background:transparent;color:#64748b;font-size:12px;cursor:pointer;font-family:inherit">✕</button>
+      </div>
+    </div>
+    <style>@keyframes pwaSlide{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}</style>
+  `;
+  document.body.appendChild(banner);
+}
+
+window.installPWA = async function(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const {outcome} = await deferredPrompt.userChoice;
+  console.log("PWA install:", outcome);
+  deferredPrompt = null;
+  const b = document.getElementById("pwa-banner");
+  if(b) b.remove();
+};
+
+window.addEventListener("appinstalled", () => {
+  console.log("✅ TDMH Parking installed as PWA");
+  const b = document.getElementById("pwa-banner");
+  if(b) b.remove();
+});
 </script>
 </body>
 </html>
