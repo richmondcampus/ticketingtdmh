@@ -403,11 +403,21 @@ async function sb(method,table,params='',body=null){
   if(!res.ok){const e=await res.json();throw new Error(e.message||'Request failed');}
   const text=await res.text();return text?JSON.parse(text):[];
 }
+async function sbCount(table,params=''){
+  const p=params?params+'&select=*':'?select=*';
+  const res=await fetch(SUPABASE_URL+'/rest/v1/'+table+p,{method:'HEAD',headers:{...HEADERS,'Prefer':'count=exact'}});
+  if(!res.ok)return 0;
+  const cr=res.headers.get('Content-Range');
+  if(!cr)return 0;
+  const m=cr.match(/\/(\d+)$/);
+  return m?parseInt(m[1],10):0;
+}
 const db={
   get:(t,p='')=>sb('GET',t,p),
   post:(t,b)=>sb('POST',t,'',b),
   patch:(t,p,b)=>sb('PATCH',t,p,b),
   del:(t,p)=>sb('DELETE',t,p),
+  count:(t,p='')=>sbCount(t,p),
 };
 
 let currentUser=null,patientPage=1,totalPatients=0,searchTimer=null;
@@ -490,15 +500,15 @@ async function renderDashboard(){
   document.getElementById('statTodayDate').textContent=formatDate(today);
   try{
     const[pTotal,pToday,users,logs]=await Promise.all([
-      db.get('patients','?select=id'),
-      db.get('patients','?date_of_consultation=eq.'+today+'&select=id'),
-      db.get('users','?select=id'),
-      db.get('activity_logs','?select=id'),
+      db.count('patients'),
+      db.count('patients','?date_of_consultation=eq.'+today),
+      db.count('users'),
+      db.count('activity_logs'),
     ]);
-    document.getElementById('statTotal').textContent=pTotal.length;
-    document.getElementById('statToday').textContent=pToday.length;
-    document.getElementById('statUsers').textContent=users.length;
-    document.getElementById('statLogs').textContent=logs.length;
+    document.getElementById('statTotal').textContent=pTotal.toLocaleString();
+    document.getElementById('statToday').textContent=pToday.toLocaleString();
+    document.getElementById('statUsers').textContent=users.toLocaleString();
+    document.getElementById('statLogs').textContent=logs.toLocaleString();
     const recent=await db.get('patients','?select=name,opd_number,date_of_consultation,attending_physician,created_by&order=created_at.desc&limit=5');
     document.getElementById('recentTable').innerHTML=recent.length?recent.map(p=>'<tr><td><strong>'+esc(p.name)+'</strong></td><td><span class="badge badge-teal">'+esc(p.opd_number)+'</span></td><td>'+formatDate(p.date_of_consultation)+'</td><td>'+esc(p.attending_physician)+'</td><td><span class="badge badge-gray">'+esc(p.created_by)+'</span></td></tr>').join('')
       :'<tr><td colspan="5"><div class="empty-state"><p>No patients yet</p></div></td></tr>';
@@ -512,17 +522,17 @@ async function renderPatients(){
   document.getElementById('patientTable').innerHTML='<tr><td colspan="11"><div class="page-loader"><div class="loading-spinner"></div> Loading…</div></td></tr>';
   const q=(document.getElementById('patientSearch')?.value||'').trim();
   try{
-    let countParams,dataParams;
+    let countFilter,dataParams;
     if(q){
       const f='or=(name.ilike.*'+encodeURIComponent(q)+'*,opd_number.ilike.*'+encodeURIComponent(q)+'*,attending_physician.ilike.*'+encodeURIComponent(q)+'*,agimat_number.ilike.*'+encodeURIComponent(q)+'*)';
-      countParams='?'+f+'&select=id';
+      countFilter='?'+f;
       dataParams='?'+f+'&select=*&order=created_at.desc&limit='+PAGE_SIZE+'&offset='+((patientPage-1)*PAGE_SIZE);
     }else{
-      countParams='?select=id';
+      countFilter='';
       dataParams='?select=*&order=created_at.desc&limit='+PAGE_SIZE+'&offset='+((patientPage-1)*PAGE_SIZE);
     }
-    const[allIds,rows]=await Promise.all([db.get('patients',countParams),db.get('patients',dataParams)]);
-    totalPatients=allIds.length;
+    const[totalCount,rows]=await Promise.all([db.count('patients',countFilter),db.get('patients',dataParams)]);
+    totalPatients=totalCount;
     const start=(patientPage-1)*PAGE_SIZE;
     const totalPages=Math.ceil(totalPatients/PAGE_SIZE)||1;
     document.getElementById('patientCount').textContent='Showing '+(start+1)+'–'+Math.min(start+PAGE_SIZE,totalPatients)+' of '+totalPatients+' records';
