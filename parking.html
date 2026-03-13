@@ -68,7 +68,7 @@ const VT = {
 };
 const PERMS = {
   admin:    {earn:true, allLocs:true, act:true, ci:true,co:true,rates:true,users:true, rep:true, search:true},
-  cashier:  {earn:true, allLocs:true, act:true, ci:true,co:true,rates:true,users:false,rep:false,search:true},
+  cashier:  {earn:true, allLocs:true, act:true, ci:false,co:true,rates:true,users:false,rep:false,search:true},
   attendant:{earn:false,allLocs:false,act:false,ci:true,co:false,rates:true,users:false,rep:false,search:true},
 };
 
@@ -551,7 +551,7 @@ function ReportsPanel(){
 
       <div className="rmain">
         <div className="rkpis">
-          <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Revenue</div><div className="kv">{P(total)}</div><div className="ks">{cnt} txn</div></div>
+          <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Revenue</div><div className="kv">{P(total)}</div><div className="ks">{cnt} transactions</div></div>
           <div className="rkpi" style={{"--kc":"#0ea5e9"}}><div className="kl">Daily Average</div><div className="kv">{P(avgD)}</div><div className="ks">{days} day{days!==1?"s":""}</div></div>
           <div className="rkpi" style={{"--kc":"#10b981"}}><div className="kl">Avg/Txn</div><div className="kv">{P(avg)}</div><div className="ks">per vehicle</div></div>
           <div className="rkpi" style={{"--kc":"#8b5cf6"}}><div className="kl">Overnight</div><div className="kv">{ovrCnt}</div><div className="ks">{P(filtered.filter(e=>e.overnight).reduce((s,e)=>s+Number(e.fee||0),0))}</div></div>
@@ -576,7 +576,7 @@ function ReportsPanel(){
         <div className="rcc">
           <h4>👤 Cashier Performance</h4>
           {byCash.length===0?<div className="nod"><div className="ni">👤</div>No data</div>:(
-            <div className="cbg">{byCash.map((c,i)=>(<div className="cbr" key={i}><div className="cbl">{(c.name||"").split(" ")[0]}</div><div className="cbt"><div className="cbf" style={{width:`${(c.total/maxC)*100}%`,background:"#0ea5e9"}}>{c.count} txn</div></div><div className="cbv">{P(c.total)}</div></div>))}</div>
+            <div className="cbg">{byCash.map((c,i)=>(<div className="cbr" key={i}><div className="cbl">{(c.name||"").split(" ")[0]}</div><div className="cbt"><div className="cbf" style={{width:`${(c.total/maxC)*100}%`,background:"#0ea5e9"}}>{c.count} transactions</div></div><div className="cbv">{P(c.total)}</div></div>))}</div>
           )}
         </div>
         <div className="rcc">
@@ -936,7 +936,10 @@ function TDMHParking(){
       if(!perms.co){toast("⛔ Attendants cannot check out vehicles. Please call a cashier.","error");return;}
       setModal("checkout");
     }
-    else{setForm({plate:"",name:"",vtype:slot.type==="motorcycle"?"motorcycle":"car"});setModal("checkin");}
+    else{
+      if(!perms.ci){toast("⛔ Cashiers cannot check in vehicles. Please call an attendant.","error");return;}
+      setForm({plate:"",name:"",vtype:slot.type==="motorcycle"?"motorcycle":"car"});setModal("checkin");
+    }
   }
 
   async function doCheckin(){
@@ -1103,7 +1106,7 @@ function TDMHParking(){
               <div className="ebs" key={l.id}>
                 <div className="ebsl">{l.icon} {l.short}</div>
                 <div className="ebsv">{P(le.reduce((s,e)=>s+Number(e.fee||0),0))}</div>
-                <div className="ebsc">{le.length} txn</div>
+                <div className="ebsc">{le.length} transactions</div>
               </div>
             );})}
             <div className="ebs"><div className="ebsl">Transactions</div><div className="ebsv">{todayE.length}</div><div className="ebsc">today</div></div>
@@ -1118,7 +1121,7 @@ function TDMHParking(){
         <div className="sc" style={{"--c":"#0ea5e9"}}><div className="sl2">Cars</div><div className="sv">{all.filter(s=>s.occupied&&s.vehicle?.vtype==="car").length}</div><div className="ss">parked</div></div>
         <div className="sc" style={{"--c":"#8b5cf6"}}><div className="sl2">Motorcycles</div><div className="sv">{all.filter(s=>s.occupied&&s.vehicle?.vtype==="motorcycle").length}</div><div className="ss">parked</div></div>
         <div className="sc" style={{"--c":"#10b981"}}><div className="sl2">Tricycles</div><div className="sv">{all.filter(s=>s.occupied&&s.vehicle?.vtype==="tricycle").length}</div><div className="ss">parked</div></div>
-        {perms.earn&&<div className="sc" style={{"--c":"#d97706"}}><div className="sl2">Today Earned</div><div className="sv" style={{fontSize:"clamp(12px,2vw,15px)"}}>{P(todayT)}</div><div className="ss">{todayE.length} txn</div></div>}
+        {perms.earn&&<div className="sc" style={{"--c":"#d97706"}}><div className="sl2">Today Earned</div><div className="sv" style={{fontSize:"clamp(12px,2vw,15px)"}}>{P(todayT)}</div><div className="ss">{todayE.length} transactions</div></div>}
       </div>
 
       {/* RATES */}
@@ -1355,7 +1358,7 @@ function TDMHParking(){
               </div>
               <div className="mf">
                 <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
-                {perms.co&&user?.role!=="attendant"&&<button className="btn" style={{background:"#fee2e2",color:"#991b1b",border:"1px solid #fca5a5"}} onClick={()=>setModal("void")}>⚠️ Void</button>}
+                {user?.role==="admin"&&<button className="btn" style={{background:"#fee2e2",color:"#991b1b",border:"1px solid #fca5a5"}} onClick={()=>setModal("void")}>⚠️ Void</button>}
                 <button className="btn bd2" onClick={doCheckout}>Confirm &amp; Print Receipt</button>
               </div>
             </div>
