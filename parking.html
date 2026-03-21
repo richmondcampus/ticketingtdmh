@@ -807,6 +807,17 @@ function TDMHParking(){
   const [lf,setLf]           = useState({username:"",password:"",err:"",loading:false});
   const [dbReady,setDbReady] = useState(false);
   const [rtConnected,setRtConnected] = useState(false);
+  const [battery,setBattery] = useState({level:null,charging:false});
+
+  // Receive battery updates from Android
+  React.useEffect(()=>{
+    window.updateBattery=(level,charging)=>setBattery({level,charging});
+    // Get initial value if on Android
+    if(window.AndroidBattery){
+      setBattery({level:window.AndroidBattery.getLevel(),charging:window.AndroidBattery.isCharging()});
+    }
+    return()=>{ window.updateBattery=null; };
+  },[]);
 
   // clock
   useEffect(()=>{const t=setInterval(()=>setClock(new Date()),1000);return()=>clearInterval(t);},[]);
@@ -1114,6 +1125,9 @@ function TDMHParking(){
         </div>
         <div className="hr2">
           {rtConnected&&<div className="rtind"><div className="rtdot"/>Live</div>}
+          {battery.level!==null&&<div className="rtind" style={{background:battery.level<=20?"rgba(239,68,68,.15)":"rgba(16,185,129,.15)",borderColor:battery.level<=20?"rgba(239,68,68,.3)":"rgba(16,185,129,.3)",color:battery.level<=20?"#fca5a5":"#6ee7b7"}}>
+            {battery.charging?"⚡":"🔋"} {battery.level}%
+          </div>}
           <div className="hck">{clock.toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div>
           <span className={`rbdg rb-${user.role}`}>{user.role==="admin"?"👑":user.role==="cashier"?"💳":"🅿️"} {user.role}</span>
           {user.role==="attendant"&&<button className="hbtn" onClick={()=>setAttLoc(null)} style={{background:"rgba(139,92,246,.2)",borderColor:"rgba(139,92,246,.4)",color:"#c4b5fd"}}>Change Location</button>}
