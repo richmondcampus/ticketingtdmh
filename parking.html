@@ -447,6 +447,31 @@ function DonutChart({data,size=110}){
 function ReportsPanel(){
   const [from,setFrom]=useState(dAgo(6));
   const [to,setTo]=useState(todayStr());
+
+  function exportCSV(){
+    const rows=[['Date/Time','Ticket','Plate','Vehicle','Location','Duration','Type','Checked In By','Checked Out By','Status','Fee']];
+    [...filtered,...voided].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).forEach(e=>{
+      rows.push([
+        fmtDT(e.checkout_at||e.checkout_time||e.checkin_at),
+        e.ticket_no||'',
+        e.plate||'',
+        VT[e.vtype]?.label||e.vtype||'',
+        LOCS.find(l=>l.id===e.loc_id)?.name||e.loc_id||'',
+        e.dur||e.duration||'',
+        e.overnight?'Overnight':'Regular',
+        e.checkin_by||'',
+        e.cashier||'',
+        e.status||'completed',
+        e.fee||0
+      ]);
+    });
+    const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=`TDMH_Parking_${from}_to_${to}.csv`;
+    a.click();URL.revokeObjectURL(url);
+  }
   const [preset,setPreset]=useState("week");
   const [locF,setLocF]=useState({compound:true,quality:true,motopark:true});
   const [vtF,setVtF]=useState({car:true,motorcycle:true,tricycle:true});
@@ -599,7 +624,10 @@ function ReportsPanel(){
         <div className="rcc">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11,flexWrap:"wrap",gap:7}}>
             <h4 style={{margin:0}}>📄 Transaction Log</h4>
-            <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}</span>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}</span>
+              <button className="btn" style={{padding:"4px 10px",fontSize:11,background:"#f0fdf4",color:"#166534",border:"1px solid #86efac"}} onClick={exportCSV}>⬇️ Export CSV</button>
+            </div>
           </div>
           {fetching?<div className="nod"><div className="ni">⏳</div>Loading transactions…</div>:filtered.length===0?<div className="nod"><div className="ni">📭</div>No transactions found</div>:(
             <div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table className="rtbl">
@@ -625,18 +653,18 @@ function ReportsPanel(){
               <div className="rch" style={{background:"#fef2f2",borderColor:"#fca5a5"}}>
                 <h4 style={{color:"#991b1b",margin:0}}>⚠️ Voided Transactions — {P(lossTotal)} lost</h4>
               </div>
-              <div className="rtw"><table className="rt">
-                <thead><tr><th>Time</th><th>Ticket</th><th>Plate</th><th>Type</th><th>Location</th><th>Duration</th><th>Voided By</th><th>Expected Fee</th></tr></thead>
+              <div style={{overflowX:"auto",maxHeight:300,overflowY:"auto"}}><table className="rtbl">
+                <thead><tr><th>Date/Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Duration</th><th>Voided By</th><th>Expected Fee</th></tr></thead>
                 <tbody>{voided.map((e,i)=>(
                   <tr key={i} style={{background:"#fef2f2"}}>
                     <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_at||e.checkout_time||e.checkin_at)}</td>
-                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.ticket_no||"—"}</td>
-                    <td><strong>{e.plate}</strong></td>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#7c3aed"}}>{e.ticket_no||"—"}</td>
+                    <td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{e.plate}</span></td>
                     <td>{VT[e.vtype]?.icon} {VT[e.vtype]?.label||e.vtype}</td>
-                    <td style={{fontSize:11}}>{LOCS.find(l=>l.id===e.loc_id)?.name||e.loc_id}</td>
-                    <td>{e.dur||e.duration||"—"}</td>
-                    <td style={{fontSize:11}}>{e.cashier||"—"}</td>
-                    <td><span style={{color:"#dc2626",fontWeight:700}}>{P(e.fee||0)}</span></td>
+                    <td style={{fontSize:10}}>{LOCS.find(l=>l.id===e.loc_id)?.short||e.loc_id}</td>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur||e.duration||"—"}</td>
+                    <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
+                    <td><span style={{color:"#dc2626",fontFamily:"'Space Mono',monospace",fontWeight:700}}>{P(e.fee||0)}</span></td>
                   </tr>
                 ))}</tbody>
               </table></div>
@@ -903,7 +931,7 @@ function TDMHParking(){
 
   const perms   = user ? PERMS[user.role] : {};
   const all     = Object.values(slots).flat();
-  const todayE  = txns.filter(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at)===todayStr());
+  const todayE  = txns.filter(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at)===todayStr()&&e.status!=="voided");
   const todayT  = todayE.reduce((s,e)=>s+Number(e.fee||0),0);
   const totOcc  = all.filter(s=>s.occupied).length;
   const searchSlots = (user?.role==="attendant"&&attLoc) ? (slots[attLoc]||[]) : all;
