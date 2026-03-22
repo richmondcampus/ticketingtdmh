@@ -237,6 +237,28 @@ textarea{resize:vertical;min-height:80px;}
 .empty{text-align:center;padding:40px 20px;}
 .empty-ico{font-size:38px;margin-bottom:10px;}
 .empty p{color:var(--text3);font-size:13px;}
+
+/* ─── SIMPLIFIED MAINTENANCE CARDS ─── */
+.maint-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px;}
+.maint-card-loc{font-size:12px;color:var(--text3);margin-bottom:6px;display:flex;align-items:center;gap:5px;}
+.maint-card-title{font-size:17px;font-weight:800;line-height:1.3;margin-bottom:10px;color:var(--text);}
+.maint-card-desc{font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.big-btn{width:100%;border:none;border-radius:12px;padding:16px;font-family:inherit;font-size:17px;font-weight:800;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:10px;letter-spacing:-.2px;}
+.big-btn:active{transform:scale(.97);}
+.big-btn-green{background:var(--green);color:#fff;box-shadow:0 4px 16px rgba(34,199,122,.3);}
+.big-btn-blue{background:var(--accent);color:#fff;box-shadow:0 4px 16px rgba(79,142,247,.3);}
+.big-btn-gray{background:var(--bg3);color:var(--text2);border:1px solid var(--border);}
+.maint-card-meta{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.maint-section-label{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin:18px 0 10px;}
+.priority-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.pd-urgent{background:var(--red);}
+.pd-high{background:var(--amber);}
+.pd-normal{background:var(--accent);}
+.pd-low{background:var(--text3);}
+.greeting-card{background:linear-gradient(135deg,var(--bg3),var(--bg4));border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:4px;display:flex;align-items:center;gap:14px;}
+.greeting-av{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex-shrink:0;}
+.greeting-name{font-size:17px;font-weight:800;}
+.greeting-sub{font-size:13px;color:var(--text2);margin-top:2px;}
 .loading{text-align:center;padding:40px 20px;color:var(--text3);font-size:13px;}
 .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:10px;}
 @keyframes spin{to{transform:rotate(360deg);}}
@@ -374,7 +396,11 @@ textarea{resize:vertical;min-height:80px;}
 
     <!-- MY TICKETS -->
     <div class="page" id="pg-mytickets">
-      <div class="sec-title" style="margin-bottom:13px;">My Tickets</div>
+      <!-- greeting + live open ticket count shown for maintenance -->
+      <div id="maintGreeting" style="margin-bottom:14px;"></div>
+      <!-- unclaimed open tickets — "Jobs waiting for you" -->
+      <div id="openJobsList"></div>
+      <!-- my active tickets -->
       <div id="myTktList"></div>
     </div>
 
@@ -890,13 +916,177 @@ async function renderTickets() {
 }
 
 async function renderMyTickets() {
+  // For non-maintenance roles, fall back to regular ticket card view
+  if (CU.role !== 'maintenance') {
+    document.getElementById('myTktList').innerHTML='<div class="loading"><div class="spin"></div><br>Loading…</div>';
+    const {data:team}=await sb.from('ticket_team').select('ticket_id').eq('user_id',CU.id);
+    if(!team||!team.length){document.getElementById('myTktList').innerHTML='<div class="empty"><div class="empty-ico">✅</div><p>No tickets assigned to you.</p></div>';return;}
+    const ids=team.map(r=>r.ticket_id);
+    const {data:tickets}=await sb.from('tickets').select('*').in('id',ids);
+    document.getElementById('myTktList').innerHTML=(tickets||[]).map(t=>tktCard(t)).join('');
+    return;
+  }
+
+  // ── SIMPLIFIED MAINTENANCE VIEW ──────────────────────────────────────────
   document.getElementById('myTktList').innerHTML='<div class="loading"><div class="spin"></div><br>Loading…</div>';
-  const {data:team}=await sb.from('ticket_team').select('ticket_id').eq('user_id',CU.id);
-  if(!team||!team.length){document.getElementById('myTktList').innerHTML='<div class="empty"><div class="empty-ico">✅</div><p>No tickets assigned to you. Check All Tickets to claim one.</p></div>';return;}
-  const ids=team.map(r=>r.ticket_id);
-  const {data:tickets}=await sb.from('tickets').select('*').in('id',ids);
-  const list=(tickets||[]).sort((a,b)=>new Date(b.updated_at)-new Date(a.updated_at));
-  document.getElementById('myTktList').innerHTML=list.length?list.map(t=>tktCard(t)).join(''):'<div class="empty"><div class="empty-ico">✅</div><p>No active tickets.</p></div>';
+  document.getElementById('openJobsList').innerHTML='';
+  document.getElementById('maintGreeting').innerHTML='';
+
+  // Load my assigned tickets + all open unclaimed tickets in parallel
+  const [teamRes, allRes] = await Promise.all([
+    sb.from('ticket_team').select('ticket_id').eq('user_id', CU.id),
+    sb.from('tickets').select('*').eq('status','open'),
+  ]);
+
+  const myIds = (teamRes.data||[]).map(r=>r.ticket_id);
+  const {data:myTickets} = myIds.length
+    ? await sb.from('tickets').select('*').in('id', myIds)
+    : {data:[]};
+
+  const active = (myTickets||[]).filter(t=>t.status!=='resolved'&&t.status!=='closed');
+  const done   = (myTickets||[]).filter(t=>t.status==='resolved'||t.status==='closed');
+  const openUnclaimed = (allRes.data||[]).filter(t=>!myIds.includes(t.id));
+  const priOrder = {urgent:0,high:1,normal:2,low:3};
+
+  // ── Greeting card ────────────────────────────────────────────────────────
+  const initials = CU.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const color = CU.color||'#22c77a';
+  const hour = new Date().getHours();
+  const greeting = hour<12?'Magandang umaga ☀️':(hour<18?'Magandang hapon ☀️':'Magandang gabi 🌙');
+  const activeCount = active.length;
+  const openCount = openUnclaimed.length;
+  document.getElementById('maintGreeting').innerHTML = `
+    <div class="greeting-card">
+      <div class="greeting-av" style="background:${color}">${initials}</div>
+      <div>
+        <div class="greeting-name">${greeting}, ${CU.name.split(' ')[0]}!</div>
+        <div class="greeting-sub">${activeCount>0?`${activeCount} aktibong trabaho mo`:'Wala kang aktibong trabaho'}${openCount>0?` · ${openCount} bagong trabaho na pwede mong kunin`:''}</div>
+      </div>
+    </div>`;
+
+  // ── Open unclaimed tickets — "Bagong Trabaho" ────────────────────────────
+  const openEl = document.getElementById('openJobsList');
+  if (openUnclaimed.length) {
+    const sorted = openUnclaimed.sort((a,b)=>{
+      // Urgent first, then oldest first
+      const pd = priOrder[a.priority]-priOrder[b.priority];
+      return pd !== 0 ? pd : new Date(a.created_at)-new Date(b.created_at);
+    });
+    openEl.innerHTML = `<div class="maint-section-label">📢 Bagong Trabaho — ${openUnclaimed.length} naghihintay</div>`
+      + sorted.map(t=>maintCardOpen(t)).join('');
+  }
+
+  // ── My active tickets ────────────────────────────────────────────────────
+  const myEl = document.getElementById('myTktList');
+  if (!active.length && !done.length) {
+    myEl.innerHTML = '<div class="empty"><div class="empty-ico">👍</div><p>Wala kang trabaho ngayon.<br>Tingnan ang mga bagong trabaho sa itaas.</p></div>';
+    return;
+  }
+
+  let html = '';
+  if (active.length) {
+    html += `<div class="maint-section-label">🔧 Aking mga Trabaho — ${active.length}</div>`;
+    html += active.sort((a,b)=>priOrder[a.priority]-priOrder[b.priority]).map(t=>maintCardMine(t)).join('');
+  }
+  if (done.length) {
+    html += `<div class="maint-section-label" style="margin-top:20px;">✅ Natapos na — ${done.length}</div>`;
+    html += done.slice(0,5).map(t=>maintCardDone(t)).join('');
+  }
+  myEl.innerHTML = html;
+}
+
+// ── Open unclaimed card — big green CLAIM button ─────────────────────────
+function maintCardOpen(t) {
+  const priColors = {urgent:'var(--red)',high:'var(--amber)',normal:'var(--accent)',low:'var(--text3)'};
+  const priLabel = {urgent:'EMERGENCY',high:'MATAAS',normal:'NORMAL',low:'MABABA'}[t.priority]||t.priority.toUpperCase();
+  return `<div class="maint-card" style="border-color:${t.priority==='urgent'?'rgba(240,78,78,.4)':t.priority==='high'?'rgba(240,164,41,.3)':'var(--border)'}">
+    <div class="maint-card-loc">
+      <div class="priority-dot pd-${t.priority}"></div>
+      <span>${priLabel}</span>
+      <span style="margin-left:4px">· 📍 ${t.dept||''} · ${t.loc||''}</span>
+    </div>
+    <div class="maint-card-title">${t.title}</div>
+    ${t.description?`<div class="maint-card-desc">${t.description}</div>`:''}
+    <button class="big-btn big-btn-green" onclick="maintClaim('${t.id}',this)">
+      🙋 KUNIN ITO (Claim)
+    </button>
+    <div style="text-align:center;margin-top:10px;">
+      <span style="font-size:12px;color:var(--text3);cursor:pointer;" onclick="openTkt('${t.id}')">Basahin ang detalye →</span>
+    </div>
+  </div>`;
+}
+
+// ── My active ticket card — big blue TAPOS NA button ─────────────────────
+function maintCardMine(t) {
+  const isTeamed = t.status === 'teamed';
+  const waiting  = t.status === 'resolved';
+  return `<div class="maint-card">
+    <div class="maint-card-loc">
+      <div class="priority-dot pd-${t.priority}"></div>
+      <span>${t.dept||''} · 📍 ${t.loc||''}</span>
+      ${isTeamed?'<span style="margin-left:auto;font-size:10px;background:rgba(159,122,255,.15);color:var(--purple2);padding:2px 8px;border-radius:10px;font-weight:700;">TEAM</span>':''}
+    </div>
+    <div class="maint-card-title">${t.title}</div>
+    ${waiting
+      ? `<div style="background:rgba(45,212,199,.08);border:1px solid rgba(45,212,199,.2);border-radius:10px;padding:13px;text-align:center;">
+           <div style="font-size:22px;margin-bottom:6px;">⏳</div>
+           <div style="font-weight:700;color:var(--teal2);font-size:14px;">Hinihintay ng departamento</div>
+           <div style="font-size:12px;color:var(--text3);margin-top:3px;">Susunod na isara nang awtomatiko</div>
+         </div>`
+      : `<button class="big-btn big-btn-blue" onclick="maintMarkDone('${t.id}',this)">
+           ✅ TAPOS NA — I-resolve
+         </button>`
+    }
+    <div class="maint-card-meta">
+      <span style="font-size:12px;color:var(--text3);">${timeAgo(t.updated_at)}</span>
+      <span style="font-size:12px;color:var(--accent2);cursor:pointer;" onclick="openTkt('${t.id}')">Buksan · Maglagay ng note →</span>
+    </div>
+  </div>`;
+}
+
+// ── Done ticket card — minimal, just for reference ────────────────────────
+function maintCardDone(t) {
+  return `<div class="maint-card" style="opacity:.6;" onclick="openTkt('${t.id}')">
+    <div class="maint-card-loc">✅ Tapos · ${t.dept||''} · ${t.loc||''}</div>
+    <div style="font-size:14px;font-weight:600;">${t.title}</div>
+    <div style="font-size:12px;color:var(--text3);margin-top:4px;">${timeAgo(t.updated_at)}</div>
+  </div>`;
+}
+
+// ── Quick claim directly from the big button ──────────────────────────────
+async function maintClaim(id, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Kinukuha…';
+  const {data:t} = await sb.from('tickets').select('*').eq('id',id).single();
+  if (!t) { btn.disabled=false; btn.textContent='🙋 KUNIN ITO (Claim)'; return; }
+  await sb.from('tickets').update({status:'claimed',claimed_by:CU.id,updated_at:new Date().toISOString()}).eq('id',id);
+  await sb.from('ticket_team').upsert({ticket_id:id,user_id:CU.id},{onConflict:'ticket_id,user_id'});
+  await sb.from('ticket_notes').insert({ticket_id:id,user_id:CU.id,user_label:CU.name,message:`🙋 ${CU.name} claimed this ticket.`});
+  await sendEmail('ticket_claimed', t, {claimer:{name:CU.name,spec:CU.spec}});
+  addNotif('🙋','Nakuha mo!',`${id} — ${t.title}`);
+  toast('success','Nakuha mo! 💪',`Ikaw na ang mag-aayos ng ${id}`);
+  renderMyTickets();
+  buildNav();
+}
+
+// ── Quick resolve directly from the big button ────────────────────────────
+async function maintMarkDone(id, btn) {
+  // Confirmation dialog in Filipino
+  const confirmed = confirm('Tapos mo na ba ang trabaho?\n\nI-tap ang OK kung tapos na, Cancel kung hindi pa.');
+  if (!confirmed) return;
+  btn.disabled = true;
+  btn.textContent = 'Nagse-send…';
+  const {data:t} = await sb.from('tickets').select('*').eq('id',id).single();
+  if (!t) { btn.disabled=false; btn.textContent='✅ TAPOS NA — I-resolve'; return; }
+  const now = new Date().toISOString();
+  await sb.from('tickets').update({status:'resolved',resolved_at:now,updated_at:now}).eq('id',id);
+  await sb.from('ticket_notes').insert({ticket_id:id,user_id:CU.id,user_label:CU.name,message:`✅ ${CU.name} marked this ticket as resolved. Awaiting department confirmation.`});
+  await sendEmail('ticket_resolved', t, {claimer:{name:CU.name}});
+  scheduleAutoClose(id);
+  addNotif('✅','Na-resolve!',`${id} — hinihintay ng departamento`);
+  toast('success','Magaling! 🎉','Inaabisuhan na ang departamento para kumpirmahin.');
+  renderMyTickets();
+  buildNav();
 }
 
 function tktCard(t) {
