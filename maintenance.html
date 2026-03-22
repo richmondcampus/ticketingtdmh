@@ -572,7 +572,11 @@ async function sendSMS(phones, message) {
 
 async function blastMaintenance(message) {
   const phones = MAINT_MEMBERS.map(m=>m.phone).filter(Boolean);
-  if (phones.length) await sendSMS(phones, message);
+  if (!phones.length) return;
+  // Send one SMS per recipient — TextBee free plan only allows 1 recipient per call
+  for (const phone of phones) {
+    await sendSMS(phone, message);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
