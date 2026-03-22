@@ -408,7 +408,10 @@ textarea{resize:vertical;min-height:80px;}
     <div class="page" id="pg-team">
       <div class="sec-head">
         <div class="sec-title">Maintenance Team</div>
-        <button class="btn btn-ghost btn-sm" id="addMbrBtn" onclick="openAddMbr()" style="display:none">＋ Add Member</button>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" id="testSmsBtn" onclick="testSMS()" style="display:none" title="Send a test SMS to yourself">📱 Test SMS</button>
+          <button class="btn btn-ghost btn-sm" id="addMbrBtn" onclick="openAddMbr()" style="display:none">＋ Add Member</button>
+        </div>
       </div>
       <div id="teamGrid"></div>
     </div>
@@ -465,7 +468,10 @@ textarea{resize:vertical;min-height:80px;}
     </div>
     <div class="fg"><label>Location / Room No.</label><input id="nt-loc" placeholder="e.g. 3rd Floor, Room 312"></div>
     <div class="fg"><label>Description</label><textarea id="nt-desc" placeholder="Describe the issue in detail…"></textarea></div>
-    <div class="fg"><label>Contact Email (for status updates)</label><input type="email" id="nt-email"></div>
+    <div class="fg">
+      <label>Contact Email <span style="font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0;">(optional — leave blank to use your account email)</span></label>
+      <input type="email" id="nt-email" placeholder="Leave blank to use your account email">
+    </div>
     <div style="background:var(--bg3);border:1px solid rgba(240,78,78,.2);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px;">
       <div class="msg-tag" style="color:var(--red2);">📱 TextBee SMS Preview</div>
       <div id="smsPreview" class="msg-block msg-sms" style="font-size:10px;"></div>
@@ -517,6 +523,10 @@ textarea{resize:vertical;min-height:80px;}
         </select>
       </div>
       <div class="fg"><label>Contact Email</label><input type="email" id="am-email" placeholder="dept@tdmh.com"></div>
+    </div>
+    <div class="fg" style="margin-top:4px;">
+      <label>Email Address <span style="font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0;">(for ticket status updates)</span></label>
+      <input type="email" id="am-email-all" placeholder="email@tdmh.com">
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
       <button class="btn btn-ghost" onclick="closeM('addMbrModal')">Cancel</button>
@@ -811,6 +821,27 @@ function showRealtimePulse(ticketId) {
   }, 300);
 }
 
+// ── Test SMS — sends a real SMS to the logged-in user's phone ─────────────
+async function testSMS() {
+  const btn = document.getElementById('testSmsBtn');
+  if (!CU) return;
+  // Use logged-in user's phone or prompt
+  let phone = CU.phone || ALL_USERS[CU.id]?.phone;
+  if (!phone) {
+    phone = prompt('Walang phone number sa iyong account.\nI-enter ang number para sa test (09XXXXXXXXX):');
+    if (!phone) return;
+  }
+  btn.disabled = true; btn.textContent = '📱 Sending…';
+  try {
+    await sendSMS(phone, `[TDMH TEST] ✅ Gumagana ang SMS! Sent at ${new Date().toLocaleTimeString('en-PH')}`);
+    toast('success', '📱 Test SMS Sent!', `Sent to ${phone} — check your phone`);
+  } catch(e) {
+    toast('error', '📱 SMS Failed', String(e).slice(0,100));
+  } finally {
+    btn.disabled = false; btn.textContent = '📱 Test SMS';
+  }
+}
+
 function buildNav() {
   const role = CU.role;
   let tabs = [];
@@ -832,6 +863,7 @@ function buildNav() {
 
   document.getElementById('newTktBtn').style.display = (role==='admin'||role==='department')?'inline-flex':'none';
   if (document.getElementById('addMbrBtn')) document.getElementById('addMbrBtn').style.display = role==='admin'?'inline-flex':'none';
+  if (document.getElementById('testSmsBtn')) document.getElementById('testSmsBtn').style.display = role==='admin'?'inline-flex':'none';
   document.getElementById('ticketsHeading').textContent = role==='department'?`My Requests — ${CU.dept}`:'All Tickets';
 }
 
@@ -1647,7 +1679,7 @@ async function addNote(ticketId, message) {
 // ══════════════════════════════════════════════════════════════
 function openNewTkt() {
   ['nt-title','nt-desc','nt-loc'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  document.getElementById('nt-email').value=CU.email||'';
+  document.getElementById('nt-email').value = CU.email || '';  // pre-fill from user profile
   updateSMSPreview();
   ['nt-title','nt-loc','nt-cat','nt-pri'].forEach(id=>{
     const el=document.getElementById(id);
@@ -1687,7 +1719,7 @@ async function submitTkt() {
       priority: document.getElementById('nt-pri').value,
       status:'open',
       description: document.getElementById('nt-desc').value||'',
-      email: document.getElementById('nt-email').value||CU.email||'',
+      email: (document.getElementById('nt-email').value.trim() || CU.email || ''),
       submitted_by: CU.id,
       created_at:now, updated_at:now
     };
@@ -1808,7 +1840,8 @@ async function addMember() {
   const btn=document.getElementById('addMbrBtn2');btn.disabled=true;btn.textContent='Adding…';
   const colors=['#6366f1','#ec4899','#14b8a6','#f97316','#a855f7','#22c77a','#4f8ef7'];
   const color=colors[Math.floor(Math.random()*colors.length)];
-  const userData={name,username,password,role,color};
+  const emailAll = document.getElementById('am-email-all').value.trim()||null;
+  const userData={name,username,password,role,color,email:emailAll};
   if (role==='maintenance'){
     userData.spec=document.getElementById('am-spec').value;
     userData.phone=document.getElementById('am-phone').value.trim()||null;
@@ -1826,7 +1859,7 @@ async function addMember() {
   }
   toast('success','Member Added',`${name} added successfully!`);
   closeM('addMbrModal');
-  ['am-name','am-user','am-pass','am-phone'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['am-name','am-user','am-pass','am-phone','am-email-all'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   btn.disabled=false;btn.textContent='Add Member';
   renderTeam();
 }
@@ -2057,6 +2090,7 @@ async function openEditUser(uid) {
   document.getElementById('eu-name').value     = u.name || '';
   document.getElementById('eu-username').value = u.username || '';
   document.getElementById('eu-role').value     = u.role || 'maintenance';
+  document.getElementById('eu-email').value    = u.email || '';
   document.getElementById('eu-pass').value     = '';
   document.getElementById('eu-err').style.display = 'none';
 
@@ -2086,7 +2120,8 @@ async function submitEditUser() {
   const newPass  = document.getElementById('eu-pass').value;
   if (!name || !username) { document.getElementById('eu-err').textContent='Name and username are required.'; errEl.style.display='block'; return; }
 
-  const upd = { name, username, role };
+  const euEmail = document.getElementById('eu-email').value.trim() || null;
+  const upd = { name, username, role, email: euEmail };
   if (role === 'maintenance') {
     upd.spec  = document.getElementById('eu-spec').value;
     upd.phone = document.getElementById('eu-phone').value.trim() || null;
@@ -2370,6 +2405,7 @@ function checkShowTutorial() {
         </select>
       </div>
     </div>
+    <div class="fg"><label>Email Address <span style="font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0;">(for ticket updates)</span></label><input type="email" id="eu-email" placeholder="email@tdmh.com"></div>
     <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
     <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Reset Password (leave blank to keep current)</div>
     <div class="fg"><label>New Password</label><input type="password" id="eu-pass" placeholder="Leave blank to keep current password"></div>
