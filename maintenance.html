@@ -545,38 +545,37 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 // ══════════════════════════════════════════════════════════════
-// TEXTBEE
+// SMS — routed through Supabase Edge Function (send-sms)
+// This avoids CORS issues when calling TextBee from the browser
 // ══════════════════════════════════════════════════════════════
-const TB_KEY     = '81d121fa-3a7d-4b7c-bb5d-c18c7a0b5469';
-const TB_DEVICE  = '67341f488ec947e7babd0443';
-const TB_URL     = `https://api.textbee.dev/api/v1/gateway/devices/${TB_DEVICE}/sendSMS`;
+const SMS_FN_URL = `${SUPA_URL}/functions/v1/send-sms`;
 
 async function sendSMS(phones, message) {
-  const recipients = (Array.isArray(phones)?phones:[phones])
-    .map(p=>p?(p.startsWith('+63')?p:'+63'+String(p).replace(/^0/,'')):null).filter(Boolean);
-  if (!recipients.length) return;
-  if (window.location.protocol === 'file:') {
-    console.warn('[TextBee] Skipped — file:// protocol, serve via server');
-    return;
-  }
+  const list = (Array.isArray(phones)?phones:[phones]).filter(Boolean);
+  if (!list.length) return;
   try {
-    const res = await fetch(TB_URL,{method:'POST',headers:{'x-api-key':TB_KEY,'Content-Type':'application/json'},body:JSON.stringify({recipients,message})});
+    const res = await fetch(SMS_FN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY },
+      body: JSON.stringify({ phones: list, message }),
+    });
     const data = await res.json();
-    if (!res.ok) console.error('[TextBee error]', data);
-    else console.log('[TextBee sent ✓]', recipients);
-  } catch(e){
-    console.error('[TextBee error]',e);
-    toast('error','📱 SMS hindi naipadala', String(e).slice(0,80));
+    if (!res.ok) {
+      console.error('[SMS error]', data);
+      toast('error', '📱 SMS hindi naipadala', JSON.stringify(data).slice(0,80));
+    } else {
+      console.log('[SMS sent ✓]', data.results);
+    }
+  } catch(e) {
+    console.error('[SMS error]', e);
+    toast('error', '📱 SMS hindi naipadala', String(e).slice(0,80));
   }
 }
 
 async function blastMaintenance(message) {
   const phones = MAINT_MEMBERS.map(m=>m.phone).filter(Boolean);
   if (!phones.length) return;
-  // Send one SMS per recipient — TextBee free plan only allows 1 recipient per call
-  for (const phone of phones) {
-    await sendSMS(phone, message);
-  }
+  await sendSMS(phones, message);  // edge function handles one-by-one internally
 }
 
 // ══════════════════════════════════════════════════════════════
