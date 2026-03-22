@@ -560,11 +560,20 @@ async function sendSMS(phones, message) {
       body: JSON.stringify({ phones: list, message }),
     });
     const data = await res.json();
-    if (!res.ok) {
+    if (data.results) {
+      data.results.forEach(r => {
+        if (r.ok) {
+          console.log('[SMS sent ✓]', r.phone, r.tb);
+        } else {
+          console.error('[SMS failed]', r.phone, r.tb || r.error);
+          // Show what TextBee actually said
+          const reason = r.tb?.message || r.tb?.error || r.error || 'Unknown error';
+          toast('error', `📱 SMS failed → ${r.phone}`, String(reason).slice(0,100));
+        }
+      });
+    } else if (!res.ok) {
       console.error('[SMS error]', data);
-      toast('error', '📱 SMS hindi naipadala', JSON.stringify(data).slice(0,80));
-    } else {
-      console.log('[SMS sent ✓]', data.results);
+      toast('error', '📱 SMS hindi naipadala', JSON.stringify(data).slice(0,100));
     }
   } catch(e) {
     console.error('[SMS error]', e);
