@@ -240,6 +240,28 @@ textarea{resize:vertical;min-height:80px;}
 .loading{text-align:center;padding:40px 20px;color:var(--text3);font-size:13px;}
 .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:10px;}
 @keyframes spin{to{transform:rotate(360deg);}}
+
+/* ─── TUTORIAL ─── */
+.tut-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(4px);z-index:500;align-items:flex-end;justify-content:center;padding:0;}
+.tut-overlay.open{display:flex;}
+.tut-card{background:var(--bg2);border:1px solid var(--border2);border-radius:24px 24px 0 0;padding:28px 24px 36px;width:100%;max-width:480px;animation:slideUpTut .35s ease;}
+@keyframes slideUpTut{from{transform:translateY(100%);}to{transform:none;}}
+.tut-icon{font-size:52px;text-align:center;margin-bottom:14px;}
+.tut-title{font-size:22px;font-weight:800;text-align:center;margin-bottom:8px;letter-spacing:-.5px;}
+.tut-body{font-size:15px;color:var(--text2);text-align:center;line-height:1.6;margin-bottom:24px;}
+.tut-body strong{color:var(--text);font-weight:700;}
+.tut-dots{display:flex;justify-content:center;gap:6px;margin-bottom:22px;}
+.tut-dot{width:8px;height:8px;border-radius:50%;background:var(--border2);transition:.3s;}
+.tut-dot.active{background:var(--accent);width:22px;border-radius:4px;}
+.tut-btn{width:100%;height:52px;border-radius:14px;background:var(--accent);border:none;color:#fff;font-family:inherit;font-size:17px;font-weight:800;cursor:pointer;transition:.2s;}
+.tut-btn:active{transform:scale(.97);}
+.tut-skip{display:block;text-align:center;margin-top:14px;font-size:13px;color:var(--text3);cursor:pointer;padding:8px;}
+
+/* ─── FLOATING HELP BUTTON ─── */
+.help-fab{position:fixed;bottom:80px;right:16px;width:52px;height:52px;border-radius:50%;background:var(--accent);border:none;box-shadow:0 4px 20px rgba(79,142,247,.5);color:#fff;font-size:22px;cursor:pointer;z-index:90;transition:.2s;display:none;}
+.help-fab:active{transform:scale(.93);}
+@media(max-width:639px){.help-fab{display:flex;align-items:center;justify-content:center;}}
+@media(min-width:640px){.help-fab{bottom:24px;right:24px;display:flex;align-items:center;justify-content:center;}}
 </style>
 </head>
 <body>
@@ -556,6 +578,11 @@ function showErr(msg) {
 }
 
 function doLogout() {
+  // Hide help button
+  const fab = document.getElementById('helpFab');
+  if (fab) fab.style.display = 'none';
+  // Stop realtime subscriptions
+  if (realtimeChannel) { sb.removeChannel(realtimeChannel); realtimeChannel = null; }
   CU = null; MAINT_MEMBERS = []; NOTIFS = []; ALL_USERS = {};
   localStorage.removeItem('tdmh_session');
   document.getElementById('app').style.display = 'none';
@@ -617,6 +644,130 @@ async function initApp() {
   if (CU.role==='maintenance') switchPage('mytickets');
   else if (CU.role==='department') switchPage('tickets');
   else switchPage('dashboard');
+  // Start real-time subscriptions after page loads
+  startRealtime();
+  // Show floating help button for maintenance users
+  const fab = document.getElementById('helpFab');
+  if (fab) fab.style.display = CU.role === 'maintenance' ? 'flex' : 'none';
+  // Auto-show tutorial on first login for maintenance staff
+  checkShowTutorial();
+}
+
+// ══════════════════════════════════════════════════════════════
+// REAL-TIME SUBSCRIPTIONS via Supabase WebSocket
+// Automatically refreshes the current view when any ticket
+// changes — no manual refresh needed
+// ══════════════════════════════════════════════════════════════
+let realtimeChannel = null;
+
+function startRealtime() {
+  // Clean up any existing channel first (e.g. if user switches account)
+  if (realtimeChannel) { sb.removeChannel(realtimeChannel); realtimeChannel = null; }
+
+  realtimeChannel = sb.channel('tdmh-realtime')
+    // Listen for ANY change on tickets table
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' },
+      (payload) => handleRealtimeTicket(payload))
+    // Listen for new notes (activity log updates)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ticket_notes' },
+      (payload) => handleRealtimeNote(payload))
+    // Listen for team assignments
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_team' },
+      (payload) => handleRealtimeTeam(payload))
+    .subscribe((status) => {
+      console.log('[Realtime]', status);
+      if (status === 'SUBSCRIBED') {
+        console.log('[Realtime] Connected — live updates active');
+      }
+    });
+}
+
+function getActivePage() {
+  const pages = ['dashboard','tickets','mytickets','team','analytics','notifs'];
+  for (const p of pages) {
+    if (document.getElementById('pg-'+p)?.classList.contains('active')) return p;
+  }
+  return null;
+}
+
+function handleRealtimeTicket(payload) {
+  const { eventType, new: newRow, old: oldRow } = payload;
+  const activePage = getActivePage();
+  const ticketId = newRow?.id || oldRow?.id;
+
+  // Show a subtle notification for changes made by OTHER users
+  if (newRow && newRow.updated_at !== oldRow?.updated_at) {
+    const isDeptRelevant = CU.role === 'department' && newRow.dept === CU.dept;
+    const isMaintRelevant = CU.role === 'maintenance';
+    const isAdmin = CU.role === 'admin';
+
+    if (isDeptRelevant || isMaintRelevant || isAdmin) {
+      // Show live badge on ticket list — subtle, doesn't interrupt
+      showRealtimePulse(ticketId);
+    }
+
+    // If status changed to resolved and this is a dept user — add a notification
+    if (newRow.status === 'resolved' && CU.role === 'department' && newRow.dept === CU.dept) {
+      addNotif('✅', 'Ticket Resolved', `${ticketId} — Tap to confirm or reopen`);
+      toast('info', '🔔 Action Required', `${ticketId} resolved — please confirm`);
+    }
+
+    // If status changed to open (reopened) and this is maintenance
+    if (newRow.status === 'open' && oldRow?.status === 'resolved' && (CU.role === 'maintenance' || isAdmin)) {
+      addNotif('🔄', 'Ticket Reopened', `${ticketId} was reopened by the department`);
+      toast('info', '🔄 Ticket Reopened', `${ticketId} needs attention`);
+    }
+  }
+
+  // Refresh the current view silently
+  if (activePage === 'dashboard') renderDash();
+  else if (activePage === 'tickets') renderTickets();
+  else if (activePage === 'mytickets') renderMyTickets();
+  else if (activePage === 'analytics') renderAnalytics();
+
+  // If ticket detail modal is open for this ticket, refresh it too
+  const modal = document.getElementById('tktModal');
+  if (modal?.classList.contains('open') && document.getElementById('td-id')?.textContent === ticketId) {
+    openTkt(ticketId);
+  }
+
+  // Always update nav counts
+  buildNav();
+}
+
+function handleRealtimeNote(payload) {
+  const ticketId = payload.new?.ticket_id;
+  // If ticket detail is open for this ticket, refresh the notes
+  const modal = document.getElementById('tktModal');
+  if (modal?.classList.contains('open') && document.getElementById('td-id')?.textContent === ticketId) {
+    openTkt(ticketId);
+  }
+}
+
+function handleRealtimeTeam(payload) {
+  const ticketId = payload.new?.ticket_id || payload.old?.ticket_id;
+  const activePage = getActivePage();
+  if (activePage === 'mytickets') renderMyTickets();
+  if (activePage === 'tickets') renderTickets();
+  const modal = document.getElementById('tktModal');
+  if (modal?.classList.contains('open') && document.getElementById('td-id')?.textContent === ticketId) {
+    openTkt(ticketId);
+  }
+}
+
+// Show a small "updated" pulse on a ticket card without full re-render
+function showRealtimePulse(ticketId) {
+  // After re-render the card will already be fresh — just flash it briefly
+  setTimeout(() => {
+    const cards = document.querySelectorAll('.tkt');
+    cards.forEach(card => {
+      if (card.innerHTML.includes(ticketId)) {
+        card.style.transition = 'border-color 0.3s';
+        card.style.borderColor = 'var(--accent)';
+        setTimeout(() => { card.style.borderColor = ''; }, 1200);
+      }
+    });
+  }, 300);
 }
 
 function buildNav() {
@@ -1641,6 +1792,181 @@ async function deleteUser() {
   renderTeam();
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// GUIDED TUTORIAL  — for maintenance staff (non-techy users)
+// Shows on first login, available anytime via ? button
+// Written in Filipino/Tagalog mixed with English for accessibility
+// ══════════════════════════════════════════════════════════════
+
+const TUTORIAL_STEPS = [
+  {
+    icon: '👋',
+    title: 'Maligayang pagdating!',
+    body: 'Ako ang <strong>TDMH Maintenance Hub</strong>. Dito makikita mo ang lahat ng mga <strong>trabaho (tickets)</strong> na kailangan mong ayusin sa ospital.',
+    btn: 'Sige, ituloy →'
+  },
+  {
+    icon: '🔔',
+    title: 'May bagong trabaho!',
+    body: 'Kapag may bagong problema sa ospital, makakatanggap ka ng <strong>SMS sa iyong telepono</strong>. Pagkatapos, buksan mo ang app na ito para makita ang detalye.',
+    btn: 'Naintindihan ko →'
+  },
+  {
+    icon: '🎫',
+    title: 'Paano kumuha ng trabaho',
+    body: 'I-tap ang <strong>🎫 All Tickets</strong> sa ibaba. Makikita mo ang mga trabahong walang nakatayo. I-tap ang ticket, tapos i-tap ang malaking berdeng button na <strong>"Claim This Ticket"</strong>.',
+    btn: 'OK! →'
+  },
+  {
+    icon: '🙋',
+    title: '"Claim" — ano ang ibig sabihin?',
+    body: '<strong>Claim</strong> = "Ako ang aayos nito!" Kapag nag-claim ka, alam na ng departamento na ikaw na ang mag-aayos. <strong>Isa lang</strong> ang pwedeng mag-claim sa isang ticket.',
+    btn: 'Sige →'
+  },
+  {
+    icon: '🤝',
+    title: 'Kailangan ng kasama?',
+    body: 'Kung mahirap ayusin nag-iisa, pwede kang humingi ng tulong. Sa loob ng ticket, hanapin ang <strong>"Team Up"</strong> at i-tap ang pangalan ng kasamahan mo. Makakatanggap siya ng SMS.',
+    btn: 'Magaling! →'
+  },
+  {
+    icon: '✅',
+    title: 'Tapos na ang trabaho!',
+    body: 'Kapag naaayos mo na ang problema, i-tap ang <strong>"Mark Resolved"</strong>. Ipapadala namin ang email sa departamento para kumpirmahin. <strong>Huwag kalimutan ito!</strong>',
+    btn: 'Importante! →'
+  },
+  {
+    icon: '💬',
+    title: 'Mag-iwan ng mensahe',
+    body: 'Sa loob ng ticket, may kahon sa ibaba para sa <strong>notes o updates</strong>. Isulat mo kung ano ang ginawa mo — hal: "Pinalitan ang fuse, gumagana na."',
+    btn: 'Nakuha ko →'
+  },
+  {
+    icon: '❓',
+    title: 'Nakalimutan? Walang problema!',
+    body: 'Kapag nakalimutan mo kung paano gamitin, i-tap lang ang <strong>? na bilog na button</strong> sa kanang bahagi. Lalabas ulit ang gabay na ito anumang oras.',
+    btn: 'Handa na ako! 💪'
+  },
+];
+
+let tutStep = 0;
+let tutMode = 'full'; // 'full' = all steps, 'quick' = short reminder
+
+function startTutorial(mode = 'full') {
+  tutMode = mode;
+  tutStep = 0;
+  renderTutStep();
+  document.getElementById('tutOverlay').classList.add('open');
+}
+
+function renderTutStep() {
+  const steps = TUTORIAL_STEPS;
+  const s = steps[tutStep];
+  document.getElementById('tutIcon').textContent  = s.icon;
+  document.getElementById('tutTitle').textContent = s.title;
+  document.getElementById('tutBody').innerHTML    = s.body;
+  document.getElementById('tutBtn').textContent   = s.btn;
+
+  // Dots
+  const dots = document.getElementById('tutDots');
+  dots.innerHTML = steps.map((_,i) =>
+    `<div class="tut-dot ${i===tutStep?'active':''}"></div>`
+  ).join('');
+}
+
+function tutNext() {
+  tutStep++;
+  if (tutStep >= TUTORIAL_STEPS.length) {
+    tutClose();
+    // Mark as seen so it doesn't auto-show again
+    localStorage.setItem('tdmh_tutorial_seen_'+CU?.id, '1');
+    toast('success', '🎉 Handa ka na!', 'I-tap ang ? button anumang oras para sa tulong.');
+    return;
+  }
+  // Animate step change
+  const card = document.querySelector('.tut-card');
+  card.style.opacity = '0';
+  card.style.transform = 'translateY(20px)';
+  setTimeout(() => {
+    renderTutStep();
+    card.style.transition = 'all .25s ease';
+    card.style.opacity = '1';
+    card.style.transform = 'translateY(0)';
+    setTimeout(() => { card.style.transition = ''; }, 300);
+  }, 150);
+}
+
+function tutClose() {
+  document.getElementById('tutOverlay').classList.remove('open');
+  localStorage.setItem('tdmh_tutorial_seen_'+CU?.id, '1');
+}
+
+// Quick contextual help — shorter version
+const HELP_TOPICS = [
+  { icon:'🎫', q:'Paano kumuha ng ticket?', a:'I-tap ang "All Tickets" sa menu. Hanapin ang ticket na "Unclaimed". Buksan ito, tapos i-tap ang berdeng "Claim This Ticket" button.' },
+  { icon:'✅', q:'Paano sabihing tapos na?', a:'Buksan ang iyong ticket. I-tap ang asul na "Mark Resolved" button. Ipapadala namin ang email sa departamento.' },
+  { icon:'🤝', q:'Paano humingi ng tulong?', a:'Buksan ang ticket. Sa ibaba, i-tap ang pangalan ng kasamahan mo sa "Team Up" section. Makakatanggap siya ng SMS.' },
+  { icon:'💬', q:'Paano mag-lagay ng update?', a:'Buksan ang ticket. Sa ibaba ng page, may kahon para sa "notes". Isulat ang ginawa mo, tapos i-tap ang "Post".' },
+  { icon:'📱', q:'Bakit walang SMS?', a:'Siguraduhing tama ang numero ng telepono mo. Makipag-ugnayan sa Admin para i-update ang iyong numero sa "Team" tab.' },
+  { icon:'🔄', q:'Hindi ko makita ang ticket ko?', a:'I-tap ang "My Tickets" para makita lang ang mga ticket mo. Kung gusto mong makita lahat, i-tap ang "All Tickets".' },
+];
+
+function showHelp() {
+  // Build quick help modal
+  const existing = document.getElementById('helpModal');
+  if (existing) existing.remove();
+
+  const div = document.createElement('div');
+  div.className = 'overlay open';
+  div.id = 'helpModal';
+  div.innerHTML = `
+    <div class="modal" style="max-width:500px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">❓ Tulong / Help</div>
+          <div class="modal-sub">I-tap ang tanong mo</div>
+        </div>
+        <button class="x-btn" onclick="document.getElementById('helpModal').remove()">✕</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+        ${HELP_TOPICS.map((t,i) => `
+          <div onclick="toggleHelpAnswer(${i})" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:13px 14px;cursor:pointer;transition:.2s;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:20px;">${t.icon}</span>
+              <span style="font-size:14px;font-weight:600;flex:1;">${t.q}</span>
+              <span style="color:var(--text3);font-size:18px;" id="ha-arrow-${i}">›</span>
+            </div>
+            <div id="ha-body-${i}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:13px;color:var(--text2);line-height:1.6;">${t.a}</div>
+          </div>`).join('')}
+      </div>
+      <button class="tut-btn" style="font-size:14px;height:46px;" onclick="document.getElementById('helpModal').remove();startTutorial('full')">
+        📖 Ipakita ulit ang buong tutorial
+      </button>
+    </div>`;
+  div.addEventListener('click', e => { if (e.target === div) div.remove(); });
+  document.body.appendChild(div);
+}
+
+function toggleHelpAnswer(i) {
+  const body  = document.getElementById(`ha-body-${i}`);
+  const arrow = document.getElementById(`ha-arrow-${i}`);
+  const isOpen = body.style.display !== 'none';
+  body.style.display  = isOpen ? 'none' : 'block';
+  arrow.textContent   = isOpen ? '›' : '˅';
+  arrow.style.color   = isOpen ? 'var(--text3)' : 'var(--accent2)';
+}
+
+// Auto-show tutorial on first login for maintenance staff
+function checkShowTutorial() {
+  if (!CU || CU.role !== 'maintenance') return;
+  const seen = localStorage.getItem('tdmh_tutorial_seen_' + CU.id);
+  if (!seen) {
+    // Slight delay so the page renders first
+    setTimeout(() => startTutorial('full'), 800);
+  }
+}
+
 </script>
 
 <!-- CHANGE PASSWORD MODAL (any user) -->
@@ -1721,6 +2047,21 @@ async function deleteUser() {
     </div>
   </div>
 </div>
+
+<!-- TUTORIAL OVERLAY -->
+<div class="tut-overlay" id="tutOverlay">
+  <div class="tut-card">
+    <div class="tut-icon" id="tutIcon">👋</div>
+    <div class="tut-title" id="tutTitle">Kamusta!</div>
+    <div class="tut-body" id="tutBody">Loading...</div>
+    <div class="tut-dots" id="tutDots"></div>
+    <button class="tut-btn" id="tutBtn" onclick="tutNext()">Susunod →</button>
+    <span class="tut-skip" onclick="tutClose()">Laktawan na</span>
+  </div>
+</div>
+
+<!-- FLOATING HELP BUTTON — always visible for maintenance users -->
+<button class="help-fab" id="helpFab" onclick="showHelp()" title="Tulong / Help" style="display:none;">?</button>
 
 </body>
 </html>
