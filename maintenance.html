@@ -683,6 +683,21 @@ async function renderMyTickets() {
 function tktCard(t) {
   const stClass={open:'b-open',claimed:'b-claimed',teamed:'b-teamed',resolved:'b-resolved',closed:'b-closed'}[t.status]||'b-open';
   const stLabel={open:'● Open',claimed:'● Claimed',teamed:'● Teamed Up',resolved:'● Pending Confirmation',closed:'● Closed'}[t.status]||t.status;
+
+  // Quick-action bar: show for department when ticket is pending confirmation
+  // Also show for maintenance staff when ticket is open (quick claim)
+  const isDept = CU.role === 'department' && t.dept === CU.dept;
+  const isMaint = CU.role === 'maintenance';
+  let quickActions = '';
+
+  if (isDept && t.status === 'resolved') {
+    quickActions = `
+    <div style="display:flex;gap:7px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);" onclick="event.stopPropagation()">
+      <button onclick="quickClose('${t.id}')" style="flex:1;background:var(--green);border:none;border-radius:6px;padding:8px;color:#fff;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;">✅ Yes, it's fixed — Close</button>
+      <button onclick="quickReopen('${t.id}')" style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--red2);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;">❌ Still broken — Reopen</button>
+    </div>`;
+  }
+
   return `<div class="tkt" onclick="openTkt('${t.id}')">
     <div class="tkt-top">
       <div>
@@ -696,7 +711,40 @@ function tktCard(t) {
       <span class="badge ${stClass}">${stLabel}</span>
       <span class="tkt-age">${timeAgo(t.updated_at)}</span>
     </div>
+    ${quickActions}
   </div>`;
+}
+
+// Quick close directly from the card — no need to open the ticket
+async function quickClose(id) {
+  const {data:t} = await sb.from('tickets').select('*').eq('id',id).single();
+  if (!t) return;
+  const now = new Date().toISOString();
+  await sb.from('tickets').update({status:'closed', closed_at:now, updated_at:now}).eq('id',id);
+  await sb.from('ticket_notes').insert({ticket_id:id, user_id:CU.id, user_label:CU.name, message:`✅ ${CU.name} (${CU.dept}) confirmed the issue is resolved. Ticket closed.`});
+  const {data:team} = await sb.from('ticket_team').select('user_id').eq('ticket_id',id);
+  const phones = (team||[]).map(r=>ALL_USERS[r.user_id]?.phone).filter(Boolean);
+  if (phones.length) sendSMS(phones, `[TDMH] ✅ ${t.dept} confirmed ${id} is resolved and closed. Great work!`);
+  await sendEmail('ticket_closed', t);
+  addNotif('🔒','Ticket Closed',`${id} confirmed closed by ${t.dept}`);
+  toast('success','Ticket Closed ✅','Thank you for confirming!');
+  renderTickets();
+  buildNav();
+}
+
+// Quick reopen directly from the card
+async function quickReopen(id) {
+  const {data:t} = await sb.from('tickets').select('*').eq('id',id).single();
+  if (!t) return;
+  await sb.from('tickets').update({status:'open', resolved_at:null, updated_at:new Date().toISOString()}).eq('id',id);
+  await sb.from('ticket_notes').insert({ticket_id:id, user_id:CU.id, user_label:CU.name, message:`❌ ${CU.name} (${CU.dept}) reported the issue is NOT resolved. Ticket reopened.`});
+  const sms = `[TDMH] ⚠️ REOPENED: ${id} — ${t.title}\n${t.dept} says problem still exists.\nLocation: ${t.loc}\nPlease re-attend.`;
+  await blastMaintenance(sms);
+  await sendEmail('ticket_reopened', t);
+  addNotif('🔄','Ticket Reopened',`${id} reopened by ${t.dept}`);
+  toast('info','Ticket Reopened 🔄','Maintenance team has been notified.');
+  renderTickets();
+  buildNav();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -845,14 +893,57 @@ async function openTkt(id) {
 // ══════════════════════════════════════════════════════════════
 // TICKET ACTIONS
 // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// EMAIL  — calls Supabase Edge Function → Resend → dept inbox
+// type: ticket_submitted | ticket_claimed | ticket_teamed |
+//       ticket_resolved  | ticket_closed  | ticket_reopened
+// ══════════════════════════════════════════════════════════════
+const EDGE_FN_URL = `${SUPA_URL}/functions/v1/send-email`;
+
+async function sendEmail(type, ticket, opts = {}) {
+  if (!ticket?.email) {
+    console.warn('[Email] Skipped — no email on ticket', ticket?.id);
+    return;
+  }
+  // Cannot call Edge Functions from file:// — must be served via a server
+  if (window.location.protocol === 'file:') {
+    console.warn('[Email] Skipped — page is opened as file://, serve via Live Server or Python to enable emails');
+    return;
+  }
+  try {
+    const res = await fetch(EDGE_FN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY },
+      body: JSON.stringify({
+        type,
+        ticket: { id: ticket.id, title: ticket.title, loc: ticket.loc, cat: ticket.cat, priority: ticket.priority },
+        claimer: opts.claimer || null,
+        dept_email: ticket.email,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.error('[Email] Edge Function error:', data);
+      toast('error', '📧 Email failed', data?.error || 'Check Supabase Edge Function logs');
+      return;
+    }
+    console.log('[Email sent ✓]', type, ticket.id, '→', ticket.email);
+  } catch(e) {
+    console.warn('[Email error]', e);
+    // Non-fatal — silently swallow network errors
+  }
+}
+
 async function claimTkt(id) {
   const {data:t}=await sb.from('tickets').select('*').eq('id',id).single();
   if (!t) return;
   await sb.from('tickets').update({status:'claimed',claimed_by:CU.id,updated_at:new Date().toISOString()}).eq('id',id);
   await sb.from('ticket_team').upsert({ticket_id:id,user_id:CU.id},{onConflict:'ticket_id,user_id'});
   await addNote(id,`🙋 ${CU.name} claimed this ticket.`);
+  await sendEmail('ticket_claimed', t, { claimer: { name: CU.name, spec: CU.spec } });
   addNotif('🙋','Ticket Claimed',`${id} — ${t.title}`);
   toast('success','Ticket Claimed!',`You are now handling ${id}`);
+  setTimeout(()=>toast('email','📧 Email sent',`${t.dept} notified you claimed ${id}`),600);
   openTkt(id);
 }
 
@@ -874,8 +965,11 @@ async function toggleTeam(tktId, uid, el) {
       const sms=`[TDMH] 🤝 You've been tagged on ${tktId} by ${CU.name}\nIssue: ${t?.title}\nLocation: ${t?.loc}\nLogin: hub.tdmh.com`;
       await sendSMS(m.phone,sms);
     }
+    const {data:tktForEmail}=await sb.from('tickets').select('*').eq('id',tktId).single();
+    if (tktForEmail) await sendEmail('ticket_teamed', tktForEmail, { claimer: { name: m?.name, spec: m?.spec } });
     addNotif('🤝','Team Up',`${CU.name} tagged ${m?.name} on ${tktId}`);
     toast('sms',`📱 TextBee → ${m?.name?.split(' ')[0]}`,`${m?.phone||'no number'} notified`);
+    setTimeout(()=>toast('email','📧 Email sent',`${tktForEmail?.dept} notified of team update`),700);
   }
   openTkt(tktId);
 }
@@ -900,8 +994,9 @@ async function maintResolve(id) {
   await sb.from('tickets').update({status:'resolved',resolved_at:now,updated_at:now}).eq('id',id);
   await addNote(id,`✅ ${CU.name} marked this ticket as resolved. Awaiting department confirmation.`);
   addNotif('✅','Ticket Resolved',`${id} resolved — awaiting ${t.dept} confirmation`);
+  await sendEmail('ticket_resolved', t, { claimer: { name: CU.name } });
   toast('success','Marked Resolved!','Department will be asked to confirm.');
-  setTimeout(()=>toast('email','📧 Email → '+t.dept,'Confirmation request sent to '+t.email),600);
+  setTimeout(()=>toast('email','📧 Email sent',`${t.dept} asked to confirm resolution`),600);
   scheduleAutoClose(id);
   openTkt(id);
   buildNav();
@@ -917,8 +1012,10 @@ async function deptClose(id) {
   const {data:team}=await sb.from('ticket_team').select('user_id').eq('ticket_id',id);
   const phones=(team||[]).map(r=>ALL_USERS[r.user_id]?.phone).filter(Boolean);
   if (phones.length) await sendSMS(phones,`[TDMH] ✅ ${t.dept} confirmed ${id} is resolved and closed. Great work!`);
+  await sendEmail('ticket_closed', t);
   addNotif('🔒','Ticket Closed',`${id} confirmed closed by ${t.dept}`);
   toast('success','Ticket Closed','Thank you for confirming!');
+  setTimeout(()=>toast('email','📧 Closure email sent',`Confirmation sent to ${t.email}`),600);
   closeM('tktModal');
   renderTickets();
   buildNav();
@@ -931,9 +1028,11 @@ async function deptReopen(id) {
   await addNote(id,`❌ ${CU.name} (${CU.dept}) reported the issue is NOT resolved. Ticket reopened.`);
   const sms=`[TDMH] ⚠️ REOPENED: ${id} — ${t.title}\n${t.dept} says problem still exists.\nLocation: ${t.loc}\nPlease re-attend.`;
   await blastMaintenance(sms);
+  await sendEmail('ticket_reopened', t);
   addNotif('🔄','Ticket Reopened',`${id} reopened by ${t.dept} — problem not fixed`);
   toast('info','Ticket Reopened','Maintenance team notified.');
   setTimeout(()=>toast('sms','📱 TextBee Blast','All maintenance staff re-notified'),500);
+  setTimeout(()=>toast('email','📧 Email sent',`${t.dept} notified of reopen`),800);
   closeM('tktModal');
   renderTickets();
   buildNav();
@@ -1049,7 +1148,8 @@ async function submitTkt() {
     addNotif('📱','New Ticket',`${id} — ${title}`);
     toast('success','Ticket Submitted!',`${id} created successfully.`);
     setTimeout(()=>toast('sms','📱 TextBee SMS Blast',`${MAINT_MEMBERS.length} maintenance staff notified`),500);
-    setTimeout(()=>toast('email','📧 Confirmation','Sent to '+ticket.email),1100);
+    sendEmail('ticket_submitted', {...ticket, email: ticket.email});
+    setTimeout(()=>toast('email','📧 Confirmation',`Sent to ${ticket.email}`),1100);
     closeM('newTktModal');
     renderTickets();
     buildNav();
