@@ -2,8 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>TDMH Maintenance Hub</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TDMH Maint">
+<meta name="theme-color" content="#0d1117">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -62,7 +67,33 @@ html,body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:
 .app-wrap{display:flex;flex-direction:column;min-height:100vh;}
 .main-area{flex:1;padding:16px;max-width:1100px;margin:0 auto;width:100%;padding-bottom:80px;}
 @media(min-width:640px){.bottom-nav{display:none!important;}.main-area{padding-bottom:24px;}}
-@media(max-width:639px){.desk-nav{display:none!important;}.bottom-nav{display:flex!important;}.main-area{padding:12px;}}
+@media(max-width:639px){
+  .desk-nav{display:none!important;}
+  .bottom-nav{display:flex!important;}
+  .main-area{padding:10px;}
+  /* Modals go full-screen on mobile */
+  .overlay{padding:0;align-items:flex-end;}
+  .modal{border-radius:20px 20px 0 0;max-width:100%!important;margin:0;max-height:92vh;overflow-y:auto;padding:20px 16px;}
+  /* Toast smaller on mobile */
+  .toast-wrap{top:auto;bottom:72px;right:8px;left:8px;}
+  .toast{min-width:0;max-width:100%;}
+  /* Login card full width */
+  .login-card{padding:24px 18px;border-radius:16px;}
+  /* Bigger touch targets */
+  .btn{min-height:42px;}
+  .btn-sm{min-height:36px;}
+  /* Stats grid 2-col on mobile */
+  .stats-row{grid-template-columns:1fr 1fr;}
+  /* Quick action buttons full width stack */
+  .tkt-bottom{gap:5px;}
+  /* Filter bar full width inputs */
+  .filters{flex-direction:column;}
+  .filters input,.filters select{width:100%;}
+  /* Nav bottom safe area */
+  .bottom-nav{padding-bottom:calc(8px + env(safe-area-inset-bottom));}
+  /* Leaderboard table scroll */
+  .ptable th,.ptable td{padding:7px 6px;font-size:11px;}
+}
 
 /* PAGES */
 .page{display:none;animation:fadeIn .25s ease;}
@@ -138,6 +169,7 @@ textarea{resize:vertical;min-height:80px;}
 .overlay.open{display:flex;}
 .modal{background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:20px;width:100%;max-width:580px;margin:auto;box-shadow:0 24px 64px rgba(0,0,0,.65);animation:modalIn .25s ease;}
 @keyframes modalIn{from{opacity:0;transform:translateY(16px) scale(.98);}to{opacity:1;transform:none;}}
+@media(max-width:639px){@keyframes modalIn{from{opacity:0;transform:translateY(100%);}to{opacity:1;transform:translateY(0);}}}
 .modal-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:10px;}
 .modal-title{font-size:17px;font-weight:800;letter-spacing:-.3px;}
 .modal-sub{font-size:11px;color:var(--text3);margin-top:2px;}
@@ -503,6 +535,10 @@ async function doLogin() {
     if (!allowed.includes(data.role)) { showErr('Your account does not have access to this system.'); return; }
 
     CU = data;
+    // Save session to localStorage — stays across refreshes and device restarts
+    // We only store non-sensitive fields (no password)
+    const session = { id:data.id, name:data.name, username:data.username, role:data.role, dept:data.dept, spec:data.spec, color:data.color, email:data.email };
+    localStorage.setItem('tdmh_session', JSON.stringify(session));
     document.getElementById('loginPage').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     await initApp();
@@ -521,11 +557,43 @@ function showErr(msg) {
 
 function doLogout() {
   CU = null; MAINT_MEMBERS = []; NOTIFS = []; ALL_USERS = {};
+  localStorage.removeItem('tdmh_session');
   document.getElementById('app').style.display = 'none';
   document.getElementById('loginPage').style.display = 'block';
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('loginErr').style.display = 'none';
+}
+
+// ══════════════════════════════════════════════════════════════
+// SESSION RESTORE  — runs immediately on page load
+// Re-fetches fresh user data from DB to pick up any profile changes
+// ══════════════════════════════════════════════════════════════
+async function restoreSession() {
+  const raw = localStorage.getItem('tdmh_session');
+  if (!raw) return false; // no saved session
+  let saved;
+  try { saved = JSON.parse(raw); } catch { localStorage.removeItem('tdmh_session'); return false; }
+  if (!saved?.username) return false;
+  try {
+    // Re-fetch fresh data from DB (catches password changes, role changes)
+    const { data, error } = await sb.from('users').select('*').eq('id', saved.id).single();
+    if (error || !data) { localStorage.removeItem('tdmh_session'); return false; }
+    const allowed = ['admin','maintenance','department'];
+    if (!allowed.includes(data.role)) { localStorage.removeItem('tdmh_session'); return false; }
+    CU = data;
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    await initApp();
+    return true;
+  } catch(e) {
+    // Network error — use cached session so app still works offline briefly
+    CU = saved;
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    await initApp();
+    return true;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1381,6 +1449,10 @@ function updateNotifDot(){const u=NOTIFS.filter(n=>!n.read).length;document.getE
 function closeM(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
 document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+// Attempt to restore saved session on page load
+// If no session found, the login page stays visible
+restoreSession();
 
 // Detect file:// protocol and show warning
 if (window.location.protocol === 'file:') {
