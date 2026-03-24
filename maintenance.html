@@ -12,7 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-:root{
+/* ── DARK MODE (default) ── */
+:root,[data-theme="dark"]{
   --bg:#07090f;--bg2:#0d1117;--bg3:#161b27;--bg4:#1c2333;--surface:#1e2740;
   --border:rgba(148,163,225,0.1);--border2:rgba(148,163,225,0.22);--border3:rgba(148,163,225,0.35);
   --accent:#4f8ef7;--accent2:#7aadff;--accent3:#b3ceff;
@@ -25,6 +26,23 @@
   --radius:14px;--radius-sm:9px;--radius-xs:6px;
   --shadow:0 8px 32px rgba(0,0,0,0.5);
 }
+/* ── LIGHT MODE ── */
+[data-theme="light"]{
+  --bg:#f0f2f8;--bg2:#ffffff;--bg3:#f4f6fb;--bg4:#e8ecf5;--surface:#e4e9f5;
+  --border:rgba(60,80,140,0.13);--border2:rgba(60,80,140,0.22);--border3:rgba(60,80,140,0.35);
+  --accent:#2563eb;--accent2:#1d4ed8;--accent3:#3b82f6;
+  --green:#16a34a;--green2:#15803d;
+  --amber:#d97706;--amber2:#b45309;
+  --red:#dc2626;--red2:#b91c1c;
+  --purple:#7c3aed;--purple2:#6d28d9;
+  --teal:#0d9488;--teal2:#0f766e;
+  --text:#0f172a;--text2:#475569;--text3:#94a3b8;
+  --radius:14px;--radius-sm:9px;--radius-xs:6px;
+  --shadow:0 8px 32px rgba(0,0,0,0.1);
+}
+/* Smooth theme transition */
+*{transition:background-color .2s,border-color .2s,color .15s;}
+.big-btn,.btn,.tut-btn{transition:background-color .2s,border-color .2s,color .15s,transform .1s!important;}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html,body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;line-height:1.55;overscroll-behavior:none;}
 ::-webkit-scrollbar{width:4px;height:4px;}
@@ -350,6 +368,7 @@ textarea{resize:vertical;min-height:80px;}
       <div><div class="logo-text">TDMH Maintenance</div><div class="logo-sub">Taytay Doctors Hospital</div></div>
     </div>
     <div class="topbar-right">
+      <button id="themeToggleBtn" onclick="toggleTheme()" title="Toggle light/dark mode" style="width:34px;height:34px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;flex-shrink:0;">🌙</button>
       <div class="notif-btn" onclick="switchPage('notifs')" title="Notifications">🔔<div class="notif-dot" id="notifDot"></div></div>
       <div class="user-chip" onclick="openAccountMenu()">
         <div class="av" id="topAv" style="background:var(--accent)">A</div>
@@ -2350,6 +2369,32 @@ function checkShowTutorial() {
     setTimeout(() => startTutorial('full'), 800);
   }
 }
+
+
+// ══════════════════════════════════════════════════════════════
+// THEME — light / dark toggle, persisted in localStorage
+// ══════════════════════════════════════════════════════════════
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+  // Update meta theme-color for browser chrome
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = theme === 'light' ? '#f0f2f8' : '#0d1117';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  localStorage.setItem('tdmh_theme', next);
+}
+
+// Apply saved theme immediately on load (before render to avoid flash)
+(function() {
+  const saved = localStorage.getItem('tdmh_theme') || 'dark';
+  applyTheme(saved);
+})();
 
 </script>
 
