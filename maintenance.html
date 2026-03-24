@@ -1199,7 +1199,7 @@ async function quickTeamTag(ticketId, memberId, memberName, memberPhone, btn) {
     // SMS the tagged member
     if (memberPhone) {
       const {data:t} = await sb.from('tickets').select('title,loc').eq('id',ticketId).single();
-      const sms = `[TDMH] 🤝 Na-tag ka ni ${CU.name} sa ${ticketId}\nIssue: ${t?.title}\nLocation: ${t?.loc}\nBuksan: hub.tdmh.com`;
+      const sms = `[TDMH] Na-tag ka ni ${CU.name} sa ${ticketId}\nIssue: ${t?.title}\nLocation: ${t?.loc}\nBuksan ang TDMH Maintenance app`;
       sendSMS(memberPhone, sms);
     }
 
@@ -1558,7 +1558,7 @@ async function toggleTeam(tktId, uid, el) {
     await addNote(tktId,`🤝 ${CU.name} tagged ${m?.name||uid} to help with this ticket.`);
     const {data:t}=await sb.from('tickets').select('title,loc').eq('id',tktId).single();
     if (m?.phone) {
-      const sms=`[TDMH] 🤝 You've been tagged on ${tktId} by ${CU.name}\nIssue: ${t?.title}\nLocation: ${t?.loc}\nLogin: hub.tdmh.com`;
+      const sms=`[TDMH] Na-tag ka ni ${CU.name} sa ${tktId}\nIssue: ${t?.title}\nLocation: ${t?.loc}\nBuksan ang TDMH Maintenance app`;
       await sendSMS(m.phone,sms);
     }
     const {data:tktForEmail}=await sb.from('tickets').select('*').eq('id',tktId).single();
@@ -1707,7 +1707,7 @@ function updateSMSPreview() {
   const cat=document.getElementById('nt-cat')?.value||'General';
   const pri=document.getElementById('nt-pri')?.value||'normal';
   document.getElementById('smsPreview').textContent=
-    `[TDMH] 🔧 NEW TICKET\nFrom: ${CU.dept||CU.name}\nIssue: ${title}\nLocation: ${loc}\nCategory: ${cat}\nPriority: ${pri.toUpperCase()}\nClaim at: hub.tdmh.com`;
+    `[TDMH] BAGONG TICKET\nMula: ${CU.dept||CU.name}\nIssue: ${title}\nLocation: ${loc}\nCategory: ${cat}\nPriority: ${pri.toUpperCase()}\nBuksan ang TDMH Maintenance app`;
 }
 
 async function submitTkt() {
@@ -1739,7 +1739,7 @@ async function submitTkt() {
     if (error){toast('error','Error',error.message);return;}
     await addNote(id,`📋 Ticket submitted by ${CU.name} (${CU.dept||CU.role}).`);
     // SMS blast all maintenance
-    const sms=`[TDMH] 🔧 NEW TICKET ${id}\nFrom: ${ticket.dept}\nIssue: ${title}\nLocation: ${ticket.loc}\nPriority: ${ticket.priority.toUpperCase()}\nClaim at: hub.tdmh.com`;
+    const sms=`[TDMH] BAGONG TICKET ${id}\nMula: ${ticket.dept}\nIssue: ${title}\nLocation: ${ticket.loc}\nPriority: ${ticket.priority.toUpperCase()}\nBuksan ang TDMH Maintenance app`;
     await blastMaintenance(sms);
     addNotif('📱','New Ticket',`${id} — ${title}`);
     toast('success','Ticket Submitted!',`${id} created successfully.`);
@@ -1866,7 +1866,7 @@ async function addMember() {
   const {data:users}=await sb.from('users').select('*').eq('role','maintenance');
   if(users){MAINT_MEMBERS=users;users.forEach(u=>{ALL_USERS[u.id]=u;});}
   if (userData.phone) {
-    await sendSMS(userData.phone,`[TDMH] Welcome ${name}! You've been added to the TDMH Maintenance Hub. Login at hub.tdmh.com with username: ${username}`);
+    await sendSMS(userData.phone,`[TDMH] Welcome ${name}! Naidagdag ka na sa TDMH Maintenance Hub. Username: ${username}`);
     toast('sms','📱 Welcome SMS',`Sent to ${userData.phone}`);
   }
   toast('success','Member Added',`${name} added successfully!`);
