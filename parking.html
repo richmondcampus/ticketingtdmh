@@ -792,7 +792,9 @@ function UserManagement({currentUser,toast}){
 function TDMHParking(){
   const {add:toast,Toasts}=useToast();
 
-  const [user,setUser]       = useState(null);
+  // Restore session from localStorage on load
+  const savedUser = (()=>{ try{ const u=localStorage.getItem('tdmh_user'); return u?JSON.parse(u):null; }catch{return null;} })();
+  const [user,setUser]       = useState(savedUser);
   const [attLoc,setAttLoc]   = useState(null);
   const [slots,setSlots]     = useState(initSlotsLocal);
   const [tab,setTab]         = useState("overview");
@@ -956,10 +958,12 @@ function TDMHParking(){
     setLf(p=>({...p,loading:true,err:""}));
     const{data,error}=await sb.from("users").select("*").eq("username",lf.username).eq("password",lf.password).maybeSingle();
     if(error||!data){setLf(p=>({...p,loading:false,err:"Invalid username or password."}));return;}
+    try{ localStorage.setItem('tdmh_user', JSON.stringify(data)); }catch{}
     setUser(data);setTab("overview");setLf(p=>({...p,loading:false}));
   }
 
   function doLogout(){
+    try{ localStorage.removeItem('tdmh_user'); }catch{}
     if(user?.role==="attendant")setAttLoc(null);
     setUser(null);
     setTxns([]);
