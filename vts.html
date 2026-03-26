@@ -300,20 +300,19 @@ const ROLE_LABELS = { admin:'Administrator', approver:'Approver', guard:'Guard',
 const ROLE_COLORS = { admin:'#0c6fdb', approver:'#7c3aed', guard:'#0d9488', requester:'#d97706', driver:'#16a34a' }
 const STATUS_MAP = {
   'pending-approval':{ cls:'b-pending',  lbl:'Pending' },
-  'driver-assigned': { cls:'b-assigned', lbl:'Assigned' },
-  'gate-out-pending':{ cls:'b-gout',     lbl:'Gate Out Pending' },
+  'approved':        { cls:'b-assigned', lbl:'Approved' },
+  'assigned':        { cls:'b-gout',     lbl:'Driver Assigned' },
   'on-trip':         { cls:'b-ontrip',   lbl:'On Trip' },
   'completed':       { cls:'b-done',     lbl:'Completed' },
   'rejected':        { cls:'b-rejected', lbl:'Rejected' },
   'cancelled':       { cls:'b-rejected', lbl:'Cancelled' },
   'available':       { cls:'b-avail',    lbl:'Available' },
   'maintenance':     { cls:'b-maint',    lbl:'Maintenance' },
-  'on-trip':         { cls:'b-gout',     lbl:'On Trip' },
 }
 const WF_STEPS = [
   { key:'pending-approval', lbl:'Requested' },
-  { key:'driver-assigned',  lbl:'Approved' },
-  { key:'gate-out-pending', lbl:'Driver Assigned' },
+  { key:'approved',  lbl:'Approved' },
+  { key:'assigned', lbl:'Driver Assigned' },
   { key:'on-trip',          lbl:'Gate Out' },
   { key:'completed',        lbl:'Completed' },
 ]
@@ -552,7 +551,7 @@ async function renderDashboard() {
   ])
   const T = trips || []; const L = logs || []
   const pending  = T.filter(t => t.status==='pending-approval')
-  const active   = T.filter(t => ['driver-assigned','gate-out-pending','on-trip'].includes(t.status))
+  const active   = T.filter(t => ['approved','assigned','on-trip'].includes(t.status))
   const done     = T.filter(t => t.status==='completed')
   updateNavBadge(pending.length)
 
@@ -628,8 +627,8 @@ function renderTicketsTable() {
     <select class="fs" id="tkStatus" style="width:155px;font-size:12px;padding:7px 11px" onchange="renderTicketsTable()">
       <option value="">All Statuses</option>
       <option value="pending-approval" ${sf==='pending-approval'?'selected':''}>Pending</option>
-      <option value="driver-assigned" ${sf==='driver-assigned'?'selected':''}>Approved</option>
-      <option value="gate-out-pending" ${sf==='gate-out-pending'?'selected':''}>Gate Out Pending</option>
+      <option value="approved" ${sf==='approved'?'selected':''}>Approved</option>
+      <option value="assigned" ${sf==='assigned'?'selected':''}>Gate Out Pending</option>
       <option value="on-trip" ${sf==='on-trip'?'selected':''}>On Trip</option>
       <option value="completed" ${sf==='completed'?'selected':''}>Completed</option>
       <option value="rejected" ${sf==='rejected'?'selected':''}>Rejected</option>
@@ -650,9 +649,9 @@ function renderTicketsTable() {
         acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
         acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
       }
-      if (role==='admin' && t.status==='driver-assigned')
+      if (role==='admin' && t.status==='approved')
         acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign</button>`)
-      if (role==='guard' && t.status==='gate-out-pending')
+      if (role==='guard' && t.status==='assigned')
         acts.push(`<button class="btn btn-teal btn-sm" onclick="event.stopPropagation();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle?.plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}')">Gate Out</button>`)
       if (role==='guard' && t.status==='on-trip')
         acts.push(`<button class="btn btn-purple btn-sm" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
@@ -715,7 +714,7 @@ async function doApprove(id, ticketNo) {
   const rem = document.getElementById('apRem')?.value||''
   // Get trip details for SMS
   const { data: trip } = await SB.from('trips').select('requester_name,department,purpose,vehicle_type_needed').eq('id',id).single()
-  const { error } = await SB.from('trips').update({ status:'driver-assigned', admin_id:currentProfile?.id, admin_approved_at:new Date().toISOString(), admin_remarks:rem }).eq('id',id)
+  const { error } = await SB.from('trips').update({ status:'approved', approver_id:currentProfile?.id, approved_at:new Date().toISOString(), approval_remarks:rem }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Confirm Approval'; return }
   await addAudit(id, ticketNo, 'Ticket Approved', rem||'Approved')
   // SMS + Email → notify requester
@@ -771,7 +770,7 @@ async function doAssign(id, ticketNo) {
   if (!dv||!vv) { alert('Select both driver and vehicle.'); return }
   const [driverId, driverName] = dv.split('|')
   const btn = document.getElementById('asBtn'); btn.disabled=true; btn.textContent='Assigning...'
-  const { error } = await SB.from('trips').update({ status:'gate-out-pending', driver_id:driverId, driver_name:driverName, vehicle_id:vv, assigned_by:currentProfile?.id, assigned_at:new Date().toISOString() }).eq('id',id)
+  const { error } = await SB.from('trips').update({ status:'assigned', driver_id:driverId, driver_name:driverName, vehicle_id:vv, assigned_by:currentProfile?.id, assigned_at:new Date().toISOString() }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Assign'; return }
   await SB.from('drivers').update({ status:'on-trip' }).eq('id',driverId)
   await SB.from('vehicles').update({ status:'on-trip' }).eq('id',vv)
@@ -809,7 +808,7 @@ async function doGateOut(id, ticketNo) {
   const odo = parseInt(document.getElementById('odoOut')?.value)
   if (!odo) { alert('Odometer reading required.'); return }
   const btn = document.getElementById('goBtn'); btn.disabled=true; btn.textContent='Recording...'
-  const { error } = await SB.from('trips').update({ status:'on-trip', guard_out_id:currentProfile?.id, gate_out_at:new Date().toISOString(), odometer_out:odo, fuel_level_out:document.getElementById('fuelOut')?.value, condition_out:document.getElementById('condOut')?.value, guard_out_remarks:document.getElementById('goRem')?.value }).eq('id',id)
+  const { error } = await SB.from('trips').update({ status:'on-trip', guard_out_id:currentProfile?.id, gate_out_at:new Date().toISOString(), odometer_out:odo, fuel_out:document.getElementById('fuelOut')?.value, condition_out:document.getElementById('condOut')?.value, guard_out_remarks:document.getElementById('goRem')?.value }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Record Gate Out'; return }
   await addAudit(id, ticketNo, 'Gate Out', `Odometer: ${odo} km`)
   closeMO(); renderTickets()
@@ -833,7 +832,7 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
   const odo = parseInt(document.getElementById('odoIn')?.value)
   if (!odo) { alert('Odometer reading required.'); return }
   const btn = document.getElementById('giBtn'); btn.disabled=true; btn.textContent='Recording...'
-  const { error } = await SB.from('trips').update({ status:'completed', guard_in_id:currentProfile?.id, gate_in_at:new Date().toISOString(), odometer_in:odo, fuel_level_in:document.getElementById('fuelIn')?.value, condition_in:document.getElementById('condIn')?.value, guard_in_remarks:document.getElementById('giRem')?.value }).eq('id',id)
+  const { error } = await SB.from('trips').update({ status:'completed', guard_in_id:currentProfile?.id, gate_in_at:new Date().toISOString(), odometer_in:odo, fuel_in:document.getElementById('fuelIn')?.value, condition_in:document.getElementById('condIn')?.value, guard_in_remarks:document.getElementById('giRem')?.value }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Complete Trip'; return }
   if (driverId && driverId!=='null') await SB.from('drivers').update({ status:'available' }).eq('id',driverId)
   if (vehicleId && vehicleId!=='null') await SB.from('vehicles').update({ status:'available' }).eq('id',vehicleId)
@@ -1082,7 +1081,7 @@ function filterDepts(q) {
 // GPS
 // ════════════════════════════════════════════════
 async function renderGPS() {
-  const { data } = await SB.from('trips').select('ticket_no,status,destination,driver_name,vehicle:vehicles(plate)').in('status',['gate-out-pending','on-trip'])
+  const { data } = await SB.from('trips').select('ticket_no,status,destination,driver_name,vehicle:vehicles(plate)').in('status',['assigned','on-trip'])
   const active = data||[]
   document.getElementById('CONTENT').innerHTML = `
   <div class="info info-blue" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -1343,7 +1342,7 @@ async function toggleUser(id, status) {
 // DRIVER APP
 // ════════════════════════════════════════════════
 async function renderDriverApp() {
-  const { data } = await SB.from('trips').select('ticket_no,status,purpose,destination,departure_at').in('status',['gate-out-pending','on-trip']).limit(3)
+  const { data } = await SB.from('trips').select('ticket_no,status,purpose,destination,departure_at').in('status',['assigned','on-trip']).limit(3)
   const assigned = data||[]
   document.getElementById('CONTENT').innerHTML = `
   <div style="display:grid;grid-template-columns:1fr auto;gap:20px;align-items:start">
