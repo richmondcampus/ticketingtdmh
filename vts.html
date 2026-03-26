@@ -288,6 +288,18 @@ async function getPhonesForRole(role) {
   return (data || []).map(u => u.phone).filter(Boolean)
 }
 
+// Get ONLY the specific requester's phone and email (the person who submitted the ticket)
+async function getRequesterContacts(tripId) {
+  const { data: trip } = await SB.from('trips').select('requester_id').eq('id', tripId).single()
+  if (!trip?.requester_id) return { phones: [], emails: [], name: '' }
+  const { data: user } = await SB.from('users').select('phone, email, full_name').eq('id', trip.requester_id).single()
+  return {
+    phones: [user?.phone].filter(Boolean),
+    emails: [user?.email].filter(Boolean),
+    name:   user?.full_name || ''
+  }
+}
+
 // ════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════
@@ -717,11 +729,10 @@ async function doApprove(id, ticketNo) {
   const { error } = await SB.from('trips').update({ status:'approved', approver_id:currentProfile?.id, approved_at:new Date().toISOString(), approval_remarks:rem }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Confirm Approval'; return }
   await addAudit(id, ticketNo, 'Ticket Approved', rem||'Approved')
-  // SMS + Email → notify requester
-  const reqPhones = await getPhonesForRole('requester')
-  const reqEmails = await getEmailsForRole('requester')
-  await sendSMS(reqPhones, `[MedCenter VTS] Your request ${ticketNo} has been APPROVED.\nPurpose: ${trip?.purpose||''}\nA driver will be assigned shortly.`)
-  await sendEmail(reqEmails, 'ticket_approved', { ticket_no: ticketNo, purpose: trip?.purpose||'', destination: trip?.destination||'', approved_by: currentProfile?.full_name||'Approver', remarks: rem })
+  // SMS + Email → notify ONLY the requester who submitted this ticket
+  const requester = await getRequesterContacts(id)
+  await sendSMS(requester.phones, `[MedCenter VTS] Your request ${ticketNo} has been APPROVED.\nPurpose: ${trip?.purpose||''}\nA driver will be assigned shortly.`)
+  await sendEmail(requester.emails, 'ticket_approved', { ticket_no: ticketNo, purpose: trip?.purpose||'', destination: trip?.destination||'', approved_by: currentProfile?.full_name||'Approver', remarks: rem })
   closeMO(); renderTickets()
 }
 
@@ -738,15 +749,23 @@ async function doReject(id, ticketNo) {
   const reason = document.getElementById('rejR')?.value?.trim()
   if (!reason) { alert('Reason required.'); return }
   const btn = document.getElementById('rejBtn'); btn.disabled=true; btn.textContent='Rejecting...'
-  const { data: trip } = await SB.from('trips').select('purpose').eq('id',id).single()
+  const { data: trip } = await SB.from('trips').select('purpose,department,destination,driver_id,vehicle_id').eq('id',id).single()
   const { error } = await SB.from('trips').update({ status:'rejected', rejected_by:currentProfile?.id, rejected_at:new Date().toISOString(), rejection_reason:reason }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Reject Ticket'; return }
   await addAudit(id, ticketNo, 'Ticket Rejected', reason)
   // SMS + Email → notify requester
-  const reqPhones = await getPhonesForRole('requester')
-  const reqEmails = await getEmailsForRole('requester')
-  await sendSMS(reqPhones, `[MedCenter VTS] Your request ${ticketNo} has been REJECTED.\nReason: ${reason}\nPlease coordinate with your department head.`)
-  await sendEmail(reqEmails, 'ticket_rejected', { ticket_no: ticketNo, purpose: trip?.purpose||'', reason })
+  const requester = await getRequesterContacts(id)
+  await sendSMS(requester.phones, `[MedCenter VTS] Your request ${ticketNo} has been REJECTED.\nReason: ${reason}\nPlease coordinate with your department head.`)
+  await sendEmail(requester.emails, 'ticket_rejected', { ticket_no: ticketNo, purpose: trip?.purpose||'', reason })
+  // SMS + Email → notify driver if already assigned
+  if (trip?.driver_id) {
+    const { data: drvRow } = await SB.from('drivers').select('phone').eq('id', trip.driver_id).single()
+    if (drvRow?.phone) await sendSMS([drvRow.phone], `[MedCenter VTS] Trip ${ticketNo} has been CANCELLED.\nYou are no longer assigned to this trip.`)
+    const drvEmails = await getEmailsForRole('driver')
+    await sendEmail(drvEmails, 'trip_cancelled_driver', { ticket_no: ticketNo, department: trip?.department||'', purpose: trip?.purpose||'', destination: trip?.destination||'', reason })
+    await SB.from('drivers').update({ status:'available' }).eq('id', trip.driver_id)
+    if (trip?.vehicle_id) await SB.from('vehicles').update({ status:'available' }).eq('id', trip.vehicle_id)
+  }
   closeMO(); renderTickets()
 }
 
@@ -783,6 +802,16 @@ async function doAssign(id, ticketNo) {
   // SMS + Email → notify driver
   if (driverRow?.phone) await sendSMS([driverRow.phone], `[MedCenter VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nDestination: ${tripData?.destination||''}\nPlease report to the motor pool.`)
   if (driverUser?.email) await sendEmail([driverUser.email], 'driver_assigned', { ticket_no: ticketNo, department: tripData?.department||'', purpose: tripData?.purpose||'', destination: tripData?.destination||'', departure_at: tripData?.departure_at||'', vehicle_plate: vehiclePlate })
+  // SMS + Email → notify requester that driver is assigned
+  const reqPhonesA = await getPhonesForRole('requester')
+  const reqEmailsA = await getEmailsForRole('requester')
+  await sendSMS(reqPhonesA, `[MedCenter VTS] Driver assigned for your request ${ticketNo}.\nDriver: ${driverName}\nVehicle: ${vehiclePlate}\nDestination: ${tripData?.destination||''}`)
+  await sendEmail(reqEmailsA, 'driver_assigned_requester', { ticket_no: ticketNo, purpose: tripData?.purpose||'', destination: tripData?.destination||'', driver_name: driverName, vehicle_plate: vehiclePlate, departure_at: tripData?.departure_at||'' })
+  // SMS + Email → notify guards to process gate out
+  const guardPhones = await getPhonesForRole('guard')
+  const guardEmails = await getEmailsForRole('guard')
+  await sendSMS(guardPhones, `[MedCenter VTS] ${ticketNo} is ready for Gate Out.\nDriver: ${driverName} | Vehicle: ${vehiclePlate}\nDestination: ${tripData?.destination||''}\nPlease process Gate Out.`)
+  await sendEmail(guardEmails, 'gate_out_guard', { ticket_no: ticketNo, department: tripData?.department||'', purpose: tripData?.purpose||'', destination: tripData?.destination||'', driver_name: driverName, vehicle_plate: vehiclePlate, departure_at: tripData?.departure_at||'' })
   closeMO(); renderTickets()
 }
 
@@ -842,15 +871,15 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
   const approverRole = trip?.vehicle_type_needed === 'ambulance' ? 'approver_amb' : 'approver_admin'
   const approverPhones = await getPhonesForRole(approverRole)
   const approverEmails = await getEmailsForRole(approverRole)
-  const reqPhones      = await getPhonesForRole('requester')
-  const reqEmails      = await getEmailsForRole('requester')
+  // ONLY the specific requester who submitted this ticket
+  const requester = await getRequesterContacts(id)
   const tripPayload = { ticket_no: ticketNo, department: trip?.department||'', purpose: trip?.purpose||'', destination: trip?.destination||'', driver_name: trip?.driver_name||'', vehicle_plate: trip?.vehicle_plate||'', gate_out_at: trip?.gate_out_at||'', gate_in_at: trip?.gate_in_at||'', odometer_out: trip?.odometer_out, odometer_in: odo, distance_km: trip?.odometer_out ? odo - trip.odometer_out : null }
   // SMS + Email → notify approver
   await sendSMS(approverPhones, `[MedCenter VTS] Trip ${ticketNo} COMPLETED.\nDept: ${trip?.department||''}\nPurpose: ${trip?.purpose||''}\nOdometer in: ${odo} km.`)
   await sendEmail(approverEmails, 'trip_completed_approver', tripPayload)
-  // SMS + Email → notify requester
-  await sendSMS(reqPhones, `[MedCenter VTS] Your trip ${ticketNo} has been COMPLETED.\nVehicle has returned safely. Thank you.`)
-  await sendEmail(reqEmails, 'trip_completed_requester', tripPayload)
+  // SMS + Email → notify the specific requester only
+  await sendSMS(requester.phones, `[MedCenter VTS] Your trip ${ticketNo} has been COMPLETED.\nVehicle has returned safely. Thank you.`)
+  await sendEmail(requester.emails, 'trip_completed_requester', tripPayload)
   closeMO(); renderTickets()
 }
 
