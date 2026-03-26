@@ -243,6 +243,52 @@ const SB = createClient(
 )
 
 // ════════════════════════════════════════════════
+// SMS — TextBee via Edge Function
+// ════════════════════════════════════════════════
+const SMS_URL = 'https://blgscwtseqvhgdoksvjh.supabase.co/functions/v1/send-sms'
+
+async function sendSMS(phones, message) {
+  if (!phones || (Array.isArray(phones) && phones.filter(Boolean).length === 0)) return
+  try {
+    await fetch(SMS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phones, message })
+    })
+  } catch(e) {
+    console.warn('[SMS]', e.message)
+  }
+}
+
+const EMAIL_URL = 'https://blgscwtseqvhgdoksvjh.supabase.co/functions/v1/send-email'
+
+async function sendEmail(to, type, ticket) {
+  const toList = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean)
+  if (!toList.length) return
+  try {
+    await fetch(EMAIL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: toList, type, ticket })
+    })
+  } catch(e) {
+    console.warn('[Email]', e.message)
+  }
+}
+
+// Get emails of all users with a given role
+async function getEmailsForRole(role) {
+  const { data } = await SB.from('users').select('email').eq('role', role).eq('status', 'active')
+  return (data || []).map(u => u.email).filter(Boolean)
+}
+
+// Get phone numbers of all users with a given role
+async function getPhonesForRole(role) {
+  const { data } = await SB.from('users').select('phone').eq('role', role).eq('status', 'active')
+  return (data || []).map(u => u.phone).filter(Boolean)
+}
+
+// ════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════
 let currentUser = null   // supabase auth user
@@ -667,9 +713,16 @@ function openApproveModal(id, ticketNo, vtype) {
 async function doApprove(id, ticketNo) {
   const btn = document.getElementById('apBtn'); btn.disabled=true; btn.textContent='Approving...'
   const rem = document.getElementById('apRem')?.value||''
+  // Get trip details for SMS
+  const { data: trip } = await SB.from('trips').select('requester_name,department,purpose,vehicle_type_needed').eq('id',id).single()
   const { error } = await SB.from('trips').update({ status:'driver-assigned', admin_id:currentProfile?.id, admin_approved_at:new Date().toISOString(), admin_remarks:rem }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Confirm Approval'; return }
   await addAudit(id, ticketNo, 'Ticket Approved', rem||'Approved')
+  // SMS + Email → notify requester
+  const reqPhones = await getPhonesForRole('requester')
+  const reqEmails = await getEmailsForRole('requester')
+  await sendSMS(reqPhones, `[MedCenter VTS] Your request ${ticketNo} has been APPROVED.\nPurpose: ${trip?.purpose||''}\nA driver will be assigned shortly.`)
+  await sendEmail(reqEmails, 'ticket_approved', { ticket_no: ticketNo, purpose: trip?.purpose||'', destination: trip?.destination||'', approved_by: currentProfile?.full_name||'Approver', remarks: rem })
   closeMO(); renderTickets()
 }
 
@@ -686,9 +739,15 @@ async function doReject(id, ticketNo) {
   const reason = document.getElementById('rejR')?.value?.trim()
   if (!reason) { alert('Reason required.'); return }
   const btn = document.getElementById('rejBtn'); btn.disabled=true; btn.textContent='Rejecting...'
+  const { data: trip } = await SB.from('trips').select('purpose').eq('id',id).single()
   const { error } = await SB.from('trips').update({ status:'rejected', rejected_by:currentProfile?.id, rejected_at:new Date().toISOString(), rejection_reason:reason }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Reject Ticket'; return }
   await addAudit(id, ticketNo, 'Ticket Rejected', reason)
+  // SMS + Email → notify requester
+  const reqPhones = await getPhonesForRole('requester')
+  const reqEmails = await getEmailsForRole('requester')
+  await sendSMS(reqPhones, `[MedCenter VTS] Your request ${ticketNo} has been REJECTED.\nReason: ${reason}\nPlease coordinate with your department head.`)
+  await sendEmail(reqEmails, 'ticket_rejected', { ticket_no: ticketNo, purpose: trip?.purpose||'', reason })
   closeMO(); renderTickets()
 }
 
@@ -717,6 +776,14 @@ async function doAssign(id, ticketNo) {
   await SB.from('drivers').update({ status:'on-trip' }).eq('id',driverId)
   await SB.from('vehicles').update({ status:'on-trip' }).eq('id',vv)
   await addAudit(id, ticketNo, 'Driver Assigned', `Driver: ${driverName}`)
+  // Get trip + driver details for notifications
+  const { data: tripData } = await SB.from('trips').select('purpose,destination,departure_at,department,vehicle_plate').eq('id',id).single()
+  const { data: driverRow } = await SB.from('drivers').select('phone').eq('id',driverId).single()
+  const { data: driverUser } = await SB.from('users').select('email').eq('role','driver').eq('status','active').limit(1).single()
+  const vehiclePlate = _vehicles.find(v => v.id === vv)?.plate || ''
+  // SMS + Email → notify driver
+  if (driverRow?.phone) await sendSMS([driverRow.phone], `[MedCenter VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nDestination: ${tripData?.destination||''}\nPlease report to the motor pool.`)
+  if (driverUser?.email) await sendEmail([driverUser.email], 'driver_assigned', { ticket_no: ticketNo, department: tripData?.department||'', purpose: tripData?.purpose||'', destination: tripData?.destination||'', departure_at: tripData?.departure_at||'', vehicle_plate: vehiclePlate })
   closeMO(); renderTickets()
 }
 
@@ -771,6 +838,20 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
   if (driverId && driverId!=='null') await SB.from('drivers').update({ status:'available' }).eq('id',driverId)
   if (vehicleId && vehicleId!=='null') await SB.from('vehicles').update({ status:'available' }).eq('id',vehicleId)
   await addAudit(id, ticketNo, 'Gate In', `Odometer: ${odo} km — Trip completed`)
+  // Get full trip details for notifications
+  const { data: trip } = await SB.from('trips').select('*').eq('id',id).single()
+  const approverRole = trip?.vehicle_type_needed === 'ambulance' ? 'approver_amb' : 'approver_admin'
+  const approverPhones = await getPhonesForRole(approverRole)
+  const approverEmails = await getEmailsForRole(approverRole)
+  const reqPhones      = await getPhonesForRole('requester')
+  const reqEmails      = await getEmailsForRole('requester')
+  const tripPayload = { ticket_no: ticketNo, department: trip?.department||'', purpose: trip?.purpose||'', destination: trip?.destination||'', driver_name: trip?.driver_name||'', vehicle_plate: trip?.vehicle_plate||'', gate_out_at: trip?.gate_out_at||'', gate_in_at: trip?.gate_in_at||'', odometer_out: trip?.odometer_out, odometer_in: odo, distance_km: trip?.odometer_out ? odo - trip.odometer_out : null }
+  // SMS + Email → notify approver
+  await sendSMS(approverPhones, `[MedCenter VTS] Trip ${ticketNo} COMPLETED.\nDept: ${trip?.department||''}\nPurpose: ${trip?.purpose||''}\nOdometer in: ${odo} km.`)
+  await sendEmail(approverEmails, 'trip_completed_approver', tripPayload)
+  // SMS + Email → notify requester
+  await sendSMS(reqPhones, `[MedCenter VTS] Your trip ${ticketNo} has been COMPLETED.\nVehicle has returned safely. Thank you.`)
+  await sendEmail(reqEmails, 'trip_completed_requester', tripPayload)
   closeMO(); renderTickets()
 }
 
@@ -855,6 +936,21 @@ async function submitNewTicket() {
     }]).select().single()
     if (error) throw error
     await addAudit(trip.id, trip.ticket_no, 'Ticket Created', purpose)
+    // SMS → notify correct approver
+    const approverRole = vtype === 'ambulance' ? 'approver_amb' : 'approver_admin'
+    const approverPhones = await getPhonesForRole(approverRole)
+    await sendSMS(approverPhones,
+      `[MedCenter VTS] New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nDate: ${date} ${time}\nPlease log in to approve.`
+    )
+    // Email → notify correct approver
+    const approverEmails = await getEmailsForRole(approverRole)
+    await sendEmail(approverEmails, 'ticket_created', {
+      ticket_no: trip.ticket_no, department: dept,
+      requester_name: req, purpose, destination: dest,
+      departure_at: `${date} ${time}`,
+      vehicle_type_needed: vtype,
+      priority: document.getElementById('ntPri')?.value||'normal'
+    })
     openMO('Request Submitted',
       `<div style="text-align:center;padding:16px 0">
         <div style="width:52px;height:52px;background:var(--green-s);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;color:var(--green)">✓</div>
@@ -1123,15 +1219,17 @@ async function renderAccounts() {
   document.getElementById('CONTENT').innerHTML = `
   <div class="card card-np" style="overflow:hidden;margin-bottom:14px">
     <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">User Accounts</div><button class="btn btn-pri btn-sm" onclick="openCreateAccount()">+ Create Account</button></div>
-    <table class="tbl"><thead><tr><th>Full Name</th><th>Username</th><th>Role</th><th>Department</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    <table class="tbl"><thead><tr><th>Full Name</th><th>Username</th><th>Role</th><th>Department</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>
     ${U.map(u=>{const c=ROLE_COLORS[u.role]||'#64748b';return`<tr>
       <td><div style="display:flex;align-items:center;gap:8px"><div style="width:28px;height:28px;border-radius:50%;background:${c}22;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${c}">${ini(u.full_name)}</div><span style="font-weight:600">${u.full_name}</span></div></td>
       <td>${chip(u.username||'—')}</td>
       <td><span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:20px;background:${c}20;color:${c}">${ROLE_LABELS[u.role]||u.role}</span></td>
       <td style="font-size:11.5px">${u.department||'—'}</td>
+      <td style="font-size:11px;color:var(--text2)">${u.phone||'—'}</td>
+      <td style="font-size:11px;color:var(--text2)">${u.email||'—'}</td>
       <td><span class="badge ${u.status==='active'?'b-avail':'b-rejected'}">${u.status==='active'?'Active':'Inactive'}</span></td>
       <td><div style="display:flex;gap:4px">
-        <button class="btn btn-ghost btn-sm" onclick="openEditAccount('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}','${u.role}','${u.department||''}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="openEditAccount('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}','${u.role}','${u.department||''}','${u.phone||''}','${u.email||''}')">Edit</button>
         <button class="btn btn-ghost btn-sm" onclick="openResetPw('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}')">Reset PW</button>
         <button class="btn btn-ghost btn-sm" onclick="toggleUser('${u.id}','${u.status}')">${u.status==='active'?'Deactivate':'Activate'}</button>
       </div></td>
@@ -1182,13 +1280,17 @@ async function doCreateAccount() {
     alert(`Account created!\nUsername: ${username}\nPassword: ${pw}`)
   } catch(e) { alert(e.message); btn.disabled=false; btn.textContent='Create Account' }
 }
-function openEditAccount(id, name, username, role, dept) {
+function openEditAccount(id, name, username, role, dept, phone, email) {
   openMO(`Edit — ${name}`,
     `<div class="fr">
        <div class="fg"><label class="fl">Full Name</label><input class="fi" id="eaName" value="${name}"></div>
        <div class="fg"><label class="fl">Username</label><input class="fi" id="eaUsername" value="${username}" style="text-transform:lowercase"></div>
        <div class="fg"><label class="fl">Role</label><select class="fs" id="eaRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}"${role===k?' selected':''}>${v}</option>`).join('')}</select></div>
-       <div class="fg" style="grid-column:span 2"><label class="fl">Department</label><select class="fs" id="eaDept">${DEPTS.map(d=>`<option value="${d}"${dept===d?' selected':''}>${d}</option>`).join('')}</select></div>
+       <div class="fg"><label class="fl">Department</label><select class="fs" id="eaDept">${DEPTS.map(d=>`<option value="${d}"${dept===d?' selected':''}>${d}</option>`).join('')}</select></div>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Phone (for SMS)</label><input class="fi" id="eaPhone" value="${phone||''}" placeholder="09XXXXXXXXX"></div>
+       <div class="fg"><label class="fl">Email (for Email notif.)</label><input class="fi" type="email" id="eaEmail" value="${email||''}" placeholder="user@hospital.com"></div>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="eaBn" onclick="doEditAccount('${id}')">Save Changes</button>`
@@ -1196,12 +1298,20 @@ function openEditAccount(id, name, username, role, dept) {
 }
 async function doEditAccount(id) {
   const btn = document.getElementById('eaBn'); btn.disabled=true; btn.textContent='Saving...'
-  await SB.from('users').update({
+  const { error } = await SB.from('users').update({
     full_name:  document.getElementById('eaName').value,
     username:   document.getElementById('eaUsername').value.toLowerCase(),
     role:       document.getElementById('eaRole').value,
-    department: document.getElementById('eaDept').value
+    department: document.getElementById('eaDept').value,
+    phone:      document.getElementById('eaPhone').value||null,
+    email:      document.getElementById('eaEmail').value||null
   }).eq('id',id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Save Changes'; return }
+  if (currentProfile?.id === id) {
+    currentProfile.phone = document.getElementById('eaPhone').value||null
+    currentProfile.email = document.getElementById('eaEmail').value||null
+    localStorage.setItem('vts_user', JSON.stringify(currentProfile))
+  }
   closeMO(); renderAccounts()
 }
 function openResetPw(id, name, username) {
