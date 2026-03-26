@@ -319,20 +319,41 @@ async function fetchProfile(authUser) {
   return data
 }
 
+// ── Session from localStorage (no Supabase Auth) ─────────────
+function loadSession() {
+  try {
+    const saved = localStorage.getItem('vts_user')
+    if (saved) {
+      currentProfile = JSON.parse(saved)
+      return true
+    }
+  } catch(e) {}
+  return false
+}
+
 async function handleLogin() {
   const username = (document.getElementById('loginUsername').value || '').trim().toLowerCase()
   const pw = document.getElementById('loginPw').value
   const btn = document.getElementById('loginBtn')
   const err = document.getElementById('loginErr')
   err.style.display = 'none'
-  if (!username) { err.textContent = 'Please enter your username.'; err.style.display = 'block'; return }
+  if (!username || !pw) { err.textContent = 'Please enter your username and password.'; err.style.display = 'block'; return }
   btn.textContent = 'Signing in...'; btn.disabled = true
   try {
-    const email = username + '@vts.local'
-    const { error } = await SB.auth.signInWithPassword({ email, password: pw })
-    if (error) throw error
+    const { data, error } = await SB
+      .from('users')
+      .select('*')
+      .eq('username', username)
+      .eq('password', pw)
+      .eq('status', 'active')
+      .single()
+    if (error || !data) throw new Error('Invalid username or password.')
+    // Store session in localStorage
+    localStorage.setItem('vts_user', JSON.stringify(data))
+    currentProfile = data
+    showApp()
   } catch(e) {
-    err.textContent = 'Invalid username or password.'
+    err.textContent = e.message || 'Invalid username or password.'
     err.style.display = 'block'
     btn.textContent = 'Sign in'; btn.disabled = false
   }
@@ -347,20 +368,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function handleSignOut() {
   if (!confirm('Sign out?')) return
-  await SB.auth.signOut()
+  localStorage.removeItem('vts_user')
+  currentProfile = null
+  currentUser = null
+  showLogin()
 }
 
-// Auth state listener
-SB.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) {
-    currentUser = session.user
-    currentProfile = await fetchProfile(session.user)
-    showApp()
-  } else {
-    currentUser = null; currentProfile = null
-    showLogin()
-  }
-})
+
+// Auth handled via localStorage — no Supabase Auth listener needed
+
 
 // ════════════════════════════════════════════════
 // SHOW / HIDE
@@ -1157,10 +1173,10 @@ async function doCreateAccount() {
   if (!name||!username||!pw) { alert('Name, username, and password required.'); return }
   const btn = document.getElementById('caBn'); btn.disabled=true; btn.textContent='Creating...'
   try {
-    const { error } = await SB.rpc('create_vts_account', {
-      p_username: username, p_password: pw, p_full_name: name,
-      p_role: role, p_department: dept, p_phone: phone
-    })
+    const { error } = await SB.from('users').insert([{
+      username, password: pw, full_name: name,
+      role, department: dept, phone, status: 'active'
+    }])
     if (error) throw error
     closeMO(); renderAccounts()
     alert(`Account created!\nUsername: ${username}\nPassword: ${pw}`)
@@ -1202,14 +1218,9 @@ async function doResetPw(id, username) {
   if (!p1||p1!==p2) { alert('Passwords must match.'); return }
   if (p1.length < 3) { alert('Password must be at least 3 characters.'); return }
   const btn = document.getElementById('rpBn'); btn.disabled=true; btn.textContent='Resetting...'
-  // Update password via Supabase auth (admin must be logged in)
-  const { error } = await SB.rpc('reset_user_password', { user_id: id, new_password: p1 })
-  if (error) {
-    // Fallback: show manual instruction
-    alert(`To reset ${username}'s password, go to your Supabase dashboard → Authentication → Users → find ${username}@vts.local → Update password.`)
-  } else {
-    alert(`Password for "${username}" has been updated successfully.`)
-  }
+  const { error } = await SB.from('users').update({ password: p1 }).eq('id', id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Reset Password'; return }
+  alert(`Password for "${username}" updated successfully.`)
   closeMO()
 }
 async function toggleUser(id, status) {
@@ -1327,15 +1338,10 @@ function toggleFAQ(i) {
   openFAQ = isOpen?null:i
 }
 
-// ════════════════════════════════════════════════
-// INIT — check existing session
-// ════════════════════════════════════════════════
+// ── INIT — check existing session from localStorage ──────────
 ;(async () => {
-  const { data: { session } } = await SB.auth.getSession()
-  if (session?.user) {
-    currentUser = session.user
-    currentProfile = await fetchProfile(session.user)
-    if (currentProfile) { showApp() } else { showLogin() }
+  if (loadSession() && currentProfile) {
+    showApp()
   } else {
     showLogin()
   }
