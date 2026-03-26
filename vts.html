@@ -7,7 +7,34 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-/* ── Reset & Base ── */
+/* ── Dark / Night Mode ── */
+body.dark{
+  --bg:#0f1117;--card:#161b27;--sb:#080d18;--sb-border:rgba(255,255,255,.06);
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#475569;
+  --border:#1e2d3d;--pri-s:rgba(12,111,219,.18);
+  --red-s:rgba(220,38,38,.15);--green-s:rgba(22,163,74,.15);
+  --amber-s:rgba(217,119,6,.15);--teal-s:rgba(13,148,136,.15);
+  --purple-s:rgba(124,58,237,.15)
+}
+body.dark .fi,body.dark .fs,body.dark .ft{background:#0f1117;color:var(--text);border-color:var(--border)}
+body.dark .fi:focus,body.dark .fs:focus,body.dark .ft:focus{background:#0f1117}
+body.dark .tbl tr:hover td{background:#1a2235}
+body.dark .tbl td{border-bottom-color:#1e2d3d}
+body.dark .stat,body.dark .card{background:var(--card);border-color:var(--border)}
+body.dark .mo{background:var(--card);border-color:var(--border)}
+body.dark .mo-hd,body.dark .mo-foot{background:var(--card);border-color:var(--border)}
+body.dark .info-blue{background:rgba(12,111,219,.12);color:#7eb8f7}
+body.dark .info-red{background:rgba(220,38,38,.12);color:#fca5a5}
+body.dark .info-green{background:rgba(22,163,74,.12);color:#86efac}
+body.dark .info-amber{background:rgba(217,119,6,.12);color:#fcd34d}
+body.dark .btn-ghost{color:var(--text2);border-color:var(--border)}
+body.dark .btn-ghost:hover{background:#1e2d3d}
+body.dark .chip{background:#1e2d3d;color:var(--text2);border-color:var(--border)}
+body.dark .wf-step{background:#1e2d3d;border-color:var(--border)}
+body.dark .nav-item:hover{background:rgba(255,255,255,.04)}
+body.dark select option{background:#161b27}
+.theme-toggle{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background .13s;color:var(--text2)}
+.theme-toggle:hover{background:var(--bg)}
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
   --bg:#f0f4f8;--card:#fff;--sb:#0c2340;--sb-border:rgba(255,255,255,.07);
@@ -212,6 +239,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
     <div class="topbar">
       <div class="topbar-title" id="pageTitle">Dashboard</div>
       <div style="display:flex;align-items:center;gap:6px">
+        <button class="theme-toggle" id="themeBtn" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
         <div class="ndot" style="position:relative">
           <button class="ib" onclick="showNotifs()">🔔</button>
           <span class="ndot-dot" id="ndot"></span>
@@ -301,12 +329,30 @@ async function getRequesterContacts(tripId) {
 }
 
 // ════════════════════════════════════════════════
+// THEME
+// ════════════════════════════════════════════════
+function toggleTheme() {
+  const isDark = document.body.classList.toggle('dark')
+  localStorage.setItem('vts_theme', isDark ? 'dark' : 'light')
+  document.getElementById('themeBtn').textContent = isDark ? '☀️' : '🌙'
+}
+function initTheme() {
+  const saved = localStorage.getItem('vts_theme')
+  if (saved === 'dark') {
+    document.body.classList.add('dark')
+    const btn = document.getElementById('themeBtn')
+    if (btn) btn.textContent = '☀️'
+  }
+}
+
+// ════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════
-let currentUser = null   // supabase auth user
-let currentProfile = null // users table row
+let currentUser = null
+let currentProfile = null
 let currentPage = 'dashboard'
 let realtimeChannel = null
+let _departments = [] // cached from DB
 
 const ROLE_LABELS = { admin:'Administrator', approver:'Approver', guard:'Guard', requester:'Department User', driver:'Driver' }
 const ROLE_COLORS = { admin:'#0c6fdb', approver:'#7c3aed', guard:'#0d9488', requester:'#d97706', driver:'#16a34a' }
@@ -328,8 +374,19 @@ const WF_STEPS = [
   { key:'on-trip',          lbl:'Gate Out' },
   { key:'completed',        lbl:'Completed' },
 ]
-const DEPTS = ['Administration','Emergency Room','Intensive Care Unit','OB-Gynecology','Pediatrics','Surgery','Radiology','Laboratory','Pharmacy','Nursing','Human Resources','Finance','Maintenance','Security','Housekeeping','Information Technology','Social Work','Psychiatry','Dental','Ophthalmology','Orthopedics','ENT','Neurology','Cardiology','Pulmonology','Gastroenterology','Urology','Oncology','Infection Control','Physical Medicine','Internal Medicine','Ambulance / EMS']
 const DEPT_COLORS = ['#0c6fdb','#7c3aed','#0d9488','#d97706','#dc2626','#0ea5e9','#16a34a','#c026d3','#ea580c','#0891b2']
+
+// Load departments from DB and cache
+async function loadDepartments() {
+  const { data } = await SB.from('departments').select('*').eq('status','active').order('name')
+  _departments = data || []
+  return _departments
+}
+
+// Generate dept <option> tags from cache
+function deptOptions(selected='') {
+  return _departments.map(d => `<option value="${d.name}"${d.name===selected?' selected':''}>${d.name}</option>`).join('')
+}
 
 // ════════════════════════════════════════════════
 // HELPERS
@@ -447,9 +504,12 @@ function showLogin() {
 function showApp() {
   document.getElementById('loginPage').style.display = 'none'
   document.getElementById('appShell').style.display = 'flex'
-  buildSidebar()
-  goTo('dashboard')
-  subscribeRealtime()
+  initTheme()
+  loadDepartments().then(() => {
+    buildSidebar()
+    goTo('dashboard')
+    subscribeRealtime()
+  })
 }
 
 // ════════════════════════════════════════════════
@@ -895,7 +955,7 @@ function renderNewTicket() {
       <div class="card-title" style="margin-bottom:16px">New Vehicle Request</div>
       <div class="fr">
         <div class="fg"><label class="fl">Department *</label>
-          <select class="fs" id="ntDept"><option value="">-- Select --</option>${DEPTS.map(d=>`<option value="${d}" ${currentProfile?.department===d?'selected':''}>${d}</option>`).join('')}</select></div>
+          <select class="fs" id="ntDept"><option value="">-- Select --</option>${deptOptions(currentProfile?.department)}</select></div>
         <div class="fg"><label class="fl">Requester Name *</label><input class="fi" id="ntReq" value="${currentProfile?.full_name||''}" placeholder="Full name"></div>
       </div>
       <div class="fg"><label class="fl">Vehicle Type *</label>
@@ -1087,24 +1147,120 @@ async function doAddDriver() {
 // ════════════════════════════════════════════════
 // DEPARTMENTS
 // ════════════════════════════════════════════════
-const ALL_DEPTS = [
-  {c:'ADM',n:'Administration',hd:'Dr. Ramon Cruz',u:4},{c:'ER',n:'Emergency Room',hd:'Dr. Ana Reyes',u:6},{c:'ICU',n:'Intensive Care Unit',hd:'Dr. Jose Lim',u:4},{c:'OBG',n:'OB-Gynecology',hd:'Dr. Maria Santos',u:5},{c:'PED',n:'Pediatrics',hd:'Dr. Carlo Bueno',u:4},{c:'SUR',n:'Surgery',hd:'Dr. Lea Tan',u:6},{c:'RAD',n:'Radiology',hd:'Dr. Ben Flores',u:3},{c:'LAB',n:'Laboratory',hd:'Mr. Jun Reyes',u:4},{c:'PHA',n:'Pharmacy',hd:'Ms. Clara Ng',u:4},{c:'NUR',n:'Nursing',hd:'Ms. Tess Valdez',u:8},{c:'HRD',n:'Human Resources',hd:'Ms. Joy Diaz',u:3},{c:'FIN',n:'Finance',hd:'Mr. Arnel Uy',u:3},{c:'MNT',n:'Maintenance',hd:'Mr. Romy Basco',u:5},{c:'SEC',n:'Security',hd:'Mr. Mark Torres',u:6},{c:'HSK',n:'Housekeeping',hd:'Ms. Luz Pandy',u:5},{c:'IT',n:'Information Technology',hd:'Mr. Roy Sanchez',u:4},{c:'SOC',n:'Social Work',hd:'Ms. Eva Quinto',u:3},{c:'PSY',n:'Psychiatry',hd:'Dr. Nora Bello',u:3},{c:'DEN',n:'Dental',hd:'Dr. Sam Perez',u:2},{c:'OPH',n:'Ophthalmology',hd:'Dr. Ida Cruz',u:2},{c:'ORT',n:'Orthopedics',hd:'Dr. Vic Reyes',u:3},{c:'ENT',n:'ENT',hd:'Dr. Noel Chua',u:2},{c:'NEU',n:'Neurology',hd:'Dr. Gina Sy',u:3},{c:'CAR',n:'Cardiology',hd:'Dr. Ben Marco',u:3},{c:'PUL',n:'Pulmonology',hd:'Dr. Alma Chan',u:3},{c:'GAS',n:'Gastroenterology',hd:'Dr. Leo Tan',u:2},{c:'URO',n:'Urology',hd:'Dr. Rex Go',u:2},{c:'ONK',n:'Oncology',hd:'Dr. Cora Viray',u:3},{c:'INF',n:'Infection Control',hd:'Dr. Paz Delos',u:2},{c:'PMR',n:'Physical Medicine',hd:'Dr. Dale Yap',u:3},{c:'MED',n:'Internal Medicine',hd:'Dr. Rica Ong',u:4},{c:'AMB',n:'Ambulance / EMS',hd:'Pmedic Rudy',u:5},
-]
-function renderDepts() {
-  document.getElementById('CONTENT').innerHTML = `
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-    <input class="fi" id="deptSearch" placeholder="Search departments..." style="width:220px;font-size:12px;padding:7px 11px" oninput="filterDepts(this.value)">
-    <div style="margin-left:auto;font-size:11px;color:var(--text3)">${ALL_DEPTS.length} departments</div>
-  </div>
-  <div id="deptsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:10px">
-    ${ALL_DEPTS.map((d,i)=>{const c=DEPT_COLORS[i%DEPT_COLORS.length];return`<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px;border-top:3px solid ${c}"><div style="font-size:10px;font-weight:700;color:${c};margin-bottom:3px">${d.c}</div><div style="font-size:12.5px;font-weight:700;margin-bottom:5px">${d.n}</div><div style="font-size:10.5px;color:var(--text3)">${d.hd}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">${d.u} users</div></div>`}).join('')}
+// ════════════════════════════════════════════════
+// DEPARTMENTS — Full CRUD
+// ════════════════════════════════════════════════
+function deptCard(d, i) {
+  const c = DEPT_COLORS[i % DEPT_COLORS.length]
+  const canEdit = ['admin'].includes(currentProfile?.role)
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px;border-top:3px solid ${c};position:relative">
+    <div style="font-size:10px;font-weight:700;color:${c};margin-bottom:3px">${d.code||'—'}</div>
+    <div style="font-size:12.5px;font-weight:700;margin-bottom:4px">${d.name}</div>
+    <div style="font-size:10.5px;color:var(--text3)">${d.head||'—'}</div>
+    ${d.phone?`<div style="font-size:10px;color:var(--text3);margin-top:2px">📞 ${d.phone}</div>`:''}
+    ${d.email?`<div style="font-size:10px;color:var(--text3)">✉ ${d.email}</div>`:''}
+    ${canEdit?`<div style="display:flex;gap:4px;margin-top:9px">
+      <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center" onclick="openEditDept('${d.id}','${(d.name||'').replace(/'/g,"\\'")}','${d.code||''}','${(d.head||'').replace(/'/g,"\\'")}','${d.phone||''}','${d.email||''}')">Edit</button>
+      <button class="btn btn-red btn-sm" style="padding:5px 8px" onclick="deleteDept('${d.id}','${(d.name||'').replace(/'/g,"\\'")}')">✕</button>
+    </div>`:''}
   </div>`
 }
-function filterDepts(q) {
-  const qq = q.toLowerCase()
-  const r = ALL_DEPTS.filter(d=>d.n.toLowerCase().includes(qq)||d.c.toLowerCase().includes(qq))
-  document.getElementById('deptsGrid').innerHTML = r.map((d,i)=>{const c=DEPT_COLORS[i%DEPT_COLORS.length];return`<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px;border-top:3px solid ${c}"><div style="font-size:10px;font-weight:700;color:${c};margin-bottom:3px">${d.c}</div><div style="font-size:12.5px;font-weight:700;margin-bottom:5px">${d.n}</div><div style="font-size:10.5px;color:var(--text3)">${d.hd}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">${d.u} users</div></div>`}).join('')
+
+async function renderDepts() {
+  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>`
+  const { data } = await SB.from('departments').select('*').order('name')
+  const depts = data || []
+  const canEdit = ['admin'].includes(currentProfile?.role)
+  document.getElementById('CONTENT').innerHTML = `
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <input class="fi" id="deptSearch" placeholder="Search departments..." style="width:220px;font-size:12px;padding:7px 11px" oninput="filterDeptsUI(this.value)">
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+      <span style="font-size:11px;color:var(--text3)">${depts.length} departments</span>
+      ${canEdit?`<button class="btn btn-pri btn-sm" onclick="openAddDept()">+ Add Department</button>`:''}
+    </div>
+  </div>
+  <div id="deptsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:10px">
+    ${depts.map((d,i) => deptCard(d,i)).join('')}
+  </div>`
+  window._deptsAll = depts
 }
+
+function filterDeptsUI(q) {
+  const qq = q.toLowerCase()
+  const r = (window._deptsAll||[]).filter(d => d.name.toLowerCase().includes(qq)||(d.code||'').toLowerCase().includes(qq))
+  document.getElementById('deptsGrid').innerHTML = r.map((d,i) => deptCard(d,i)).join('')
+}
+
+function openAddDept() {
+  openMO('Add Department',
+    `<div class="fr">
+       <div class="fg"><label class="fl">Department Name *</label><input class="fi" id="dpName" placeholder="e.g. Dermatology"></div>
+       <div class="fg"><label class="fl">Code</label><input class="fi" id="dpCode" placeholder="e.g. DER" style="text-transform:uppercase"></div>
+       <div class="fg" style="grid-column:span 2"><label class="fl">Department Head</label><input class="fi" id="dpHead" placeholder="Dr. Full Name"></div>
+       <div class="fg"><label class="fl">Phone</label><input class="fi" id="dpPhone" placeholder="02-XXXX-XXXX"></div>
+       <div class="fg"><label class="fl">Email</label><input class="fi" type="email" id="dpEmail" placeholder="dept@hospital.com"></div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="dpSaveBtn" onclick="doAddDept()">Add Department</button>`
+  )
+}
+
+async function doAddDept() {
+  const name = document.getElementById('dpName')?.value?.trim()
+  if (!name) { alert('Department name is required.'); return }
+  const btn = document.getElementById('dpSaveBtn'); btn.disabled=true; btn.textContent='Saving...'
+  const { error } = await SB.from('departments').insert([{
+    name,
+    code: document.getElementById('dpCode')?.value?.trim().toUpperCase()||null,
+    head: document.getElementById('dpHead')?.value?.trim()||null,
+    phone: document.getElementById('dpPhone')?.value?.trim()||null,
+    email: document.getElementById('dpEmail')?.value?.trim()||null,
+    status: 'active'
+  }])
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Add Department'; return }
+  await loadDepartments()
+  closeMO(); renderDepts()
+}
+
+function openEditDept(id, name, code, head, phone, email) {
+  openMO(`Edit — ${name}`,
+    `<div class="fr">
+       <div class="fg"><label class="fl">Department Name *</label><input class="fi" id="dpName" value="${name}"></div>
+       <div class="fg"><label class="fl">Code</label><input class="fi" id="dpCode" value="${code}" style="text-transform:uppercase"></div>
+       <div class="fg" style="grid-column:span 2"><label class="fl">Department Head</label><input class="fi" id="dpHead" value="${head}"></div>
+       <div class="fg"><label class="fl">Phone</label><input class="fi" id="dpPhone" value="${phone}"></div>
+       <div class="fg"><label class="fl">Email</label><input class="fi" type="email" id="dpEmail" value="${email}"></div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="dpSaveBtn" onclick="doEditDept('${id}')">Save Changes</button>`
+  )
+}
+
+async function doEditDept(id) {
+  const name = document.getElementById('dpName')?.value?.trim()
+  if (!name) { alert('Department name is required.'); return }
+  const btn = document.getElementById('dpSaveBtn'); btn.disabled=true; btn.textContent='Saving...'
+  const { error } = await SB.from('departments').update({
+    name,
+    code: document.getElementById('dpCode')?.value?.trim().toUpperCase()||null,
+    head: document.getElementById('dpHead')?.value?.trim()||null,
+    phone: document.getElementById('dpPhone')?.value?.trim()||null,
+    email: document.getElementById('dpEmail')?.value?.trim()||null
+  }).eq('id', id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Save Changes'; return }
+  await loadDepartments()
+  closeMO(); renderDepts()
+}
+
+async function deleteDept(id, name) {
+  if (!confirm(`Delete department "${name}"?\n\nThis cannot be undone. Make sure no users or trips are still assigned to this department.`)) return
+  const { error } = await SB.from('departments').delete().eq('id', id)
+  if (error) { alert(error.message); return }
+  await loadDepartments()
+  renderDepts()
+}
+
+
 
 // ════════════════════════════════════════════════
 // GPS
@@ -1281,7 +1437,7 @@ function openCreateAccount() {
        <div class="fg"><label class="fl">Full Name *</label><input class="fi" id="caName" placeholder="Full name"></div>
        <div class="fg"><label class="fl">Username *</label><input class="fi" id="caUsername" placeholder="e.g. jdelacruz" style="text-transform:lowercase"></div>
        <div class="fg"><label class="fl">Role *</label><select class="fs" id="caRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
-       <div class="fg"><label class="fl">Department</label><select class="fs" id="caDept">${DEPTS.map(d=>`<option value="${d}">${d}</option>`).join('')}</select></div>
+       <div class="fg"><label class="fl">Department</label><select class="fs" id="caDept">${deptOptions()}</select></div>
      </div>
      <div class="fg"><label class="fl">Phone</label><input class="fi" id="caPhone" placeholder="09XXXXXXXXX"></div>
      <div class="fg"><label class="fl">Initial Password *</label><input class="fi" type="password" id="caPw" placeholder="Set initial password"></div>`,
@@ -1314,7 +1470,7 @@ function openEditAccount(id, name, username, role, dept, phone, email) {
        <div class="fg"><label class="fl">Full Name</label><input class="fi" id="eaName" value="${name}"></div>
        <div class="fg"><label class="fl">Username</label><input class="fi" id="eaUsername" value="${username}" style="text-transform:lowercase"></div>
        <div class="fg"><label class="fl">Role</label><select class="fs" id="eaRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}"${role===k?' selected':''}>${v}</option>`).join('')}</select></div>
-       <div class="fg"><label class="fl">Department</label><select class="fs" id="eaDept">${DEPTS.map(d=>`<option value="${d}"${dept===d?' selected':''}>${d}</option>`).join('')}</select></div>
+       <div class="fg"><label class="fl">Department</label><select class="fs" id="eaDept">${deptOptions(dept)}</select></div>
      </div>
      <div class="fr">
        <div class="fg"><label class="fl">Phone (for SMS)</label><input class="fi" id="eaPhone" value="${phone||''}" placeholder="09XXXXXXXXX"></div>
