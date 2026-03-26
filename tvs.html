@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MedCenter VTS — Vehicle Ticketing System</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Base ── */
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#f0f4f8;--card:#fff;--sb:#0c2340;--sb-border:rgba(255,255,255,.07);
+  --pri:#0c6fdb;--pri-s:#dbeafe;--pri-d:#0a4fa3;
+  --teal:#0d9488;--teal-s:#ccfbf1;
+  --red:#dc2626;--red-s:#fee2e2;
+  --amber:#d97706;--amber-s:#fef3c7;
+  --green:#16a34a;--green-s:#dcfce7;
+  --purple:#7c3aed;--purple-s:#ede9fe;
+  --text:#0f172a;--text2:#475569;--text3:#94a3b8;
+  --border:#e2e8f0;--radius:10px;--radius-lg:14px;
+  --font:'Plus Jakarta Sans',system-ui,sans-serif
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+
+/* ── Layout ── */
+.app{display:flex;height:100vh;overflow:hidden}
+.sb{width:220px;min-width:220px;background:var(--sb);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.topbar{background:var(--card);border-bottom:1px solid var(--border);height:50px;display:flex;align-items:center;padding:0 18px;gap:10px;flex-shrink:0}
+.topbar-title{font-size:14.5px;font-weight:700;flex:1}
+.content{flex:1;overflow-y:auto;padding:18px}
+.content::-webkit-scrollbar{width:4px}.content::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* ── Sidebar ── */
+.sb-head{padding:15px 13px 11px;border-bottom:1px solid var(--sb-border)}
+.sb-logo{display:flex;align-items:center;gap:9px}
+.sb-cross{width:32px;height:32px;background:var(--pri);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sb-cross svg{width:18px;height:18px}
+.sb-brand{color:#fff;font-size:12.5px;font-weight:700;line-height:1.25}
+.sb-sub{color:#4e7098;font-size:10px;margin-top:1px}
+.sb-user-pill{margin:9px 10px 0;padding:7px 10px;background:rgba(12,111,219,.18);border-radius:8px;border:1px solid rgba(12,111,219,.3)}
+.sb-user-label{font-size:9px;color:#4e7098;text-transform:uppercase;letter-spacing:.5px}
+.sb-user-name{font-size:11px;color:#7eb8f7;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-nav{flex:1;overflow-y:auto;padding:8px 0;scrollbar-width:none}
+.sb-nav::-webkit-scrollbar{display:none}
+.sb-section{padding:9px 14px 3px;font-size:9px;font-weight:700;color:#2e5070;text-transform:uppercase;letter-spacing:.7px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:7px 12px;margin:1px 8px;border-radius:8px;cursor:pointer;color:#5a8ab0;font-size:12px;font-weight:500;transition:all .13s;user-select:none}
+.nav-item:hover{background:rgba(255,255,255,.05);color:#9fc3e8}
+.nav-item.active{background:rgba(12,111,219,.22);color:#7eb8f7}
+.nav-ic{font-size:13px;width:16px;text-align:center;flex-shrink:0}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;min-width:16px;text-align:center;display:none}
+.nav-tag{margin-left:auto;font-size:8px;background:rgba(124,58,237,.35);color:#a78bfa;padding:1px 5px;border-radius:4px;font-weight:700}
+.sb-foot{padding:10px;border-top:1px solid var(--sb-border)}
+.sb-signout{display:flex;align-items:center;gap:8px;padding:8px 9px;border-radius:8px;background:rgba(255,255,255,.04);cursor:pointer;width:100%;border:none;transition:background .13s}
+.sb-signout:hover{background:rgba(255,255,255,.07)}
+.sb-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
+.sb-av-name{font-size:11px;font-weight:600;color:#c8ddf0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;flex:1}
+.sb-av-role{font-size:9px;color:#4e7098;text-align:left}
+
+/* ── Cards ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px}
+.card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
+.card-title{font-size:13px;font-weight:700}
+.card-np{padding:0;overflow:hidden}
+
+/* ── Stats ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;position:relative;overflow:hidden}
+.stat-bar{position:absolute;top:0;left:0;width:3px;height:100%;border-radius:2px 0 0 2px}
+.stat-lbl{font-size:10px;color:var(--text3);font-weight:700;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+.stat-val{font-size:22px;font-weight:700;line-height:1}
+.stat-sub{font-size:10px;color:var(--text3);margin-top:4px}
+
+/* ── Table ── */
+.tbl-wrap{overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);white-space:nowrap}
+.tbl td{padding:9px 12px;border-bottom:1px solid #f8fafc;color:var(--text2);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
+.tbl tr:hover td{background:var(--bg);cursor:pointer}
+.tbl tr:last-child td{border-bottom:none}
+
+/* ── Badges ── */
+.badge{display:inline-flex;padding:3px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap}
+.b-pending{background:var(--amber-s);color:var(--amber)}
+.b-approved{background:var(--green-s);color:var(--green)}
+.b-assigned{background:var(--purple-s);color:var(--purple)}
+.b-gout{background:var(--pri-s);color:var(--pri)}
+.b-ontrip{background:var(--green-s);color:var(--green)}
+.b-done{background:var(--teal-s);color:var(--teal)}
+.b-rejected{background:var(--red-s);color:var(--red)}
+.b-amb{background:var(--red-s);color:var(--red)}
+.b-reg{background:var(--pri-s);color:var(--pri)}
+.b-avail{background:var(--green-s);color:var(--green)}
+.b-maint{background:var(--red-s);color:var(--red)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all .13s;font-family:var(--font)}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.btn-pri{background:var(--pri);color:#fff}.btn-pri:hover:not(:disabled){background:var(--pri-d)}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}.btn-ghost:hover{background:var(--bg)}
+.btn-green{background:var(--green);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-teal{background:var(--teal);color:#fff}
+.btn-purple{background:var(--purple);color:#fff}
+.btn-amber{background:var(--amber);color:#fff}
+.btn-sm{padding:5px 10px;font-size:11px}
+.ib{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:13px;color:var(--text2)}
+.ib:hover{background:var(--bg)}
+
+/* ── Modal ── */
+.mo-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:center;justify-content:center;padding:20px}
+.mo-overlay.open{display:flex}
+.mo{background:var(--card);border-radius:var(--radius-lg);width:540px;max-width:100%;max-height:88vh;overflow-y:auto;border:1px solid var(--border)}
+.mo-hd{padding:15px 18px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--card);z-index:1}
+.mo-title{font-size:14px;font-weight:700}
+.mo-body{padding:18px}
+.mo-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:7px;position:sticky;bottom:0;background:var(--card)}
+
+/* ── Forms ── */
+.fg{margin-bottom:13px}
+.fl{display:block;font-size:10px;font-weight:700;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.fi,.fs,.ft{width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:var(--font);background:#f8fafc;color:var(--text);outline:none;transition:border .13s}
+.fi:focus,.fs:focus,.ft:focus{border-color:var(--pri);background:var(--card)}
+.ft{min-height:65px;resize:vertical}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+
+/* ── Info boxes ── */
+.info{padding:11px 13px;border-radius:9px;font-size:11.5px;border:1px solid;margin-bottom:13px}
+.info-blue{background:var(--pri-s);border-color:rgba(12,111,219,.3);color:var(--pri)}
+.info-red{background:var(--red-s);border-color:rgba(220,38,38,.3);color:var(--red)}
+.info-green{background:var(--green-s);border-color:rgba(22,163,74,.3);color:var(--green)}
+.info-amber{background:var(--amber-s);border-color:rgba(217,119,6,.3);color:var(--amber)}
+
+/* ── Workflow steps ── */
+.wf{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:14px}
+.wf-step{padding:5px 10px;border-radius:6px;font-size:10px;font-weight:600;background:var(--bg);border:1px solid var(--border);color:var(--text3);white-space:nowrap}
+.wf-step.done{background:var(--teal-s);border-color:var(--teal);color:var(--teal)}
+.wf-step.active{background:var(--pri-s);border-color:var(--pri);color:var(--pri)}
+.wf-arr{color:var(--text3);font-size:12px}
+
+/* ── Report bars ── */
+.rbar{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.rbar-track{flex:1;height:7px;background:var(--bg);border-radius:4px;overflow:hidden}
+.rbar-fill{height:100%;border-radius:4px}
+
+/* ── Chip ── */
+.chip{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:600;background:var(--bg);color:var(--text2);border:1px solid var(--border)}
+
+/* ── GPS dot ── */
+.ping{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block;position:relative}
+.ping::after{content:'';position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--green);animation:pinga 1.6s ease-out infinite}
+@keyframes pinga{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(2.3)}}
+
+/* ── Driver app mockup ── */
+.daf{background:#060e1c;border-radius:14px;border:2px solid #1a2d45;overflow:hidden;width:225px;flex-shrink:0}
+
+/* ── Login page ── */
+.login-page{display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg)}
+.login-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:36px 32px;width:100%;max-width:400px}
+
+/* ── Ndot ── */
+.ndot{position:relative}
+.ndot-dot{display:none;width:8px;height:8px;border-radius:50%;background:var(--red);position:absolute;top:4px;right:4px;border:2px solid var(--card)}
+.ndot-dot.show{display:block}
+
+/* ── Responsive ── */
+@media(max-width:900px){.stats-grid{grid-template-columns:1fr 1fr}.fr{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ════ LOGIN PAGE ════ -->
+<div id="loginPage" class="login-page">
+  <div class="login-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:28px">
+      <div class="sb-cross" style="width:36px;height:36px;border-radius:9px"><svg viewBox="0 0 18 18" fill="none"><rect x="7" y="1" width="4" height="16" rx="2" fill="#fff"/><rect x="1" y="7" width="16" height="4" rx="2" fill="#fff"/></svg></div>
+      <div><div style="font-size:14px;font-weight:700">MedCenter VTS</div><div style="font-size:11px;color:var(--text3)">Vehicle Ticketing System</div></div>
+    </div>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:22px">Sign in to your account</h2>
+    <div class="fg"><label class="fl">Username</label><input class="fi" type="text" id="loginUsername" placeholder="e.g. admin" autocomplete="username" style="text-transform:lowercase"></div>
+    <div class="fg"><label class="fl">Password</label><input class="fi" type="password" id="loginPw" placeholder="••••••••" autocomplete="current-password"></div>
+    <div id="loginErr" style="display:none;background:var(--red-s);color:var(--red);padding:9px 12px;border-radius:8px;font-size:12px;margin-bottom:12px;border:1px solid rgba(220,38,38,.2)"></div>
+    <button class="btn btn-pri" style="width:100%;justify-content:center;padding:10px" onclick="handleLogin()" id="loginBtn">Sign in</button>
+    <p style="font-size:11.5px;color:var(--text3);text-align:center;margin-top:16px">Contact your administrator if you cannot log in.</p>
+  </div>
+</div>
+
+<!-- ════ MAIN APP ════ -->
+<div id="appShell" class="app" style="display:none">
+  <!-- Sidebar -->
+  <aside class="sb">
+    <div class="sb-head">
+      <div class="sb-logo">
+        <div class="sb-cross"><svg viewBox="0 0 18 18" fill="none"><rect x="7" y="1" width="4" height="16" rx="2" fill="#fff"/><rect x="1" y="7" width="16" height="4" rx="2" fill="#fff"/></svg></div>
+        <div><div class="sb-brand">MedCenter VTS</div><div class="sb-sub">Vehicle Ticketing System</div></div>
+      </div>
+      <div class="sb-user-pill"><div class="sb-user-label">Username</div><div class="sb-user-name" id="sbDept">Loading...</div></div>
+    </div>
+    <nav class="sb-nav" id="sbNav"></nav>
+    <div class="sb-foot">
+      <button class="sb-signout" onclick="handleSignOut()">
+        <div class="sb-av" id="sbAv" style="background:var(--pri)">AD</div>
+        <div style="flex:1;min-width:0"><div class="sb-av-name" id="sbFullName">Loading</div><div class="sb-av-role" id="sbRole">—</div></div>
+        <span style="color:#4e7098;font-size:13px" title="Sign out">⏻</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title" id="pageTitle">Dashboard</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="ndot" style="position:relative">
+          <button class="ib" onclick="showNotifs()">🔔</button>
+          <span class="ndot-dot" id="ndot"></span>
+        </div>
+        <button class="btn btn-pri btn-sm" onclick="goTo('new-ticket')" id="newTicketBtn">+ New Ticket</button>
+      </div>
+    </div>
+    <div class="content" id="CONTENT"></div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="mo-overlay" id="MO" onclick="if(event.target===this)closeMO()">
+  <div class="mo">
+    <div class="mo-hd"><div class="mo-title" id="moTitle">—</div><button class="ib" onclick="closeMO()" style="border:none;font-size:15px">✕</button></div>
+    <div class="mo-body" id="moBody"></div>
+    <div class="mo-foot" id="moFoot"></div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════
+// SUPABASE INIT
+// ════════════════════════════════════════════════
+const { createClient } = supabase
+const SB = createClient(
+  'https://blgscwtseqvhgdoksvjh.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsZ3Njd3RzZXF2aGdkb2tzdmpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0ODkwNzAsImV4cCI6MjA5MDA2NTA3MH0.NoJ8ASqwyJBMCkbufoYZy9iCYkZvZIi6bz2vLamlQG0'
+)
+
+// ════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════
+let currentUser = null   // supabase auth user
+let currentProfile = null // users table row
+let currentPage = 'dashboard'
+let realtimeChannel = null
+
+const ROLE_LABELS = { admin:'Administrator', approver:'Approver', guard:'Guard', requester:'Department User', driver:'Driver' }
+const ROLE_COLORS = { admin:'#0c6fdb', approver:'#7c3aed', guard:'#0d9488', requester:'#d97706', driver:'#16a34a' }
+const STATUS_MAP = {
+  'pending-approval':{ cls:'b-pending',  lbl:'Pending' },
+  'driver-assigned': { cls:'b-assigned', lbl:'Assigned' },
+  'gate-out-pending':{ cls:'b-gout',     lbl:'Gate Out Pending' },
+  'on-trip':         { cls:'b-ontrip',   lbl:'On Trip' },
+  'completed':       { cls:'b-done',     lbl:'Completed' },
+  'rejected':        { cls:'b-rejected', lbl:'Rejected' },
+  'cancelled':       { cls:'b-rejected', lbl:'Cancelled' },
+  'available':       { cls:'b-avail',    lbl:'Available' },
+  'maintenance':     { cls:'b-maint',    lbl:'Maintenance' },
+  'on-trip':         { cls:'b-gout',     lbl:'On Trip' },
+}
+const WF_STEPS = [
+  { key:'pending-approval', lbl:'Requested' },
+  { key:'driver-assigned',  lbl:'Approved' },
+  { key:'gate-out-pending', lbl:'Driver Assigned' },
+  { key:'on-trip',          lbl:'Gate Out' },
+  { key:'completed',        lbl:'Completed' },
+]
+const DEPTS = ['Administration','Emergency Room','Intensive Care Unit','OB-Gynecology','Pediatrics','Surgery','Radiology','Laboratory','Pharmacy','Nursing','Human Resources','Finance','Maintenance','Security','Housekeeping','Information Technology','Social Work','Psychiatry','Dental','Ophthalmology','Orthopedics','ENT','Neurology','Cardiology','Pulmonology','Gastroenterology','Urology','Oncology','Infection Control','Physical Medicine','Internal Medicine','Ambulance / EMS']
+const DEPT_COLORS = ['#0c6fdb','#7c3aed','#0d9488','#d97706','#dc2626','#0ea5e9','#16a34a','#c026d3','#ea580c','#0891b2']
+
+// ════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════
+const ini = n => (n||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()
+const badge = s => { const m = STATUS_MAP[s]||{cls:'b-pending',lbl:s}; return `<span class="badge ${m.cls}">${m.lbl}</span>` }
+const typeBadge = t => t==='ambulance' ? `<span class="badge b-amb">Ambulance</span>` : `<span class="badge b-reg">Regular</span>`
+const fmtDate = d => d ? new Date(d).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : '—'
+const fmtDT = d => d ? new Date(d).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'
+const chip = t => `<span class="chip">${t}</span>`
+
+function wfHtml(status) {
+  const idx = WF_STEPS.findIndex(s => s.key === status)
+  return `<div class="wf">${WF_STEPS.map((s,i) =>
+    `${i?'<span class="wf-arr">›</span>':''}
+     <span class="wf-step ${i<idx?'done':i===idx?'active':''}">${s.lbl}</span>`
+  ).join('')}</div>`
+}
+
+async function addAudit(ticketId, ticketNo, action, details) {
+  await SB.from('audit_logs').insert([{
+    ticket_id: ticketId, ticket_no: ticketNo,
+    action, details,
+    user_id: currentProfile?.id || null,
+    user_name: currentProfile?.full_name || null,
+    user_role: currentProfile?.role || null
+  }])
+}
+
+function openMO(title, body, foot) {
+  document.getElementById('moTitle').textContent = title
+  document.getElementById('moBody').innerHTML = body
+  document.getElementById('moFoot').innerHTML = foot || '<button class="btn btn-ghost" onclick="closeMO()">Close</button>'
+  document.getElementById('MO').classList.add('open')
+}
+function closeMO() { document.getElementById('MO').classList.remove('open') }
+
+// ════════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════════
+async function fetchProfile(authUser) {
+  if (!authUser) return null
+  const { data } = await SB.from('users').select('*').eq('id', authUser.id).single()
+  return data
+}
+
+async function handleLogin() {
+  const username = (document.getElementById('loginUsername').value || '').trim().toLowerCase()
+  const pw = document.getElementById('loginPw').value
+  const btn = document.getElementById('loginBtn')
+  const err = document.getElementById('loginErr')
+  err.style.display = 'none'
+  if (!username) { err.textContent = 'Please enter your username.'; err.style.display = 'block'; return }
+  btn.textContent = 'Signing in...'; btn.disabled = true
+  try {
+    const email = username + '@vts.local'
+    const { error } = await SB.auth.signInWithPassword({ email, password: pw })
+    if (error) throw error
+  } catch(e) {
+    err.textContent = 'Invalid username or password.'
+    err.style.display = 'block'
+    btn.textContent = 'Sign in'; btn.disabled = false
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const pwEl = document.getElementById('loginPw')
+  if (pwEl) pwEl.addEventListener('keydown', e => { if(e.key==='Enter') handleLogin() })
+  const unEl = document.getElementById('loginUsername')
+  if (unEl) unEl.addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('loginPw').focus() })
+})
+
+async function handleSignOut() {
+  if (!confirm('Sign out?')) return
+  await SB.auth.signOut()
+}
+
+// Auth state listener
+SB.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    currentUser = session.user
+    currentProfile = await fetchProfile(session.user)
+    showApp()
+  } else {
+    currentUser = null; currentProfile = null
+    showLogin()
+  }
+})
+
+// ════════════════════════════════════════════════
+// SHOW / HIDE
+// ════════════════════════════════════════════════
+function showLogin() {
+  document.getElementById('loginPage').style.display = 'flex'
+  document.getElementById('appShell').style.display = 'none'
+  if (realtimeChannel) { SB.removeChannel(realtimeChannel); realtimeChannel = null }
+}
+
+function showApp() {
+  document.getElementById('loginPage').style.display = 'none'
+  document.getElementById('appShell').style.display = 'flex'
+  buildSidebar()
+  goTo('dashboard')
+  subscribeRealtime()
+}
+
+// ════════════════════════════════════════════════
+// SIDEBAR
+// ════════════════════════════════════════════════
+const NAV = [
+  { section: 'Overview' },
+  { id:'dashboard',    label:'Dashboard',      ic:'⊞', roles:['admin','approver','guard','requester','driver'] },
+  { id:'tickets',      label:'All Tickets',    ic:'◈', roles:['admin','approver','guard'], badge: true },
+  { id:'new-ticket',   label:'New Request',    ic:'+', roles:['admin','requester'] },
+  { section: 'Fleet' },
+  { id:'vehicles',     label:'Vehicles',       ic:'◉', roles:['admin','guard'] },
+  { id:'drivers',      label:'Drivers',        ic:'◎', roles:['admin'] },
+  { id:'departments',  label:'Departments',    ic:'◫', roles:['admin'] },
+  { section: 'Oversight' },
+  { id:'gps',          label:'GPS Tracking',   ic:'◍', tag:'Beta', roles:['admin','guard'] },
+  { id:'reports',      label:'Reports',        ic:'◪', roles:['admin'] },
+  { id:'audit',        label:'Audit Logs',     ic:'◻', roles:['admin'] },
+  { section: 'System' },
+  { id:'accounts',     label:'Accounts',       ic:'◷', roles:['admin'] },
+  { id:'driver-app',   label:'Driver App',     ic:'◱', roles:['admin'] },
+  { id:'faq',          label:'FAQ',            ic:'◌', roles:['admin','approver','guard','requester','driver'] },
+]
+
+function buildSidebar() {
+  const role = currentProfile?.role || 'requester'
+  const col = ROLE_COLORS[role] || '#0c6fdb'
+  document.getElementById('sbDept').textContent = currentProfile?.username || '—'
+  document.getElementById('sbAv').textContent = ini(currentProfile?.full_name)
+  document.getElementById('sbAv').style.background = col
+  document.getElementById('sbFullName').textContent = currentProfile?.full_name || 'User'
+  document.getElementById('sbRole').textContent = ROLE_LABELS[role] || role
+  document.getElementById('sbRole').style.color = col
+  // Show/hide new ticket button
+  const showNewTicket = ['admin','requester'].includes(role)
+  document.getElementById('newTicketBtn').style.display = showNewTicket ? '' : 'none'
+
+  const nav = document.getElementById('sbNav')
+  nav.innerHTML = NAV.map(n => {
+    if (n.section) return `<div class="sb-section">${n.section}</div>`
+    if (n.roles && !n.roles.includes(role)) return ''
+    return `<div class="nav-item ${n.id===currentPage?'active':''}" data-page="${n.id}" onclick="goTo('${n.id}')">
+      <span class="nav-ic">${n.ic}</span>${n.label}
+      ${n.badge ? `<span class="nav-badge" id="navBadge"></span>` : ''}
+      ${n.tag  ? `<span class="nav-tag">${n.tag}</span>` : ''}
+    </div>`
+  }).join('')
+}
+
+function updateNavBadge(count) {
+  const el = document.getElementById('navBadge')
+  const dot = document.getElementById('ndot')
+  if (el) { el.textContent = count; el.style.display = count ? 'block' : 'none' }
+  if (dot) { dot.classList.toggle('show', count > 0) }
+}
+
+function goTo(page) {
+  currentPage = page
+  const titles = { dashboard:'Dashboard', tickets:'All Tickets', 'new-ticket':'New Vehicle Request', vehicles:'Vehicles', drivers:'Drivers', departments:'Departments', gps:'GPS Tracking', reports:'Reports', audit:'Audit Logs', accounts:'Account Management', 'driver-app':'Driver Mobile App', faq:'FAQ' }
+  document.getElementById('pageTitle').textContent = titles[page] || page
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page))
+  renderPage(page)
+}
+
+// ════════════════════════════════════════════════
+// REALTIME
+// ════════════════════════════════════════════════
+function subscribeRealtime() {
+  if (realtimeChannel) SB.removeChannel(realtimeChannel)
+  realtimeChannel = SB.channel('vts-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, () => renderPage(currentPage))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, () => { if(['drivers','tickets'].includes(currentPage)) renderPage(currentPage) })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, () => { if(['vehicles','tickets'].includes(currentPage)) renderPage(currentPage) })
+    .subscribe()
+}
+
+// ════════════════════════════════════════════════
+// RENDER ROUTER
+// ════════════════════════════════════════════════
+function renderPage(page) {
+  const pages = { dashboard:renderDashboard, tickets:renderTickets, 'new-ticket':renderNewTicket, vehicles:renderVehicles, drivers:renderDrivers, departments:renderDepts, gps:renderGPS, reports:renderReports, audit:renderAudit, accounts:renderAccounts, 'driver-app':renderDriverApp, faq:renderFAQ }
+  const fn = pages[page] || renderDashboard
+  fn()
+}
+
+// ════════════════════════════════════════════════
+// NOTIFICATIONS
+// ════════════════════════════════════════════════
+async function showNotifs() {
+  const { data } = await SB.from('trips').select('ticket_no,department,purpose,vehicle_type_needed,departure_at').eq('status','pending-approval').order('created_at',{ascending:false}).limit(10)
+  const items = data || []
+  openMO('Pending Notifications',
+    `<div style="font-size:11px;color:var(--text3);margin-bottom:10px">${items.length} ticket${items.length!==1?'s':''} awaiting approval</div>` +
+    (items.map(t => `<div style="padding:10px;background:var(--bg);border-radius:8px;margin-bottom:7px;border-left:3px solid var(--amber)">
+      <div style="font-size:12px;font-weight:700">${t.ticket_no} — ${t.department}</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px">${t.purpose}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">${t.vehicle_type_needed==='ambulance'?'Ambulance Approver':'Admin Approver'} · ${fmtDate(t.departure_at)}</div>
+    </div>`).join('') || '<div style="font-size:13px;color:var(--text3)">No pending tickets.</div>'),
+    ''
+  )
+}
+
+// ════════════════════════════════════════════════
+// DASHBOARD
+// ════════════════════════════════════════════════
+async function renderDashboard() {
+  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>'
+  const [{ data: trips }, { data: logs }] = await Promise.all([
+    SB.from('trips').select('id,ticket_no,status,department,purpose,vehicle_type_needed,driver_name,departure_at,created_at').order('created_at',{ascending:false}),
+    SB.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(6)
+  ])
+  const T = trips || []; const L = logs || []
+  const pending  = T.filter(t => t.status==='pending-approval')
+  const active   = T.filter(t => ['driver-assigned','gate-out-pending','on-trip'].includes(t.status))
+  const done     = T.filter(t => t.status==='completed')
+  updateNavBadge(pending.length)
+
+  document.getElementById('CONTENT').innerHTML = `
+  <div class="stats-grid">
+    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Total Tickets</div><div class="stat-val">${T.length}</div><div class="stat-sub">All time</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Pending Approval</div><div class="stat-val">${pending.length}</div><div class="stat-sub">Requires action</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Active Trips</div><div class="stat-val">${active.length}</div><div class="stat-sub">In progress</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Completed</div><div class="stat-val">${done.length}</div><div class="stat-sub">This period</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+    <div class="card">
+      <div class="card-hd"><div class="card-title">Pending Approvals</div><button class="btn btn-ghost btn-sm" onclick="goTo('tickets')">View All</button></div>
+      ${pending.length ? pending.slice(0,5).map(t => `
+        <div onclick="goTo('tickets')" style="display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid #f1f5f9;cursor:pointer">
+          <div style="width:34px;height:34px;border-radius:8px;background:${t.vehicle_type_needed==='ambulance'?'var(--red-s)':'var(--pri-s)'};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${t.vehicle_type_needed==='ambulance'?'🚑':'🚙'}</div>
+          <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.ticket_no} — ${t.department}</div><div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.purpose}</div></div>
+          ${typeBadge(t.vehicle_type_needed)}
+        </div>`).join('') : '<div style="font-size:12px;color:var(--text3);padding:8px 0">No pending tickets</div>'}
+    </div>
+    <div class="card">
+      <div class="card-hd"><div class="card-title">Active Trips</div></div>
+      ${active.length ? active.slice(0,5).map(t => `
+        <div onclick="goTo('tickets')" style="display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid #f1f5f9;cursor:pointer">
+          <div style="width:34px;height:34px;border-radius:8px;background:var(--green-s);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">🚗</div>
+          <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">${t.ticket_no} — ${t.department}</div><div style="font-size:11px;color:var(--text2)">${t.driver_name||'Awaiting driver'}</div></div>
+          ${badge(t.status)}
+        </div>`).join('') : '<div style="font-size:12px;color:var(--text3);padding:8px 0">No active trips</div>'}
+    </div>
+  </div>
+  <div class="card card-np">
+    <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">Recent Audit Activity</div><button class="btn btn-ghost btn-sm" onclick="goTo('audit')">Full Log</button></div>
+    <table class="tbl"><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Ticket</th><th>Detail</th></tr></thead><tbody>
+    ${L.map(l => `<tr><td style="font-size:10px;color:var(--text3);white-space:nowrap">${fmtDT(l.created_at)}</td><td style="font-weight:600">${l.user_name||'—'}</td><td>${l.action}</td><td>${chip(l.ticket_no||'—')}</td><td style="font-size:11px">${l.details||''}</td></tr>`).join('')}
+    </tbody></table>
+  </div>`
+}
+
+// ════════════════════════════════════════════════
+// TICKETS
+// ════════════════════════════════════════════════
+let _tickets = [], _drivers = [], _vehicles = []
+
+async function renderTickets() {
+  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>`
+  const [{ data: trips }, { data: drvs }, { data: vehs }] = await Promise.all([
+    SB.from('trips').select('*,vehicle:vehicles(id,plate,type,name)').order('created_at',{ascending:false}),
+    SB.from('drivers').select('*').eq('status','available'),
+    SB.from('vehicles').select('*').eq('status','available')
+  ])
+  _tickets = trips || []; _drivers = drvs || []; _vehicles = vehs || []
+  updateNavBadge(_tickets.filter(t=>t.status==='pending-approval').length)
+  renderTicketsTable()
+}
+
+function renderTicketsTable() {
+  const sEl = document.getElementById('tkSearch')
+  const stEl = document.getElementById('tkStatus')
+  const tyEl = document.getElementById('tkType')
+  const q = (sEl?.value||'').toLowerCase()
+  const sf = stEl?.value||''
+  const tf = tyEl?.value||''
+
+  const filtered = _tickets.filter(t => {
+    const m = (t.ticket_no||'').toLowerCase().includes(q)||(t.department||'').toLowerCase().includes(q)||(t.purpose||'').toLowerCase().includes(q)
+    return m && (!sf||t.status===sf) && (!tf||t.vehicle_type_needed===tf)
+  })
+  const role = currentProfile?.role
+
+  document.getElementById('CONTENT').innerHTML = `
+  <div style="display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+    <input class="fi" id="tkSearch" placeholder="Search tickets..." style="width:200px;font-size:12px;padding:7px 11px" oninput="renderTicketsTable()" value="${q}">
+    <select class="fs" id="tkStatus" style="width:155px;font-size:12px;padding:7px 11px" onchange="renderTicketsTable()">
+      <option value="">All Statuses</option>
+      <option value="pending-approval" ${sf==='pending-approval'?'selected':''}>Pending</option>
+      <option value="driver-assigned" ${sf==='driver-assigned'?'selected':''}>Approved</option>
+      <option value="gate-out-pending" ${sf==='gate-out-pending'?'selected':''}>Gate Out Pending</option>
+      <option value="on-trip" ${sf==='on-trip'?'selected':''}>On Trip</option>
+      <option value="completed" ${sf==='completed'?'selected':''}>Completed</option>
+      <option value="rejected" ${sf==='rejected'?'selected':''}>Rejected</option>
+    </select>
+    <select class="fs" id="tkType" style="width:135px;font-size:12px;padding:7px 11px" onchange="renderTicketsTable()">
+      <option value="">All Types</option>
+      <option value="regular" ${tf==='regular'?'selected':''}>Regular</option>
+      <option value="ambulance" ${tf==='ambulance'?'selected':''}>Ambulance</option>
+    </select>
+    <div style="margin-left:auto;font-size:11px;color:var(--text3)">${filtered.length} tickets</div>
+  </div>
+  <div class="card card-np" style="overflow:hidden">
+  <div class="tbl-wrap"><table class="tbl">
+    <thead><tr><th>Ticket</th><th>Department</th><th>Purpose</th><th>Date</th><th>Type</th><th>Status</th><th>Driver · Vehicle</th><th>Actions</th></tr></thead>
+    <tbody>${filtered.map(t => {
+      const acts = []
+      if (['admin','approver'].includes(role) && t.status==='pending-approval') {
+        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
+        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
+      }
+      if (role==='admin' && t.status==='driver-assigned')
+        acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign</button>`)
+      if (role==='guard' && t.status==='gate-out-pending')
+        acts.push(`<button class="btn btn-teal btn-sm" onclick="event.stopPropagation();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle?.plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}')">Gate Out</button>`)
+      if (role==='guard' && t.status==='on-trip')
+        acts.push(`<button class="btn btn-purple btn-sm" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
+      acts.push(`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button>`)
+      return `<tr onclick="openViewModal('${t.id}')">
+        <td>${chip(t.ticket_no)}</td>
+        <td style="font-weight:700;font-size:11px">${t.department||'—'}</td>
+        <td style="font-size:11px">${t.purpose||'—'}</td>
+        <td style="font-size:11px;white-space:nowrap">${fmtDate(t.departure_at||t.created_at)}</td>
+        <td>${typeBadge(t.vehicle_type_needed)}</td>
+        <td>${badge(t.status)}</td>
+        <td style="font-size:10.5px">${t.driver_name||'—'}<br><span style="color:var(--text3)">${t.vehicle?.plate||''}</span></td>
+        <td onclick="event.stopPropagation()"><div style="display:flex;gap:4px;flex-wrap:wrap">${acts.join('')}</div></td>
+      </tr>`
+    }).join('')}
+    ${filtered.length===0?'<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">No tickets found.</td></tr>':''}
+    </tbody>
+  </table></div></div>`
+}
+
+// VIEW
+async function openViewModal(id) {
+  const { data: t } = await SB.from('trips').select('*,vehicle:vehicles(plate,type)').eq('id',id).single()
+  if (!t) return
+  const fields = [
+    ['Department',t.department],['Requester',t.requester_name],
+    ['Purpose',t.purpose,'span2'],['Destination',t.destination,'span2'],
+    ['Date & Time',fmtDT(t.departure_at)],['Passengers',`${t.passengers||1} pax`],
+    ['Driver',t.driver_name||'Not assigned'],['Vehicle',t.vehicle?.plate||'Not assigned'],
+    ...(t.gate_out_at?[['Gate Out',fmtDT(t.gate_out_at)]]:[]),
+    ...(t.gate_in_at?[['Gate In',fmtDT(t.gate_in_at)]]:[]),
+    ...(t.odometer_out&&t.odometer_in?[['Distance',`${t.odometer_in-t.odometer_out} km`]]:[]),
+    ...(t.remarks?[['Remarks',t.remarks,'span2']]:[]),
+  ]
+  openMO(`Ticket — ${t.ticket_no}`,
+    `<div style="display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap">${badge(t.status)}${typeBadge(t.vehicle_type_needed)}</div>
+     ${wfHtml(t.status)}
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+       ${fields.map(([l,v,s])=>`<div style="background:var(--bg);padding:10px;border-radius:8px;${s==='span2'?'grid-column:span 2':''}">
+         <div style="font-size:9.5px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">${l}</div>
+         <div style="font-size:12.5px;font-weight:600">${v}</div>
+       </div>`).join('')}
+     </div>
+     <div style="font-size:10.5px;color:var(--text3);margin-top:13px">Created: ${fmtDT(t.created_at)} · Approver: ${t.vehicle_type_needed==='ambulance'?'Ambulance Approver':'Admin Approver'}</div>`,
+    ''
+  )
+}
+
+// APPROVE
+function openApproveModal(id, ticketNo, vtype) {
+  openMO(`Approve — ${ticketNo}`,
+    `<div class="info info-green">Approving as <strong>${vtype==='ambulance'?'Ambulance Approver':'Admin Approver'}</strong>. A notification will be sent to the requester.</div>
+     <div class="fg"><label class="fl">Remarks (optional)</label><textarea class="ft" id="apRem" placeholder="Add any remarks..."></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-green" id="apBtn" onclick="doApprove('${id}','${ticketNo}')">Confirm Approval</button>`
+  )
+}
+async function doApprove(id, ticketNo) {
+  const btn = document.getElementById('apBtn'); btn.disabled=true; btn.textContent='Approving...'
+  const rem = document.getElementById('apRem')?.value||''
+  const { error } = await SB.from('trips').update({ status:'driver-assigned', admin_id:currentProfile?.id, admin_approved_at:new Date().toISOString(), admin_remarks:rem }).eq('id',id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Confirm Approval'; return }
+  await addAudit(id, ticketNo, 'Ticket Approved', rem||'Approved')
+  closeMO(); renderTickets()
+}
+
+// REJECT
+function openRejectModal(id, ticketNo) {
+  openMO(`Reject — ${ticketNo}`,
+    `<div class="info info-red">This will reject the request and notify the department.</div>
+     <div class="fg"><label class="fl">Reason for rejection *</label><textarea class="ft" id="rejR" placeholder="Please state the reason..."></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-red" id="rejBtn" onclick="doReject('${id}','${ticketNo}')">Reject Ticket</button>`
+  )
+}
+async function doReject(id, ticketNo) {
+  const reason = document.getElementById('rejR')?.value?.trim()
+  if (!reason) { alert('Reason required.'); return }
+  const btn = document.getElementById('rejBtn'); btn.disabled=true; btn.textContent='Rejecting...'
+  const { error } = await SB.from('trips').update({ status:'rejected', rejected_by:currentProfile?.id, rejected_at:new Date().toISOString(), rejection_reason:reason }).eq('id',id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Reject Ticket'; return }
+  await addAudit(id, ticketNo, 'Ticket Rejected', reason)
+  closeMO(); renderTickets()
+}
+
+// ASSIGN DRIVER
+function openAssignModal(id, ticketNo, vtype) {
+  const isAmb = vtype==='ambulance'
+  const avD = _drivers
+  const avV = _vehicles.filter(v => isAmb ? (v.type||'').toLowerCase().includes('ambulance')||(v.type||'').toLowerCase().includes('bls') : !(v.type||'').toLowerCase().includes('ambulance'))
+  openMO(`Assign Driver & Vehicle — ${ticketNo}`,
+    `<div class="fg"><label class="fl">Select Driver</label>
+      <select class="fs" id="dSel"><option value="">-- Select Driver --</option>${avD.map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no}</option>`).join('')}</select></div>
+     <div class="fg"><label class="fl">Select Vehicle</label>
+      <select class="fs" id="vSel"><option value="">-- Select Vehicle --</option>${avV.map(v=>`<option value="${v.id}">${v.plate} — ${v.type} (${v.capacity} pax)</option>`).join('')}</select></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="asBtn" onclick="doAssign('${id}','${ticketNo}')">Assign & Notify Driver</button>`
+  )
+}
+async function doAssign(id, ticketNo) {
+  const dv = document.getElementById('dSel')?.value
+  const vv = document.getElementById('vSel')?.value
+  if (!dv||!vv) { alert('Select both driver and vehicle.'); return }
+  const [driverId, driverName] = dv.split('|')
+  const btn = document.getElementById('asBtn'); btn.disabled=true; btn.textContent='Assigning...'
+  const { error } = await SB.from('trips').update({ status:'gate-out-pending', driver_id:driverId, driver_name:driverName, vehicle_id:vv, assigned_by:currentProfile?.id, assigned_at:new Date().toISOString() }).eq('id',id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Assign'; return }
+  await SB.from('drivers').update({ status:'on-trip' }).eq('id',driverId)
+  await SB.from('vehicles').update({ status:'on-trip' }).eq('id',vv)
+  await addAudit(id, ticketNo, 'Driver Assigned', `Driver: ${driverName}`)
+  closeMO(); renderTickets()
+}
+
+// GATE OUT
+function openGateOutModal(id, ticketNo, purpose, driverName, plate, dest) {
+  openMO(`Gate Out — ${ticketNo}`,
+    `<div style="background:var(--bg);padding:12px;border-radius:9px;margin-bottom:13px">
+       <div style="font-size:12px;font-weight:700;margin-bottom:6px">${purpose}</div>
+       <div style="font-size:11.5px;color:var(--text2)">Driver: <strong>${driverName}</strong> · Vehicle: <strong>${plate}</strong></div>
+       <div style="font-size:11.5px;color:var(--text2)">Destination: <strong>${dest}</strong></div>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Odometer Out (km) *</label><input class="fi" type="number" id="odoOut" placeholder="e.g. 42500"></div>
+       <div class="fg"><label class="fl">Fuel Level</label><select class="fs" id="fuelOut"><option>Full</option><option>3/4</option><option>1/2</option><option>1/4</option></select></div>
+       <div class="fg"><label class="fl">Condition</label><select class="fs" id="condOut"><option>Good</option><option>Fair</option><option>With defects</option></select></div>
+     </div>
+     <div class="fg"><label class="fl">Remarks</label><textarea class="ft" id="goRem" placeholder="Observations..."></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-teal" id="goBtn" onclick="doGateOut('${id}','${ticketNo}')">Record Gate Out</button>`
+  )
+}
+async function doGateOut(id, ticketNo) {
+  const odo = parseInt(document.getElementById('odoOut')?.value)
+  if (!odo) { alert('Odometer reading required.'); return }
+  const btn = document.getElementById('goBtn'); btn.disabled=true; btn.textContent='Recording...'
+  const { error } = await SB.from('trips').update({ status:'on-trip', guard_out_id:currentProfile?.id, gate_out_at:new Date().toISOString(), odometer_out:odo, fuel_level_out:document.getElementById('fuelOut')?.value, condition_out:document.getElementById('condOut')?.value, guard_out_remarks:document.getElementById('goRem')?.value }).eq('id',id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Record Gate Out'; return }
+  await addAudit(id, ticketNo, 'Gate Out', `Odometer: ${odo} km`)
+  closeMO(); renderTickets()
+}
+
+// GATE IN
+function openGateInModal(id, ticketNo, dest, vehicleId, driverId) {
+  openMO(`Gate In — ${ticketNo}`,
+    `<div class="info info-green">Vehicle returning from: <strong>${dest}</strong></div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Odometer In (km) *</label><input class="fi" type="number" id="odoIn" placeholder="e.g. 42740"></div>
+       <div class="fg"><label class="fl">Fuel on Return</label><select class="fs" id="fuelIn"><option>Full</option><option>3/4</option><option>1/2</option><option>1/4</option></select></div>
+       <div class="fg"><label class="fl">Condition</label><select class="fs" id="condIn"><option>Good</option><option>Fair</option><option>With defects</option></select></div>
+     </div>
+     <div class="fg"><label class="fl">Trip Remarks</label><textarea class="ft" id="giRem" placeholder="Incidents, observations..."></textarea></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-purple" id="giBtn" onclick="doGateIn('${id}','${ticketNo}','${vehicleId}','${driverId}')">Complete Trip</button>`
+  )
+}
+async function doGateIn(id, ticketNo, vehicleId, driverId) {
+  const odo = parseInt(document.getElementById('odoIn')?.value)
+  if (!odo) { alert('Odometer reading required.'); return }
+  const btn = document.getElementById('giBtn'); btn.disabled=true; btn.textContent='Recording...'
+  const { error } = await SB.from('trips').update({ status:'completed', guard_in_id:currentProfile?.id, gate_in_at:new Date().toISOString(), odometer_in:odo, fuel_level_in:document.getElementById('fuelIn')?.value, condition_in:document.getElementById('condIn')?.value, guard_in_remarks:document.getElementById('giRem')?.value }).eq('id',id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Complete Trip'; return }
+  if (driverId && driverId!=='null') await SB.from('drivers').update({ status:'available' }).eq('id',driverId)
+  if (vehicleId && vehicleId!=='null') await SB.from('vehicles').update({ status:'available' }).eq('id',vehicleId)
+  await addAudit(id, ticketNo, 'Gate In', `Odometer: ${odo} km — Trip completed`)
+  closeMO(); renderTickets()
+}
+
+// ════════════════════════════════════════════════
+// NEW TICKET
+// ════════════════════════════════════════════════
+function renderNewTicket() {
+  document.getElementById('CONTENT').innerHTML = `
+  <div style="max-width:580px">
+    <div class="info info-blue"><strong>Approval Workflow:</strong> Requester → Approver → Assign Driver → Gate Out → Gate In<br>
+    <span style="font-size:11px;opacity:.85">Ambulance/EMS requests route exclusively to the <strong>Ambulance Approver</strong>.</span></div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:16px">New Vehicle Request</div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Department *</label>
+          <select class="fs" id="ntDept"><option value="">-- Select --</option>${DEPTS.map(d=>`<option value="${d}" ${currentProfile?.department===d?'selected':''}>${d}</option>`).join('')}</select></div>
+        <div class="fg"><label class="fl">Requester Name *</label><input class="fi" id="ntReq" value="${currentProfile?.full_name||''}" placeholder="Full name"></div>
+      </div>
+      <div class="fg"><label class="fl">Vehicle Type *</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button type="button" class="btn" id="typeReg" style="justify-content:center;border:1px solid var(--pri);background:var(--pri-s);color:var(--pri);font-weight:600" onclick="selectVtype('regular')">🚙 Regular Vehicle</button>
+          <button type="button" class="btn" id="typeAmb" style="justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600" onclick="selectVtype('ambulance')">🚑 Ambulance / EMS</button>
+        </div>
+        <input type="hidden" id="ntType" value="regular">
+      </div>
+      <div id="ntAmbNote" class="info info-red" style="display:none;margin-top:8px">Routes to <strong>Ambulance Approver</strong> only.</div>
+      <div class="fg"><label class="fl">Priority</label>
+        <select class="fs" id="ntPri"><option value="normal">Normal</option><option value="low">Low</option><option value="urgent">Urgent</option><option value="emergency">Emergency</option></select></div>
+      <div class="fg"><label class="fl">Purpose / Reason *</label><textarea class="ft" id="ntPurpose" placeholder="Describe the purpose of the trip..."></textarea></div>
+      <div class="fg"><label class="fl">Destination *</label><input class="fi" id="ntDest" placeholder="Full destination address"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Departure Date *</label><input class="fi" type="date" id="ntDate" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="fg"><label class="fl">Departure Time *</label><input class="fi" type="time" id="ntTime"></div>
+        <div class="fg"><label class="fl">Expected Return Date</label><input class="fi" type="date" id="ntReturn"></div>
+        <div class="fg"><label class="fl">No. of Passengers</label><input class="fi" type="number" id="ntPax" value="1" min="1"></div>
+      </div>
+      <div class="fg"><label class="fl">Additional Notes</label><textarea class="ft" id="ntNotes" placeholder="Special requirements, items to carry, etc."></textarea></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+        <button class="btn btn-ghost" onclick="goTo('tickets')">Cancel</button>
+        <button class="btn btn-pri" id="ntSubmit" onclick="submitNewTicket()">Submit Request</button>
+      </div>
+    </div>
+  </div>`
+}
+
+function selectVtype(t) {
+  document.getElementById('ntType').value = t
+  const isAmb = t==='ambulance'
+  const reg = document.getElementById('typeReg')
+  const amb = document.getElementById('typeAmb')
+  reg.style.cssText = isAmb ? 'justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600' : 'justify-content:center;border:1px solid var(--pri);background:var(--pri-s);color:var(--pri);font-weight:600'
+  amb.style.cssText = isAmb ? 'justify-content:center;border:1px solid var(--red);background:var(--red-s);color:var(--red);font-weight:600' : 'justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600'
+  document.getElementById('ntAmbNote').style.display = isAmb ? 'block' : 'none'
+}
+
+async function submitNewTicket() {
+  const dept    = document.getElementById('ntDept')?.value
+  const req     = document.getElementById('ntReq')?.value?.trim()
+  const purpose = document.getElementById('ntPurpose')?.value?.trim()
+  const dest    = document.getElementById('ntDest')?.value?.trim()
+  const date    = document.getElementById('ntDate')?.value
+  const time    = document.getElementById('ntTime')?.value
+  const vtype   = document.getElementById('ntType')?.value||'regular'
+  if (!dept||!req||!purpose||!dest||!date||!time) { alert('Please fill all required fields.'); return }
+  const btn = document.getElementById('ntSubmit'); btn.disabled=true; btn.textContent='Submitting...'
+  try {
+    const departureISO = new Date(`${date}T${time}`).toISOString()
+    const retDate = document.getElementById('ntReturn')?.value
+    const { data: trip, error } = await SB.from('trips').insert([{
+      requester_id: currentProfile?.id||null,
+      requester_name: req,
+      department: dept,
+      vehicle_type_needed: vtype,
+      purpose,
+      destination: dest,
+      departure_at: departureISO,
+      expected_return_at: retDate ? new Date(retDate).toISOString() : null,
+      passengers: parseInt(document.getElementById('ntPax')?.value)||1,
+      remarks: document.getElementById('ntNotes')?.value||'',
+      priority: document.getElementById('ntPri')?.value||'normal',
+      status: 'pending-approval'
+    }]).select().single()
+    if (error) throw error
+    await addAudit(trip.id, trip.ticket_no, 'Ticket Created', purpose)
+    openMO('Request Submitted',
+      `<div style="text-align:center;padding:16px 0">
+        <div style="width:52px;height:52px;background:var(--green-s);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;color:var(--green)">✓</div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:5px">${trip.ticket_no}</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Request submitted successfully.</div>
+        <div class="info info-blue" style="text-align:left">Approver: <strong>${vtype==='ambulance'?'Ambulance Approver':'Admin Approver'}</strong><br>A notification has been sent.</div>
+      </div>`,
+      `<button class="btn btn-pri" onclick="closeMO();goTo('tickets')">View All Tickets</button>`
+    )
+  } catch(e) {
+    alert('Error: '+e.message)
+    btn.disabled=false; btn.textContent='Submit Request'
+  }
+}
+
+// ════════════════════════════════════════════════
+// VEHICLES
+// ════════════════════════════════════════════════
+async function renderVehicles() {
+  const { data } = await SB.from('vehicles').select('*').order('plate')
+  const V = data||[]
+  document.getElementById('CONTENT').innerHTML = `
+  <div class="card card-np" style="overflow:hidden">
+    <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">Vehicle Registry</div><button class="btn btn-pri btn-sm" onclick="openAddVehicle()">+ Add Vehicle</button></div>
+    <table class="tbl"><thead><tr><th>Plate</th><th>Name</th><th>Type</th><th>Capacity</th><th>Fuel</th><th>Status</th></tr></thead><tbody>
+    ${V.map(v=>`<tr>
+      <td style="font-weight:700;font-size:13px">${v.plate}</td>
+      <td>${v.name||'—'}</td>
+      <td>${(v.type||'').toLowerCase().includes('ambulance')?`<span style="color:var(--red);font-weight:600">${v.type}</span>`:v.type||'—'}</td>
+      <td>${v.capacity||'—'} pax</td>
+      <td style="font-size:11px;color:var(--text2)">${v.fuel||'—'}</td>
+      <td>${badge(v.status||'available')}</td>
+    </tr>`).join('')}
+    </tbody></table>
+  </div>`
+}
+
+function openAddVehicle() {
+  openMO('Add Vehicle',
+    `<div class="fr">
+       <div class="fg"><label class="fl">Plate *</label><input class="fi" id="vPlate" placeholder="MCH-XXXX"></div>
+       <div class="fg"><label class="fl">Name / Description</label><input class="fi" id="vName" placeholder="Hospital Van 1"></div>
+       <div class="fg"><label class="fl">Type *</label><select class="fs" id="vType"><option>Service Van</option><option>Sedan</option><option>Pickup Truck</option><option>Service Bus</option><option>Utility Van</option><option>Ambulance</option><option>BLS Ambulance</option></select></div>
+       <div class="fg"><label class="fl">Capacity (pax)</label><input class="fi" type="number" id="vCap" value="4"></div>
+       <div class="fg"><label class="fl">Fuel Type</label><select class="fs" id="vFuel"><option>Diesel</option><option>Gasoline</option><option>Electric</option></select></div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="addVBtn" onclick="doAddVehicle()">Add Vehicle</button>`
+  )
+}
+async function doAddVehicle() {
+  const plate = document.getElementById('vPlate')?.value?.trim()
+  if (!plate) { alert('Plate number required.'); return }
+  const btn = document.getElementById('addVBtn'); btn.disabled=true
+  await SB.from('vehicles').insert([{ plate, name:document.getElementById('vName').value, type:document.getElementById('vType').value, capacity:parseInt(document.getElementById('vCap').value)||4, fuel:document.getElementById('vFuel').value, status:'available' }])
+  closeMO(); renderVehicles()
+}
+
+// ════════════════════════════════════════════════
+// DRIVERS
+// ════════════════════════════════════════════════
+async function renderDrivers() {
+  const { data } = await SB.from('drivers').select('*').order('full_name')
+  const D = data||[]
+  document.getElementById('CONTENT').innerHTML = `
+  <div class="card card-np" style="overflow:hidden">
+    <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">Driver Registry</div><button class="btn btn-pri btn-sm" onclick="openAddDriver()">+ Add Driver</button></div>
+    <table class="tbl"><thead><tr><th>Driver</th><th>License No.</th><th>Type</th><th>Expiry</th><th>Shift</th><th>Status</th></tr></thead><tbody>
+    ${D.map(d=>`<tr>
+      <td><div style="display:flex;align-items:center;gap:7px">
+        <div style="width:28px;height:28px;border-radius:50%;background:${d.status==='available'?'var(--green-s)':'var(--amber-s)'};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${d.status==='available'?'var(--green)':'var(--amber)'}">${ini(d.full_name)}</div>
+        <span style="font-weight:600">${d.full_name}</span>
+      </div></td>
+      <td>${chip(d.license_no||'—')}</td>
+      <td style="font-size:11px">${d.license_type||'—'}</td>
+      <td style="font-size:11px;color:var(--text3)">${d.license_expiry||'—'}</td>
+      <td style="font-size:11px">${d.shift||'—'}</td>
+      <td>${badge(d.status||'available')}</td>
+    </tr>`).join('')}
+    </tbody></table>
+  </div>`
+}
+
+function openAddDriver() {
+  openMO('Add Driver',
+    `<div class="fr">
+       <div class="fg"><label class="fl">Full Name *</label><input class="fi" id="dName" placeholder="Full name"></div>
+       <div class="fg"><label class="fl">License No. *</label><input class="fi" id="dLic" placeholder="N01-XX-XXXXXX"></div>
+       <div class="fg"><label class="fl">License Type</label><select class="fs" id="dLicType"><option>PRO</option><option>NON-PRO</option><option>A</option><option>B</option><option>BE</option><option>C</option><option>CE</option></select></div>
+       <div class="fg"><label class="fl">License Expiry</label><input class="fi" type="date" id="dExpiry"></div>
+       <div class="fg"><label class="fl">Shift</label><select class="fs" id="dShift"><option>AM</option><option>PM</option><option>Night</option><option>24hrs</option></select></div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="addDBtn" onclick="doAddDriver()">Add Driver</button>`
+  )
+}
+async function doAddDriver() {
+  const name = document.getElementById('dName')?.value?.trim()
+  const lic  = document.getElementById('dLic')?.value?.trim()
+  if (!name||!lic) { alert('Name and license required.'); return }
+  const btn = document.getElementById('addDBtn'); btn.disabled=true
+  await SB.from('drivers').insert([{ full_name:name, license_no:lic, license_type:document.getElementById('dLicType').value, license_expiry:document.getElementById('dExpiry').value||null, shift:document.getElementById('dShift').value, status:'available' }])
+  closeMO(); renderDrivers()
+}
+
+// ════════════════════════════════════════════════
+// DEPARTMENTS
+// ════════════════════════════════════════════════
+const ALL_DEPTS = [
+  {c:'ADM',n:'Administration',hd:'Dr. Ramon Cruz',u:4},{c:'ER',n:'Emergency Room',hd:'Dr. Ana Reyes',u:6},{c:'ICU',n:'Intensive Care Unit',hd:'Dr. Jose Lim',u:4},{c:'OBG',n:'OB-Gynecology',hd:'Dr. Maria Santos',u:5},{c:'PED',n:'Pediatrics',hd:'Dr. Carlo Bueno',u:4},{c:'SUR',n:'Surgery',hd:'Dr. Lea Tan',u:6},{c:'RAD',n:'Radiology',hd:'Dr. Ben Flores',u:3},{c:'LAB',n:'Laboratory',hd:'Mr. Jun Reyes',u:4},{c:'PHA',n:'Pharmacy',hd:'Ms. Clara Ng',u:4},{c:'NUR',n:'Nursing',hd:'Ms. Tess Valdez',u:8},{c:'HRD',n:'Human Resources',hd:'Ms. Joy Diaz',u:3},{c:'FIN',n:'Finance',hd:'Mr. Arnel Uy',u:3},{c:'MNT',n:'Maintenance',hd:'Mr. Romy Basco',u:5},{c:'SEC',n:'Security',hd:'Mr. Mark Torres',u:6},{c:'HSK',n:'Housekeeping',hd:'Ms. Luz Pandy',u:5},{c:'IT',n:'Information Technology',hd:'Mr. Roy Sanchez',u:4},{c:'SOC',n:'Social Work',hd:'Ms. Eva Quinto',u:3},{c:'PSY',n:'Psychiatry',hd:'Dr. Nora Bello',u:3},{c:'DEN',n:'Dental',hd:'Dr. Sam Perez',u:2},{c:'OPH',n:'Ophthalmology',hd:'Dr. Ida Cruz',u:2},{c:'ORT',n:'Orthopedics',hd:'Dr. Vic Reyes',u:3},{c:'ENT',n:'ENT',hd:'Dr. Noel Chua',u:2},{c:'NEU',n:'Neurology',hd:'Dr. Gina Sy',u:3},{c:'CAR',n:'Cardiology',hd:'Dr. Ben Marco',u:3},{c:'PUL',n:'Pulmonology',hd:'Dr. Alma Chan',u:3},{c:'GAS',n:'Gastroenterology',hd:'Dr. Leo Tan',u:2},{c:'URO',n:'Urology',hd:'Dr. Rex Go',u:2},{c:'ONK',n:'Oncology',hd:'Dr. Cora Viray',u:3},{c:'INF',n:'Infection Control',hd:'Dr. Paz Delos',u:2},{c:'PMR',n:'Physical Medicine',hd:'Dr. Dale Yap',u:3},{c:'MED',n:'Internal Medicine',hd:'Dr. Rica Ong',u:4},{c:'AMB',n:'Ambulance / EMS',hd:'Pmedic Rudy',u:5},
+]
+function renderDepts() {
+  document.getElementById('CONTENT').innerHTML = `
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+    <input class="fi" id="deptSearch" placeholder="Search departments..." style="width:220px;font-size:12px;padding:7px 11px" oninput="filterDepts(this.value)">
+    <div style="margin-left:auto;font-size:11px;color:var(--text3)">${ALL_DEPTS.length} departments</div>
+  </div>
+  <div id="deptsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:10px">
+    ${ALL_DEPTS.map((d,i)=>{const c=DEPT_COLORS[i%DEPT_COLORS.length];return`<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px;border-top:3px solid ${c}"><div style="font-size:10px;font-weight:700;color:${c};margin-bottom:3px">${d.c}</div><div style="font-size:12.5px;font-weight:700;margin-bottom:5px">${d.n}</div><div style="font-size:10.5px;color:var(--text3)">${d.hd}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">${d.u} users</div></div>`}).join('')}
+  </div>`
+}
+function filterDepts(q) {
+  const qq = q.toLowerCase()
+  const r = ALL_DEPTS.filter(d=>d.n.toLowerCase().includes(qq)||d.c.toLowerCase().includes(qq))
+  document.getElementById('deptsGrid').innerHTML = r.map((d,i)=>{const c=DEPT_COLORS[i%DEPT_COLORS.length];return`<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px;border-top:3px solid ${c}"><div style="font-size:10px;font-weight:700;color:${c};margin-bottom:3px">${d.c}</div><div style="font-size:12.5px;font-weight:700;margin-bottom:5px">${d.n}</div><div style="font-size:10.5px;color:var(--text3)">${d.hd}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">${d.u} users</div></div>`}).join('')
+}
+
+// ════════════════════════════════════════════════
+// GPS
+// ════════════════════════════════════════════════
+async function renderGPS() {
+  const { data } = await SB.from('trips').select('ticket_no,status,destination,driver_name,vehicle:vehicles(plate)').in('status',['gate-out-pending','on-trip'])
+  const active = data||[]
+  document.getElementById('CONTENT').innerHTML = `
+  <div class="info info-blue" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div><strong>AKSH GPS Integration</strong> — Optional real-time tracking. Click Configure to set your API credentials.</div>
+    <button class="btn btn-pri btn-sm" onclick="openAKSH()" style="flex-shrink:0">Configure API</button>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 260px;gap:14px">
+    <div class="card card-np" style="overflow:hidden">
+      <div style="background:#0c2340;padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
+        <div style="color:#7eb8f7;font-size:12px;font-weight:700">Live Map — Metro Manila Area</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:#4e7098"><span class="ping"></span> ${active.length} active</div>
+      </div>
+      <div style="background:#0d1b2e;height:300px;position:relative;overflow:hidden">
+        <svg width="100%" height="100%" viewBox="0 0 500 300" style="position:absolute;inset:0">
+          ${Array.from({length:10},(_,i)=>`<line x1="${50*i}" y1="0" x2="${50*i}" y2="300" stroke="#1a2d45" stroke-width=".5"/>`).join('')}
+          ${Array.from({length:6},(_,i)=>`<line x1="0" y1="${50*i}" x2="500" y2="${50*i}" stroke="#1a2d45" stroke-width=".5"/>`).join('')}
+          <path d="M0 150 Q80 130 160 150 Q240 170 320 145 Q400 120 500 140" stroke="#1e3a5f" stroke-width="4" fill="none"/>
+          <path d="M180 0 Q185 100 180 300" stroke="#1e3a5f" stroke-width="3" fill="none"/>
+          <path d="M320 0 Q318 120 320 300" stroke="#1e3a5f" stroke-width="2.5" fill="none"/>
+          ${active.map((t,i)=>`<g transform="translate(${180+i*110},${135+i*18})"><circle r="16" fill="rgba(12,111,219,.15)" stroke="#0c6fdb" stroke-width="1.5"/><circle r="6" fill="#0c6fdb"/><text x="0" y="30" text-anchor="middle" font-size="8" fill="#7eb8f7" font-family="sans-serif">${t.ticket_no}</text></g>`).join('')}
+          <text x="250" y="265" text-anchor="middle" font-size="9" fill="#2e5070" font-family="sans-serif">Demo view — AKSH GPS API not yet connected</text>
+        </svg>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Active Vehicles</div>
+      ${active.length ? active.map(t=>`<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;font-weight:700">${t.vehicle?.plate||'—'}</span><span class="ping"></span></div>
+        <div style="font-size:10px;color:var(--text3)">${t.driver_name||'—'}</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">${t.destination}</div>
+        <div style="margin-top:6px">${badge(t.status)}</div>
+      </div>`).join('') : '<div style="font-size:12px;color:var(--text3);padding:10px">No active vehicles</div>'}
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px;margin-top:4px">
+        <div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">AKSH Status</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--amber)">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--amber);display:inline-block"></span>Not Connected
+        </div>
+      </div>
+    </div>
+  </div>`
+}
+function openAKSH() {
+  openMO('AKSH GPS Configuration',
+    `<div class="info info-amber">Enter your AKSH API credentials to enable real-time vehicle tracking.</div>
+     <div class="fg"><label class="fl">API Endpoint URL</label><input class="fi" id="akUrl" placeholder="https://api.aksh.com/v1/track"></div>
+     <div class="fg"><label class="fl">API Key</label><input class="fi" type="password" id="akKey" placeholder="Your AKSH API key"></div>
+     <div class="fg"><label class="fl">Fleet ID</label><input class="fi" id="akFleet" placeholder="Fleet identifier"></div>
+     <div class="fg"><label class="fl">Polling Interval (seconds)</label><input class="fi" type="number" id="akInt" value="30" min="10"></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" onclick="alert('AKSH credentials saved. GPS tracking will activate once connection is verified.');closeMO()">Save & Test Connection</button>`
+  )
+}
+
+// ════════════════════════════════════════════════
+// REPORTS
+// ════════════════════════════════════════════════
+async function renderReports() {
+  const { data } = await SB.from('trips').select('id,ticket_no,status,department,vehicle_type_needed,departure_at,gate_out_at,gate_in_at,distance_km,driver_name,vehicle:vehicles(plate)').order('created_at',{ascending:false})
+  const T = data||[]; const total = T.length||1
+  const done = T.filter(t=>t.status==='completed').length
+  const amb  = T.filter(t=>t.vehicle_type_needed==='ambulance').length
+  const bySt = {}; T.forEach(t=>{bySt[t.status]=(bySt[t.status]||0)+1})
+  const byDept = {}; T.forEach(t=>{byDept[t.department]=(byDept[t.department]||0)+1})
+  document.getElementById('CONTENT').innerHTML = `
+  <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Total Requests</div><div class="stat-val">${T.length}</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Completion Rate</div><div class="stat-val">${Math.round(done/total*100)}%</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--red)"></div><div class="stat-lbl">Ambulance Trips</div><div class="stat-val">${amb}</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+    <div class="card"><div class="card-title" style="margin-bottom:13px">By Status</div>
+      ${Object.entries(bySt).map(([s,c])=>`<div class="rbar">${badge(s)}<div class="rbar-track"><div class="rbar-fill" style="width:${Math.round(c/total*100)}%;background:var(--pri)"></div></div><span style="font-size:11px;font-weight:700;min-width:18px;text-align:right">${c}</span></div>`).join('')}
+    </div>
+    <div class="card"><div class="card-title" style="margin-bottom:13px">Top Departments</div>
+      ${Object.entries(byDept).sort((a,b)=>b[1]-a[1]).slice(0,7).map(([d,c])=>`<div class="rbar"><span style="font-size:11px;font-weight:600;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d}</span><div class="rbar-track"><div class="rbar-fill" style="width:${Math.round(c/total*100)}%;background:var(--teal)"></div></div><span style="font-size:11px;font-weight:700;min-width:18px;text-align:right">${c}</span></div>`).join('')}
+    </div>
+  </div>
+  <div class="card card-np" style="overflow:hidden">
+    <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">Full Report</div><button class="btn btn-ghost btn-sm" onclick="alert('Export to CSV — connect to a backend export endpoint.')">Export CSV</button></div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Ticket</th><th>Dept</th><th>Type</th><th>Status</th><th>Date</th><th>Driver</th><th>Vehicle</th><th>Gate Out</th><th>Gate In</th><th>Km</th></tr></thead>
+      <tbody>${T.map(t=>`<tr>
+        <td>${chip(t.ticket_no)}</td><td style="font-size:11px;font-weight:700">${t.department||'—'}</td>
+        <td>${typeBadge(t.vehicle_type_needed)}</td><td>${badge(t.status)}</td>
+        <td style="font-size:11px;white-space:nowrap">${fmtDate(t.departure_at)}</td>
+        <td style="font-size:11px">${t.driver_name||'—'}</td>
+        <td style="font-size:11px">${t.vehicle?.plate||'—'}</td>
+        <td style="font-size:10.5px;color:var(--text3)">${fmtDT(t.gate_out_at)}</td>
+        <td style="font-size:10.5px;color:var(--text3)">${fmtDT(t.gate_in_at)}</td>
+        <td style="font-size:11px">${t.distance_km!=null?t.distance_km+' km':'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`
+}
+
+// ════════════════════════════════════════════════
+// AUDIT
+// ════════════════════════════════════════════════
+async function renderAudit() {
+  const { data } = await SB.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(200)
+  const L = data||[]
+  document.getElementById('CONTENT').innerHTML = `
+  <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
+    <input class="fi" id="auQ" placeholder="Search logs..." style="width:220px;font-size:12px;padding:7px 11px" oninput="filterAudit(this.value)">
+    <div style="margin-left:auto"><button class="btn btn-ghost btn-sm" onclick="alert('Export audit log — connect to backend API')">Export</button></div>
+  </div>
+  <div class="card card-np" style="overflow:hidden">
+  <table class="tbl" id="auTable"><thead><tr><th>Timestamp</th><th>User</th><th>Role</th><th>Action</th><th>Ticket</th><th>Detail</th></tr></thead>
+  <tbody id="auBody">${L.map(auditRow).join('')}</tbody></table></div>`
+  window._auditLogs = L
+}
+function auditRow(l) {
+  return `<tr>
+    <td style="font-size:10px;color:var(--text3);white-space:nowrap">${fmtDT(l.created_at)}</td>
+    <td><div style="display:flex;align-items:center;gap:6px"><div style="width:22px;height:22px;border-radius:50%;background:var(--pri-s);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:var(--pri)">${ini(l.user_name||'?')}</div><span style="font-size:11.5px;font-weight:600">${l.user_name||'—'}</span></div></td>
+    <td style="font-size:10.5px;color:var(--text3);text-transform:capitalize">${l.user_role||'—'}</td>
+    <td style="font-weight:600">${l.action}</td>
+    <td>${chip(l.ticket_no||'—')}</td>
+    <td style="font-size:11px;color:var(--text2)">${l.details||''}</td>
+  </tr>`
+}
+function filterAudit(q) {
+  const qq = q.toLowerCase()
+  const filtered = (window._auditLogs||[]).filter(l => (l.user_name||'').toLowerCase().includes(qq)||(l.action||'').toLowerCase().includes(qq)||(l.ticket_no||'').toLowerCase().includes(qq)||(l.details||'').toLowerCase().includes(qq))
+  document.getElementById('auBody').innerHTML = filtered.map(auditRow).join('')
+}
+
+// ════════════════════════════════════════════════
+// ACCOUNTS
+// ════════════════════════════════════════════════
+async function renderAccounts() {
+  const { data } = await SB.from('users').select('*').order('full_name')
+  const U = data||[]
+  document.getElementById('CONTENT').innerHTML = `
+  <div class="card card-np" style="overflow:hidden;margin-bottom:14px">
+    <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">User Accounts</div><button class="btn btn-pri btn-sm" onclick="openCreateAccount()">+ Create Account</button></div>
+    <table class="tbl"><thead><tr><th>Full Name</th><th>Username</th><th>Role</th><th>Department</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    ${U.map(u=>{const c=ROLE_COLORS[u.role]||'#64748b';return`<tr>
+      <td><div style="display:flex;align-items:center;gap:8px"><div style="width:28px;height:28px;border-radius:50%;background:${c}22;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${c}">${ini(u.full_name)}</div><span style="font-weight:600">${u.full_name}</span></div></td>
+      <td>${chip(u.username||'—')}</td>
+      <td><span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:20px;background:${c}20;color:${c}">${ROLE_LABELS[u.role]||u.role}</span></td>
+      <td style="font-size:11.5px">${u.department||'—'}</td>
+      <td><span class="badge ${u.status==='active'?'b-avail':'b-rejected'}">${u.status==='active'?'Active':'Inactive'}</span></td>
+      <td><div style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="openEditAccount('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}','${u.role}','${u.department||''}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="openResetPw('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}')">Reset PW</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleUser('${u.id}','${u.status}')">${u.status==='active'?'Deactivate':'Activate'}</button>
+      </div></td>
+    </tr>`}).join('')}
+    </tbody></table>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:11px">Role Definitions</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">
+      ${Object.entries(ROLE_LABELS).map(([k,v])=>`<div style="padding:11px;border:1px solid var(--border);border-radius:9px;border-left:3px solid ${ROLE_COLORS[k]}">
+        <div style="font-size:11px;font-weight:700;color:${ROLE_COLORS[k]};margin-bottom:3px">${v}</div>
+        <div style="font-size:10px;color:var(--text3)">${{admin:'Full system access',approver:'Approves vehicle requests',guard:'Records gate in/out',requester:'Submit requests only',driver:'View assigned trips'}[k]}</div>
+      </div>`).join('')}
+    </div>
+  </div>`
+}
+
+function openCreateAccount() {
+  openMO('Create Account',
+    `<div class="fr">
+       <div class="fg"><label class="fl">Full Name *</label><input class="fi" id="caName" placeholder="Full name"></div>
+       <div class="fg"><label class="fl">Username *</label><input class="fi" id="caUsername" placeholder="e.g. jdelacruz" style="text-transform:lowercase"></div>
+       <div class="fg"><label class="fl">Role *</label><select class="fs" id="caRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+       <div class="fg"><label class="fl">Department</label><select class="fs" id="caDept">${DEPTS.map(d=>`<option value="${d}">${d}</option>`).join('')}</select></div>
+     </div>
+     <div class="fg"><label class="fl">Phone</label><input class="fi" id="caPhone" placeholder="09XXXXXXXXX"></div>
+     <div class="fg"><label class="fl">Initial Password *</label><input class="fi" type="password" id="caPw" placeholder="Set initial password"></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="caBn" onclick="doCreateAccount()">Create Account</button>`
+  )
+}
+async function doCreateAccount() {
+  const name     = document.getElementById('caName')?.value?.trim()
+  const username = document.getElementById('caUsername')?.value?.trim().toLowerCase()
+  const pw       = document.getElementById('caPw')?.value
+  const role     = document.getElementById('caRole')?.value
+  const dept     = document.getElementById('caDept')?.value
+  const phone    = document.getElementById('caPhone')?.value||''
+  if (!name||!username||!pw) { alert('Name, username, and password required.'); return }
+  const btn = document.getElementById('caBn'); btn.disabled=true; btn.textContent='Creating...'
+  try {
+    const { error } = await SB.rpc('create_vts_account', {
+      p_username: username, p_password: pw, p_full_name: name,
+      p_role: role, p_department: dept, p_phone: phone
+    })
+    if (error) throw error
+    closeMO(); renderAccounts()
+    alert(`Account created!\nUsername: ${username}\nPassword: ${pw}`)
+  } catch(e) { alert(e.message); btn.disabled=false; btn.textContent='Create Account' }
+}
+function openEditAccount(id, name, username, role, dept) {
+  openMO(`Edit — ${name}`,
+    `<div class="fr">
+       <div class="fg"><label class="fl">Full Name</label><input class="fi" id="eaName" value="${name}"></div>
+       <div class="fg"><label class="fl">Username</label><input class="fi" id="eaUsername" value="${username}" style="text-transform:lowercase"></div>
+       <div class="fg"><label class="fl">Role</label><select class="fs" id="eaRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}"${role===k?' selected':''}>${v}</option>`).join('')}</select></div>
+       <div class="fg" style="grid-column:span 2"><label class="fl">Department</label><select class="fs" id="eaDept">${DEPTS.map(d=>`<option value="${d}"${dept===d?' selected':''}>${d}</option>`).join('')}</select></div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="eaBn" onclick="doEditAccount('${id}')">Save Changes</button>`
+  )
+}
+async function doEditAccount(id) {
+  const btn = document.getElementById('eaBn'); btn.disabled=true; btn.textContent='Saving...'
+  await SB.from('users').update({
+    full_name:  document.getElementById('eaName').value,
+    username:   document.getElementById('eaUsername').value.toLowerCase(),
+    role:       document.getElementById('eaRole').value,
+    department: document.getElementById('eaDept').value
+  }).eq('id',id)
+  closeMO(); renderAccounts()
+}
+function openResetPw(id, name, username) {
+  openMO(`Reset Password — ${name}`,
+    `<div class="fg"><label class="fl">New Password *</label><input class="fi" type="password" id="rp1" placeholder="New password"></div>
+     <div class="fg"><label class="fl">Confirm Password *</label><input class="fi" type="password" id="rp2" placeholder="Confirm password"></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="rpBn" onclick="doResetPw('${id}','${username}')">Reset Password</button>`
+  )
+}
+async function doResetPw(id, username) {
+  const p1 = document.getElementById('rp1')?.value
+  const p2 = document.getElementById('rp2')?.value
+  if (!p1||p1!==p2) { alert('Passwords must match.'); return }
+  if (p1.length < 3) { alert('Password must be at least 3 characters.'); return }
+  const btn = document.getElementById('rpBn'); btn.disabled=true; btn.textContent='Resetting...'
+  // Update password via Supabase auth (admin must be logged in)
+  const { error } = await SB.rpc('reset_user_password', { user_id: id, new_password: p1 })
+  if (error) {
+    // Fallback: show manual instruction
+    alert(`To reset ${username}'s password, go to your Supabase dashboard → Authentication → Users → find ${username}@vts.local → Update password.`)
+  } else {
+    alert(`Password for "${username}" has been updated successfully.`)
+  }
+  closeMO()
+}
+async function toggleUser(id, status) {
+  const newStatus = status==='active'?'inactive':'active'
+  await SB.from('users').update({ status:newStatus }).eq('id',id)
+  renderAccounts()
+}
+
+// ════════════════════════════════════════════════
+// DRIVER APP
+// ════════════════════════════════════════════════
+async function renderDriverApp() {
+  const { data } = await SB.from('trips').select('ticket_no,status,purpose,destination,departure_at').in('status',['gate-out-pending','on-trip']).limit(3)
+  const assigned = data||[]
+  document.getElementById('CONTENT').innerHTML = `
+  <div style="display:grid;grid-template-columns:1fr auto;gap:20px;align-items:start">
+    <div>
+      <div class="info info-blue"><strong>Driver Mobile Application</strong><br><span style="font-size:11px;opacity:.85">Drivers log in to view assigned hospital transport tickets, navigate, and confirm trip completion. GPS sharing is optional via AKSH.</span></div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title" style="margin-bottom:13px">App Features</div>
+        ${[['Assigned Tickets','View only their own assigned trips'],['Navigation','Tap destination to open in Google Maps or Waze'],['GPS Share','Optional — shares position when AKSH GPS is configured'],['Trip Actions','Mark departure, arrival, and return'],['Emergency Contact','One-tap call to dispatch / guard on duty'],['Push Notifications','Instant alerts for new assignments'],['Offline Mode','View ticket details without internet']].map(([t,d])=>`
+        <div style="display:flex;gap:11px;padding:10px 0;border-bottom:1px solid #f1f5f9">
+          <div style="width:34px;height:34px;border-radius:8px;background:var(--pri-s);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:16px">—</div>
+          <div><div style="font-size:12.5px;font-weight:700;margin-bottom:2px">${t}</div><div style="font-size:11.5px;color:var(--text2)">${d}</div></div>
+        </div>`).join('')}
+      </div>
+      <div class="card">
+        <div class="card-title" style="margin-bottom:11px">Build Options</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          ${[['PWA','Works on any mobile browser, no install'],['React Native','Cross-platform iOS + Android'],['Flutter','High-performance native app']].map(([t,d])=>`<div style="padding:11px;border:1px solid var(--border);border-radius:9px"><div style="font-size:12px;font-weight:700;margin-bottom:4px">${t}</div><div style="font-size:10.5px;color:var(--text2)">${d}</div></div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:10px;text-align:center;color:var(--text3);margin-bottom:7px;text-transform:uppercase;letter-spacing:.5px">App Preview</div>
+      <div class="daf">
+        <div style="background:#040a14;padding:3px 12px;display:flex;justify-content:space-between;font-size:9px;color:#374151"><span>9:41</span><span>100%</span></div>
+        <div style="background:#0a1424;padding:11px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #0d1e33">
+          <div><div style="font-size:11px;font-weight:700;color:#e2e8f0">Driver Portal</div><div style="font-size:9px;color:#4e7098">MedCenter VTS</div></div>
+          <div style="display:flex;align-items:center;gap:5px;font-size:9px;color:#34d399"><span class="ping"></span>GPS On</div>
+        </div>
+        <div style="padding:8px 8px 4px;font-size:9px;color:#4e7098;text-transform:uppercase;letter-spacing:.5px">My Assignments</div>
+        ${assigned.map(t=>`<div style="margin:8px;background:#0d1e33;border-radius:9px;padding:11px;border:1px solid #1a2d45">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+            <span style="font-size:10px;font-weight:700;color:#7eb8f7">${t.ticket_no}</span>
+            <span style="font-size:8px;background:#0a1e38;color:#7eb8f7;padding:2px 5px;border-radius:4px;font-weight:600">${t.status}</span>
+          </div>
+          <div style="font-size:9px;color:#9ca3af;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(t.purpose||'').slice(0,32)}</div>
+          <div style="font-size:9px;color:#6b7280">${(t.destination||'').slice(0,28)}</div>
+          <div style="display:flex;gap:5px;margin-top:8px">
+            <div style="flex:1;background:#0c3a6e;color:#7eb8f7;text-align:center;padding:5px;border-radius:6px;font-size:9px;font-weight:600;cursor:pointer">Navigate</div>
+            <div style="flex:1;background:#052814;color:#34d399;text-align:center;padding:5px;border-radius:6px;font-size:9px;font-weight:600;cursor:pointer">Complete</div>
+          </div>
+        </div>`).join('')}
+        ${!assigned.length?'<div style="font-size:10px;color:#4e7098;padding:10px;text-align:center">No assigned trips</div>':''}
+        <div style="display:flex;border-top:1px solid #0d1e33">
+          ${['Home','Tickets','Map','Profile'].map((l,i)=>`<div style="flex:1;padding:9px 0;text-align:center;cursor:pointer;background:${i===0?'rgba(12,111,219,.15)':'transparent'}">
+            <div style="font-size:16px">${['⌂','◈','◍','◷'][i]}</div>
+            <div style="font-size:8px;color:#4e7098;margin-top:2px">${l}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>
+  </div>`
+}
+
+// ════════════════════════════════════════════════
+// FAQ
+// ════════════════════════════════════════════════
+const FAQS = [
+  ['Who can submit a vehicle request?','Any department user registered in the system can submit a request via the New Request page. Each department at the Medical Center has at least one registered user account.'],
+  ['How does approval routing work?','Regular vehicle requests go to the Admin Approver. Ambulance and BLS requests go exclusively to the Ambulance Approver — routing is automatic based on vehicle type selected.'],
+  ['What is the full approval workflow?','Requester submits → Approver approves/rejects → Admin assigns driver & vehicle → Guard records Gate Out → Guard records Gate In on return. Status: Completed.'],
+  ['What if my request is rejected?','You receive a notification with the rejection reason. You may resubmit or coordinate with your department head.'],
+  ['How does the Guard use the system?','Guards log in and use the Tickets page. They record Gate Out when vehicles leave (with odometer and fuel) and Gate In when vehicles return.'],
+  ['What is the AKSH GPS integration?','AKSH is an optional GPS system. When configured, it enables real-time vehicle tracking on the GPS page. Ask your administrator to set the API credentials.'],
+  ['How does the Driver App work?','Drivers log in on mobile to see their assigned trips, navigate to destinations, and mark trips complete. GPS sharing is optional and requires AKSH integration.'],
+  ['How does the administrator manage accounts?','From Account Management: create accounts, assign roles, edit user info, reset passwords, and deactivate users. All actions are recorded in Audit Logs.'],
+  ['Where can I see all system activity?','The Audit Logs page records every action — ticket creation, approvals, gate events, and account changes — with timestamps and user details.'],
+  ['Can I export reports?','Yes. The Reports page has an Export CSV button. In production, connect this to a backend CSV endpoint or use Supabase REST download.'],
+]
+let openFAQ = null
+function renderFAQ() {
+  document.getElementById('CONTENT').innerHTML = `
+  <div style="max-width:680px">
+    <div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div style="width:40px;height:40px;background:var(--pri-s);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;color:var(--pri)">?</div>
+      <div><div style="font-size:13px;font-weight:700;margin-bottom:2px">Help &amp; Frequently Asked Questions</div><div style="font-size:11.5px;color:var(--text2)">MedCenter Vehicle Ticketing System — Staff Guide</div></div>
+    </div>
+    ${FAQS.map(([q,a],i)=>`
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;margin-bottom:7px;overflow:hidden">
+      <div onclick="toggleFAQ(${i})" style="padding:13px 15px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;user-select:none" id="faqQ${i}">
+        <span>${q}</span><span id="faqIc${i}" style="color:var(--text3);font-weight:700;font-size:15px">+</span>
+      </div>
+      <div id="faqA${i}" style="display:none;padding:0 15px 13px;font-size:12.5px;color:var(--text2);line-height:1.65;border-top:1px solid #f1f5f9">${a}</div>
+    </div>`).join('')}
+  </div>`
+  openFAQ = null
+}
+function toggleFAQ(i) {
+  const a = document.getElementById('faqA'+i)
+  const ic = document.getElementById('faqIc'+i)
+  if (!a||!ic) return
+  const isOpen = a.style.display==='block'
+  // Close previous
+  if (openFAQ !== null && openFAQ !== i) {
+    const prev = document.getElementById('faqA'+openFAQ)
+    const prevIc = document.getElementById('faqIc'+openFAQ)
+    if (prev) prev.style.display='none'
+    if (prevIc) { prevIc.textContent='+'; prevIc.style.color='var(--text3)' }
+  }
+  a.style.display = isOpen?'none':'block'
+  ic.textContent = isOpen?'+':'−'
+  ic.style.color = isOpen?'var(--text3)':'var(--pri)'
+  openFAQ = isOpen?null:i
+}
+
+// ════════════════════════════════════════════════
+// INIT — check existing session
+// ════════════════════════════════════════════════
+;(async () => {
+  const { data: { session } } = await SB.auth.getSession()
+  if (session?.user) {
+    currentUser = session.user
+    currentProfile = await fetchProfile(session.user)
+    if (currentProfile) { showApp() } else { showLogin() }
+  } else {
+    showLogin()
+  }
+})()
+</script>
+</body>
+</html>
