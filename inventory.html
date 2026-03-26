@@ -170,10 +170,13 @@
     .maint-overdue{color:var(--red)}
     .maint-ok{color:var(--tx3)}
     .category-icon{margin-right:5px}
-    .action-btns{display:flex;gap:5px}
-    .icon-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--bd);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s;color:var(--tx3)}
+    .action-btns{display:flex;gap:5px;flex-shrink:0}
+    .icon-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--bd);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s;color:var(--tx3);flex-shrink:0}
     .icon-btn:hover{border-color:var(--ac2);color:var(--ac2);background:rgba(0,153,255,.08)}
     .icon-btn.del:hover{border-color:var(--red);color:var(--red);background:rgba(255,77,106,.08)}
+    thead th:last-child{position:sticky;right:0;background:var(--bg3);z-index:1}
+    tbody td:last-child{position:sticky;right:0;background:var(--bg2);z-index:1}
+    tbody tr:hover td:last-child{background:var(--bg3)}
 
     /* EMPTY STATE */
     .empty-state{text-align:center;padding:60px 20px;color:var(--tx3)}
@@ -666,6 +669,7 @@ function render(){
       ${currentTab==='assets' ? renderAssetsTab() : ''}
       ${currentTab==='users' && currentUser.role==='admin' ? renderUsersTab() : ''}
       ${currentTab==='logs' && currentUser.role==='admin' ? renderLogsTab() : ''}
+      ${currentTab==='help' ? renderHelpTab() : ''}
     </div>
     ${selectedAsset ? renderDetailPanel() : ''}
   `;
@@ -704,6 +708,7 @@ function renderTabs(){
     tabs.push({id:'users',label:'👥 Users'});
     tabs.push({id:'logs',label:'📋 Activity Log'});
   }
+  tabs.push({id:'help',label:'❓ Help & Guide'});
   return `<div class="tabs">${tabs.map(t=>`<button class="tab ${currentTab===t.id?'active':''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('')}</div>`;
 }
 
@@ -905,6 +910,162 @@ function renderLogsTab(){
       </div>`;
     }).join('')}
   </div>`}`;
+}
+
+function renderHelpTab(){
+  const role = currentUser.role;
+  const isAdmin = role==='admin';
+  const isEditor = role==='editor';
+
+  const section = (icon,title,content) => `
+  <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;margin-bottom:14px">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px">${icon}</span>
+      <span style="font-size:15px;font-weight:700;color:var(--tx)">${title}</span>
+    </div>
+    <div style="padding:16px 18px">${content}</div>
+  </div>`;
+
+  const row = (q,a) => `
+  <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--bd)">
+    <div style="font-size:14px;font-weight:700;color:var(--tx);margin-bottom:5px">Q: ${q}</div>
+    <div style="font-size:14px;color:var(--tx2);line-height:1.6">${a}</div>
+  </div>`;
+
+  const check = `<span style="color:var(--ac)">✓</span>`;
+  const cross = `<span style="color:var(--red)">✗</span>`;
+  const warn  = `<span style="color:var(--orange)">~</span>`;
+
+  return `
+  <div style="max-width:900px">
+
+    <div style="margin-bottom:20px">
+      <div style="font-size:18px;font-weight:700;color:var(--tx)">❓ Help & Guide</div>
+      <div style="font-size:14px;color:var(--tx3);margin-top:4px">Everything you need to know about using TadocsAsset.</div>
+    </div>
+
+    ${section('👥','User Roles & Permissions',`
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--bd)">
+              <th style="padding:8px 12px;text-align:left;color:var(--tx3);font-size:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Feature</th>
+              <th style="padding:8px 12px;text-align:center;color:#a78bfa;font-size:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">👑 Admin</th>
+              <th style="padding:8px 12px;text-align:center;color:#60b8ff;font-size:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">✏️ Editor</th>
+              <th style="padding:8px 12px;text-align:center;color:var(--tx3);font-size:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">👁️ Viewer</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${[
+              ['View assets & dashboard',        true,  true,  true ],
+              ['Search & filter assets',          true,  true,  true ],
+              ['Export CSV',                      true,  true,  true ],
+              ['Add new asset',                   true,  true,  false],
+              ['Edit asset details',              true,  true,  false],
+              ['Delete asset',                    true,  true,  false],
+              ['Log PM (maintenance) entry',      true,  true,  false],
+              ['Delete PM entry',                 true,  true,  false],
+              ['View activity log',               true,  false, false],
+              ['Manage users (add/edit/delete)',  true,  false, false],
+              ['Change own password',             true,  true,  true ],
+            ].map(([feat,a,e,v])=>`
+            <tr style="border-bottom:1px solid var(--bd)">
+              <td style="padding:9px 12px;color:var(--tx2)">${feat}</td>
+              <td style="padding:9px 12px;text-align:center">${a?check:cross}</td>
+              <td style="padding:9px 12px;text-align:center">${e?check:cross}</td>
+              <td style="padding:9px 12px;text-align:center">${v?check:cross}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px;padding:10px 14px;background:var(--bg3);border-radius:var(--r2);font-size:13px;color:var(--tx3)">
+        💡 Your current role is <strong style="color:var(--tx)">${role}</strong>${isAdmin?' — you have full access to all features.':isEditor?' — you can manage assets and PM history but cannot manage users.':' — you have read-only access. Contact your admin to request elevated access.'}</div>
+    `)}
+
+    ${section('📦','Managing Assets',`
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+        ${[
+          ['➕ Adding an asset',    'Click the <strong>+ Add Asset</strong> button in the toolbar. Fill in the asset name (required), tag, category, status, location, and other details, then click Save.'],
+          ['✏️ Editing an asset',   'Click the <strong>✏️ pencil icon</strong> on any table row, or open the detail panel and click <strong>Edit</strong>. Update the fields and save.'],
+          ['🗑️ Deleting an asset',  'Click the <strong>🗑️ trash icon</strong> on the row or inside the detail panel. A confirmation dialog will appear. This also deletes all PM history for that asset.'],
+          ['👁️ Viewing details',    'Click anywhere on a row to open the <strong>detail panel</strong> on the right. It shows all asset info, PM history timeline, and action buttons.'],
+          ['🔍 Searching',          'Type in the search bar to filter by asset name, ID, asset tag, location, or assigned person. Results update automatically after a short pause.'],
+          ['🏷️ Filtering',          'Use the <strong>status dropdown</strong> or <strong>category pills</strong> to narrow down the list. Filters can be combined with search.'],
+        ].map(([t,d])=>`
+        <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r2);padding:12px 14px">
+          <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:5px">${t}</div>
+          <div style="font-size:13px;color:var(--tx2);line-height:1.5">${d}</div>
+        </div>`).join('')}
+      </div>
+    `)}
+
+    ${section('🔧','Maintenance (PM) Tracking',`
+      <div style="font-size:14px;color:var(--tx2);line-height:1.7;margin-bottom:14px">
+        Every asset has a full maintenance history. PM entries are recorded with date, type, description, who performed it, and cost.
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:14px">
+        ${[
+          ['🟢 Routine',     'Scheduled regular preventive maintenance.'],
+          ['🔵 Calibration', 'Accuracy and performance calibration checks.'],
+          ['🟡 Corrective',  'Repairs after a fault or failure is detected.'],
+          ['🔴 Emergency',   'Unplanned urgent repair needed immediately.'],
+        ].map(([t,d])=>`
+        <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r2);padding:10px 12px">
+          <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:3px">${t}</div>
+          <div style="font-size:12px;color:var(--tx2)">${d}</div>
+        </div>`).join('')}
+      </div>
+      <div style="background:rgba(255,159,67,.08);border:1px solid rgba(255,159,67,.25);border-radius:var(--r2);padding:10px 14px;font-size:13px;color:var(--orange)">
+        ⏰ <strong>Due Soon</strong> — assets with maintenance due within 7 days are highlighted orange and shown in the banner at the top.<br>
+        🔧 <strong>Overdue</strong> — assets past their next maintenance date are automatically flagged in red.
+      </div>
+    `)}
+
+    ${section('📊','Asset Statuses Explained',`
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+        ${[
+          ['Active',       'var(--ac)',     'Asset is in normal use and operational.'],
+          ['Inactive',     'var(--tx3)',    'Asset is not currently in use but still owned.'],
+          ['Maintenance',  'var(--orange)', 'Asset is undergoing or due for maintenance.'],
+          ['Due Soon',     'var(--orange)', 'Maintenance is scheduled within the next 7 days.'],
+          ['Disposed',     'var(--red)',    'Asset has been retired, sold, or discarded.'],
+        ].map(([s,col,d])=>`
+        <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r2);padding:10px 12px">
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px">
+            <span style="font-size:12px;font-weight:700;color:${col};background:${col}18;padding:2px 8px;border-radius:100px;border:1px solid ${col}30">${s}</span>
+          </div>
+          <div style="font-size:12px;color:var(--tx2)">${d}</div>
+        </div>`).join('')}
+      </div>
+    `)}
+
+    ${section('❓','Frequently Asked Questions',`
+      ${row('How do I change my password?',
+        'Click the 🔑 key icon in the top right header. Enter your new password twice and click Update Password.')}
+      ${row('Can I recover a deleted asset?',
+        'No — deletion is permanent. Always double-check before deleting. If in doubt, set the status to <strong>Disposed</strong> instead of deleting.')}
+      ${row('Why does an asset show as Maintenance even though I set it to Active?',
+        'The system automatically changes an asset to Maintenance if its Next PM date has passed. Update the Next PM date or log a new PM entry to reset it.')}
+      ${row('What is an Asset Tag?',
+        'An asset tag is your internal inventory number (e.g. 100001). It is manually assigned when adding an asset. It is separate from the system-generated Asset ID (e.g. HA-001).')}
+      ${row('How does the CSV export work?',
+        'Click the <strong>⬇ CSV</strong> button in the toolbar. It exports all assets matching your current search and filters — not just the current page. For all assets, clear your filters first.')}
+      ${row('What happens if two people edit the same asset at the same time?',
+        'The last save wins. The system uses real-time sync so changes appear instantly across all open sessions, but simultaneous edits to the same record may overwrite each other.')}
+      ${row('Will I be logged out automatically?',
+        'No — your session stays active until you click <strong>Sign Out</strong>, just like Facebook or Messenger. Closing the browser or tab does not log you out.')}
+      ${row('Can I use TadocsAsset on my phone?',
+        'Yes — the system is fully mobile-friendly. Open it in your phone\'s browser and it will adapt to your screen size automatically.')}
+      <div style="border-bottom:none;margin:0;padding:0">
+      ${row('Who do I contact if I have an issue?',
+        'Contact your system administrator. Only Admin-role users can manage accounts and system access.')}
+      </div>
+    `)}
+
+    <div style="text-align:center;padding:20px;color:var(--tx3);font-size:13px">
+      TadocsAsset — Taytay Doctors Multispecialty Hospital &nbsp;·&nbsp; Built for internal use
+    </div>
+  </div>`;
 }
 
 function renderDetailPanel(){
@@ -1262,6 +1423,7 @@ async function doLogin(){
   const {data,error} = await sb.from('users').select('*').eq('username',u).eq('password',p).maybeSingle();
   if(error||!data){ showErr('Invalid username or password'); btn.disabled=false; btn.innerHTML='Sign In →'; return; }
   currentUser=data;
+  localStorage.setItem('session_user', JSON.stringify(data));
   loading=false;
   render(); // show app immediately after auth
 
@@ -1279,6 +1441,7 @@ async function doLogin(){
 function showErr(msg){ const e=document.getElementById('login-err'); if(e){e.textContent='⚠️ '+msg;e.style.display='block';} }
 
 function doLogout(){
+  localStorage.removeItem('session_user');
   currentUser=null; assets=[]; pmHistory=[]; users=[]; activityLogs=[]; loading=true; selectedAsset=null; searchQuery=''; filterStatus='All'; filterCat='All'; currentPage=0; totalCount=0; statsCache={total:0,active:0,maint:0,inactive:0,totalCost:0,dueSoon:[]};
   render();
 }
@@ -1320,13 +1483,39 @@ function applyTheme(){
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-function init(){
+async function init(){
   applyTheme();
-  // Show login immediately — no DB ping needed before auth
   const s = document.getElementById('splash');
   if(s){ s.style.opacity='0'; setTimeout(()=>s.remove(), 400); }
   document.getElementById('app').style.display = 'block';
-  render();
+
+  // Restore session from localStorage (like Facebook/Messenger)
+  const saved = localStorage.getItem('session_user');
+  if(saved){
+    try{
+      const u = JSON.parse(saved);
+      // Verify user still exists in DB
+      const {data} = await sb.from('users').select('*').eq('id',u.id).maybeSingle();
+      if(data){
+        currentUser = data;
+        // Update stored data in case role/name changed
+        localStorage.setItem('session_user', JSON.stringify(data));
+        loading = false;
+        render();
+        const isAdmin = currentUser.role==='admin';
+        await Promise.all([
+          loadAssets(),
+          loadPmHistory(),
+          ...(isAdmin ? [loadUsers(), loadActivityLogs()] : []),
+        ]);
+        setupRealtime();
+        render();
+        return;
+      }
+    } catch(e){ localStorage.removeItem('session_user'); }
+  }
+
+  render(); // no saved session — show login
 }
 
 // ─── SERVICE WORKER ──────────────────────────────────────────────────────────
