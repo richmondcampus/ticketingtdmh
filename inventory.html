@@ -552,7 +552,7 @@ async function loadPmHistory(assetId=null){
 }
 
 async function loadUsers(){
-  const {data,error} = await sb.from('users').select('id,name,username,role,created_at').order('created_at');
+  const {data,error} = await sb.from('users').select('id,name,username,role,email,phone,created_at').order('created_at');
   if(!error && data) users = data;
 }
 
@@ -837,6 +837,8 @@ function renderUsersTab(){
         <div style="min-width:0">
           <div class="user-name">${u.name}${u.id===currentUser.id?'<span style="font-size:15px;background:rgba(0,212,170,.15);color:var(--ac);padding:1px 5px;border-radius:100px;margin-left:5px">You</span>':''}</div>
           <div class="user-username">@${u.username}</div>
+          <div style="font-size:13px;color:var(--tx3);margin-top:2px">${u.email?'📧 '+u.email:''} ${u.phone?'📱 '+u.phone:''}</div>
+          ${!u.email&&!u.phone?`<div style="font-size:11px;color:var(--red);margin-top:3px">⚠️ No contact — won't get PM alerts</div>`:''}
           <div style="margin-top:3px"><span class="role-badge role-${u.role}">${u.role}</span></div>
         </div>
       </div>
@@ -1304,6 +1306,10 @@ function renderUserModal(mode, user){
       ${!isPasswd?`
       <div class="fg"><label class="fl">Full Name *</label><input class="fi" id="um-name" value="${u.name||''}" placeholder="e.g. Maria Santos"/></div>
       <div class="fg"><label class="fl">Username *</label><input class="fi" id="um-user" value="${u.username||''}" placeholder="e.g. maria.santos"/></div>
+      <div class="modal-grid">
+        <div class="fg"><label class="fl">Email <span style="color:var(--tx3);font-weight:400">(notifications)</span></label><input class="fi" type="email" id="um-email" value="${u.email||''}" placeholder="e.g. maria@taytaydoctors.com"/></div>
+        <div class="fg"><label class="fl">Phone <span style="color:var(--tx3);font-weight:400">(SMS)</span></label><input class="fi" type="tel" id="um-phone" value="${u.phone||''}" placeholder="e.g. 09171234567"/></div>
+      </div>
       <div class="fg"><label class="fl">Role</label>
         <div style="display:flex;gap:7px">
           ${['admin','editor','viewer'].map(r=>`<div id="role-${r}" onclick="selectRole('${r}')" style="flex:1;padding:8px 4px;border-radius:8px;border:1.5px solid ${(u.role||'viewer')===r?'var(--ac2)':'var(--bd)'};background:${(u.role||'viewer')===r?'rgba(0,153,255,.1)':'var(--bg3)'};cursor:pointer;text-align:center;font-size:14px;font-weight:600;color:${(u.role||'viewer')===r?'var(--ac2)':'var(--tx3)'}">
@@ -1349,7 +1355,9 @@ async function doSaveUser(mode, existingId){
     if(pass!==pass2){ toast('Passwords do not match','err'); btn.disabled=false; btn.innerHTML='Create User'; return; }
     const {data:ex} = await sb.from('users').select('id').eq('username',username).maybeSingle();
     if(ex){ toast('Username already taken','err'); btn.disabled=false; btn.innerHTML='Create User'; return; }
-    const {error} = await sb.from('users').insert({name,username,password:pass,role:window._selectedRole||'viewer'});
+    const email = document.getElementById('um-email')?.value?.trim()||null;
+    const phone = document.getElementById('um-phone')?.value?.trim()||null;
+    const {error} = await sb.from('users').insert({name,username,password:pass,role:window._selectedRole||'viewer',email,phone});
     if(error){ toast('Failed: '+error.message,'err'); btn.disabled=false; btn.innerHTML='Create User'; return; }
     await writeLog('CREATE','User',username,`Created user "${name}" (@${username}) with role "${window._selectedRole||'viewer'}"`);
     toast(`User "${name}" created ✓`);
@@ -1359,7 +1367,9 @@ async function doSaveUser(mode, existingId){
     if(!name||!username){ toast('Name and username required','err'); btn.disabled=false; btn.innerHTML='Save Changes'; return; }
     const {data:ex} = await sb.from('users').select('id').eq('username',username).neq('id',existingId).maybeSingle();
     if(ex){ toast('Username already taken','err'); btn.disabled=false; btn.innerHTML='Save Changes'; return; }
-    const {error} = await sb.from('users').update({name,username,role:window._selectedRole||'viewer'}).eq('id',existingId);
+    const email = document.getElementById('um-email')?.value?.trim()||null;
+    const phone = document.getElementById('um-phone')?.value?.trim()||null;
+    const {error} = await sb.from('users').update({name,username,role:window._selectedRole||'viewer',email,phone}).eq('id',existingId);
     if(error){ toast('Failed: '+error.message,'err'); btn.disabled=false; btn.innerHTML='Save Changes'; return; }
     await writeLog('UPDATE','User',existingId,`Updated user "${name}" (@${username}), role: "${window._selectedRole||'viewer'}"`);
     toast('User updated ✓');
