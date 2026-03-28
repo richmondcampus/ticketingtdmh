@@ -429,6 +429,7 @@ textarea{resize:vertical;min-height:80px;}
         <div class="sec-title">Maintenance Team</div>
         <div style="display:flex;gap:6px;">
           <button class="btn btn-ghost btn-sm" id="testSmsBtn" onclick="testSMS()" style="display:none" title="Send a test SMS to yourself">📱 Test SMS</button>
+          <button class="btn btn-ghost btn-sm" id="slaBtn" onclick="openSLAModal()" style="display:none">⏱ SLA Settings</button>
           <button class="btn btn-ghost btn-sm" id="addMbrBtn" onclick="openAddMbr()" style="display:none">＋ Add Member</button>
         </div>
       </div>
@@ -613,6 +614,12 @@ let CU = null;           // current user object
 let MAINT_MEMBERS = [];  // cached maintenance staff
 let NOTIFS = [];         // in-session notifications
 let ALL_USERS = {};      // id → user map for display
+let SLA_CONFIG = {       // minutes per priority — loaded from DB
+  urgent: { respond:15,  arrive:30,   resolve:120  },
+  high:   { respond:60,  arrive:120,  resolve:480  },
+  normal: { respond:240, arrive:1440, resolve:2880 },
+  low:    { respond:1440,arrive:4320, resolve:10080},
+};
 
 // ══════════════════════════════════════════════════════════════
 // AUTH
@@ -717,9 +724,17 @@ async function initApp() {
   document.getElementById('topName').textContent = CU.name.split(' ')[0];
   document.getElementById('topRole').textContent = CU.role.charAt(0).toUpperCase()+CU.role.slice(1);
   document.getElementById('topRole').className = 'rbadge '+CU.role;
-  // Load all users for display purposes
-  const { data: users } = await sb.from('users').select('id,name,username,role,dept,phone,spec,color,online_status');
-  if (users) { users.forEach(u=>{ ALL_USERS[u.id]=u; }); MAINT_MEMBERS = users.filter(u=>u.role==='maintenance'); }
+  // Load all users + SLA config in parallel
+  const [usersRes, slaRes] = await Promise.all([
+    sb.from('users').select('id,name,username,role,dept,phone,spec,color,online_status'),
+    sb.from('sla_config').select('*'),
+  ]);
+  if (usersRes.data) { usersRes.data.forEach(u=>{ ALL_USERS[u.id]=u; }); MAINT_MEMBERS = usersRes.data.filter(u=>u.role==='maintenance'); }
+  if (slaRes.data) {
+    slaRes.data.forEach(r => {
+      SLA_CONFIG[r.priority] = { respond: r.respond_min, arrive: r.arrive_min, resolve: r.resolve_min };
+    });
+  }
   buildNav();
   checkPendingAutoClose();
   updateNotifDot();
@@ -895,6 +910,7 @@ function buildNav() {
   document.getElementById('newTktBtn').style.display = (role==='admin'||role==='department')?'inline-flex':'none';
   if (document.getElementById('addMbrBtn')) document.getElementById('addMbrBtn').style.display = role==='admin'?'inline-flex':'none';
   if (document.getElementById('testSmsBtn')) document.getElementById('testSmsBtn').style.display = role==='admin'?'inline-flex':'none';
+  if (document.getElementById('slaBtn')) document.getElementById('slaBtn').style.display = role==='admin'?'inline-flex':'none';
   document.getElementById('ticketsHeading').textContent = role==='department'?`My Requests — ${CU.dept}`:'All Tickets';
 }
 
@@ -1163,7 +1179,9 @@ function maintCardMine(t, taggedIds=[]) {
     ? '<span style="margin-left:auto;font-size:10px;background:rgba(159,122,255,.15);color:var(--purple2);padding:2px 8px;border-radius:10px;font-weight:700;">TEAM</span>'
     : '';
 
-  return '<div class="maint-card">'
+  const mSla = slaChip(t);
+  const mBorder = slaBorderColor(t);
+  return '<div class="maint-card" style="'+mBorder+'">'
     + '<div class="maint-card-loc">'
     + '<div class="priority-dot pd-'+t.priority+'"></div>'
     + '<span>'+(t.dept||'')+' · 📍 '+(t.loc||'')+'</span>'
@@ -1173,7 +1191,7 @@ function maintCardMine(t, taggedIds=[]) {
     + actionBtn
     + teamSection
     + '<div class="maint-card-meta">'
-    + '<span style="font-size:12px;color:var(--text3);">'+timeAgo(t.updated_at)+'</span>'
+    + '<span style="display:flex;align-items:center;gap:6px;">'+mSla+'<span style="font-size:12px;color:var(--text3);">'+timeAgo(t.updated_at)+'</span></span>'
     + '<span style="font-size:12px;color:var(--accent2);cursor:pointer;" onclick="openTkt(\''+t.id+'\')">Buksan · Maglagay ng note →</span>'
     + '</div>'
     + '</div>';
@@ -1306,7 +1324,8 @@ function tktCard(t) {
     </div>`;
   }
 
-  return `<div class="tkt" onclick="openTkt('${t.id}')">
+  const slaBorder = slaBorderColor(t);
+  return `<div class="tkt" onclick="openTkt('${t.id}')" style="${slaBorder}">
     <div class="tkt-top">
       <div>
         <div class="tkt-id">${t.id}</div>
@@ -1317,6 +1336,7 @@ function tktCard(t) {
     </div>
     <div class="tkt-bottom">
       <span class="badge ${stClass}">${stLabel}</span>
+      ${slaChip(t)}
       <span class="tkt-age">${timeAgo(t.updated_at)}</span>
     </div>
     ${quickActions}
@@ -2014,6 +2034,59 @@ if (window.location.protocol === 'file:') {
 
 function stLbl(s){return{open:'Open',claimed:'Claimed',teamed:'Teamed Up',resolved:'Pending Confirmation',closed:'Closed'}[s]||s;}
 function timeAgo(iso){if(!iso)return'';const d=(Date.now()-new Date(iso))/1000;if(d<60)return'just now';if(d<3600)return`${Math.floor(d/60)}m ago`;if(d<86400)return`${Math.floor(d/3600)}h ago`;return`${Math.floor(d/86400)}d ago`;}
+
+// ── SLA HELPERS ───────────────────────────────────────────────────────────
+function getSLADeadline(ticket) {
+  // Deadline is based on created_at + resolve_min for the priority
+  const cfg = SLA_CONFIG[ticket.priority] || SLA_CONFIG.normal;
+  return new Date(new Date(ticket.created_at).getTime() + cfg.resolve_min * 60000);
+}
+
+function getSLAStatus(ticket) {
+  // Only applies to open, claimed, teamed tickets (not resolved/closed)
+  if (!['open','claimed','teamed'].includes(ticket.status)) return null;
+  const cfg = SLA_CONFIG[ticket.priority] || SLA_CONFIG.normal;
+  const created = new Date(ticket.created_at);
+  const now = Date.now();
+  const elapsedMin = (now - created) / 60000;
+  const resolveMin = cfg.resolve_min;
+  const pct = elapsedMin / resolveMin;
+
+  if (pct >= 1) return { state:'overdue', label:'OVERDUE', remaining: null, pct:1 };
+  const remaining = resolveMin - elapsedMin;
+  if (pct >= 0.75) return { state:'warning', label: formatSLATime(remaining) + ' left', remaining, pct };
+  return { state:'ok', label: formatSLATime(remaining) + ' left', remaining, pct };
+}
+
+function formatSLATime(min) {
+  if (min <= 0) return '0m';
+  if (min < 60) return Math.floor(min) + 'm';
+  if (min < 1440) return Math.floor(min/60) + 'h ' + (Math.floor(min)%60) + 'm';
+  return Math.floor(min/1440) + 'd ' + Math.floor((min%1440)/60) + 'h';
+}
+
+function slaChip(ticket) {
+  const s = getSLAStatus(ticket);
+  if (!s) return '';
+  const colors = {
+    ok:      { bg:'rgba(22,163,74,.12)',  text:'#16A34A', border:'rgba(22,163,74,.3)'  },
+    warning: { bg:'rgba(217,119,6,.12)',  text:'#D97706', border:'rgba(217,119,6,.3)'  },
+    overdue: { bg:'rgba(220,38,38,.12)',  text:'#DC2626', border:'rgba(220,38,38,.3)'  },
+  };
+  const c = colors[s.state];
+  return '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;'
+    + 'background:'+c.bg+';color:'+c.text+';border:1px solid '+c.border+';">'
+    + (s.state==='overdue' ? '⚠ OVERDUE' : '⏱ '+s.label)
+    + '</span>';
+}
+
+function slaBorderColor(ticket) {
+  const s = getSLAStatus(ticket);
+  if (!s) return '';
+  if (s.state==='overdue') return 'border-color:rgba(220,38,38,.5)!important;';
+  if (s.state==='warning') return 'border-color:rgba(217,119,6,.4)!important;';
+  return '';
+}
 function fmt(iso){if(!iso)return'';return new Date(iso).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 function toast(type,title,body){
   const c=document.getElementById('toasts');
@@ -2396,6 +2469,75 @@ function toggleTheme() {
   applyTheme(saved);
 })();
 
+
+// ══════════════════════════════════════════════════════════════
+// SLA SETTINGS MODAL
+// ══════════════════════════════════════════════════════════════
+function openSLAModal() {
+  const priorities = ['urgent','high','normal','low'];
+  const labels = { urgent:'🚨 Urgent', high:'⚠️ High', normal:'🔧 Normal', low:'📋 Low' };
+  const colors = { urgent:'#DC2626', high:'#D97706', normal:'#2563EB', low:'#16A34A' };
+
+  let html = '<div style="display:flex;flex-direction:column;gap:10px;">';
+  priorities.forEach(p => {
+    const cfg = SLA_CONFIG[p] || { respond:60, arrive:120, resolve:480 };
+    html += `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;">
+      <div style="font-size:13px;font-weight:700;color:${colors[p]};margin-bottom:10px;">${labels[p]}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:4px;">Respond (min)</div>
+          <input type="number" id="sla-${p}-respond" value="${cfg.respond}" min="1" style="width:100%;padding:6px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;">
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:4px;">On-site (min)</div>
+          <input type="number" id="sla-${p}-arrive" value="${cfg.arrive}" min="1" style="width:100%;padding:6px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;">
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:4px;">Resolve (min)</div>
+          <input type="number" id="sla-${p}-resolve" value="${cfg.resolve}" min="1" style="width:100%;padding:6px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;">
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:6px;">
+        = Respond: ${formatSLATime(cfg.respond)} · On-site: ${formatSLATime(cfg.arrive)} · Resolve: ${formatSLATime(cfg.resolve)}
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+  html += '<div style="margin-top:12px;padding:10px 12px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text3);">Values are in minutes. Example: 60 = 1 hour · 1440 = 1 day · 2880 = 2 days</div>';
+  document.getElementById('slaModalBody').innerHTML = html;
+  document.getElementById('slaModal').classList.add('open');
+}
+
+async function saveSLA() {
+  const priorities = ['urgent','high','normal','low'];
+  let hasError = false;
+  for (const p of priorities) {
+    const respond = parseInt(document.getElementById(`sla-${p}-respond`).value);
+    const arrive  = parseInt(document.getElementById(`sla-${p}-arrive`).value);
+    const resolve = parseInt(document.getElementById(`sla-${p}-resolve`).value);
+    if (!respond||!arrive||!resolve||respond<1||arrive<1||resolve<1) { hasError=true; break; }
+    const {error} = await sb.from('sla_config').upsert({ priority:p, respond_min:respond, arrive_min:arrive, resolve_min:resolve });
+    if (error) { toast('error','Error',error.message); return; }
+    // Update local cache immediately
+    SLA_CONFIG[p] = { respond, arrive, resolve };
+  }
+  if (hasError) { toast('error','Invalid values','All times must be at least 1 minute.'); return; }
+  toast('success','SLA Updated','New response time targets are now active.');
+  closeM('slaModal');
+  // Refresh current view to show updated SLA chips
+  const activePage = getActivePage();
+  if (activePage==='tickets') renderTickets();
+  else if (activePage==='mytickets') renderMyTickets();
+  else if (activePage==='dashboard') renderDash();
+}
+
+// Refresh ticket cards every 60 seconds to update SLA countdown timers
+setInterval(() => {
+  const activePage = getActivePage();
+  if (activePage==='tickets') renderTickets();
+  else if (activePage==='mytickets') renderMyTickets();
+}, 60000);
+
 </script>
 
 <!-- CHANGE PASSWORD MODAL (any user) -->
@@ -2474,6 +2616,21 @@ function toggleTheme() {
         <button class="btn btn-ghost" onclick="closeM('editUserModal')">Cancel</button>
         <button class="btn btn-primary" id="euBtn" onclick="submitEditUser()">Save Changes</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLA SETTINGS MODAL -->
+<div class="overlay" id="slaModal">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-head">
+      <div><div class="modal-title">⏱ SLA Settings</div><div class="modal-sub">Response & resolution time targets per priority</div></div>
+      <button class="x-btn" onclick="closeM('slaModal')">✕</button>
+    </div>
+    <div id="slaModalBody">Loading…</div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+      <button class="btn btn-ghost" onclick="closeM('slaModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSLA()">Save Changes</button>
     </div>
   </div>
 </div>
