@@ -2037,19 +2037,32 @@ function timeAgo(iso){if(!iso)return'';const d=(Date.now()-new Date(iso))/1000;i
 
 // ── SLA HELPERS ───────────────────────────────────────────────────────────
 function getSLADeadline(ticket) {
-  // Deadline is based on created_at + resolve_min for the priority
   const cfg = SLA_CONFIG[ticket.priority] || SLA_CONFIG.normal;
-  return new Date(new Date(ticket.created_at).getTime() + cfg.resolve_min * 60000);
+  const created = parseDate(ticket.created_at);
+  if (!created) return null;
+  return new Date(created.getTime() + cfg.resolve_min * 60000);
+}
+
+function parseDate(iso) {
+  if (!iso) return null;
+  // Supabase returns "2026-03-28 06:40:59.583+00" — space instead of T
+  // Safari can't parse this, so normalize it first
+  const normalized = String(iso).replace(' ', 'T').replace('+00', '+00:00');
+  const d = new Date(normalized);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 function getSLAStatus(ticket) {
   // Only applies to open, claimed, teamed tickets (not resolved/closed)
   if (!['open','claimed','teamed'].includes(ticket.status)) return null;
+  if (!ticket.created_at) return null;
   const cfg = SLA_CONFIG[ticket.priority] || SLA_CONFIG.normal;
-  const created = new Date(ticket.created_at);
+  const created = parseDate(ticket.created_at);
+  if (!created) return null;
   const now = Date.now();
-  const elapsedMin = (now - created) / 60000;
+  const elapsedMin = (now - created.getTime()) / 60000;
   const resolveMin = cfg.resolve_min;
+  if (!resolveMin || isNaN(elapsedMin)) return null;
   const pct = elapsedMin / resolveMin;
 
   if (pct >= 1) return { state:'overdue', label:'OVERDUE', remaining: null, pct:1 };
