@@ -1,0 +1,37 @@
+{
+  "name": "TDMH Maintenance Hub",
+  "short_name": "TDMH Maint",
+  "description": "Taytay Doctors Multispecialty Hospital — Maintenance Ticketing System",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#080c12",
+  "theme_color": "#080c12",
+  "lang": "en-PH",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%23080c12'/%3E%3Ccircle cx='96' cy='96' r='55' fill='none' stroke='%2300d4c8' stroke-width='7'/%3E%3Ctext x='96' y='112' text-anchor='middle' font-size='56' fill='%2300d4c8'%3E%E2%9A%95%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%23080c12'/%3E%3Ccircle cx='256' cy='256' r='150' fill='none' stroke='%2300d4c8' stroke-width='18'/%3E%3Ctext x='256' y='298' text-anchor='middle' font-size='150' fill='%2300d4c8'%3E%E2%9A%95%3C/text%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["productivity", "utilities", "medical"],
+  "shortcuts": [
+    {
+      "name": "Bagong Ticket",
+      "short_name": "New Ticket",
+      "description": "Mag-submit ng bagong maintenance request",
+      "url": "/?action=new-ticket",
+      "icons": []
+    }
+  ]
+}
