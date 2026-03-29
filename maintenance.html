@@ -280,6 +280,9 @@ textarea{resize:vertical;min-height:80px;}
 .loading{text-align:center;padding:40px 20px;color:var(--text3);font-size:13px;}
 .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:10px;}
 @keyframes spin{to{transform:rotate(360deg);}}
+.pri-opt{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;cursor:pointer;transition:.15s;}
+.pri-opt:hover{border-color:var(--border2);background:var(--bg4);}
+.pri-opt-selected{border-color:var(--accent)!important;background:rgba(79,142,247,.08)!important;}
 
 /* ─── TUTORIAL ─── */
 .tut-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(4px);z-index:500;align-items:flex-end;justify-content:center;padding:0;}
@@ -482,8 +485,51 @@ textarea{resize:vertical;min-height:80px;}
           <option>Fire Safety</option><option>Sanitation</option><option>Elevator / Lift</option><option>Other</option>
         </select>
       </div>
-      <div class="fg"><label>Priority</label>
-        <select id="nt-pri"><option value="urgent">🔴 Urgent</option><option value="high">🟡 High</option><option value="normal" selected>🔵 Normal</option><option value="low">⚪ Low</option></select>
+      <div class="fg">
+        <label>Priority</label>
+        <input type="hidden" id="nt-pri" value="normal">
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+          <div onclick="setPriority('urgent')" id="pri-opt-urgent" class="pri-opt" style="border-color:rgba(240,78,78,.2);">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:#f04e4e;flex-shrink:0;"></div>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:700;color:#ff7474;">Urgent</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:1px;">Immediate threat to patient safety — electrical hazard, equipment failure in ICU/OR, flooding</div>
+              </div>
+              <div id="pri-check-urgent" style="display:none;color:#f04e4e;font-size:15px;font-weight:800;">✓</div>
+            </div>
+          </div>
+          <div onclick="setPriority('high')" id="pri-opt-high" class="pri-opt">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:#f0a429;flex-shrink:0;"></div>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:700;color:#ffbe57;">High</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:1px;">Significant impact on operations — AC failure, broken hospital bed, active water leak, CCTV down</div>
+              </div>
+              <div id="pri-check-high" style="display:none;color:#f0a429;font-size:15px;font-weight:800;">✓</div>
+            </div>
+          </div>
+          <div onclick="setPriority('normal')" id="pri-opt-normal" class="pri-opt pri-opt-selected">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:#4f8ef7;flex-shrink:0;"></div>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:700;color:#7aadff;">Normal <span style="font-size:10px;font-weight:400;opacity:.6;">(default)</span></div>
+                <div style="font-size:11px;color:var(--text3);margin-top:1px;">Standard maintenance — busted light, minor leak, broken door or window, outlet not working</div>
+              </div>
+              <div id="pri-check-normal" style="color:#4f8ef7;font-size:15px;font-weight:800;">✓</div>
+            </div>
+          </div>
+          <div onclick="setPriority('low')" id="pri-opt-low" class="pri-opt">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:#4d5d80;flex-shrink:0;"></div>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:700;color:#8b9fc7;">Low</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:1px;">Cosmetic or minor — peeling paint, missing signage, loose tile. Does not affect operations</div>
+              </div>
+              <div id="pri-check-low" style="display:none;color:#8b9fc7;font-size:15px;font-weight:800;">✓</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="fg"><label>Location / Room No.</label><input id="nt-loc" placeholder="e.g. 3rd Floor, Room 312"></div>
@@ -1731,6 +1777,7 @@ async function addNote(ticketId, message) {
 function openNewTkt() {
   ['nt-title','nt-desc','nt-loc'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('nt-email').value = CU.email || '';  // pre-fill from user profile
+  setPriority('normal');  // reset priority picker to default
   updateSMSPreview();
   ['nt-title','nt-loc','nt-cat','nt-pri'].forEach(id=>{
     const el=document.getElementById(id);
@@ -2017,6 +2064,32 @@ function updateNotifDot(){const u=NOTIFS.filter(n=>!n.read).length;document.getE
 function closeM(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
 document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+// ── PRIORITY PICKER ──────────────────────────────────────────────────────
+function setPriority(val) {
+  document.getElementById('nt-pri').value = val;
+  const priorities = ['urgent','high','normal','low'];
+  const borderColors = { urgent:'rgba(240,78,78,.4)', high:'rgba(240,164,41,.3)', normal:'rgba(79,142,247,.4)', low:'rgba(77,93,128,.3)' };
+  const bgColors = { urgent:'rgba(240,78,78,.07)', high:'rgba(240,164,41,.07)', normal:'rgba(79,142,247,.07)', low:'rgba(77,93,128,.07)' };
+  priorities.forEach(p => {
+    const opt   = document.getElementById('pri-opt-'+p);
+    const check = document.getElementById('pri-check-'+p);
+    if (!opt) return;
+    if (p === val) {
+      opt.classList.add('pri-opt-selected');
+      opt.style.borderColor = borderColors[p];
+      opt.style.background  = bgColors[p];
+      if (check) check.style.display = 'block';
+    } else {
+      opt.classList.remove('pri-opt-selected');
+      opt.style.borderColor = '';
+      opt.style.background  = '';
+      if (check) check.style.display = 'none';
+    }
+  });
+  // Update SMS preview if it exists
+  if (typeof updateSMSPreview === 'function') updateSMSPreview();
+}
 
 // Attempt to restore saved session on page load
 // If no session found, the login page stays visible
