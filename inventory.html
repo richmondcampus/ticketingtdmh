@@ -389,6 +389,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let currentUser = null;
 let assets = [];
+let allAssetsCache = []; // full unfiltered list for reports
 let pmHistory = [];
 let users = [];
 let activityLogs = [];
@@ -474,6 +475,204 @@ function genTag(){
   return String(max+1);
 }
 
+
+// ─── REPORTS TAB ──────────────────────────────────────────────────────────────
+function renderReportsTab(){
+  const reportCat    = window._reportCat    || 'All';
+  const reportStatus = window._reportStatus || 'All';
+  const reportFrom   = window._reportFrom   || '';
+  const reportTo     = window._reportTo     || '';
+
+  // Filter PM history based on selections
+  let filteredPm = pmHistory.filter(p => {
+    const asset = allAssetsCache.find(a => a.id === p.asset_id);
+    if (!asset) return false;
+    if (reportCat !== 'All' && asset.category !== reportCat) return false;
+    if (reportStatus !== 'All' && asset.status !== reportStatus) return false;
+    if (reportFrom && p.date < reportFrom) return false;
+    if (reportTo && p.date > reportTo) return false;
+    return true;
+  });
+
+  // Sort by date desc
+  filteredPm = filteredPm.sort((a,b) => b.date.localeCompare(a.date));
+
+  // Stats
+  const totalPm     = filteredPm.length;
+  const totalCostPm = filteredPm.reduce((s,p) => s + Number(p.cost||0), 0);
+  const pmTypes     = {};
+  filteredPm.forEach(p => { pmTypes[p.type] = (pmTypes[p.type]||0) + 1; });
+
+  const typeColors = {Routine:'var(--ac)',Corrective:'var(--orange)',Calibration:'var(--ac2)',Emergency:'var(--red)'};
+
+  return `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div>
+      <div style="font-size:15px;font-weight:700;color:var(--tx)">📊 PM Reports</div>
+      <div style="font-size:12px;color:var(--tx3);margin-top:2px">Preventive Maintenance history for DOH compliance and audit</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="export-btn" onclick="exportReportCSV()">⬇ Export CSV</button>
+      <button class="export-btn" onclick="printReport()">🖨 Print Report</button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div>
+      <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Category</div>
+      <select class="filter-select" onchange="window._reportCat=this.value;render()">
+        ${['All','Medical Equipment','Furniture & Fixtures','IT & Electronics','Vehicles & Transport'].map(c=>`<option value="${c}" ${reportCat===c?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>
+    <div>
+      <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Status</div>
+      <select class="filter-select" onchange="window._reportStatus=this.value;render()">
+        ${['All','Active','Maintenance','Due Soon','Inactive','Disposed'].map(s=>`<option value="${s}" ${reportStatus===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </div>
+    <div>
+      <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Date From</div>
+      <input class="fi" type="date" value="${reportFrom}" onchange="window._reportFrom=this.value;render()" style="width:140px;padding:7px 10px;font-size:12px"/>
+    </div>
+    <div>
+      <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Date To</div>
+      <input class="fi" type="date" value="${reportTo}" onchange="window._reportTo=this.value;render()" style="width:140px;padding:7px 10px;font-size:12px"/>
+    </div>
+    <button class="export-btn" onclick="window._reportCat='All';window._reportStatus='All';window._reportFrom='';window._reportTo='';render()">Clear</button>
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat-card" style="--c:var(--ac)"><div class="stat-label">Total PM Records</div><div class="stat-value">${totalPm}</div><div class="stat-sub">filtered results</div></div>
+    <div class="stat-card" style="--c:var(--yellow)"><div class="stat-label">Total PM Cost</div><div class="stat-value" style="font-size:16px">${fmtCost(totalCostPm)}</div><div class="stat-sub">combined</div></div>
+    ${Object.entries(pmTypes).map(([t,c]) => `<div class="stat-card" style="--c:${typeColors[t]||'var(--ac)'}"><div class="stat-label">${t}</div><div class="stat-value" style="color:${typeColors[t]||'var(--ac)'}">${c}</div><div class="stat-sub">PM entries</div></div>`).join('')}
+  </div>
+
+  <!-- PM Table -->
+  <div id="report-content">
+  <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r);padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <div style="font-size:14px;font-weight:700;color:var(--tx)">Taytay Doctors Multispecialty Hospital</div>
+      <div style="font-size:11px;color:var(--tx3);margin-top:2px">Preventive Maintenance Report · Generated: ${new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'})}</div>
+    </div>
+    <div style="font-size:11px;color:var(--tx3);text-align:right">
+      ${reportCat !== 'All' ? `<div>Category: ${reportCat}</div>` : ''}
+      ${reportStatus !== 'All' ? `<div>Status: ${reportStatus}</div>` : ''}
+      ${reportFrom ? `<div>From: ${reportFrom}</div>` : ''}
+      ${reportTo ? `<div>To: ${reportTo}</div>` : ''}
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Asset Name</th>
+            <th>Asset ID</th>
+            <th>Category</th>
+            <th>Location</th>
+            <th>PM Type</th>
+            <th>Description</th>
+            <th>Performed By</th>
+            <th>Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filteredPm.length === 0 ? `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--tx3)">No PM records found for the selected filters.</td></tr>` :
+            filteredPm.map(p => {
+              const asset = allAssetsCache.find(a => a.id === p.asset_id);
+              const typeColor = typeColors[p.type] || 'var(--ac)';
+              return `<tr>
+                <td style="font-family:'DM Mono',monospace;font-size:11px;white-space:nowrap">${fmtDate(p.date)}</td>
+                <td style="font-weight:600;color:var(--tx)">${asset?.name || '—'}</td>
+                <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--tx3)">${p.asset_id}</td>
+                <td style="font-size:11px">${asset?.category || '—'}</td>
+                <td style="font-size:11px">${asset?.location || '—'}</td>
+                <td><span style="background:${typeColor}18;color:${typeColor};padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;border:1px solid ${typeColor}30">${p.type}</span></td>
+                <td style="font-size:12px;max-width:220px;white-space:normal;line-height:1.4">${p.description || '—'}</td>
+                <td style="font-size:11px">${p.performed_by || '—'}</td>
+                <td style="font-family:'DM Mono',monospace;font-size:11px">${p.cost ? fmtCost(p.cost) : '—'}</td>
+              </tr>`;
+            }).join('')
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </div>`;
+}
+
+function exportReportCSV(){
+  const reportCat    = window._reportCat    || 'All';
+  const reportStatus = window._reportStatus || 'All';
+  const reportFrom   = window._reportFrom   || '';
+  const reportTo     = window._reportTo     || '';
+
+  let filteredPm = pmHistory.filter(p => {
+    const asset = allAssetsCache.find(a => a.id === p.asset_id);
+    if (!asset) return false;
+    if (reportCat !== 'All' && asset.category !== reportCat) return false;
+    if (reportStatus !== 'All' && asset.status !== reportStatus) return false;
+    if (reportFrom && p.date < reportFrom) return false;
+    if (reportTo && p.date > reportTo) return false;
+    return true;
+  }).sort((a,b) => b.date.localeCompare(a.date));
+
+  const rows = [['Date','Asset Name','Asset ID','Category','Location','PM Type','Description','Performed By','Cost']];
+  filteredPm.forEach(p => {
+    const asset = allAssetsCache.find(a => a.id === p.asset_id);
+    rows.push([
+      p.date,
+      asset?.name||'',
+      p.asset_id,
+      asset?.category||'',
+      asset?.location||'',
+      p.type,
+      p.description||'',
+      p.performed_by||'',
+      p.cost||0
+    ]);
+  });
+
+  const csv = rows.map(r => r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `TadocsAsset-PM-Report-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('PM Report exported ✓');
+}
+
+function printReport(){
+  const content = document.getElementById('report-content');
+  if (!content) return;
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head>
+    <title>PM Report — TadocsAsset</title>
+    <style>
+      body { font-family: Arial, sans-serif; font-size: 12px; color: #000; padding: 20px; }
+      h1 { font-size: 16px; margin-bottom: 4px; }
+      p { font-size: 11px; color: #666; margin-bottom: 16px; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      th { background: #f0f4f8; padding: 7px 10px; text-align: left; border: 1px solid #ddd; font-size: 10px; text-transform: uppercase; }
+      td { padding: 7px 10px; border: 1px solid #ddd; vertical-align: top; }
+      tr:nth-child(even) td { background: #f9fafb; }
+      .badge { padding: 2px 6px; border-radius: 10px; font-size: 9px; font-weight: 700; }
+    </style>
+  </head><body>
+    <h1>Taytay Doctors Multispecialty Hospital</h1>
+    <p>Preventive Maintenance Report · Generated: ${new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'})}</p>
+    ${content.querySelector('table').outerHTML}
+  </body></html>`);
+  win.document.close();
+  win.print();
+}
+
 // ─── ACTIVITY LOG ────────────────────────────────────────────────────────────
 async function writeLog(action, entity, entityId, detail){
   const entry = {
@@ -527,6 +726,9 @@ async function loadAssets(){
     assets = pageRes.data;
     totalCount = pageRes.count || 0;
   }
+  // Load full unfiltered list for reports tab
+  const {data:allData} = await sb.from('assets').select('id,name,category,status,location,asset_tag').order('name').limit(10000);
+  if(allData) allAssetsCache = allData;
   statsCache = {
     total:     totRes.count  || 0,
     active:    actRes.count  || 0,
@@ -668,6 +870,7 @@ function render(){
       ${renderTabs()}
       ${currentTab==='assets' ? renderAssetsTab() : ''}
       ${currentTab==='users' && currentUser.role==='admin' ? renderUsersTab() : ''}
+      ${currentTab==='reports' ? renderReportsTab() : ''}
       ${currentTab==='logs' && currentUser.role==='admin' ? renderLogsTab() : ''}
       ${currentTab==='help' ? renderHelpTab() : ''}
     </div>
@@ -704,6 +907,7 @@ function renderHeader(){
 
 function renderTabs(){
   const tabs = [{id:'assets',label:'📦 Assets'}];
+  tabs.push({id:'reports',label:'📊 Reports'});
   if(currentUser.role==='admin'){
     tabs.push({id:'users',label:'👥 Users'});
     tabs.push({id:'logs',label:'📋 Activity Log'});
