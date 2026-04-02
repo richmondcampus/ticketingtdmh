@@ -175,6 +175,15 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 .btn-purple{background:var(--purple);color:#fff}
 .btn-amber{background:var(--amber);color:#fff}
 .btn-sm{padding:6px 11px;font-size:11px}
+/* Table action buttons — compact, pill-shaped */
+.tbl-act{display:inline-flex;align-items:center;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:600;border:none;cursor:pointer;transition:all .15s;white-space:nowrap;letter-spacing:.1px}
+.tbl-act-green{background:#dcfce7;color:#15803d}.tbl-act-green:hover{background:#16a34a;color:#fff}
+.tbl-act-red{background:#fee2e2;color:#b91c1c}.tbl-act-red:hover{background:#dc2626;color:#fff}
+.tbl-act-blue{background:#dbeafe;color:#1d4ed8}.tbl-act-blue:hover{background:#2563eb;color:#fff}
+.tbl-act-teal{background:#ccfbf1;color:#0f766e}.tbl-act-teal:hover{background:#0d9488;color:#fff}
+.tbl-act-purple{background:#ede9fe;color:#6d28d9}.tbl-act-purple:hover{background:#7c3aed;color:#fff}
+.tbl-act-amber{background:#fef3c7;color:#92400e}.tbl-act-amber:hover{background:#d97706;color:#fff}
+.tbl-act-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}.tbl-act-ghost:hover{background:var(--bg);color:var(--text1)}
 .btn-full{width:100%;justify-content:center;padding:12px}
 .ib{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:14px;color:var(--text2);touch-action:manipulation}
 .ib:hover{background:var(--bg)}
@@ -1078,73 +1087,105 @@ function renderTicketsTable() {
   const role = currentProfile?.role
 
   document.getElementById('CONTENT').innerHTML = `
-  <div style="display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
-    <input class="fi" id="tkSearch" placeholder="Search tickets..." style="width:200px;font-size:12px;padding:7px 11px" oninput="renderTicketsTable()" value="${q}">
-    <select class="fs" id="tkStatus" style="width:155px;font-size:12px;padding:7px 11px" onchange="renderTicketsTable()">
+  <!-- Toolbar -->
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    <div style="position:relative;flex:1;min-width:180px;max-width:260px">
+      <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.4;pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input class="fi" id="tkSearch" placeholder="Search tickets..." style="width:100%;font-size:12px;padding:7px 11px 7px 32px;box-sizing:border-box" oninput="renderTicketsTable()" value="${q}">
+    </div>
+    <select class="fs" id="tkStatus" style="font-size:12px;padding:7px 11px;min-width:150px" onchange="renderTicketsTable()">
       <option value="">All Statuses</option>
-      <option value="pending-approval" ${sf==='pending-approval'?'selected':''}>Pending</option>
+      <option value="pending-approval" ${sf==='pending-approval'?'selected':''}>Pending Approval</option>
       <option value="approved" ${sf==='approved'?'selected':''}>Approved</option>
       <option value="assigned" ${sf==='assigned'?'selected':''}>Gate Out Pending</option>
       <option value="on-trip" ${sf==='on-trip'?'selected':''}>On Trip</option>
       <option value="completed" ${sf==='completed'?'selected':''}>Completed</option>
       <option value="rejected" ${sf==='rejected'?'selected':''}>Rejected</option>
+      <option value="cancelled" ${sf==='cancelled'?'selected':''}>Cancelled</option>
     </select>
     ${['approver_admin','approver_amb'].includes(currentProfile?.role) ? '' : `
-    <select class="fs" id="tkType" style="width:135px;font-size:12px;padding:7px 11px" onchange="renderTicketsTable()">
+    <select class="fs" id="tkType" style="font-size:12px;padding:7px 11px;min-width:130px" onchange="renderTicketsTable()">
       <option value="">All Types</option>
-      <option value="regular" ${tf==='regular'?'selected':''}>Regular</option>
-      <option value="motorcycle" ${tf==='motorcycle'?'selected':''}>Motorcycle</option>
-      <option value="ambulance" ${tf==='ambulance'?'selected':''}>Ambulance</option>
+      <option value="regular" ${tf==='regular'?'selected':''}>🚙 Regular</option>
+      <option value="motorcycle" ${tf==='motorcycle'?'selected':''}>🏍 Motorcycle</option>
+      <option value="ambulance" ${tf==='ambulance'?'selected':''}>🚑 Ambulance</option>
     </select>`}
-    <div style="margin-left:auto;font-size:11px;color:var(--text3)">${filtered.length} tickets</div>
+    <div style="margin-left:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-size:11.5px;color:var(--text2);font-weight:600;white-space:nowrap">${filtered.length} ticket${filtered.length!==1?'s':''}</div>
   </div>
-  <div class="card card-np" style="overflow:hidden">
-  <div class="tbl-wrap desktop-only"><table class="tbl">
-    <thead><tr><th>Ticket</th><th>Department</th><th>Purpose</th><th>Date</th><th>Type</th><th>Status</th><th>Driver · Vehicle</th><th>Actions</th></tr></thead>
-    <tbody>${filtered.map(t => {
+
+  <!-- Desktop Table -->
+  <div class="card card-np desktop-only" style="overflow:hidden">
+  <table style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Ticket</th>
+        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Department</th>
+        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Purpose</th>
+        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Date</th>
+        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Type</th>
+        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Status</th>
+        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Driver · Vehicle</th>
+        <th style="padding:11px 16px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Actions</th>
+      </tr>
+    </thead>
+    <tbody>${filtered.map((t,i) => {
       const acts = []
-      // Approve/Reject — route by vehicle type
-      if (role==='admin' && t.status==='pending-approval') {
-        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
-        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
-      }
-      if (role==='approver_admin' && t.status==='pending-approval' && t.vehicle_type_needed!=='ambulance') {
-        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
-        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
-      }
-      if (role==='approver_amb' && t.status==='pending-approval' && t.vehicle_type_needed==='ambulance') {
-        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
-        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
+      const canApprove =
+        (role==='admin' && t.status==='pending-approval') ||
+        (role==='approver_admin' && t.status==='pending-approval' && t.vehicle_type_needed!=='ambulance') ||
+        (role==='approver_amb' && t.status==='pending-approval' && t.vehicle_type_needed==='ambulance')
+      if (canApprove) {
+        acts.push(`<button class="tbl-act tbl-act-green" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">✓ Approve</button>`)
+        acts.push(`<button class="tbl-act tbl-act-red" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">✕ Reject</button>`)
       }
       if (role==='admin' && t.status==='approved')
-        acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign</button>`)
+        acts.push(`<button class="tbl-act tbl-act-blue" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign</button>`)
       if (role==='guard' && t.status==='assigned')
-        acts.push(`<button class="btn btn-teal btn-sm" onclick="event.stopPropagation();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle?.plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}')">Gate Out</button>`)
+        acts.push(`<button class="tbl-act tbl-act-teal" onclick="event.stopPropagation();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle?.plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}')">Gate Out</button>`)
       if (role==='guard' && t.status==='on-trip')
-        acts.push(`<button class="btn btn-purple btn-sm" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
-      // Cancel — requester can cancel their own pending, admin can cancel anything not completed
+        acts.push(`<button class="tbl-act tbl-act-purple" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
       if (role==='requester' && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
-        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
+        acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
       if (role==='admin' && !['completed','cancelled'].includes(t.status))
-        acts.push(`<button class="btn btn-amber btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-      acts.push(`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button>`)
-      return `<tr onclick="openViewModal('${t.id}')">
-        <td>${chip(t.ticket_no)}</td>
-        <td style="font-weight:700;font-size:11px">${t.department||'—'}</td>
-        <td style="font-size:11px">${t.purpose||'—'}</td>
-        <td style="font-size:11px;white-space:nowrap">${fmtDate(t.departure_at||t.created_at)}</td>
-        <td>${typeBadge(t.vehicle_type_needed)}</td>
-        <td style="white-space:nowrap">
-          ${badge(t.status)}
-          ${isOverdue(t) ? `<br><span class="badge b-overdue" style="margin-top:3px;font-size:9px">⚠ ${overdueDuration(t)}</span>` : ''}
+        acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
+      const isPending = t.status==='pending-approval'
+      const rowBg = isPending ? 'background:color-mix(in srgb,var(--amber-s) 40%,transparent)' : ''
+      return `<tr onclick="openViewModal('${t.id}')" style="border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;${rowBg}" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${isPending?'color-mix(in srgb,var(--amber-s) 40%,transparent)':''}'">
+        <td style="padding:13px 16px;white-space:nowrap">
+          <div style="font-size:11px;font-weight:700;color:var(--pri);font-family:monospace;letter-spacing:.3px">${t.ticket_no||'—'}</div>
         </td>
-        <td style="font-size:10.5px">${t.driver_name||'—'}<br><span style="color:var(--text3)">${t.vehicle?.plate||''}</span></td>
-        <td onclick="event.stopPropagation()"><div style="display:flex;gap:4px;flex-wrap:wrap">${acts.join('')}</div></td>
+        <td style="padding:13px 16px">
+          <div style="font-size:12px;font-weight:600;color:var(--text1)">${t.department||'—'}</div>
+        </td>
+        <td style="padding:13px 16px;max-width:180px">
+          <div style="font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${t.purpose||''}">${t.purpose||'—'}</div>
+          ${t.destination?`<div style="font-size:10.5px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">→ ${t.destination}</div>`:''}
+        </td>
+        <td style="padding:13px 16px;white-space:nowrap">
+          <div style="font-size:11.5px;color:var(--text1)">${fmtDate(t.departure_at||t.created_at)}</div>
+        </td>
+        <td style="padding:13px 16px">${typeBadge(t.vehicle_type_needed)}</td>
+        <td style="padding:13px 16px;white-space:nowrap">
+          ${badge(t.status)}
+          ${isOverdue(t)?`<div style="margin-top:4px"><span class="badge b-overdue" style="font-size:9px;padding:2px 6px">⚠ ${overdueDuration(t)}</span></div>`:''}
+        </td>
+        <td style="padding:13px 16px">
+          ${t.driver_name
+            ? `<div style="font-size:11.5px;font-weight:600;color:var(--text1)">${t.driver_name}</div><div style="font-size:10.5px;color:var(--text3);margin-top:1px;font-family:monospace">${t.vehicle?.plate||''}</div>`
+            : `<span style="font-size:11px;color:var(--text3)">—</span>`}
+        </td>
+        <td style="padding:13px 16px" onclick="event.stopPropagation()">
+          <div style="display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap;align-items:center">
+            ${acts.join('')}
+            <button class="tbl-act tbl-act-ghost" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button>
+          </div>
+        </td>
       </tr>`
     }).join('')}
-    ${filtered.length===0?'<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">No tickets found.</td></tr>':''}
+    ${filtered.length===0?`<tr><td colspan="8" style="text-align:center;padding:36px;color:var(--text3);font-size:13px">No tickets found.</td></tr>`:''}
     </tbody>
-  </table></div></div>
+  </table>
+  </div>
   <!-- Mobile cards view -->
   <div class="mob-cards">
     ${filtered.length===0?`<div style="text-align:center;padding:32px;color:var(--text3)">No tickets found.</div>`:''}
