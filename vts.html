@@ -1324,8 +1324,10 @@ function renderNewTicket() {
         <input type="hidden" id="ntType" value="regular">
       </div>
       <div id="ntAmbNote" class="info info-red" style="display:none;margin-top:8px">Routes to <strong>Ambulance Approver</strong> only.</div>
-      <div class="fg"><label class="fl">Priority</label>
-        <select class="fs" id="ntPri"><option value="normal">Normal</option><option value="low">Low</option><option value="urgent">Urgent</option><option value="emergency">Emergency</option></select></div>
+      <div id="ntPriWrap" class="fg"><label class="fl">Priority</label>
+        <select class="fs" id="ntPri"><option value="normal">Normal — 4 hours</option><option value="low">Low — 24 hours</option><option value="urgent">Urgent — 1 hour</option><option value="emergency">Emergency — 15 minutes</option></select>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">SLA: approval target time from submission</div>
+      </div>
       <div class="fg"><label class="fl">Purpose / Reason *</label><textarea class="ft" id="ntPurpose" placeholder="Describe the purpose of the trip..."></textarea></div>
       <div class="fg"><label class="fl">Destination *</label><input class="fi" id="ntDest" placeholder="Full destination address"></div>
       <div class="fr">
@@ -1351,12 +1353,12 @@ function selectVtype(t) {
   reg.style.cssText = isAmb ? 'justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600' : 'justify-content:center;border:1px solid var(--pri);background:var(--pri-s);color:var(--pri);font-weight:600'
   amb.style.cssText = isAmb ? 'justify-content:center;border:1px solid var(--red);background:var(--red-s);color:var(--red);font-weight:600' : 'justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600'
   document.getElementById('ntAmbNote').style.display = isAmb ? 'block' : 'none'
-  // Hide expected return date for ambulance — return time is unpredictable
+  // Hide expected return date and priority for ambulance
   const retWrap = document.getElementById('ntReturnWrap')
-  if (retWrap) {
-    retWrap.style.display = isAmb ? 'none' : ''
-    if (isAmb) document.getElementById('ntReturn').value = ''
-  }
+  const priWrap = document.getElementById('ntPriWrap')
+  if (retWrap) { retWrap.style.display = isAmb ? 'none' : ''; if (isAmb) document.getElementById('ntReturn').value = '' }
+  if (priWrap) { priWrap.style.display = isAmb ? 'none' : '' }
+  if (isAmb) document.getElementById('ntPri').value = 'emergency'
 }
 
 async function submitNewTicket() {
@@ -1697,43 +1699,370 @@ function openAKSH() {
 // ════════════════════════════════════════════════
 // REPORTS
 // ════════════════════════════════════════════════
+// ── Helpers ──────────────────────────────────────
+function fmtMins(m) {
+  if (m == null || isNaN(m)) return '—'
+  const h = Math.floor(m / 60), mn = Math.round(m % 60)
+  return h > 0 ? `${h}h ${mn}m` : `${mn}m`
+}
+function pct(n, d) { return d ? Math.round(n / d * 100) : 0 }
+function slaColor(breached) { return breached ? '#dc2626' : '#16a34a' }
+function rbar2(label, val, max, color, suffix='') {
+  const w = max ? Math.min(100, Math.round(val/max*100)) : 0
+  return `<div class="rbar">
+    <span style="font-size:11px;font-weight:600;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
+    <div class="rbar-track"><div class="rbar-fill" style="width:${w}%;background:${color}"></div></div>
+    <span style="font-size:11px;font-weight:700;min-width:32px;text-align:right">${val}${suffix}</span>
+  </div>`
+}
+
+// ── Date range filter state ───────────────────────
+let _rptFrom = '', _rptTo = '', _rptTab = 'overview'
+
 async function renderReports() {
-  const { data } = await SB.from('trips').select('id,ticket_no,status,department,vehicle_type_needed,departure_at,gate_out_at,gate_in_at,distance_km,driver_name,vehicle:vehicles(plate)').order('created_at',{ascending:false})
-  const T = data||[]; const total = T.length||1
-  const done = T.filter(t=>t.status==='completed').length
-  const amb  = T.filter(t=>t.vehicle_type_needed==='ambulance').length
-  const bySt = {}; T.forEach(t=>{bySt[t.status]=(bySt[t.status]||0)+1})
-  const byDept = {}; T.forEach(t=>{byDept[t.department]=(byDept[t.department]||0)+1})
+  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center">Loading reports...</div>'
+  // Default date range: last 30 days
+  if (!_rptFrom) {
+    const d = new Date(); d.setDate(d.getDate()-30)
+    _rptFrom = d.toISOString().slice(0,10)
+    _rptTo   = new Date().toISOString().slice(0,10)
+  }
+  await renderReportContent()
+}
+
+async function renderReportContent() {
+  // Fetch all trips in date range
+  let q = SB.from('trips').select('*,vehicle:vehicles(plate,type)').order('created_at',{ascending:false})
+  if (_rptFrom) q = q.gte('created_at', _rptFrom + 'T00:00:00')
+  if (_rptTo)   q = q.lte('created_at', _rptTo   + 'T23:59:59')
+  const { data } = await q
+  const T = data || []
+  const total = T.length || 1
+
+  // ── Core metrics ──────────────────────────────
+  const completed   = T.filter(t => t.status === 'completed')
+  const rejected    = T.filter(t => t.status === 'rejected')
+  const cancelled   = T.filter(t => t.status === 'cancelled')
+  const pending     = T.filter(t => t.status === 'pending-approval')
+  const active      = T.filter(t => ['approved','assigned','on-trip'].includes(t.status))
+  const ambulance   = T.filter(t => t.vehicle_type_needed === 'ambulance')
+  const regular     = T.filter(t => t.vehicle_type_needed !== 'ambulance')
+
+  // SLA metrics (regular only)
+  const withSLA     = regular.filter(t => t.sla_deadline)
+  const slaBreached = withSLA.filter(t => t.sla_breached)
+  const slaKept     = withSLA.filter(t => !t.sla_breached && t.approved_at)
+  const slaRate     = withSLA.length ? pct(slaKept.length, withSLA.length) : null
+
+  // Response time (approved tickets)
+  const withResp    = T.filter(t => t.response_minutes != null)
+  const avgResp     = withResp.length ? withResp.reduce((s,t) => s + parseFloat(t.response_minutes), 0) / withResp.length : null
+
+  // Trip duration (completed)
+  const withDur     = completed.filter(t => t.trip_duration_minutes != null)
+  const avgDur      = withDur.length ? withDur.reduce((s,t) => s + parseFloat(t.trip_duration_minutes), 0) / withDur.length : null
+
+  // Total distance
+  const totalKm     = completed.reduce((s,t) => s + (t.distance_km||0), 0)
+
+  // By department
+  const byDept = {}
+  T.forEach(t => { byDept[t.department] = (byDept[t.department]||0) + 1 })
+  const topDepts = Object.entries(byDept).sort((a,b) => b[1]-a[1]).slice(0,10)
+
+  // By priority (regular only)
+  const byPri = { low:0, normal:0, urgent:0, emergency:0 }
+  regular.forEach(t => { if (byPri[t.priority] !== undefined) byPri[t.priority]++ })
+
+  // By driver (completed trips)
+  const byDriver = {}
+  completed.forEach(t => { if (t.driver_name) byDriver[t.driver_name] = (byDriver[t.driver_name]||0)+1 })
+  const topDrivers = Object.entries(byDriver).sort((a,b) => b[1]-a[1]).slice(0,8)
+
+  // By vehicle
+  const byVehicle = {}
+  completed.forEach(t => { const p = t.vehicle?.plate||t.vehicle_plate; if (p) byVehicle[p] = (byVehicle[p]||0)+1 })
+  const topVehicles = Object.entries(byVehicle).sort((a,b) => b[1]-a[1]).slice(0,6)
+
+  // Monthly trend (last 6 months)
+  const monthMap = {}
+  T.forEach(t => {
+    const m = t.created_at?.slice(0,7)
+    if (m) { if (!monthMap[m]) monthMap[m] = {total:0,done:0,breached:0}; monthMap[m].total++; if (t.status==='completed') monthMap[m].done++; if (t.sla_breached) monthMap[m].breached++ }
+  })
+  const months = Object.entries(monthMap).sort((a,b) => a[0].localeCompare(b[0])).slice(-6)
+  const maxMonth = Math.max(...months.map(([,v]) => v.total), 1)
+
+  // SLA breakdown by priority
+  const slaPri = {}
+  ;['low','normal','urgent','emergency'].forEach(p => {
+    const pts = regular.filter(t => t.priority===p && t.sla_deadline)
+    const kept = pts.filter(t => !t.sla_breached && t.approved_at)
+    slaPri[p] = { total: pts.length, kept: kept.length, rate: pts.length ? pct(kept.length, pts.length) : null }
+  })
+
+  const exportCSV = () => {
+    const rows = [['Ticket No','Department','Type','Priority','Status','Requested','Approved','Gate Out','Gate In','Distance (km)','Driver','Vehicle','Response (min)','Trip Duration (min)','SLA Target (min)','SLA Deadline','SLA Breached']]
+    T.forEach(t => rows.push([t.ticket_no,t.department,t.vehicle_type_needed,t.priority||'',t.status,t.created_at||'',t.approved_at||'',t.gate_out_at||'',t.gate_in_at||'',t.distance_km||'',t.driver_name||'',t.vehicle?.plate||'',t.response_minutes||'',t.trip_duration_minutes||'',t.sla_target_minutes||'',t.sla_deadline||'',t.sla_breached?'YES':'NO']))
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n')
+    const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv)
+    a.download = `VTS_Report_${_rptFrom}_${_rptTo}.csv`; a.click()
+  }
+  window._exportCSV = exportCSV
+
   document.getElementById('CONTENT').innerHTML = `
-  <div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Total Requests</div><div class="stat-val">${T.length}</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Completion Rate</div><div class="stat-val">${Math.round(done/total*100)}%</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--red)"></div><div class="stat-lbl">Ambulance Trips</div><div class="stat-val">${amb}</div></div>
+  <!-- Header with date filter -->
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+    <div style="font-size:13px;font-weight:700;flex:1">Reports & Analytics</div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <input class="fi" type="date" id="rptFrom" value="${_rptFrom}" style="width:140px;font-size:12px;padding:6px 10px">
+      <span style="font-size:12px;color:var(--text3)">to</span>
+      <input class="fi" type="date" id="rptTo" value="${_rptTo}" style="width:140px;font-size:12px;padding:6px 10px">
+      <button class="btn btn-pri btn-sm" onclick="_rptFrom=document.getElementById('rptFrom').value;_rptTo=document.getElementById('rptTo').value;renderReportContent()">Apply</button>
+      <button class="btn btn-ghost btn-sm" onclick="_rptFrom='';_rptTo='';renderReports()">Reset</button>
+      <button class="btn btn-ghost btn-sm" onclick="window._exportCSV()">⬇ Export CSV</button>
+    </div>
+  </div>
+
+  <!-- Tab navigation -->
+  <div style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap">
+    ${['overview','sla','fleet','trends','raw'].map(tab => `
+      <button class="btn ${_rptTab===tab?'btn-pri':'btn-ghost'} btn-sm" onclick="_rptTab='${tab}';renderReportContent()">
+        ${{overview:'📊 Overview',sla:'⏱ SLA',fleet:'🚗 Fleet',trends:'📈 Trends',raw:'📋 Raw Data'}[tab]}
+      </button>`).join('')}
+  </div>
+
+  <!-- ── OVERVIEW TAB ── -->
+  ${_rptTab==='overview' ? `
+  <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px">
+    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Total Requests</div><div class="stat-val">${T.length}</div><div class="stat-sub">${_rptFrom} → ${_rptTo}</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Completion Rate</div><div class="stat-val">${pct(completed.length,total)}%</div><div class="stat-sub">${completed.length} completed</div></div>
+    <div class="stat"><div class="stat-bar" style="background:${slaRate>=80?'var(--green)':slaRate>=60?'var(--amber)':'var(--red)'}"></div><div class="stat-lbl">SLA Compliance</div><div class="stat-val" style="color:${slaRate>=80?'var(--green)':slaRate>=60?'var(--amber)':'var(--red)'}">${slaRate!=null?slaRate+'%':'—'}</div><div class="stat-sub">${slaKept.length}/${withSLA.length} on time</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Response Time</div><div class="stat-val" style="font-size:16px">${avgResp!=null?fmtMins(avgResp):'—'}</div><div class="stat-sub">Submission → Approval</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px">
+    <div class="stat"><div class="stat-bar" style="background:var(--red)"></div><div class="stat-lbl">Ambulance Trips</div><div class="stat-val">${ambulance.length}</div><div class="stat-sub">${pct(ambulance.length,total)}% of total</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--purple)"></div><div class="stat-lbl">Rejected</div><div class="stat-val">${rejected.length}</div><div class="stat-sub">${pct(rejected.length,total)}% rejection rate</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Total Distance</div><div class="stat-val" style="font-size:16px">${totalKm.toLocaleString()} km</div><div class="stat-sub">All completed trips</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Trip Duration</div><div class="stat-val" style="font-size:16px">${avgDur!=null?fmtMins(avgDur):'—'}</div><div class="stat-sub">Gate Out → Gate In</div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
-    <div class="card"><div class="card-title" style="margin-bottom:13px">By Status</div>
-      ${Object.entries(bySt).map(([s,c])=>`<div class="rbar">${badge(s)}<div class="rbar-track"><div class="rbar-fill" style="width:${Math.round(c/total*100)}%;background:var(--pri)"></div></div><span style="font-size:11px;font-weight:700;min-width:18px;text-align:right">${c}</span></div>`).join('')}
+    <div class="card">
+      <div class="card-title" style="margin-bottom:13px">Tickets by Status</div>
+      ${[['pending-approval',pending.length,'var(--amber)'],['approved',active.filter(t=>t.status==='approved').length,'var(--green)'],['assigned',active.filter(t=>t.status==='assigned').length,'var(--purple)'],['on-trip',active.filter(t=>t.status==='on-trip').length,'var(--pri)'],['completed',completed.length,'var(--teal)'],['rejected',rejected.length,'var(--red)'],['cancelled',cancelled.length,'#94a3b8']].map(([s,c,col])=>rbar2(badge(s),c,total,col)).join('')}
     </div>
-    <div class="card"><div class="card-title" style="margin-bottom:13px">Top Departments</div>
-      ${Object.entries(byDept).sort((a,b)=>b[1]-a[1]).slice(0,7).map(([d,c])=>`<div class="rbar"><span style="font-size:11px;font-weight:600;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d}</span><div class="rbar-track"><div class="rbar-fill" style="width:${Math.round(c/total*100)}%;background:var(--teal)"></div></div><span style="font-size:11px;font-weight:700;min-width:18px;text-align:right">${c}</span></div>`).join('')}
+    <div class="card">
+      <div class="card-title" style="margin-bottom:13px">By Priority Level</div>
+      ${[['Emergency 🔴',byPri.emergency,'#dc2626'],['Urgent 🟠',byPri.urgent,'#d97706'],['Normal 🟡',byPri.normal,'#0c6fdb'],['Low 🟢',byPri.low,'#16a34a']].map(([l,c,col])=>rbar2(l,c,regular.length,col)).join('')}
+      <div style="font-size:10.5px;color:var(--text3);margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">Regular vehicles only. Ambulance trips excluded.</div>
     </div>
   </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:13px">Top Requesting Departments</div>
+      ${topDepts.map(([d,c])=>rbar2(d,c,topDepts[0][1],'var(--teal)')).join('')}
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:13px">Top Drivers by Trips Completed</div>
+      ${topDrivers.length ? topDrivers.map(([d,c])=>rbar2(d,c,topDrivers[0][1],'var(--purple)')).join('') : '<div style="font-size:12px;color:var(--text3)">No completed trips yet</div>'}
+    </div>
+  </div>` : ''}
+
+  <!-- ── SLA TAB ── -->
+  ${_rptTab==='sla' ? `
+  <div class="info ${slaRate>=80?'info-green':slaRate>=60?'info-amber':'info-red'}" style="margin-bottom:16px">
+    <strong>SLA Compliance Rate: ${slaRate!=null?slaRate+'%':'No data yet'}</strong>
+    ${slaRate!=null ? ` — ${slaRate>=80?'✅ Good. Meeting hospital transport SLA targets.':slaRate>=60?'⚠️ Fair. Needs improvement — review pending ticket response times.':'❌ Poor. Critical SLA breaches detected. Escalate to management.'}` : ' — Create tickets with priority levels to start tracking SLA.'}
+  </div>
+  <div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">SLA Met</div><div class="stat-val" style="color:var(--green)">${slaKept.length}</div><div class="stat-sub">Approved within target</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--red)"></div><div class="stat-lbl">SLA Breached</div><div class="stat-val" style="color:var(--red)">${slaBreached.length}</div><div class="stat-sub">Past approval deadline</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Avg Response Time</div><div class="stat-val" style="font-size:16px">${avgResp!=null?fmtMins(avgResp):'—'}</div><div class="stat-sub">All approved tickets</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Currently at Risk</div><div class="stat-val" style="color:${pending.filter(t=>t.sla_deadline&&new Date(t.sla_deadline)<new Date()).length>0?'var(--red)':'var(--green)'}">${pending.filter(t=>t.sla_deadline&&new Date(t.sla_deadline)<new Date()).length}</div><div class="stat-sub">Pending past deadline</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:4px">SLA Compliance by Priority</div>
+      <div style="font-size:10.5px;color:var(--text3);margin-bottom:13px">Target: 80%+ compliance per priority level</div>
+      ${[['Emergency','15 min',slaPri.emergency],['Urgent','1 hour',slaPri.urgent],['Normal','4 hours',slaPri.normal],['Low','24 hours',slaPri.low]].map(([label,target,d]) =>
+        `<div style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:11.5px;font-weight:700">${label} <span style="font-weight:400;color:var(--text3)">(${target} SLA)</span></span>
+            <span style="font-size:11.5px;font-weight:700;color:${d.rate==null?'var(--text3)':d.rate>=80?'var(--green)':d.rate>=60?'var(--amber)':'var(--red)'}">${d.rate!=null?d.rate+'%':'—'}</span>
+          </div>
+          <div style="height:8px;background:var(--bg);border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${d.rate||0}%;background:${d.rate==null?'#cbd5e1':d.rate>=80?'var(--green)':d.rate>=60?'var(--amber)':'var(--red)'};border-radius:4px;transition:width .4s"></div>
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">${d.kept}/${d.total} tickets on time</div>
+        </div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:13px">SLA Breach Details</div>
+      ${slaBreached.length === 0 ? '<div style="font-size:12px;color:var(--text3);padding:8px 0">No SLA breaches in this period. 🎉</div>' :
+        slaBreached.slice(0,8).map(t => `
+        <div style="padding:9px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div>
+            <div style="font-size:11.5px;font-weight:700">${t.ticket_no} — ${t.department}</div>
+            <div style="font-size:10.5px;color:var(--text3)">${t.priority?.toUpperCase()} · SLA: ${fmtMins(t.sla_target_minutes)}</div>
+            <div style="font-size:10.5px;color:var(--text3)">Deadline: ${fmtDT(t.sla_deadline)}</div>
+            ${t.response_minutes ? `<div style="font-size:10.5px;color:var(--red)">Actual response: ${fmtMins(t.response_minutes)}</div>` : ''}
+          </div>
+          <span style="background:var(--red-s);color:var(--red);font-size:9px;font-weight:700;padding:3px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0">Breached</span>
+        </div>`).join('')}
+      ${slaBreached.length > 8 ? `<div style="font-size:10.5px;color:var(--text3);padding-top:8px">+${slaBreached.length-8} more — export CSV for full list</div>` : ''}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:4px">Response Time Distribution</div>
+    <div style="font-size:10.5px;color:var(--text3);margin-bottom:13px">How long it takes from submission to approval</div>
+    ${(() => {
+      const buckets = [['Under 15 min',0,15],['15–60 min',15,60],['1–4 hours',60,240],['4–24 hours',240,1440],['Over 24 hours',1440,999999]]
+      const counts = buckets.map(([l,lo,hi]) => [l, withResp.filter(t => t.response_minutes>=lo && t.response_minutes<hi).length])
+      const maxC = Math.max(...counts.map(([,c])=>c),1)
+      return counts.map(([l,c],i) => rbar2(l,c,maxC,['var(--green)','var(--teal)','var(--pri)','var(--amber)','var(--red)'][i])).join('')
+    })()}
+  </div>` : ''}
+
+  <!-- ── FLEET TAB ── -->
+  ${_rptTab==='fleet' ? `
+  <div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Total Distance</div><div class="stat-val" style="font-size:16px">${totalKm.toLocaleString()} km</div><div class="stat-sub">All completed trips</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Avg Trip Distance</div><div class="stat-val" style="font-size:16px">${completed.filter(t=>t.distance_km).length ? Math.round(totalKm/completed.filter(t=>t.distance_km).length)+' km' : '—'}</div><div class="stat-sub">Per completed trip</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--purple)"></div><div class="stat-lbl">Avg Trip Duration</div><div class="stat-val" style="font-size:16px">${avgDur!=null?fmtMins(avgDur):'—'}</div><div class="stat-sub">Gate Out → Gate In</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Vehicles Used</div><div class="stat-val">${Object.keys(byVehicle).length}</div><div class="stat-sub">Distinct plates</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:13px">Most Used Vehicles</div>
+      ${topVehicles.length ? topVehicles.map(([p,c])=>rbar2(p,c,topVehicles[0][1],'var(--pri)',' trips')).join('') : '<div style="font-size:12px;color:var(--text3)">No completed trips yet</div>'}
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:13px">Driver Performance</div>
+      <div style="font-size:10.5px;color:var(--text3);margin-bottom:10px">Trips completed per driver</div>
+      ${topDrivers.length ? topDrivers.map(([d,c])=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--purple-s);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--purple);flex-shrink:0">${ini(d)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d}</div>
+            <div style="height:4px;background:var(--bg);border-radius:2px;margin-top:4px;overflow:hidden"><div style="height:100%;width:${pct(c,topDrivers[0][1])}%;background:var(--purple);border-radius:2px"></div></div>
+          </div>
+          <span style="font-size:12px;font-weight:700;color:var(--purple);flex-shrink:0">${c}</span>
+        </div>`).join('') : '<div style="font-size:12px;color:var(--text3)">No completed trips yet</div>'}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:13px">Distance by Department</div>
+    ${(() => {
+      const deptKm = {}
+      completed.filter(t=>t.distance_km).forEach(t=>{ deptKm[t.department]=(deptKm[t.department]||0)+t.distance_km })
+      const sorted = Object.entries(deptKm).sort((a,b)=>b[1]-a[1]).slice(0,8)
+      const maxKm = sorted[0]?.[1]||1
+      return sorted.map(([d,k])=>rbar2(d,k,maxKm,'var(--teal)',' km')).join('') || '<div style="font-size:12px;color:var(--text3)">No distance data yet</div>'
+    })()}
+  </div>` : ''}
+
+  <!-- ── TRENDS TAB ── -->
+  ${_rptTab==='trends' ? `
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title" style="margin-bottom:4px">Monthly Request Volume</div>
+    <div style="font-size:10.5px;color:var(--text3);margin-bottom:16px">Total tickets submitted per month</div>
+    ${months.length === 0 ? '<div style="font-size:12px;color:var(--text3)">No data in selected range</div>' : `
+    <div style="display:flex;align-items:flex-end;gap:8px;height:120px">
+      ${months.map(([m,v]) => `
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="font-size:10px;font-weight:700;color:var(--text2)">${v.total}</div>
+          <div style="width:100%;background:var(--pri);border-radius:4px 4px 0 0;height:${Math.round(v.total/maxMonth*100)}px;min-height:4px"></div>
+          <div style="font-size:9px;color:var(--text3);white-space:nowrap">${m.slice(5)}</div>
+        </div>`).join('')}
+    </div>`}
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:13px">Monthly Completion Rate</div>
+      ${months.map(([m,v]) => `<div class="rbar">
+        <span style="font-size:11px;font-weight:600;min-width:55px">${m}</span>
+        <div class="rbar-track"><div class="rbar-fill" style="width:${v.total?pct(v.done,v.total):0}%;background:var(--green)"></div></div>
+        <span style="font-size:11px;font-weight:700;min-width:35px;text-align:right">${v.total?pct(v.done,v.total):0}%</span>
+      </div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:13px">Monthly SLA Breaches</div>
+      ${months.map(([m,v]) => `<div class="rbar">
+        <span style="font-size:11px;font-weight:600;min-width:55px">${m}</span>
+        <div class="rbar-track"><div class="rbar-fill" style="width:${v.total?pct(v.breached,v.total):0}%;background:var(--red)"></div></div>
+        <span style="font-size:11px;font-weight:700;min-width:35px;text-align:right;color:${v.breached>0?'var(--red)':'var(--green)'}">${v.breached}</span>
+      </div>`).join('')}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:4px">Peak Request Days</div>
+    <div style="font-size:10.5px;color:var(--text3);margin-bottom:13px">Which day of the week has most requests</div>
+    ${(() => {
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+      const dayCounts = Array(7).fill(0)
+      T.forEach(t => { if (t.created_at) dayCounts[new Date(t.created_at).getDay()]++ })
+      const maxDay = Math.max(...dayCounts, 1)
+      return days.map((d,i) => rbar2(d, dayCounts[i], maxDay, 'var(--teal)')).join('')
+    })()}
+  </div>` : ''}
+
+  <!-- ── RAW DATA TAB ── -->
+  ${_rptTab==='raw' ? `
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+    <input class="fi" id="rawSearch" placeholder="Search tickets..." style="flex:1;max-width:260px;font-size:12px;padding:7px 11px" oninput="filterRawReport(this.value)">
+    <span style="font-size:11px;color:var(--text3)">${T.length} records</span>
+    <button class="btn btn-ghost btn-sm" onclick="window._exportCSV()">⬇ CSV</button>
+  </div>
   <div class="card card-np" style="overflow:hidden">
-    <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">Full Report</div><button class="btn btn-ghost btn-sm" onclick="alert('Export to CSV — connect to a backend export endpoint.')">Export CSV</button></div>
-    <div class="tbl-wrap"><table class="tbl">
-      <thead><tr><th>Ticket</th><th>Dept</th><th>Type</th><th>Status</th><th>Date</th><th>Driver</th><th>Vehicle</th><th>Gate Out</th><th>Gate In</th><th>Km</th></tr></thead>
-      <tbody>${T.map(t=>`<tr>
-        <td>${chip(t.ticket_no)}</td><td style="font-size:11px;font-weight:700">${t.department||'—'}</td>
-        <td>${typeBadge(t.vehicle_type_needed)}</td><td>${badge(t.status)}</td>
-        <td style="font-size:11px;white-space:nowrap">${fmtDate(t.departure_at)}</td>
-        <td style="font-size:11px">${t.driver_name||'—'}</td>
-        <td style="font-size:11px">${t.vehicle?.plate||'—'}</td>
-        <td style="font-size:10.5px;color:var(--text3)">${fmtDT(t.gate_out_at)}</td>
-        <td style="font-size:10.5px;color:var(--text3)">${fmtDT(t.gate_in_at)}</td>
-        <td style="font-size:11px">${t.distance_km!=null?t.distance_km+' km':'—'}</td>
-      </tr>`).join('')}</tbody>
-    </table></div>
-  </div>`
+  <div class="tbl-wrap" id="rawTbl"><table class="tbl">
+    <thead><tr>
+      <th>Ticket</th><th>Dept</th><th>Type</th><th>Priority</th><th>Status</th>
+      <th>Requested</th><th>Response</th><th>SLA</th><th>Duration</th><th>Distance</th><th>Driver</th>
+    </tr></thead>
+    <tbody id="rawBody">
+    ${T.map(t => `<tr>
+      <td>${chip(t.ticket_no)}</td>
+      <td style="font-size:11px;font-weight:700;max-width:110px">${t.department||'—'}</td>
+      <td>${typeBadge(t.vehicle_type_needed)}</td>
+      <td><span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;background:${{low:'var(--green-s)',normal:'var(--pri-s)',urgent:'var(--amber-s)',emergency:'var(--red-s)'}[t.priority]||'var(--bg)'};color:${{low:'var(--green)',normal:'var(--pri)',urgent:'var(--amber)',emergency:'var(--red)'}[t.priority]||'var(--text3)'}">${(t.priority||'—').toUpperCase()}</span></td>
+      <td>${badge(t.status)}</td>
+      <td style="font-size:10.5px;white-space:nowrap;color:var(--text3)">${fmtDate(t.created_at)}</td>
+      <td style="font-size:11px;text-align:center">${t.response_minutes!=null?fmtMins(t.response_minutes):'—'}</td>
+      <td style="text-align:center">
+        ${t.sla_target_minutes ? `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;background:${t.sla_breached?'var(--red-s)':'var(--green-s)'};color:${t.sla_breached?'var(--red)':'var(--green)'}">${t.sla_breached?'Breached':'Met'}</span>` : '<span style="color:var(--text3);font-size:10px">N/A</span>'}
+      </td>
+      <td style="font-size:11px;text-align:center">${t.trip_duration_minutes!=null?fmtMins(t.trip_duration_minutes):'—'}</td>
+      <td style="font-size:11px;text-align:center">${t.distance_km!=null?t.distance_km+' km':'—'}</td>
+      <td style="font-size:11px">${t.driver_name||'—'}</td>
+    </tr>`).join('')}
+    </tbody>
+  </table></div></div>` : ''}
+  `
+  window._rawData = T
+}
+
+function filterRawReport(q) {
+  const qq = q.toLowerCase()
+  const rows = (window._rawData||[]).filter(t =>
+    (t.ticket_no||'').toLowerCase().includes(qq) ||
+    (t.department||'').toLowerCase().includes(qq) ||
+    (t.driver_name||'').toLowerCase().includes(qq)
+  )
+  const tbody = document.getElementById('rawBody')
+  if (!tbody) return
+  tbody.innerHTML = rows.map(t => `<tr>
+    <td>${chip(t.ticket_no)}</td>
+    <td style="font-size:11px;font-weight:700">${t.department||'—'}</td>
+    <td>${typeBadge(t.vehicle_type_needed)}</td>
+    <td style="font-size:10px;font-weight:700">${(t.priority||'—').toUpperCase()}</td>
+    <td>${badge(t.status)}</td>
+    <td style="font-size:10.5px;white-space:nowrap;color:var(--text3)">${fmtDate(t.created_at)}</td>
+    <td style="font-size:11px;text-align:center">${t.response_minutes!=null?fmtMins(t.response_minutes):'—'}</td>
+    <td style="text-align:center">${t.sla_target_minutes?`<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;background:${t.sla_breached?'var(--red-s)':'var(--green-s)'};color:${t.sla_breached?'var(--red)':'var(--green)'}">${t.sla_breached?'Breached':'Met'}</span>`:'—'}</td>
+    <td style="font-size:11px;text-align:center">${t.trip_duration_minutes!=null?fmtMins(t.trip_duration_minutes):'—'}</td>
+    <td style="font-size:11px;text-align:center">${t.distance_km!=null?t.distance_km+' km':'—'}</td>
+    <td style="font-size:11px">${t.driver_name||'—'}</td>
+  </tr>`).join('')
 }
 
 // ════════════════════════════════════════════════
