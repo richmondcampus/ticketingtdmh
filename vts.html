@@ -322,34 +322,30 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
       <div class="sb-cross" style="width:36px;height:36px;border-radius:9px"><svg viewBox="0 0 18 18" fill="none"><rect x="7" y="1" width="4" height="16" rx="2" fill="#fff"/><rect x="1" y="7" width="16" height="4" rx="2" fill="#fff"/></svg></div>
       <div><div style="font-size:14px;font-weight:700">TDMH VTS</div><div style="font-size:11px;color:var(--text3)">Vehicle Ticketing System</div></div>
     </div>
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:22px">Sign in to your account</h2>
-    <div class="fg"><label class="fl">Username</label><input class="fi" type="text" id="loginUsername" placeholder="e.g. admin" autocomplete="username" style="text-transform:lowercase"></div>
-    <div class="fg">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <label class="fl" style="margin-bottom:0">Password</label>
-        <button onclick="showForgotPassword()" style="font-size:11px;color:var(--pri);background:none;border:none;cursor:pointer;padding:0">Forgot password?</button>
-      </div>
-      <input class="fi" type="password" id="loginPw" placeholder="••••••••" autocomplete="current-password">
-    </div>
-    <div id="loginErr" style="display:none;background:var(--red-s);color:var(--red);padding:9px 12px;border-radius:8px;font-size:12px;margin-bottom:12px;border:1px solid rgba(220,38,38,.2)"></div>
-    <button class="btn btn-pri" style="width:100%;justify-content:center;padding:10px" onclick="handleLogin()" id="loginBtn">Sign in</button>
 
-    <!-- Forgot Password Panel (hidden by default) -->
-    <div id="forgotPanel" style="display:none;margin-top:16px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:12px">
-      <div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Reset Password</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Enter your email address and we'll send you a reset link.</div>
-      <input class="fi" type="email" id="resetEmail" placeholder="your@email.com" style="margin-bottom:8px">
-      <div id="resetMsg" style="display:none;font-size:11.5px;padding:8px 10px;border-radius:8px;margin-bottom:8px"></div>
-      <div style="display:flex;gap:7px">
-        <button class="btn btn-ghost btn-sm" onclick="hideForgotPassword()" style="flex:1;justify-content:center">Cancel</button>
-        <button class="btn btn-pri btn-sm" onclick="doForgotPassword()" id="resetBtn" style="flex:1;justify-content:center">Send Reset Link</button>
-      </div>
+    <!-- Login form -->
+    <div id="loginForm">
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:22px">Sign in to your account</h2>
+      <div class="fg"><label class="fl">Username</label><input class="fi" type="text" id="loginUsername" placeholder="e.g. admin" autocomplete="username" style="text-transform:lowercase"></div>
+      <div class="fg"><label class="fl">Password</label><input class="fi" type="password" id="loginPw" placeholder="••••••••" autocomplete="current-password"></div>
+      <div id="loginErr" style="display:none;background:var(--red-s);color:var(--red);padding:9px 12px;border-radius:8px;font-size:12px;margin-bottom:12px;border:1px solid rgba(220,38,38,.2)"></div>
+      <button class="btn btn-pri" style="width:100%;justify-content:center;padding:10px" onclick="handleLogin()" id="loginBtn">Sign in</button>
+      <p style="font-size:11.5px;color:var(--text3);text-align:center;margin-top:16px">
+        <span onclick="showForgotPanel()" style="color:var(--pri);cursor:pointer;text-decoration:underline">Forgot password?</span>
+        &nbsp;·&nbsp; Contact your administrator if you cannot log in.
+      </p>
     </div>
 
-    <p style="font-size:11.5px;color:var(--text3);text-align:center;margin-top:16px">
-      <span onclick="openForgotPassword()" style="color:var(--pri);cursor:pointer;text-decoration:underline">Forgot password?</span>
-      &nbsp;·&nbsp; Contact your administrator if you cannot log in.
-    </p>
+    <!-- Forgot Password panel (replaces login form) -->
+    <div id="forgotPanel" style="display:none">
+      <button onclick="hideForgotPanel()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:0;margin-bottom:16px;display:flex;align-items:center;gap:4px">← Back to sign in</button>
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:8px">Forgot Password</h2>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:20px">Enter your username or email. We'll send a <strong>confirmation link</strong> to your registered email first before resetting your password.</p>
+      <div class="fg"><label class="fl">Username or Email</label><input class="fi" id="fpUsername" placeholder="e.g. admin or user@email.com" autocomplete="username"></div>
+      <div id="fpMsg" style="display:none;padding:11px 13px;border-radius:9px;font-size:12.5px;margin-bottom:14px"></div>
+      <button class="btn btn-pri" style="width:100%;justify-content:center;padding:10px" id="fpBtn" onclick="doForgotPassword()">Send Confirmation Email</button>
+      <p style="font-size:11.5px;color:var(--text3);text-align:center;margin-top:14px">A confirmation link will be sent to your registered email. You must click it to proceed with the reset.</p>
+    </div>
   </div>
 </div>
 
@@ -649,6 +645,21 @@ async function handleLogin() {
 document.addEventListener('DOMContentLoaded', () => {
   if (loadSession() && currentProfile) { showApp(); return }
   showLogin()
+  // Handle redirect back from password reset confirmation link
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('pw_reset') === 'success') {
+    window.history.replaceState({}, '', window.location.pathname)
+    setTimeout(() => {
+      const err = document.getElementById('loginErr')
+      if (err) {
+        err.style.display = 'block'
+        err.style.background = 'var(--green-s)'
+        err.style.color = 'var(--green)'
+        err.style.border = '1px solid rgba(22,163,74,.3)'
+        err.innerHTML = '✓ Password reset confirmed! Check your email for your temporary password, then log in below.'
+      }
+    }, 300)
+  }
   const pwEl = document.getElementById('loginPw')
   if (pwEl) pwEl.addEventListener('keydown', e => { if(e.key==='Enter') handleLogin() })
   const unEl = document.getElementById('loginUsername')
@@ -663,16 +674,24 @@ async function handleSignOut() {
 }
 
 // ── Forgot Password (Supabase Auth users only) ──────
-function showForgotPassword() {
+// ── Forgot Password Panel ────────────────────────
+function showForgotPanel() {
+  document.getElementById('loginForm').style.display = 'none'
   document.getElementById('forgotPanel').style.display = 'block'
-  document.getElementById('resetEmail').focus()
+  document.getElementById('fpUsername').value = ''
+  document.getElementById('fpMsg').style.display = 'none'
+  document.getElementById('fpBtn').disabled = false
+  document.getElementById('fpBtn').textContent = 'Send Temporary Password'
+  const fpEl = document.getElementById('fpUsername')
+  fpEl.focus()
+  fpEl.onkeydown = e => { if(e.key==='Enter') doForgotPassword() }
 }
-function hideForgotPassword() {
+function hideForgotPanel() {
   document.getElementById('forgotPanel').style.display = 'none'
-  document.getElementById('resetMsg').style.display = 'none'
-  document.getElementById('resetEmail').value = ''
+  document.getElementById('loginForm').style.display = 'block'
 }
-// ── Change Password (auth-aware) ────────────────────
+
+// ── Change Password ────────────────────
 function openChangePassword() {
   closeSidebar()
   openMO('Change Password',
@@ -706,62 +725,35 @@ async function doChangePassword() {
   alert('Password updated successfully!')
 }
 
-// Forgot password — sends OTP via our Edge Function
-function openForgotPassword() {
-  openMO('Forgot Password',
-    `<div class="info info-blue" style="margin-bottom:14px">
-       Enter your <strong>username</strong>. A temporary password will be sent to your registered email.
-     </div>
-     <div class="fg"><label class="fl">Username</label><input class="fi" id="fpUsername" placeholder="e.g. admin" style="text-transform:lowercase"></div>
-     <div id="fpMsg" style="display:none;font-size:12px;padding:10px 13px;border-radius:9px;margin-top:4px"></div>`,
-    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-pri" id="fpBtn" onclick="doForgotPassword()">Send Reset Email</button>`
-  )
-}
-
 async function doForgotPassword() {
-  const username = document.getElementById('fpUsername')?.value?.trim().toLowerCase()
+  const identifier = document.getElementById('fpUsername')?.value?.trim().toLowerCase()
   const btn = document.getElementById('fpBtn')
   const msg = document.getElementById('fpMsg')
-  if (!username) {
-    if (msg) { msg.style.cssText='display:block;background:var(--red-s);color:var(--red);border:1px solid rgba(220,38,38,.3)'; msg.textContent='Please enter your username.' }
+  if (!identifier) {
+    if (msg) { msg.style.cssText='display:block;background:var(--red-s);color:var(--red);border:1px solid rgba(220,38,38,.3);border-radius:9px'; msg.textContent='Please enter your username or email.' }
     return
   }
   btn.disabled=true; btn.textContent='Sending...'
+  if (msg) msg.style.display='none'
 
-  // Look up user email
-  const { data: profile } = await SB.from('users').select('id,email,username,full_name').eq('username', username).single()
-
-  // Always show same message regardless of whether user exists (security)
-  const showSuccess = () => {
-    if (msg) { msg.style.cssText='display:block;background:var(--green-s);color:var(--green);border:1px solid rgba(22,163,74,.3)'; msg.textContent='✓ If your account has a registered email, a temporary password has been sent. Check your inbox.' }
-    btn.disabled=true; btn.textContent='Sent!'
-  }
-
-  if (!profile?.email) { showSuccess(); return }
-
-  // Generate a temporary password
-  const tempPw = Math.random().toString(36).slice(-8) + Math.floor(Math.random()*100)
-
-  // Update DB with temp password
-  await SB.from('users').update({ password: tempPw }).eq('id', profile.id)
-
-  // Send via our Edge Function
-  await fetch(`${SB_URL}/functions/v1/send-email`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'apikey': SB_ANON },
-    body: JSON.stringify({
-      to: [profile.email],
-      type: 'forgot_password',
-      ticket: {
-        full_name: profile.full_name || profile.username,
-        username: profile.username,
-        temp_password: tempPw
-      }
+  try {
+    const res = await fetch(`${SB_URL}/functions/v1/password-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SB_ANON },
+      body: JSON.stringify({ identifier })
     })
-  }).catch(() => {})
-
-  showSuccess()
+    // Always show success (prevents user enumeration)
+    if (msg) {
+      msg.style.cssText='display:block;background:var(--green-s);color:var(--green);border:1px solid rgba(22,163,74,.3);border-radius:9px;line-height:1.5'
+      msg.innerHTML = `<strong>✓ Check your email inbox!</strong><br>
+        If an account matches that username or email, a <strong>confirmation link</strong> has been sent.<br>
+        <span style="font-size:11px;opacity:.8">Click the link in the email to confirm your request. The link expires in 30 minutes.</span>`
+    }
+    btn.disabled=true; btn.textContent='Email Sent!'
+  } catch(e) {
+    if (msg) { msg.style.cssText='display:block;background:var(--red-s);color:var(--red);border:1px solid rgba(220,38,38,.3);border-radius:9px'; msg.textContent='Something went wrong. Please try again.' }
+    btn.disabled=false; btn.textContent='Send Confirmation Email'
+  }
 }
 
 
