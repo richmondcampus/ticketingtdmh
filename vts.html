@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="TDMH VTS">
 <meta name="theme-color" content="#0c2340">
 <title>TDMH VTS — Vehicle Ticketing System</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 /* ── Reset & Base ── */
@@ -1268,6 +1268,7 @@ async function openViewModal(id) {
 function openApproveModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
+  const avD = _drivers.filter(d => d.status === 'available')
   const avV = _vehicles.filter(v => {
     const t = (v.type||'').toLowerCase()
     if (isAmb)  return t.includes('ambulance') || t.includes('bls')
