@@ -150,6 +150,8 @@ body.dark .mob-card{background:var(--card);border-color:var(--border)}
 .badge{display:inline-flex;padding:3px 7px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap}
 .b-overdue{background:#fff1f2;color:#e11d48;border:1px solid #fecdd3;animation:pulse-overdue 2s ease-in-out infinite}
 @keyframes pulse-overdue{0%,100%{opacity:1}50%{opacity:.6}}
+@keyframes slideUp{from{transform:translateX(-50%) translateY(20px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.1)}}
 body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:rgba(225,29,72,.3)}
 .b-pending{background:var(--amber-s);color:var(--amber)}
 .b-approved{background:var(--green-s);color:var(--green)}
@@ -808,6 +810,7 @@ const NAV = [
   { id:'dashboard',    label:'Dashboard',      ic:'⊞', roles:['admin','approver_admin','approver_amb','guard','requester','driver'] },
   { id:'tickets',      label:'All Tickets',    ic:'◈', roles:['admin','approver_admin','approver_amb','guard','requester','driver'], badge: true },
   { id:'new-ticket',   label:'New Request',    ic:'+', roles:['admin','requester'] },
+  { id:'fleet',        label:'Fleet Status',   ic:'🚦', roles:['requester'], tag:'New' },
   { section: 'Fleet' },
   { id:'vehicles',     label:'Vehicles',       ic:'◉', roles:['admin','guard'] },
   { id:'drivers',      label:'Drivers',        ic:'◎', roles:['admin'] },
@@ -859,7 +862,7 @@ const BOT_NAV_MAP = {
   approver_admin:[{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'reports',ic:'📊',lbl:'Reports'},{id:'more',ic:'⋯',lbl:'More'}],
   approver_amb: [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'reports',ic:'📊',lbl:'Reports'},{id:'more',ic:'⋯',lbl:'More'}],
   guard:        [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets'},{id:'vehicles',ic:'🚗',lbl:'Fleet'},{id:'gps',ic:'📍',lbl:'GPS'},{id:'more',ic:'⋯',lbl:'More'}],
-  requester:    [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'My Trips'},{id:'new-ticket',ic:'➕',lbl:'New'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'faq',ic:'❓',lbl:'FAQ'}],
+  requester:    [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'My Trips'},{id:'new-ticket',ic:'➕',lbl:'New'},{id:'fleet',ic:'🚦',lbl:'Fleet'},{id:'faq',ic:'❓',lbl:'FAQ'}],
   driver:       [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'My Trips'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'faq',ic:'❓',lbl:'FAQ'}],
 }
 
@@ -909,7 +912,7 @@ function updateNavBadge(count) {
 function goTo(page) {
   currentPage = page
   closeMoreMenu()
-  const titles = { dashboard:'Dashboard', tickets:'All Tickets', 'new-ticket':'New Vehicle Request', vehicles:'Vehicles', drivers:'Drivers', departments:'Departments', gps:'GPS Tracking', reports:'Reports', audit:'Audit Logs', accounts:'Account Management', 'driver-app':'Driver Mobile App', faq:'FAQ', maintenance:'Maintenance Schedule', templates:'Trip Templates' }
+  const titles = { dashboard:'Dashboard', tickets:'All Tickets', 'new-ticket':'New Vehicle Request', fleet:'Fleet Status', vehicles:'Vehicles', drivers:'Drivers', departments:'Departments', gps:'GPS Tracking', reports:'Reports', audit:'Audit Logs', accounts:'Account Management', 'driver-app':'Driver Mobile App', faq:'FAQ', maintenance:'Maintenance Schedule', templates:'Trip Templates' }
   document.getElementById('pageTitle').textContent = titles[page] || page
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page))
   // Update bottom nav active state
@@ -940,7 +943,7 @@ function subscribeRealtime() {
 // RENDER ROUTER
 // ════════════════════════════════════════════════
 function renderPage(page) {
-  const pages = { dashboard:renderDashboard, tickets:renderTickets, 'new-ticket':renderNewTicket, vehicles:renderVehicles, drivers:renderDrivers, departments:renderDepts, gps:renderGPS, reports:renderReports, audit:renderAudit, accounts:renderAccounts, 'driver-app':renderDriverApp, faq:renderFAQ, maintenance:renderMaintenance, templates:renderTemplates }
+  const pages = { dashboard:renderDashboard, tickets:renderTickets, 'new-ticket':renderNewTicket, fleet:renderFleet, vehicles:renderVehicles, drivers:renderDrivers, departments:renderDepts, gps:renderGPS, reports:renderReports, audit:renderAudit, accounts:renderAccounts, 'driver-app':renderDriverApp, faq:renderFAQ, maintenance:renderMaintenance, templates:renderTemplates }
   const fn = pages[page] || renderDashboard
   fn()
 }
@@ -1421,63 +1424,150 @@ function renderTicketsTable() {
     </tbody>
   </table>
   </div>
-  <!-- Mobile cards view -->
+  <!-- Guard: Kanban Operations Board | Others: Mobile cards -->
   <div class="mob-cards">
-    ${filtered.length===0?`<div style="text-align:center;padding:32px;color:var(--text3)">No tickets found.</div>`:''}
-    ${filtered.map(t => {
-      const acts = []
-      if (role==='admin' && t.status==='pending-approval') {
-        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
-        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
-      }
-      if ((role==='approver_admin') && t.status==='pending-approval' && t.vehicle_type_needed!=='ambulance') {
-        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
-        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
-      }
-      if ((role==='approver_amb') && t.status==='pending-approval' && t.vehicle_type_needed==='ambulance') {
-        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
-        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
-      }
-      if (role==='admin' && t.status==='approved')
-        acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign Driver</button>`)
-      if (role==='guard' && t.status==='assigned') {
-        const depDate2 = t.departure_at ? new Date(t.departure_at) : null
-        const now2 = new Date()
-        const isReady2 = depDate2 && depDate2 <= new Date(now2.getFullYear(), now2.getMonth(), now2.getDate(), 23, 59, 59)
-        if (isReady2) {
-          acts.push(`<button class="btn btn-teal btn-sm" onclick="event.stopPropagation();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle?.plate||t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}')">🚦 Gate Out</button>`)
-        } else if (depDate2) {
-          const daysAway2 = Math.ceil((depDate2 - now2) / (1000*60*60*24))
-          acts.push(`<span class="btn btn-ghost btn-sm" style="color:var(--text3);cursor:default">📅 ${daysAway2 === 1 ? 'Tomorrow' : 'In ' + daysAway2 + 'd'}</span>`)
-        }
-      }
-      if (role==='guard' && t.status==='on-trip')
-        acts.push(`<button class="btn btn-purple btn-sm" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
-      if (role==='requester' && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
-        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-      if (role==='admin' && !['completed','cancelled'].includes(t.status))
-        acts.push(`<button class="btn btn-amber btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-      return `<div class="mob-card" onclick="openViewModal('${t.id}')">
-        <div class="mob-card-hd">
-          <div>
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">${chip(t.ticket_no)} ${typeBadge(t.vehicle_type_needed)}</div>
-            <div class="mob-card-title">${t.department||'—'}</div>
-            <div class="mob-card-sub">${t.purpose||'—'}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0">
-            ${badge(t.status)}
-            ${isOverdue(t)?`<br><span class="badge b-overdue" style="font-size:9px;margin-top:3px">⚠ ${overdueDuration(t)}</span>`:''}
-          </div>
+    ${role === 'guard' ? buildGuardKanban(filtered) : buildMobCards(filtered, role)}</div>`
+}
+
+function buildGuardKanban(tickets) {
+  const now = new Date()
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
+
+  // Group into columns
+  const gateOutNow    = tickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) <= now)
+  const gateOutSoon   = tickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) > now && new Date(t.departure_at) <= new Date(now.getTime()+2*3600000))
+  const gateOutToday  = tickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) > new Date(now.getTime()+2*3600000) && new Date(t.departure_at) <= todayEnd)
+  const onTrip        = tickets.filter(t => t.status==='on-trip')
+  const scheduled     = tickets.filter(t => t.status==='assigned' && (!t.departure_at || new Date(t.departure_at) > todayEnd))
+  const others        = tickets.filter(t => !['assigned','on-trip'].includes(t.status))
+
+  function gateCard(t) {
+    const dep = t.departure_at ? new Date(t.departure_at) : null
+    const depStr = dep ? dep.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
+    const isToday = dep && dep <= todayEnd
+    const canGateOut = isToday
+    const late = dep && dep < now && t.status === 'assigned'
+    return `<div style="background:${late?'#fef2f2':'var(--card)'};border:2px solid ${late?'#fecdd3':'var(--border)'};border-radius:14px;padding:14px;margin-bottom:10px;active:opacity:.8" onclick="openViewModal('${t.id}')">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px">
+        <div>
+          <div style="font-size:14px;font-weight:900;font-family:monospace;color:var(--pri);letter-spacing:.5px">${t.ticket_no||'—'}</div>
+          <div style="font-size:12.5px;font-weight:700;margin-top:3px">${t.department||'—'}</div>
+          <div style="font-size:11.5px;color:var(--text2);margin-top:2px">→ ${t.destination||'—'}</div>
         </div>
-        <div class="mob-card-row">
-          <span>📅 ${fmtDate(t.departure_at||t.created_at)}</span>
-          ${t.driver_name?`<span>· 👤 ${t.driver_name}</span>`:''}
-          ${t.vehicle?.plate?`<span>· 🚗 ${t.vehicle.plate}</span>`:''}
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:22px;font-weight:900;color:${late?'#dc2626':'var(--text1)'};font-family:monospace">${depStr}</div>
+          ${late?'<div style="font-size:10px;font-weight:800;color:#dc2626">OVERDUE</div>':''}
         </div>
-        ${acts.length?`<div class="mob-card-acts" onclick="event.stopPropagation()">${acts.join('')}<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button></div>`:`<div class="mob-card-acts"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View Details</button></div>`}
-      </div>`
-    }).join('')}
-  </div>`
+      </div>
+      <div style="background:var(--bg);border-radius:9px;padding:9px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:11.5px;color:var(--text3)">👤 Driver</span>
+          <span style="font-size:11.5px;font-weight:700">${t.driver_name||'—'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-size:11.5px;color:var(--text3)">🚗 Vehicle</span>
+          <span style="font-size:12px;font-weight:800;font-family:monospace;color:var(--pri)">${t.vehicle?.plate||t.vehicle_plate||'—'}</span>
+        </div>
+      </div>
+      ${canGateOut
+        ? `<button onclick="event.stopPropagation();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle?.plate||t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}')}"
+            style="width:100%;background:#0d9488;color:#fff;border:none;padding:13px;border-radius:10px;font-size:15px;font-weight:900;cursor:pointer;letter-spacing:.3px">
+            🚦 GATE OUT →</button>`
+        : `<div style="background:var(--bg);border-radius:9px;padding:10px;text-align:center;font-size:12px;color:var(--text3);font-weight:600">📅 Not departing today</div>`
+      }</div>`
+  }
+
+  function gateInCard(t) {
+    const exp = t.expected_return_at ? new Date(t.expected_return_at) : null
+    const late = exp && exp < now
+    const expStr = exp ? exp.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : 'Unknown'
+    return `<div style="background:${late?'#fdf4ff':'var(--card)'};border:2px solid ${late?'#e9d5ff':'var(--border)'};border-radius:14px;padding:14px;margin-bottom:10px" onclick="openViewModal('${t.id}')">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px">
+        <div>
+          <div style="font-size:14px;font-weight:900;font-family:monospace;color:#7c3aed">${t.ticket_no||'—'}</div>
+          <div style="font-size:12.5px;font-weight:700;margin-top:3px">${t.department||'—'}</div>
+          <div style="font-size:11.5px;color:var(--text2);margin-top:2px">→ ${t.destination||'—'}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:11px;color:var(--text3)">Expected</div>
+          <div style="font-size:18px;font-weight:900;color:${late?'#dc2626':'#7c3aed'};font-family:monospace">${expStr}</div>
+          ${late?'<div style="font-size:10px;font-weight:800;color:#dc2626">OVERDUE</div>':''}
+        </div>
+      </div>
+      <div style="background:var(--bg);border-radius:9px;padding:9px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:11.5px;color:var(--text3)">👤 Driver</span>
+          <span style="font-size:11.5px;font-weight:700">${t.driver_name||'—'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-size:11.5px;color:var(--text3)">🚗 Vehicle</span>
+          <span style="font-size:12px;font-weight:800;font-family:monospace;color:#7c3aed">${t.vehicle?.plate||t.vehicle_plate||'—'}</span>
+        </div>
+      </div>
+      <button onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')"
+        style="width:100%;background:#7c3aed;color:#fff;border:none;padding:13px;border-radius:10px;font-size:15px;font-weight:900;cursor:pointer">
+        ← GATE IN</button>
+    </div>`
+  }
+
+  const section = (label, color, items, renderFn, emptyMsg='') =>
+    items.length === 0 && !emptyMsg ? '' :
+    `<div style="background:${color};border-radius:16px;padding:14px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.8px;color:rgba(0,0,0,.5);margin-bottom:10px">${label} (${items.length})</div>
+      ${items.length > 0 ? items.map(renderFn).join('') : `<div style="text-align:center;padding:20px;font-size:13px;color:rgba(0,0,0,.4);font-weight:600">${emptyMsg}</div>`}
+    </div>`
+
+  return (
+    section('🚨 Depart Now', '#fee2e2', gateOutNow, gateCard, '') +
+    section('⏰ Departing Soon (2h)', '#fef3c7', gateOutSoon, gateCard, '') +
+    (onTrip.length > 0 ? section('🔵 On Trip — Awaiting Gate-In', '#f0f0ff', onTrip, gateInCard, '') : '') +
+    (gateOutToday.length > 0 ? section('🕐 Later Today', '#f0fdfa', gateOutToday, gateCard, '') : '') +
+    (scheduled.length > 0 ? section('📅 Scheduled (Future)', '#f8fafc', scheduled, gateCard, '') : '') +
+    (gateOutNow.length === 0 && gateOutSoon.length === 0 && onTrip.length === 0 && gateOutToday.length === 0 && scheduled.length === 0
+      ? '<div style="text-align:center;padding:48px 24px;color:var(--text3)"><div style="font-size:40px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:700">All clear at the gate</div><div style="font-size:13px;margin-top:6px">No active gate operations</div></div>'
+      : '') +
+    (others.length > 0 ? `<details style="margin-top:10px"><summary style="font-size:11px;font-weight:700;color:var(--text3);cursor:pointer;padding:10px">Other Tickets (${others.length})</summary><div style="margin-top:8px">${others.map(t => `<div onclick="openViewModal('${t.id}')" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 14px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:12px;font-weight:700;font-family:monospace">${t.ticket_no}</div><div style="font-size:11.5px;color:var(--text2)">${t.department} — ${t.purpose||'—'}</div></div>${badge(t.status)}</div>`).join('')}</div></details>` : '')
+  )
+}
+
+function buildMobCards(filtered, role) {
+  if (filtered.length === 0) return '<div style="text-align:center;padding:32px;color:var(--text3)">No tickets found.</div>'
+  return filtered.map(t => {
+    const acts = []
+    const canApprove =
+      (role==='admin' && t.status==='pending-approval') ||
+      (role==='approver_admin' && t.status==='pending-approval' && t.vehicle_type_needed!=='ambulance') ||
+      (role==='approver_amb' && t.status==='pending-approval' && t.vehicle_type_needed==='ambulance')
+    if (canApprove) {
+      acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
+      acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
+    }
+    if (role==='admin' && t.status==='approved')
+      acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign Driver</button>`)
+    if (role==='requester' && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
+      acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
+    if (role==='admin' && !['completed','cancelled'].includes(t.status))
+      acts.push(`<button class="btn btn-amber btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
+    return `<div class="mob-card" onclick="openViewModal('${t.id}')">
+      <div class="mob-card-hd">
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">${chip(t.ticket_no)} ${typeBadge(t.vehicle_type_needed)}</div>
+          <div class="mob-card-title">${t.department||'—'}</div>
+          <div class="mob-card-sub">${t.purpose||'—'}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          ${badge(t.status)}
+          ${isOverdue(t)?`<br><span class="badge b-overdue" style="font-size:9px;margin-top:3px">⚠ ${overdueDuration(t)}</span>`:''}
+        </div>
+      </div>
+      <div class="mob-card-row">
+        <span>📅 ${fmtDate(t.departure_at||t.created_at)}</span>
+        ${t.driver_name?`<span>· 👤 ${t.driver_name}</span>`:''}
+        ${t.vehicle?.plate||t.vehicle_plate?`<span>· 🚗 ${t.vehicle?.plate||t.vehicle_plate}</span>`:''}
+      </div>
+      ${acts.length?`<div class="mob-card-acts" onclick="event.stopPropagation()">${acts.join('')}<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button></div>`:`<div class="mob-card-acts"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View Details</button></div>`}
+    </div>`
+  }).join('')
 }
 
 // VIEW
@@ -1492,17 +1582,36 @@ async function openViewModal(id) {
     ...(t.gate_out_at?[['Gate Out',fmtDT(t.gate_out_at)]]:[]),
     ...(t.gate_in_at?[['Gate In',fmtDT(t.gate_in_at)]]:[]),
     ...(t.odometer_out&&t.odometer_in?[['Distance',`${t.odometer_in-t.odometer_out} km`]]:[]),
+    ...(t.fuel_consumed_liters?[['Fuel Used', t.fuel_consumed_liters + 'L' + (t.fuel_cost ? ' — ₱' + parseFloat(t.fuel_cost).toLocaleString('en-PH',{minimumFractionDigits:2}) : '')]]:[]),
     ...(t.remarks?[['Remarks',t.remarks,'span2']]:[]),
   ]
+
+  // Rating display for completed trips
+  const ratingHTML = t.status === 'completed'
+    ? `<div style="border-top:1px solid var(--border);margin-top:13px;padding-top:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">TRIP RATING</div>
+        ${t.rating
+          ? `<div style="display:flex;align-items:center;gap:8px">
+              <div style="font-size:20px">${'⭐'.repeat(t.rating)}${'☆'.repeat(5-t.rating)}</div>
+              <div style="font-size:13px;font-weight:700">${t.rating}/5</div>
+            </div>
+            ${t.rating_comment ? `<div style="font-size:12px;color:var(--text2);margin-top:5px;font-style:italic">"${t.rating_comment}"</div>` : ''}`
+          : currentProfile?.id === t.requester_id
+            ? `<button onclick="closeMO();showRatingPrompt('${t.id}','${t.ticket_no}','${t.requester_id}')" class="btn btn-ghost btn-sm">⭐ Rate this trip</button>`
+            : `<span style="font-size:12px;color:var(--text3)">Not yet rated</span>`}
+      </div>`
+    : ''
+
   openMO(`Ticket — ${t.ticket_no}`,
-    `<div style="display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap">${badge(t.status)}${typeBadge(t.vehicle_type_needed)}</div>
+    `<div style="display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap">${badge(t.status)}${typeBadge(t.vehicle_type_needed)}${t.is_advance_booking?'<span style="background:var(--amber-s);color:var(--amber);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">📅 ADVANCE</span>':''}</div>
      ${wfHtml(t.status)}
      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
        ${fields.map(([l,v,s])=>`<div style="background:var(--bg);padding:10px;border-radius:8px;${s==='span2'?'grid-column:span 2':''}">
          <div style="font-size:9.5px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">${l}</div>
-         <div style="font-size:12.5px;font-weight:600">${v}</div>
+         <div style="font-size:12.5px;font-weight:600">${v||'—'}</div>
        </div>`).join('')}
      </div>
+     ${ratingHTML}
      <div style="font-size:10.5px;color:var(--text3);margin-top:13px">Created: ${fmtDT(t.created_at)} · Approver: ${t.vehicle_type_needed==='ambulance'?'Ambulance Approver':'Admin Approver'}</div>`,
     ''
   )
@@ -1847,37 +1956,73 @@ function openGateInModal(id, ticketNo, dest, vehicleId, driverId) {
   openMO(`Gate In — ${ticketNo}`,
     `<div class="info info-green">Vehicle returning from: <strong>${dest}</strong></div>
      <div class="fr">
-       <div class="fg"><label class="fl">Odometer In (km) *</label><input class="fi" type="number" id="odoIn" placeholder="e.g. 42740"></div>
-       <div class="fg"><label class="fl">Fuel on Return</label><select class="fs" id="fuelIn"><option>Full</option><option>3/4</option><option>1/2</option><option>1/4</option></select></div>
+       <div class="fg"><label class="fl">Odometer In (km) *</label><input class="fi" type="number" id="odoIn" placeholder="e.g. 42740" oninput="calcFuelCost()"></div>
+       <div class="fg"><label class="fl">Fuel on Return</label><select class="fs" id="fuelIn"><option>Full</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Empty</option></select></div>
        <div class="fg"><label class="fl">Condition</label><select class="fs" id="condIn"><option>Good</option><option>Fair</option><option>With defects</option></select></div>
+     </div>
+     <div style="border-top:1px solid var(--border);margin:10px 0 14px"></div>
+     <div style="font-size:11.5px;font-weight:700;color:var(--text2);margin-bottom:10px">⛽ Fuel Monitoring</div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Fuel Consumed (L)</label><input class="fi" type="number" step="0.1" id="fuelL" placeholder="e.g. 8.5" oninput="calcFuelCost()"></div>
+       <div class="fg"><label class="fl">Price/Liter (₱)</label><input class="fi" type="number" step="0.01" id="fuelP" value="70.00" oninput="calcFuelCost()"></div>
+       <div class="fg"><label class="fl">Fuel Cost</label>
+         <div class="fi" id="fuelCostDisp" style="background:var(--bg);color:var(--pri);font-weight:700;display:flex;align-items:center">₱ —</div>
+       </div>
      </div>
      <div class="fg"><label class="fl">Trip Remarks</label><textarea class="ft" id="giRem" placeholder="Incidents, observations..."></textarea></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-purple" id="giBtn" onclick="doGateIn('${id}','${ticketNo}','${vehicleId}','${driverId}')">Complete Trip</button>`
   )
+  // Pre-load odoOut for distance calc
+  SB.from('trips').select('odometer_out').eq('id',id).single().then(({data}) => {
+    if (data?.odometer_out) {
+      const el = document.getElementById('odoIn')
+      if (el) el.dataset.odoOut = data.odometer_out
+    }
+  })
+}
+function calcFuelCost() {
+  const liters = parseFloat(document.getElementById('fuelL')?.value)
+  const price  = parseFloat(document.getElementById('fuelP')?.value) || 70
+  const disp   = document.getElementById('fuelCostDisp')
+  if (disp) disp.textContent = liters > 0 ? '₱ ' + (liters * price).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2}) : '₱ —'
 }
 async function doGateIn(id, ticketNo, vehicleId, driverId) {
   const odo = parseInt(document.getElementById('odoIn')?.value)
   if (!odo || odo <= 0) { alert('Valid odometer reading required.'); return }
-  // Fetch odometer out to validate
   const { data: tripCheck } = await SB.from('trips').select('odometer_out').eq('id',id).single()
   if (tripCheck?.odometer_out && odo <= tripCheck.odometer_out) {
     alert(`Odometer In (${odo} km) must be greater than Odometer Out (${tripCheck.odometer_out} km).`); return
   }
+  const fuelL = parseFloat(document.getElementById('fuelL')?.value) || null
+  const fuelP = parseFloat(document.getElementById('fuelP')?.value) || 70
+  const fuelCost = fuelL ? fuelL * fuelP : null
   const btn = document.getElementById('giBtn'); btn.disabled=true; btn.textContent='Recording...'
-  const { error } = await SB.from('trips').update({ status:'completed', guard_in_id:currentProfile?.id, gate_in_at:new Date().toISOString(), odometer_in:odo, fuel_in:document.getElementById('fuelIn')?.value, condition_in:document.getElementById('condIn')?.value, guard_in_remarks:document.getElementById('giRem')?.value }).eq('id',id)
+  const { error } = await SB.from('trips').update({
+    status:'completed', guard_in_id:currentProfile?.id,
+    gate_in_at:new Date().toISOString(), odometer_in:odo,
+    fuel_in:document.getElementById('fuelIn')?.value,
+    condition_in:document.getElementById('condIn')?.value,
+    guard_in_remarks:document.getElementById('giRem')?.value,
+    fuel_consumed_liters: fuelL,
+    fuel_price_per_liter: fuelP,
+    fuel_cost: fuelCost
+  }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Complete Trip'; return }
+  // Log fuel
+  if (fuelL && vehicleId && vehicleId !== 'null') {
+    await SB.from('fuel_logs').insert({ vehicle_id: vehicleId, trip_id: id, liters: fuelL, price_per_liter: fuelP, total_cost: fuelCost, odometer_at: odo, log_type: 'trip', logged_by: currentProfile?.id }).catch(() => {})
+    // Update vehicle odometer
+    await SB.from('vehicles').update({ odometer: odo }).eq('id', vehicleId).catch(() => {})
+  }
   if (driverId && driverId!=='null') await SB.from('drivers').update({ status:'available' }).eq('id',driverId)
   if (vehicleId && vehicleId!=='null') await SB.from('vehicles').update({ status:'available' }).eq('id',vehicleId)
-  await addAudit(id, ticketNo, 'Gate In', `Odometer: ${odo} km — Trip completed`)
-  // Get full trip details for notifications
+  await addAudit(id, ticketNo, 'Gate In', `Odometer: ${odo} km${fuelL?' | Fuel: '+fuelL+'L ₱'+fuelCost?.toFixed(2):''} — Trip completed`)
   const { data: trip } = await SB.from('trips').select('*').eq('id',id).single()
   const approverRole = trip?.vehicle_type_needed === 'ambulance' ? 'approver_amb' : 'approver_admin'
   const approverEmails = await getEmailsForRole(approverRole)
-  // ONLY the specific requester who submitted this ticket
   const requester = await getRequesterContacts(id)
   const tripPayload = { ticket_no: ticketNo, department: trip?.department||'', purpose: trip?.purpose||'', destination: trip?.destination||'', driver_name: trip?.driver_name||'', vehicle_plate: trip?.vehicle_plate||'', gate_out_at: trip?.gate_out_at||'', gate_in_at: trip?.gate_in_at||'', odometer_out: trip?.odometer_out, odometer_in: odo, distance_km: trip?.odometer_out ? odo - trip.odometer_out : null }
-  // Email only → approver, requester, driver (informational — not time-critical)
   await sendEmail(approverEmails, 'trip_completed_approver', tripPayload)
   await sendEmail(requester.emails, 'trip_completed_requester', tripPayload)
   if (driverId && driverId !== 'null') {
@@ -1887,7 +2032,231 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
       if (du?.email) await sendEmail([du.email], 'trip_completed_driver', { ...tripPayload, odometer_in: odo })
     }
   }
-  closeMO(); renderTickets()
+  closeMO()
+  // Show optional rating prompt for requester's trip
+  showRatingPrompt(id, ticketNo, trip?.requester_id)
+  renderTickets()
+}
+
+// ════════════════════════════════════════════════
+// TRIP RATING (optional — shown after gate-in)
+// ════════════════════════════════════════════════
+function showRatingPrompt(tripId, ticketNo, requesterId) {
+  // Only show if the current user is the requester
+  if (!requesterId || requesterId !== currentProfile?.id) return
+  // Small non-blocking toast-style prompt
+  const toast = document.createElement('div')
+  toast.id = 'ratingToast'
+  toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 22px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:9999;max-width:340px;width:90%;animation:slideUp .3s ease'
+  toast.innerHTML = `
+    <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Rate your trip — ${ticketNo}</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:12px">How was your experience?</div>
+    <div style="display:flex;justify-content:center;gap:8px;margin-bottom:14px" id="ratingStars">
+      ${[1,2,3,4,5].map(n => `<span onclick="selectRating(${n},'${tripId}')" data-star="${n}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .15s">⭐</span>`).join('')}
+    </div>
+    <textarea class="ft" id="ratingComment" placeholder="Optional — add a comment..." style="min-height:50px;margin-bottom:10px;font-size:12px"></textarea>
+    <div style="display:flex;gap:8px">
+      <button onclick="document.getElementById('ratingToast').remove()" class="btn btn-ghost" style="flex:1;justify-content:center;font-size:12px">Skip</button>
+      <button onclick="submitRating('${tripId}')" class="btn btn-pri" style="flex:1;justify-content:center;font-size:12px" id="ratingSubmitBtn">Submit Rating</button>
+    </div>`
+  document.body.appendChild(toast)
+}
+let _selectedRating = 0
+function selectRating(n, tripId) {
+  _selectedRating = n
+  document.querySelectorAll('#ratingStars span').forEach((el, i) => {
+    el.style.opacity = i < n ? '1' : '.3'
+    el.style.transform = i < n ? 'scale(1.1)' : 'scale(1)'
+  })
+}
+async function submitRating(tripId) {
+  if (_selectedRating === 0) { alert('Please select a rating.'); return }
+  const comment = document.getElementById('ratingComment')?.value?.trim()
+  await SB.from('trips').update({ rating: _selectedRating, rating_comment: comment||null, rated_at: new Date().toISOString() }).eq('id', tripId).catch(() => {})
+  document.getElementById('ratingToast')?.remove()
+  _selectedRating = 0
+}
+
+// ════════════════════════════════════════════════
+// FLEET VISIBILITY (requester view)
+// ════════════════════════════════════════════════
+async function renderFleet() {
+  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading fleet status...</div>'
+  const dept = currentProfile?.department || ''
+  const role = currentProfile?.role
+
+  // Parallel fetch
+  const [
+    { data: vehicles },
+    { data: drivers },
+    { data: myTrips },
+    { data: allActive },
+    { data: upcoming }
+  ] = await Promise.all([
+    SB.from('vehicles').select('*').order('plate'),
+    SB.from('drivers').select('*').order('full_name'),
+    SB.from('trips').select('*').eq('requester_id', currentProfile?.id).not('status','in','("cancelled","rejected")').order('departure_at',{ascending:false}).limit(20),
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,driver_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,driver_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking').eq('is_advance_booking',true).in('status',['assigned','approved']).gt('departure_at', new Date().toISOString()).order('departure_at',{ascending:true}).limit(20)
+  ])
+
+  const V = vehicles || [], D = drivers || []
+  const availVehicles = V.filter(v => v.status === 'available')
+  const busyVehicles  = V.filter(v => v.status === 'on-trip')
+  const maintVehicles = V.filter(v => v.status === 'maintenance')
+  const availDrivers  = D.filter(d => d.status === 'available')
+  const busyDrivers   = D.filter(d => d.status === 'on-trip')
+  const myPending     = (myTrips||[]).filter(t => t.status === 'pending-approval')
+  const myActive      = (myTrips||[]).filter(t => ['approved','assigned','on-trip'].includes(t.status))
+  const myCompleted   = (myTrips||[]).filter(t => t.status === 'completed')
+
+  // Build vehicle type availability
+  const typeStats = {}
+  for (const v of availVehicles) {
+    const t = (v.type||'').toLowerCase()
+    const key = t.includes('ambulance')||t.includes('bls') ? 'Ambulance' : t.includes('motorcycle') ? 'Motorcycle' : 'Regular'
+    typeStats[key] = (typeStats[key]||0) + 1
+  }
+
+  document.getElementById('CONTENT').innerHTML = `
+  <!-- Header stats -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+    <div class="stat" style="cursor:pointer" onclick="document.getElementById('fleetVehicles').scrollIntoView({behavior:'smooth'})">
+      <div class="stat-bar" style="background:var(--green)"></div>
+      <div class="stat-lbl">Available Vehicles</div>
+      <div class="stat-val" style="color:var(--green)">${availVehicles.length}</div>
+      <div class="stat-sub">of ${V.length} total</div>
+    </div>
+    <div class="stat" onclick="document.getElementById('fleetDrivers').scrollIntoView({behavior:'smooth'})" style="cursor:pointer">
+      <div class="stat-bar" style="background:var(--green)"></div>
+      <div class="stat-lbl">Available Drivers</div>
+      <div class="stat-val" style="color:var(--green)">${availDrivers.length}</div>
+      <div class="stat-sub">of ${D.length} total</div>
+    </div>
+    <div class="stat">
+      <div class="stat-bar" style="background:var(--pri)"></div>
+      <div class="stat-lbl">On Trip Now</div>
+      <div class="stat-val">${busyVehicles.length}</div>
+      <div class="stat-sub">vehicles out</div>
+    </div>
+    <div class="stat">
+      <div class="stat-bar" style="background:var(--amber)"></div>
+      <div class="stat-lbl">My Pending</div>
+      <div class="stat-val" style="color:var(--amber)">${myPending.length}</div>
+      <div class="stat-sub">awaiting approval</div>
+    </div>
+  </div>
+
+  <!-- Vehicle type quickview -->
+  ${Object.keys(typeStats).length > 0 ? `
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    ${Object.entries(typeStats).map(([type, count]) =>
+      '<div style="padding:8px 16px;border-radius:20px;background:var(--green-s);border:1px solid rgba(22,163,74,.2);font-size:12.5px;font-weight:700;color:var(--green)">'
+      + (type==='Ambulance'?'🚑':type==='Motorcycle'?'🏍':'🚙') + ' ' + count + ' ' + type + ' available'
+      + '</div>'
+    ).join('')}
+  </div>` : '<div class="info info-amber" style="margin-bottom:16px">⚠ No vehicles currently available. Consider booking in advance.</div>'}
+
+  <!-- My Active Trips -->
+  ${myActive.length > 0 ? `
+  <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px">🚗 My Active Trips</div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+    ${myActive.map(t => {
+      const isOnTrip = t.status === 'on-trip'
+      return '<div style="background:var(--card);border:1px solid ' + (isOnTrip ? 'var(--green)' : 'var(--border)') + ';border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:12px">'
+        + '<div style="flex:1"><div style="font-size:12px;font-weight:700;font-family:monospace;color:var(--pri);margin-bottom:3px">' + t.ticket_no + '</div>'
+        + '<div style="font-size:12.5px;font-weight:600">' + (t.purpose||'—') + '</div>'
+        + '<div style="font-size:11.5px;color:var(--text2)">→ ' + (t.destination||'—') + '</div>'
+        + (t.driver_name ? '<div style="font-size:11px;color:var(--text3);margin-top:3px">👤 ' + t.driver_name + (t.vehicle_plate ? ' · 🚗 ' + t.vehicle_plate : '') + '</div>' : '')
+        + '</div>' + badge(t.status) + '</div>'
+    }).join('')}
+  </div>` : ''}
+
+  <!-- All Active + Ongoing trips (fleet wide) -->
+  ${(allActive||[]).length > 0 ? `
+  <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px">🌐 Hospital Fleet — Active Now</div>
+  <div class="card card-np" style="overflow:hidden;margin-bottom:20px">
+  <table style="width:100%;border-collapse:collapse">
+    <thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Ticket</th>
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Department</th>
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Destination</th>
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Driver · Vehicle</th>
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Departure</th>
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Status</th>
+    </tr></thead>
+    <tbody>
+    ${(allActive||[]).map((t,i) =>
+      '<tr style="border-bottom:1px solid var(--border)">'
+      + '<td style="padding:12px 16px;font-size:11.5px;font-weight:700;font-family:monospace;color:var(--pri)">' + (t.ticket_no||'—') + '</td>'
+      + '<td style="padding:12px 16px;font-size:12px;font-weight:600">' + (t.department||'—') + '</td>'
+      + '<td style="padding:12px 16px;font-size:11.5px;color:var(--text2)">' + (t.destination||'—') + '</td>'
+      + '<td style="padding:12px 16px;font-size:11px">' + (t.driver_name||'—') + (t.vehicle_plate ? '<br><span style="color:var(--text3);font-family:monospace">' + t.vehicle_plate + '</span>' : '') + '</td>'
+      + '<td style="padding:12px 16px;font-size:11.5px;white-space:nowrap">' + fmtDate(t.departure_at) + '</td>'
+      + '<td style="padding:12px 16px">' + badge(t.status) + '</td>'
+      + '</tr>'
+    ).join('')}
+    </tbody>
+  </table></div>` : ''}
+
+  <!-- Advance Bookings Schedule -->
+  ${(upcoming||[]).length > 0 ? `
+  <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px">📅 Upcoming Scheduled Trips</div>
+  <div class="card card-np" style="overflow:hidden;margin-bottom:20px">
+  <table style="width:100%;border-collapse:collapse">
+    <thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Ticket</th>
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Department</th>
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Destination</th>
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Departure</th>
+      <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">Type</th>
+    </tr></thead>
+    <tbody>
+    ${(upcoming||[]).map(t => {
+      const dep = new Date(t.departure_at)
+      const daysAway = Math.ceil((dep - new Date()) / (1000*60*60*24))
+      const urgency = daysAway <= 1 ? 'var(--red)' : daysAway <= 3 ? 'var(--amber)' : 'var(--text2)'
+      return '<tr style="border-bottom:1px solid var(--border)">'
+        + '<td style="padding:12px 16px;font-size:11.5px;font-weight:700;font-family:monospace;color:var(--pri)">' + (t.ticket_no||'—') + '</td>'
+        + '<td style="padding:12px 16px;font-size:12px;font-weight:600">' + (t.department||'—') + '</td>'
+        + '<td style="padding:12px 16px;font-size:11.5px;color:var(--text2)">' + (t.destination||'—') + '</td>'
+        + '<td style="padding:12px 16px;font-size:11.5px;white-space:nowrap"><div>' + fmtDate(t.departure_at) + '</div>'
+        + '<div style="font-size:10.5px;font-weight:700;color:' + urgency + '">' + (daysAway<=0?'Today':daysAway===1?'Tomorrow':'In '+daysAway+' days') + '</div></td>'
+        + '<td style="padding:12px 16px">' + typeBadge(t.vehicle_type_needed) + '</td>'
+        + '</tr>'
+    }).join('')}
+    </tbody>
+  </table></div>` : ''}
+
+  <!-- Available Vehicles -->
+  <div id="fleetVehicles" style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px">🚗 Available Vehicles (${availVehicles.length})</div>
+  ${availVehicles.length === 0
+    ? '<div class="info info-amber" style="margin-bottom:16px">No vehicles currently available.</div>'
+    : '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:20px">'
+      + availVehicles.map(v =>
+          '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px">'
+          + '<div style="font-size:13px;font-weight:800;font-family:monospace;margin-bottom:4px">' + v.plate + '</div>'
+          + '<div style="font-size:11.5px;color:var(--text2);margin-bottom:6px">' + (v.type||'—') + '</div>'
+          + '<div style="display:flex;align-items:center;justify-content:space-between">'
+          + '<span style="font-size:11px;color:var(--text3)">👥 ' + (v.capacity||4) + ' pax</span>'
+          + '<span style="font-size:10px;font-weight:700;color:var(--green);background:var(--green-s);padding:3px 8px;border-radius:20px">Available</span>'
+          + '</div></div>'
+        ).join('')
+      + '</div>'}
+
+  <!-- Available Drivers -->
+  <div id="fleetDrivers" style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px">👤 Available Drivers (${availDrivers.length})</div>
+  ${availDrivers.length === 0
+    ? '<div class="info info-amber">No drivers currently available.</div>'
+    : '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">'
+      + availDrivers.map(d =>
+          '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px">'
+          + '<div style="font-size:13px;font-weight:700;margin-bottom:3px">' + d.full_name + '</div>'
+          + '<div style="font-size:11px;color:var(--text3);margin-bottom:6px">Shift: ' + (d.shift||'AM') + '</div>'
+          + '<span style="font-size:10px;font-weight:700;color:var(--green);background:var(--green-s);padding:3px 8px;border-radius:20px">Available</span>'
+          + '</div>'
+        ).join('')
+      + '</div>'}`
 }
 
 // ════════════════════════════════════════════════
