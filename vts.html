@@ -751,31 +751,6 @@ function hideForgotPassword() {
   document.getElementById('resetMsg').style.display = 'none'
   document.getElementById('resetEmail').value = ''
 }
-async function doForgotPassword() {
-  const email = document.getElementById('resetEmail')?.value?.trim()
-  const msg = document.getElementById('resetMsg')
-  const btn = document.getElementById('resetBtn')
-  if (!email) {
-    msg.textContent = 'Please enter your email address.'
-    msg.style.cssText = 'display:block;background:var(--red-s);color:var(--red);padding:8px 10px;border-radius:8px;font-size:11.5px'
-    return
-  }
-  btn.disabled=true; btn.textContent='Sending...'
-  const { error } = await SB.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.href
-  })
-  btn.disabled=false; btn.textContent='Send Reset Link'
-  msg.style.display = 'block'
-  if (error) {
-    msg.textContent = 'Error: ' + error.message
-    msg.style.cssText = 'display:block;background:var(--red-s);color:var(--red);padding:8px 10px;border-radius:8px;font-size:11.5px'
-  } else {
-    msg.textContent = '✓ Reset link sent! Check your email inbox (including spam folder).'
-    msg.style.cssText = 'display:block;background:var(--green-s);color:var(--green);padding:8px 10px;border-radius:8px;font-size:11.5px'
-    btn.style.display = 'none'
-  }
-}
-
 // ── Change Password (auth-aware) ────────────────────
 function openChangePassword() {
   closeSidebar()
@@ -821,42 +796,8 @@ async function doChangePassword() {
 }
 
 // Reset password — called after clicking email link
-async function doResetPassword() {
-  const newPw  = document.getElementById('rpNew')?.value
-  const newPw2 = document.getElementById('rpNew2')?.value
-  if (!newPw || !newPw2) { alert('Please fill in both fields.'); return }
-  if (newPw !== newPw2) { alert('Passwords do not match.'); return }
-  if (newPw.length < 6) { alert('Password must be at least 6 characters.'); return }
-  const btn = document.getElementById('rpBtn'); btn.disabled=true; btn.textContent='Saving...'
-  const { error } = await SB.auth.updateUser({ password: newPw })
-  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Set New Password'; return }
-  closeMO()
-  alert('Password updated! Please sign in with your new password.')
-  await SB.auth.signOut()
-  showLogin()
-}
-async function openForgotPassword() {
-  openMO('Forgot Password',
-    `<div class="info info-blue">Enter your email address and we will send you a password reset link.</div>
-     <div class="fg"><label class="fl">Email Address</label><input class="fi" type="email" id="fpEmail" placeholder="your@email.com"></div>`,
-    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-pri" id="fpBtn" onclick="doForgotPassword()">Send Reset Link</button>`
-  )
-}
-async function doForgotPassword() {
-  const email = document.getElementById('fpEmail')?.value?.trim()
-  if (!email) { alert('Please enter your email address.'); return }
-  const btn = document.getElementById('fpBtn'); btn.disabled=true; btn.textContent='Sending...'
-  const { error } = await SB.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.href
-  })
-  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Send Reset Link'; return }
-  closeMO()
-  alert('Password reset link sent! Check your email inbox.')
-}
-
 // ── Forgot Password (Supabase Auth users only) ────────────
-function showForgotPassword() {
+function openForgotPassword() {
   openMO('Forgot Password',
     `<div class="info info-blue" style="margin-bottom:14px">
        Enter your <strong>username</strong>. If your account has a registered email, a password reset link will be sent.
@@ -876,10 +817,10 @@ async function doForgotPassword() {
 
   btn.disabled=true; btn.textContent='Sending...'
 
-  // Look up the user's email
-  const { data: profile } = await SB.from('users').select('email,username').eq('username', username).single()
+  // Look up the user's email — only auth users (admin, approver) can reset via email
+  const { data: profile } = await SB.from('users').select('email,username,auth_id').eq('username', username).single()
 
-  if (!profile?.email || !SUPABASE_AUTH_USERS.includes(username)) {
+  if (!profile?.email || !profile?.auth_id) {
     // Don't reveal if user exists or not — show same message always
     msg.style.display='block'
     msg.style.background='var(--green-s)'
