@@ -813,7 +813,10 @@ async function doForgotPassword() {
   const username = document.getElementById('fpUsername')?.value?.trim().toLowerCase()
   const btn = document.getElementById('fpBtn')
   const msg = document.getElementById('fpMsg')
-  if (!username) { msg.style.display='block'; msg.style.background='var(--red-s)'; msg.style.color='var(--red)'; msg.textContent='Please enter your username.'; return }
+  if (!username) {
+    if (msg) { msg.style.display='block'; msg.style.background='var(--red-s)'; msg.style.color='var(--red)'; msg.style.border='none'; msg.textContent='Please enter your username.' }
+    return
+  }
 
   btn.disabled=true; btn.textContent='Sending...'
 
