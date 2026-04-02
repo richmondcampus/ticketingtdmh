@@ -424,10 +424,9 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 // SUPABASE INIT
 // ════════════════════════════════════════════════
 const { createClient } = supabase
-const SB = createClient(
-  'https://blgscwtseqvhgdoksvjh.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsZ3Njd3RzZXF2aGdkb2tzdmpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0ODkwNzAsImV4cCI6MjA5MDA2NTA3MH0.NoJ8ASqwyJBMCkbufoYZy9iCYkZvZIi6bz2vLamlQG0'
-)
+const SB_URL  = 'https://blgscwtseqvhgdoksvjh.supabase.co'
+const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsZ3Njd3RzZXF2aGdkb2tzdmpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0ODkwNzAsImV4cCI6MjA5MDA2NTA3MH0.NoJ8ASqwyJBMCkbufoYZy9iCYkZvZIi6bz2vLamlQG0'
+const SB = createClient(SB_URL, SB_ANON)
 
 // ════════════════════════════════════════════════
 // SMS — TextBee via Edge Function
@@ -609,28 +608,13 @@ async function fetchProfile(authUser) {
   return data
 }
 
-// ── Session management ──────────────────────────────
-// Users with auth_id → Supabase Auth (admin, approver)
-// Users without auth_id → custom username/password (guards, drivers, etc.)
-const SUPABASE_AUTH_ROLES = ['admin', 'approver_admin', 'approver_amb']
-
+// ════════════════════════════════════════════════
+// AUTH — Pure custom login for all users
+// ════════════════════════════════════════════════
 function loadSession() {
   try {
-    // Check Supabase Auth session first
-    const sbSession = localStorage.getItem('sb-blgscwtseqvhgdoksvjh-auth-token')
-    if (sbSession) {
-      const parsed = JSON.parse(sbSession)
-      if (parsed?.user && parsed?.access_token) {
-        // Will be fully loaded in initApp via getProfileFromAuthUser
-        return false // Let initApp handle it
-      }
-    }
-    // Fallback: custom session (non-auth users)
     const saved = localStorage.getItem('vts_user')
-    if (saved) {
-      currentProfile = JSON.parse(saved)
-      return true
-    }
+    if (saved) { currentProfile = JSON.parse(saved); return true }
   } catch(e) {}
   return false
 }
@@ -644,39 +628,17 @@ async function handleLogin() {
   if (!username || !pw) { err.textContent = 'Please enter your username and password.'; err.style.display = 'block'; return }
   btn.textContent = 'Signing in...'; btn.disabled = true
   try {
-    // First, look up the user to determine if they use Supabase Auth or custom
-    const { data: userRow, error: lookupErr } = await SB
+    const { data, error } = await SB
       .from('users')
       .select('*')
       .eq('username', username)
+      .eq('password', pw)
       .eq('status', 'active')
       .single()
-    if (lookupErr || !userRow) throw new Error('Invalid username or password.')
-
-    if (userRow.auth_id && userRow.email) {
-      // ── Supabase Auth login (admin, approver) ──
-      const { data: authData, error: authErr } = await SB.auth.signInWithPassword({
-        email: userRow.email,
-        password: pw
-      })
-      if (authErr || !authData?.user) throw new Error('Invalid username or password.')
-      currentProfile = userRow
-      // Don't store in localStorage — Supabase Auth handles the session
-      showApp()
-    } else {
-      // ── Custom login (guards, drivers, requesters) ──
-      const { data, error } = await SB
-        .from('users')
-        .select('*')
-        .eq('username', username)
-        .eq('password', pw)
-        .eq('status', 'active')
-        .single()
-      if (error || !data) throw new Error('Invalid username or password.')
-      localStorage.setItem('vts_user', JSON.stringify(data))
-      currentProfile = data
-      showApp()
-    }
+    if (error || !data) throw new Error('Invalid username or password.')
+    localStorage.setItem('vts_user', JSON.stringify(data))
+    currentProfile = data
+    showApp()
   } catch(e) {
     err.textContent = e.message || 'Invalid username or password.'
     err.style.display = 'block'
@@ -684,48 +646,8 @@ async function handleLogin() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // 1. Listen for Supabase Auth state changes — handles password reset redirects
-  SB.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'PASSWORD_RECOVERY') {
-      // User clicked reset link in email — show set new password modal
-      showLogin()
-      openMO('Set New Password',
-        `<div class="info info-green" style="margin-bottom:14px">✓ Reset link verified. Please set your new password.</div>
-         <div class="fg"><label class="fl">New Password *</label><input class="fi" type="password" id="rpNew" placeholder="Min 6 characters"></div>
-         <div class="fg"><label class="fl">Confirm New Password *</label><input class="fi" type="password" id="rpNew2" placeholder="Repeat new password"></div>`,
-        `<button class="btn btn-pri" id="rpBtn" onclick="doResetPassword()">Set New Password</button>`
-      )
-      if (session?.user) {
-        const { data: profile } = await SB.from('users').select('*').eq('email', session.user.email).single()
-        if (profile) { currentProfile = profile }
-      }
-      return
-    }
-    if (event === 'SIGNED_IN' && session?.user && !currentProfile) {
-      const { data: profile } = await SB.from('users').select('*').eq('email', session.user.email).single()
-      if (profile) { currentProfile = profile; showApp() }
-    }
-  })
-
-  // 2. Check for stored custom session (guards, drivers, requesters)
-  if (loadSession() && currentProfile) {
-    showApp()
-    return
-  }
-
-  // 3. Check for active Supabase Auth session (admin on page refresh)
-  const { data: { session } } = await SB.auth.getSession()
-  if (session?.user) {
-    const { data: profile } = await SB.from('users').select('*').eq('email', session.user.email).single()
-    if (profile) {
-      currentProfile = profile
-      showApp()
-      return
-    }
-  }
-
-  // 4. Nothing found — show login
+document.addEventListener('DOMContentLoaded', () => {
+  if (loadSession() && currentProfile) { showApp(); return }
   showLogin()
   const pwEl = document.getElementById('loginPw')
   if (pwEl) pwEl.addEventListener('keydown', e => { if(e.key==='Enter') handleLogin() })
@@ -735,7 +657,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function handleSignOut() {
   if (!confirm('Sign out?')) return
-  await SB.auth.signOut().catch(() => {})
   localStorage.removeItem('vts_user')
   currentProfile = null; currentUser = null
   showLogin()
@@ -754,14 +675,10 @@ function hideForgotPassword() {
 // ── Change Password (auth-aware) ────────────────────
 function openChangePassword() {
   closeSidebar()
-  const isAuthUser = !!currentProfile?.auth_id
   openMO('Change Password',
-    `<div class="info info-blue">
-       Changing password for: <strong>${currentProfile?.username}</strong>
-       ${isAuthUser ? '<br><span style="font-size:11px;opacity:.85">Admin account — secured via email authentication.</span>' : ''}
-     </div>
-     ${!isAuthUser ? `<div class="fg"><label class="fl">Current Password *</label><input class="fi" type="password" id="cpOld" placeholder="Current password"></div>` : ''}
-     <div class="fg"><label class="fl">New Password *</label><input class="fi" type="password" id="cpNew" placeholder="Min 6 characters"></div>
+    `<div class="info info-blue">Changing password for: <strong>${currentProfile?.username}</strong></div>
+     <div class="fg"><label class="fl">Current Password *</label><input class="fi" type="password" id="cpOld" placeholder="Current password"></div>
+     <div class="fg"><label class="fl">New Password *</label><input class="fi" type="password" id="cpNew" placeholder="Min 4 characters"></div>
      <div class="fg"><label class="fl">Confirm New Password *</label><input class="fi" type="password" id="cpNew2" placeholder="Repeat new password"></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="cpBtn" onclick="doChangePassword()">Update Password</button>`
@@ -769,43 +686,36 @@ function openChangePassword() {
 }
 
 async function doChangePassword() {
+  const oldPw  = document.getElementById('cpOld')?.value
   const newPw  = document.getElementById('cpNew')?.value
   const newPw2 = document.getElementById('cpNew2')?.value
-  if (!newPw || !newPw2) { alert('All fields are required.'); return }
+  if (!oldPw || !newPw || !newPw2) { alert('All fields are required.'); return }
   if (newPw !== newPw2) { alert('New passwords do not match.'); return }
-  if (newPw.length < 6) { alert('Password must be at least 6 characters.'); return }
+  if (newPw.length < 4) { alert('New password must be at least 4 characters.'); return }
+  if (oldPw === newPw) { alert('New password must be different from the current one.'); return }
   const btn = document.getElementById('cpBtn'); btn.disabled=true; btn.textContent='Updating...'
-
-  if (currentProfile?.auth_id) {
-    // Supabase Auth user (admin) — no need to verify old password, session already proves identity
-    const { error } = await SB.auth.updateUser({ password: newPw })
-    if (error) { alert(error.message); btn.disabled=false; btn.textContent='Update Password'; return }
-    // Keep public.users in sync
-    await SB.from('users').update({ password: newPw }).eq('id', currentProfile.id)
-  } else {
-    // ── Custom auth user
-    const { data: check } = await SB.from('users').select('id').eq('id', currentProfile.id).eq('password', oldPw).single()
-    if (!check) { alert('Current password is incorrect.'); btn.disabled=false; btn.textContent='Update Password'; return }
-    const { error } = await SB.from('users').update({ password: newPw }).eq('id', currentProfile.id)
-    if (error) { alert(error.message); btn.disabled=false; btn.textContent='Update Password'; return }
-    currentProfile.password = newPw
-    localStorage.setItem('vts_user', JSON.stringify(currentProfile))
-  }
+  // Verify current password
+  const { data: check } = await SB.from('users').select('id').eq('id', currentProfile.id).eq('password', oldPw).single()
+  if (!check) { alert('Current password is incorrect.'); btn.disabled=false; btn.textContent='Update Password'; return }
+  // Update password
+  const { error } = await SB.from('users').update({ password: newPw }).eq('id', currentProfile.id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Update Password'; return }
+  currentProfile.password = newPw
+  localStorage.setItem('vts_user', JSON.stringify(currentProfile))
   closeMO()
   alert('Password updated successfully!')
 }
 
-// Reset password — called after clicking email link
-// ── Forgot Password (Supabase Auth users only) ────────────
+// Forgot password — sends OTP via our Edge Function
 function openForgotPassword() {
   openMO('Forgot Password',
     `<div class="info info-blue" style="margin-bottom:14px">
-       Enter your <strong>username</strong>. If your account has a registered email, a password reset link will be sent.
+       Enter your <strong>username</strong>. A temporary password will be sent to your registered email.
      </div>
      <div class="fg"><label class="fl">Username</label><input class="fi" id="fpUsername" placeholder="e.g. admin" style="text-transform:lowercase"></div>
      <div id="fpMsg" style="display:none;font-size:12px;padding:10px 13px;border-radius:9px;margin-top:4px"></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-pri" id="fpBtn" onclick="doForgotPassword()">Send Reset Link</button>`
+     <button class="btn btn-pri" id="fpBtn" onclick="doForgotPassword()">Send Reset Email</button>`
   )
 }
 
@@ -814,76 +724,44 @@ async function doForgotPassword() {
   const btn = document.getElementById('fpBtn')
   const msg = document.getElementById('fpMsg')
   if (!username) {
-    if (msg) { msg.style.display='block'; msg.style.background='var(--red-s)'; msg.style.color='var(--red)'; msg.style.border='none'; msg.textContent='Please enter your username.' }
+    if (msg) { msg.style.cssText='display:block;background:var(--red-s);color:var(--red);border:1px solid rgba(220,38,38,.3)'; msg.textContent='Please enter your username.' }
     return
   }
-
   btn.disabled=true; btn.textContent='Sending...'
 
-  // Look up the user's email — only auth users (admin, approver) can reset via email
-  const { data: profile } = await SB.from('users').select('email,username,auth_id').eq('username', username).single()
+  // Look up user email
+  const { data: profile } = await SB.from('users').select('id,email,username,full_name').eq('username', username).single()
 
-  if (!profile?.email || !profile?.auth_id) {
-    // Don't reveal if user exists or not — show same message always
-    msg.style.display='block'
-    msg.style.background='var(--green-s)'
-    msg.style.color='var(--green)'
-    msg.style.border='1px solid rgba(22,163,74,.3)'
-    msg.textContent='If your account has a registered email, a reset link has been sent. Check your inbox.'
-    btn.disabled=false; btn.textContent='Send Reset Link'
-    return
-  }
-
-  const { error } = await SB.auth.resetPasswordForEmail(profile.email, {
-    redirectTo: window.location.origin + window.location.pathname + '?reset=1'
-  })
-
-  msg.style.display='block'
-  if (error) {
-    msg.style.background='var(--red-s)'; msg.style.color='var(--red)'; msg.style.border='1px solid rgba(220,38,38,.3)'
-    msg.textContent='Error: ' + error.message
-    btn.disabled=false; btn.textContent='Send Reset Link'
-  } else {
-    msg.style.background='var(--green-s)'; msg.style.color='var(--green)'; msg.style.border='1px solid rgba(22,163,74,.3)'
-    msg.textContent='✓ Reset link sent to ' + profile.email + '. Check your inbox and spam folder.'
+  // Always show same message regardless of whether user exists (security)
+  const showSuccess = () => {
+    if (msg) { msg.style.cssText='display:block;background:var(--green-s);color:var(--green);border:1px solid rgba(22,163,74,.3)'; msg.textContent='✓ If your account has a registered email, a temporary password has been sent. Check your inbox.' }
     btn.disabled=true; btn.textContent='Sent!'
   }
-}
 
-// Handle password reset redirect (when user clicks link in email)
-async function checkPasswordResetRedirect() {
-  const params = new URLSearchParams(window.location.search)
-  if (!params.get('reset')) return
-  const { data: { session } } = await SB.auth.getSession()
-  if (!session) return
-  // User came from reset email — show change password modal
-  openMO('Set New Password',
-    `<div class="info info-green" style="margin-bottom:14px">You are now logged in via reset link. Please set a new password.</div>
-     <div class="fg"><label class="fl">New Password *</label><input class="fi" type="password" id="rpNew" placeholder="Min 6 characters"></div>
-     <div class="fg"><label class="fl">Confirm New Password *</label><input class="fi" type="password" id="rpNew2" placeholder="Repeat new password"></div>`,
-    `<button class="btn btn-pri" id="rpBtn" onclick="doResetPassword()">Set New Password</button>`
-  )
-  // Load profile from session
-  const { data: profile } = await SB.from('users').select('*').eq('email', session.user.email).single()
-  if (profile) { currentProfile = profile; localStorage.setItem('vts_user', JSON.stringify(profile)) }
-}
+  if (!profile?.email) { showSuccess(); return }
 
-async function doResetPassword() {
-  const newPw  = document.getElementById('rpNew')?.value
-  const newPw2 = document.getElementById('rpNew2')?.value
-  if (!newPw || !newPw2) { alert('Both fields required.'); return }
-  if (newPw !== newPw2) { alert('Passwords do not match.'); return }
-  if (newPw.length < 6) { alert('Minimum 6 characters.'); return }
-  const btn = document.getElementById('rpBtn'); btn.disabled=true; btn.textContent='Saving...'
-  const { error } = await SB.auth.updateUser({ password: newPw })
-  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Set New Password'; return }
-  // Also update public.users
-  if (currentProfile) await SB.from('users').update({ password: newPw }).eq('id', currentProfile.id)
-  closeMO()
-  // Clean URL
-  window.history.replaceState({}, '', window.location.pathname)
-  showApp()
-  alert('Password updated! You are now logged in.')
+  // Generate a temporary password
+  const tempPw = Math.random().toString(36).slice(-8) + Math.floor(Math.random()*100)
+
+  // Update DB with temp password
+  await SB.from('users').update({ password: tempPw }).eq('id', profile.id)
+
+  // Send via our Edge Function
+  await fetch(`${SB_URL}/functions/v1/send-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SB_ANON },
+    body: JSON.stringify({
+      to: [profile.email],
+      type: 'forgot_password',
+      ticket: {
+        full_name: profile.full_name || profile.username,
+        username: profile.username,
+        temp_password: tempPw
+      }
+    })
+  }).catch(() => {})
+
+  showSuccess()
 }
 
 
