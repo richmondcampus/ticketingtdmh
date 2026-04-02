@@ -2,12 +2,35 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MedCenter VTS">
+<meta name="theme-color" content="#0c2340">
 <title>MedCenter VTS — Vehicle Ticketing System</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-/* ── Dark / Night Mode ── */
+/* ── Reset & Base ── */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#f0f4f8;--card:#fff;--sb:#0c2340;--sb-border:rgba(255,255,255,.07);
+  --pri:#0c6fdb;--pri-s:#dbeafe;--pri-d:#0a4fa3;
+  --teal:#0d9488;--teal-s:#ccfbf1;
+  --red:#dc2626;--red-s:#fee2e2;
+  --amber:#d97706;--amber-s:#fef3c7;
+  --green:#16a34a;--green-s:#dcfce7;
+  --purple:#7c3aed;--purple-s:#ede9fe;
+  --text:#0f172a;--text2:#475569;--text3:#94a3b8;
+  --border:#e2e8f0;--radius:10px;--radius-lg:14px;
+  --font:'Plus Jakarta Sans',system-ui,sans-serif;
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+  --bot-nav:56px
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);height:100dvh;overflow:hidden}
+
+/* ── Dark Mode ── */
 body.dark{
   --bg:#0f1117;--card:#161b27;--sb:#080d18;--sb-border:rgba(255,255,255,.06);
   --text:#e2e8f0;--text2:#94a3b8;--text3:#475569;
@@ -33,30 +56,19 @@ body.dark .chip{background:#1e2d3d;color:var(--text2);border-color:var(--border)
 body.dark .wf-step{background:#1e2d3d;border-color:var(--border)}
 body.dark .nav-item:hover{background:rgba(255,255,255,.04)}
 body.dark select option{background:#161b27}
-.theme-toggle{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background .13s;color:var(--text2)}
-.theme-toggle:hover{background:var(--bg)}
-*{margin:0;padding:0;box-sizing:border-box}
-:root{
-  --bg:#f0f4f8;--card:#fff;--sb:#0c2340;--sb-border:rgba(255,255,255,.07);
-  --pri:#0c6fdb;--pri-s:#dbeafe;--pri-d:#0a4fa3;
-  --teal:#0d9488;--teal-s:#ccfbf1;
-  --red:#dc2626;--red-s:#fee2e2;
-  --amber:#d97706;--amber-s:#fef3c7;
-  --green:#16a34a;--green-s:#dcfce7;
-  --purple:#7c3aed;--purple-s:#ede9fe;
-  --text:#0f172a;--text2:#475569;--text3:#94a3b8;
-  --border:#e2e8f0;--radius:10px;--radius-lg:14px;
-  --font:'Plus Jakarta Sans',system-ui,sans-serif
-}
-body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+body.dark .bot-nav{background:#0d1422;border-color:#1e2d3d}
+body.dark .bot-nav-item{color:#4e7098}
+body.dark .bot-nav-item.active{color:var(--pri)}
+body.dark .sb-overlay{background:rgba(0,0,0,.6)}
+body.dark .mob-card{background:var(--card);border-color:var(--border)}
 
-/* ── Layout ── */
-.app{display:flex;height:100vh;overflow:hidden}
-.sb{width:220px;min-width:220px;background:var(--sb);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+/* ── Desktop Layout ── */
+.app{display:flex;height:100dvh;overflow:hidden}
+.sb{width:220px;min-width:220px;background:var(--sb);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:200}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-.topbar{background:var(--card);border-bottom:1px solid var(--border);height:50px;display:flex;align-items:center;padding:0 18px;gap:10px;flex-shrink:0}
+.topbar{background:var(--card);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 16px;gap:8px;flex-shrink:0}
 .topbar-title{font-size:14.5px;font-weight:700;flex:1}
-.content{flex:1;overflow-y:auto;padding:18px}
+.content{flex:1;overflow-y:auto;padding:18px;padding-bottom:calc(18px + var(--safe-bottom))}
 .content::-webkit-scrollbar{width:4px}.content::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
 /* ── Sidebar ── */
@@ -72,10 +84,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .sb-nav{flex:1;overflow-y:auto;padding:8px 0;scrollbar-width:none}
 .sb-nav::-webkit-scrollbar{display:none}
 .sb-section{padding:9px 14px 3px;font-size:9px;font-weight:700;color:#2e5070;text-transform:uppercase;letter-spacing:.7px}
-.nav-item{display:flex;align-items:center;gap:9px;padding:7px 12px;margin:1px 8px;border-radius:8px;cursor:pointer;color:#5a8ab0;font-size:12px;font-weight:500;transition:all .13s;user-select:none}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 12px;margin:1px 8px;border-radius:8px;cursor:pointer;color:#5a8ab0;font-size:12px;font-weight:500;transition:all .13s;user-select:none}
 .nav-item:hover{background:rgba(255,255,255,.05);color:#9fc3e8}
 .nav-item.active{background:rgba(12,111,219,.22);color:#7eb8f7}
-.nav-ic{font-size:13px;width:16px;text-align:center;flex-shrink:0}
+.nav-ic{font-size:14px;width:18px;text-align:center;flex-shrink:0}
 .nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;min-width:16px;text-align:center;display:none}
 .nav-tag{margin-left:auto;font-size:8px;background:rgba(124,58,237,.35);color:#a78bfa;padding:1px 5px;border-radius:4px;font-weight:700}
 .sb-foot{padding:10px;border-top:1px solid var(--sb-border)}
@@ -85,6 +97,33 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .sb-av-name{font-size:11px;font-weight:600;color:#c8ddf0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;flex:1}
 .sb-av-role{font-size:9px;color:#4e7098;text-align:left}
 
+/* ── Sidebar overlay (mobile) ── */
+.sb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:199;backdrop-filter:blur(2px)}
+.sb-overlay.open{display:block}
+
+/* ── Bottom Nav (mobile only) ── */
+.bot-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:calc(var(--bot-nav) + var(--safe-bottom));background:var(--card);border-top:1px solid var(--border);z-index:150;padding-bottom:var(--safe-bottom)}
+.bot-nav-inner{display:flex;height:var(--bot-nav);align-items:stretch}
+.bot-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--text3);font-size:9.5px;font-weight:600;border:none;background:transparent;padding:6px 2px;position:relative;transition:color .15s}
+.bot-nav-item.active{color:var(--pri)}
+.bot-nav-item svg,.bot-nav-item .bni{font-size:20px;line-height:1}
+.bot-nav-badge{position:absolute;top:6px;right:calc(50% - 16px);background:var(--red);color:#fff;font-size:8px;font-weight:700;padding:1px 4px;border-radius:8px;min-width:14px;text-align:center;display:none}
+.bot-nav-badge.show{display:block}
+.bot-nav-more{position:fixed;bottom:calc(var(--bot-nav) + var(--safe-bottom));left:0;right:0;background:var(--card);border-top:1px solid var(--border);z-index:149;padding:10px;display:none;grid-template-columns:repeat(4,1fr);gap:8px;box-shadow:0 -4px 24px rgba(0,0,0,.08)}
+.bot-nav-more.open{display:grid}
+.more-item{display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 6px;border-radius:12px;cursor:pointer;font-size:10px;font-weight:600;color:var(--text2);background:var(--bg);border:1px solid var(--border)}
+.more-item.active{background:var(--pri-s);color:var(--pri);border-color:var(--pri)}
+.more-item .mi-ic{font-size:20px}
+
+/* ── Mobile ticket cards (replaces table on small screens) ── */
+.mob-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:13px;margin-bottom:9px;cursor:pointer;transition:box-shadow .13s;active:transform:scale(.98)}
+.mob-card:active{transform:scale(.99)}
+.mob-card-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+.mob-card-title{font-size:13px;font-weight:700;line-height:1.3}
+.mob-card-sub{font-size:11.5px;color:var(--text2);margin-top:2px}
+.mob-card-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3);margin-top:5px}
+.mob-card-acts{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+
 /* ── Cards ── */
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px}
 .card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
@@ -92,15 +131,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .card-np{padding:0;overflow:hidden}
 
 /* ── Stats ── */
-.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
-.stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;position:relative;overflow:hidden}
+.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 14px;position:relative;overflow:hidden}
 .stat-bar{position:absolute;top:0;left:0;width:3px;height:100%;border-radius:2px 0 0 2px}
-.stat-lbl{font-size:10px;color:var(--text3);font-weight:700;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+.stat-lbl{font-size:10px;color:var(--text3);font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
 .stat-val{font-size:22px;font-weight:700;line-height:1}
-.stat-sub{font-size:10px;color:var(--text3);margin-top:4px}
+.stat-sub{font-size:10px;color:var(--text3);margin-top:3px}
 
 /* ── Table ── */
-.tbl-wrap{overflow-x:auto}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
 .tbl th{padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);white-space:nowrap}
 .tbl td{padding:9px 12px;border-bottom:1px solid #f8fafc;color:var(--text2);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
@@ -112,6 +151,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .b-overdue{background:#fff1f2;color:#e11d48;border:1px solid #fecdd3;animation:pulse-overdue 2s ease-in-out infinite}
 @keyframes pulse-overdue{0%,100%{opacity:1}50%{opacity:.6}}
 body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:rgba(225,29,72,.3)}
+.b-pending{background:var(--amber-s);color:var(--amber)}
 .b-approved{background:var(--green-s);color:var(--green)}
 .b-assigned{background:var(--purple-s);color:var(--purple)}
 .b-gout{background:var(--pri-s);color:var(--pri)}
@@ -124,7 +164,7 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 .b-maint{background:var(--red-s);color:var(--red)}
 
 /* ── Buttons ── */
-.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all .13s;font-family:var(--font)}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all .13s;font-family:var(--font);touch-action:manipulation}
 .btn:disabled{opacity:.6;cursor:not-allowed}
 .btn-pri{background:var(--pri);color:#fff}.btn-pri:hover:not(:disabled){background:var(--pri-d)}
 .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}.btn-ghost:hover{background:var(--bg)}
@@ -133,15 +173,16 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 .btn-teal{background:var(--teal);color:#fff}
 .btn-purple{background:var(--purple);color:#fff}
 .btn-amber{background:var(--amber);color:#fff}
-.btn-sm{padding:5px 10px;font-size:11px}
-.ib{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:13px;color:var(--text2)}
+.btn-sm{padding:6px 11px;font-size:11px}
+.btn-full{width:100%;justify-content:center;padding:12px}
+.ib{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:14px;color:var(--text2);touch-action:manipulation}
 .ib:hover{background:var(--bg)}
 
 /* ── Modal ── */
-.mo-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:center;justify-content:center;padding:20px}
+.mo-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:flex-end;justify-content:center;padding:0}
 .mo-overlay.open{display:flex}
-.mo{background:var(--card);border-radius:var(--radius-lg);width:540px;max-width:100%;max-height:88vh;overflow-y:auto;border:1px solid var(--border)}
-.mo-hd{padding:15px 18px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--card);z-index:1}
+.mo{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:600px;max-height:92dvh;overflow-y:auto;border:1px solid var(--border)}
+.mo-hd{padding:16px 18px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--card);z-index:1}
 .mo-title{font-size:14px;font-weight:700}
 .mo-body{padding:18px}
 .mo-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:7px;position:sticky;bottom:0;background:var(--card)}
@@ -149,9 +190,9 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 /* ── Forms ── */
 .fg{margin-bottom:13px}
 .fl{display:block;font-size:10px;font-weight:700;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
-.fi,.fs,.ft{width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-family:var(--font);background:#f8fafc;color:var(--text);outline:none;transition:border .13s}
+.fi,.fs,.ft{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;font-family:var(--font);background:#f8fafc;color:var(--text);outline:none;transition:border .13s;-webkit-appearance:none}
 .fi:focus,.fs:focus,.ft:focus{border-color:var(--pri);background:var(--card)}
-.ft{min-height:65px;resize:vertical}
+.ft{min-height:70px;resize:vertical}
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 
 /* ── Info boxes ── */
@@ -181,20 +222,94 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 .ping::after{content:'';position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--green);animation:pinga 1.6s ease-out infinite}
 @keyframes pinga{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(2.3)}}
 
+/* ── Floating Action Button (mobile new ticket) ── */
+.fab{display:none;position:fixed;right:16px;bottom:calc(var(--bot-nav) + var(--safe-bottom) + 12px);width:52px;height:52px;border-radius:50%;background:var(--pri);color:#fff;font-size:26px;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(12,111,219,.45);z-index:145;align-items:center;justify-content:center;transition:transform .15s;touch-action:manipulation;line-height:1;font-weight:300}
+.fab:active{transform:scale(.92)}
+@media(max-width:768px){.fab.visible{display:flex}}
+
 /* ── Driver app mockup ── */
 .daf{background:#060e1c;border-radius:14px;border:2px solid #1a2d45;overflow:hidden;width:225px;flex-shrink:0}
 
 /* ── Login page ── */
-.login-page{display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg)}
-.login-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:36px 32px;width:100%;max-width:400px}
+.login-page{display:flex;align-items:center;justify-content:center;height:100dvh;background:var(--bg);padding:20px}
+.login-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px 28px;width:100%;max-width:400px}
 
-/* ── Ndot ── */
+/* ── Notification dot ── */
 .ndot{position:relative}
 .ndot-dot{display:none;width:8px;height:8px;border-radius:50%;background:var(--red);position:absolute;top:4px;right:4px;border:2px solid var(--card)}
 .ndot-dot.show{display:block}
 
-/* ── Responsive ── */
-@media(max-width:900px){.stats-grid{grid-template-columns:1fr 1fr}.fr{grid-template-columns:1fr}}
+/* ── Theme toggle ── */
+.theme-toggle{width:36px;height:36px;border-radius:9px;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background .13s;color:var(--text2);touch-action:manipulation}
+.theme-toggle:hover{background:var(--bg)}
+
+/* ── Hamburger (mobile) ── */
+.hamburger{display:none;width:36px;height:36px;border-radius:9px;border:1px solid var(--border);background:transparent;cursor:pointer;flex-direction:column;align-items:center;justify-content:center;gap:4px;touch-action:manipulation}
+.hamburger span{width:16px;height:2px;background:var(--text2);border-radius:2px;transition:all .2s}
+
+/* ── Mobile: ≤768px ── */
+@media(max-width:768px){
+  body{height:100dvh}
+  .app{height:100dvh}
+
+  /* Sidebar becomes slide-over drawer */
+  .sb{position:fixed;top:0;left:0;height:100dvh;z-index:200;transform:translateX(-100%);width:260px;min-width:260px}
+  .sb.open{transform:translateX(0)}
+  .sb-overlay{display:block;opacity:0;pointer-events:none;transition:opacity .25s}
+  .sb-overlay.open{opacity:1;pointer-events:all}
+
+  /* Topbar adjustments */
+  .topbar{padding:0 14px;height:54px}
+  .topbar-title{font-size:14px}
+  .hamburger{display:flex}
+  #newTicketBtn{display:none!important}
+
+  /* Content — add bottom padding for bottom nav */
+  .content{padding:14px;padding-bottom:calc(var(--bot-nav) + var(--safe-bottom) + 14px)}
+
+  /* Show bottom nav */
+  .bot-nav{display:block}
+
+  /* Stats: 2x2 grid on mobile */
+  .stats-grid{grid-template-columns:1fr 1fr;gap:9px}
+  .stat{padding:11px 12px}
+  .stat-val{font-size:20px}
+
+  /* Two-col grids become single col */
+  .fr{grid-template-columns:1fr}
+  div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}
+
+  /* Modal — full bottom sheet */
+  .mo-overlay{padding:0;align-items:flex-end}
+  .mo{border-radius:20px 20px 0 0;max-height:94dvh;width:100%}
+  .mo::before{content:'';display:block;width:36px;height:4px;background:var(--border);border-radius:2px;margin:10px auto 0}
+
+  /* Forms larger touch targets */
+  .fi,.fs{padding:12px;font-size:15px}
+
+  /* Table hidden on mobile — show mob-cards instead */
+  .tbl-wrap.desktop-only{display:none}
+  .mob-cards{display:block}
+
+  /* Login card */
+  .login-card{padding:28px 20px;border-radius:20px}
+}
+
+/* ── Desktop only ── */
+@media(min-width:769px){
+  .mob-cards{display:none}
+  .hamburger{display:none}
+  .bot-nav{display:none!important}
+  .sb-overlay{display:none!important}
+}
+
+/* ── Tablet tweaks ── */
+@media(max-width:900px) and (min-width:769px){
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .fr{grid-template-columns:1fr}
+  .sb{width:200px;min-width:200px}
+}
+
 </style>
 </head>
 <body>
@@ -217,8 +332,11 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 
 <!-- ════ MAIN APP ════ -->
 <div id="appShell" class="app" style="display:none">
+  <!-- Sidebar overlay (mobile) -->
+  <div class="sb-overlay" id="sbOverlay" onclick="closeSidebar()"></div>
+
   <!-- Sidebar -->
-  <aside class="sb">
+  <aside class="sb" id="sidebar">
     <div class="sb-head">
       <div class="sb-logo">
         <div class="sb-cross"><svg viewBox="0 0 18 18" fill="none"><rect x="7" y="1" width="4" height="16" rx="2" fill="#fff"/><rect x="1" y="7" width="16" height="4" rx="2" fill="#fff"/></svg></div>
@@ -239,6 +357,9 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
   <!-- Main -->
   <div class="main">
     <div class="topbar">
+      <button class="hamburger" id="hamburger" onclick="openSidebar()" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
       <div class="topbar-title" id="pageTitle">Dashboard</div>
       <div style="display:flex;align-items:center;gap:6px">
         <button class="theme-toggle" id="themeBtn" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
@@ -251,6 +372,15 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
     </div>
     <div class="content" id="CONTENT"></div>
   </div>
+
+  <!-- Bottom Navigation (mobile) -->
+  <nav class="bot-nav" id="botNav">
+    <div class="bot-nav-inner" id="botNavInner"></div>
+  </nav>
+  <!-- More menu (mobile) -->
+  <div class="bot-nav-more" id="botNavMore"></div>
+  <!-- Floating Action Button (mobile, requester/admin only) -->
+  <button class="fab" id="fabBtn" onclick="goTo('new-ticket')" title="New Request">＋</button>
 </div>
 
 <!-- Modal -->
@@ -532,6 +662,20 @@ function showApp() {
 }
 
 // ════════════════════════════════════════════════
+// MOBILE SIDEBAR
+// ════════════════════════════════════════════════
+function openSidebar() {
+  document.getElementById('sidebar')?.classList.add('open')
+  document.getElementById('sbOverlay')?.classList.add('open')
+  document.body.style.overflow = 'hidden'
+}
+function closeSidebar() {
+  document.getElementById('sidebar')?.classList.remove('open')
+  document.getElementById('sbOverlay')?.classList.remove('open')
+  document.body.style.overflow = ''
+}
+
+// ════════════════════════════════════════════════
 // SIDEBAR
 // ════════════════════════════════════════════════
 const NAV = [
@@ -562,34 +706,93 @@ function buildSidebar() {
   document.getElementById('sbFullName').textContent = currentProfile?.full_name || 'User'
   document.getElementById('sbRole').textContent = ROLE_LABELS[role] || role
   document.getElementById('sbRole').style.color = col
-  // Show/hide new ticket button
   const showNewTicket = ['admin','requester'].includes(role)
   document.getElementById('newTicketBtn').style.display = showNewTicket ? '' : 'none'
+  const fab = document.getElementById('fabBtn')
+  if (fab) fab.classList.toggle('visible', showNewTicket)
 
   const nav = document.getElementById('sbNav')
   nav.innerHTML = NAV.map(n => {
     if (n.section) return `<div class="sb-section">${n.section}</div>`
     if (n.roles && !n.roles.includes(role)) return ''
-    return `<div class="nav-item ${n.id===currentPage?'active':''}" data-page="${n.id}" onclick="goTo('${n.id}')">
+    return `<div class="nav-item ${n.id===currentPage?'active':''}" data-page="${n.id}" onclick="goTo('${n.id}');closeSidebar()">
       <span class="nav-ic">${n.ic}</span>${n.label}
       ${n.badge ? `<span class="nav-badge" id="navBadge"></span>` : ''}
       ${n.tag  ? `<span class="nav-tag">${n.tag}</span>` : ''}
     </div>`
   }).join('')
+
+  buildBottomNav(role)
+}
+
+// Bottom nav items — pick 4 most important per role + "More"
+const BOT_NAV_MAP = {
+  admin:        [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'new-ticket',ic:'➕',lbl:'New'},{id:'vehicles',ic:'🚗',lbl:'Fleet'},{id:'more',ic:'⋯',lbl:'More'}],
+  approver_admin:[{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'reports',ic:'📊',lbl:'Reports'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'more',ic:'⋯',lbl:'More'}],
+  approver_amb: [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'reports',ic:'📊',lbl:'Reports'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'more',ic:'⋯',lbl:'More'}],
+  guard:        [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets'},{id:'vehicles',ic:'🚗',lbl:'Fleet'},{id:'gps',ic:'📍',lbl:'GPS'},{id:'more',ic:'⋯',lbl:'More'}],
+  requester:    [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'My Trips'},{id:'new-ticket',ic:'➕',lbl:'New'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'faq',ic:'❓',lbl:'FAQ'}],
+  driver:       [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'My Trips'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'faq',ic:'❓',lbl:'FAQ'}],
+}
+
+function buildBottomNav(role) {
+  const items = BOT_NAV_MAP[role] || BOT_NAV_MAP.requester
+  const inner = document.getElementById('botNavInner')
+  if (!inner) return
+  inner.innerHTML = items.map(it => `
+    <button class="bot-nav-item ${it.id===currentPage||it.id==='more'&&_moreOpen?'active':''}" onclick="${it.id==='more'?'toggleMoreMenu()':'goTo(\''+it.id+'\')'}">
+      <span class="bni">${it.ic}</span>
+      <span>${it.lbl}</span>
+      ${it.badge ? `<span class="bot-nav-badge" id="botBadge"></span>` : ''}
+    </button>`).join('')
+
+  // Build "More" menu from remaining nav items
+  const shownIds = new Set(items.map(i=>i.id))
+  const moreItems = NAV.filter(n => n.id && !shownIds.has(n.id) && n.roles?.includes(role))
+  const moreEl = document.getElementById('botNavMore')
+  if (moreEl) {
+    moreEl.innerHTML = moreItems.map(n => `
+      <div class="more-item ${n.id===currentPage?'active':''}" onclick="goTo('${n.id}');closeMoreMenu()">
+        <span class="mi-ic">${n.ic}</span>
+        <span>${n.label}</span>
+      </div>`).join('')
+  }
+}
+
+let _moreOpen = false
+function toggleMoreMenu() {
+  _moreOpen = !_moreOpen
+  document.getElementById('botNavMore')?.classList.toggle('open', _moreOpen)
+}
+function closeMoreMenu() {
+  _moreOpen = false
+  document.getElementById('botNavMore')?.classList.remove('open')
 }
 
 function updateNavBadge(count) {
   const el = document.getElementById('navBadge')
+  const el2 = document.getElementById('botBadge')
   const dot = document.getElementById('ndot')
-  if (el) { el.textContent = count; el.style.display = count ? 'block' : 'none' }
+  if (el)  { el.textContent = count; el.style.display = count ? 'block' : 'none' }
+  if (el2) { el2.textContent = count; el2.classList.toggle('show', count > 0) }
   if (dot) { dot.classList.toggle('show', count > 0) }
 }
 
 function goTo(page) {
   currentPage = page
+  closeMoreMenu()
   const titles = { dashboard:'Dashboard', tickets:'All Tickets', 'new-ticket':'New Vehicle Request', vehicles:'Vehicles', drivers:'Drivers', departments:'Departments', gps:'GPS Tracking', reports:'Reports', audit:'Audit Logs', accounts:'Account Management', 'driver-app':'Driver Mobile App', faq:'FAQ' }
   document.getElementById('pageTitle').textContent = titles[page] || page
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page))
+  // Update bottom nav active state
+  document.querySelectorAll('.bot-nav-item').forEach(el => {
+    const onclick = el.getAttribute('onclick') || ''
+    el.classList.toggle('active', onclick.includes(`'${page}'`))
+  })
+  document.querySelectorAll('.more-item').forEach(el => {
+    const onclick = el.getAttribute('onclick') || ''
+    el.classList.toggle('active', onclick.includes(`'${page}'`))
+  })
   renderPage(page)
 }
 
@@ -774,7 +977,7 @@ function renderTicketsTable() {
     <div style="margin-left:auto;font-size:11px;color:var(--text3)">${filtered.length} tickets</div>
   </div>
   <div class="card card-np" style="overflow:hidden">
-  <div class="tbl-wrap"><table class="tbl">
+  <div class="tbl-wrap desktop-only"><table class="tbl">
     <thead><tr><th>Ticket</th><th>Department</th><th>Purpose</th><th>Date</th><th>Type</th><th>Status</th><th>Driver · Vehicle</th><th>Actions</th></tr></thead>
     <tbody>${filtered.map(t => {
       const acts = []
@@ -819,7 +1022,55 @@ function renderTicketsTable() {
     }).join('')}
     ${filtered.length===0?'<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">No tickets found.</td></tr>':''}
     </tbody>
-  </table></div></div>`
+  </table></div></div>
+  <!-- Mobile cards view -->
+  <div class="mob-cards">
+    ${filtered.length===0?`<div style="text-align:center;padding:32px;color:var(--text3)">No tickets found.</div>`:''}
+    ${filtered.map(t => {
+      const acts = []
+      if (role==='admin' && t.status==='pending-approval') {
+        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
+        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
+      }
+      if ((role==='approver_admin') && t.status==='pending-approval' && t.vehicle_type_needed!=='ambulance') {
+        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
+        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
+      }
+      if ((role==='approver_amb') && t.status==='pending-approval' && t.vehicle_type_needed==='ambulance') {
+        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
+        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
+      }
+      if (role==='admin' && t.status==='approved')
+        acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign Driver</button>`)
+      if (role==='guard' && t.status==='assigned')
+        acts.push(`<button class="btn btn-teal btn-sm" onclick="event.stopPropagation();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle?.plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}')">Gate Out</button>`)
+      if (role==='guard' && t.status==='on-trip')
+        acts.push(`<button class="btn btn-purple btn-sm" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
+      if (role==='requester' && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
+        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
+      if (role==='admin' && !['completed','cancelled'].includes(t.status))
+        acts.push(`<button class="btn btn-amber btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
+      return `<div class="mob-card" onclick="openViewModal('${t.id}')">
+        <div class="mob-card-hd">
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">${chip(t.ticket_no)} ${typeBadge(t.vehicle_type_needed)}</div>
+            <div class="mob-card-title">${t.department||'—'}</div>
+            <div class="mob-card-sub">${t.purpose||'—'}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            ${badge(t.status)}
+            ${isOverdue(t)?`<br><span class="badge b-overdue" style="font-size:9px;margin-top:3px">⚠ ${overdueDuration(t)}</span>`:''}
+          </div>
+        </div>
+        <div class="mob-card-row">
+          <span>📅 ${fmtDate(t.departure_at||t.created_at)}</span>
+          ${t.driver_name?`<span>· 👤 ${t.driver_name}</span>`:''}
+          ${t.vehicle?.plate?`<span>· 🚗 ${t.vehicle.plate}</span>`:''}
+        </div>
+        ${acts.length?`<div class="mob-card-acts" onclick="event.stopPropagation()">${acts.join('')}<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button></div>`:`<div class="mob-card-acts"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View Details</button></div>`}
+      </div>`
+    }).join('')}
+  </div>`
 }
 
 // VIEW
