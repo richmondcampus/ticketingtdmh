@@ -517,21 +517,21 @@ function showApp() {
 // ════════════════════════════════════════════════
 const NAV = [
   { section: 'Overview' },
-  { id:'dashboard',    label:'Dashboard',      ic:'⊞', roles:['admin','approver','guard','requester','driver'] },
-  { id:'tickets',      label:'All Tickets',    ic:'◈', roles:['admin','approver','guard'], badge: true },
+  { id:'dashboard',    label:'Dashboard',      ic:'⊞', roles:['admin','approver_admin','approver_amb','guard','requester','driver'] },
+  { id:'tickets',      label:'All Tickets',    ic:'◈', roles:['admin','approver_admin','approver_amb','guard','requester','driver'], badge: true },
   { id:'new-ticket',   label:'New Request',    ic:'+', roles:['admin','requester'] },
   { section: 'Fleet' },
   { id:'vehicles',     label:'Vehicles',       ic:'◉', roles:['admin','guard'] },
   { id:'drivers',      label:'Drivers',        ic:'◎', roles:['admin'] },
-  { id:'departments',  label:'Departments',    ic:'◫', roles:['admin'] },
+  { id:'departments',  label:'Departments',    ic:'◫', roles:['admin','approver_admin','approver_amb','guard','requester'] },
   { section: 'Oversight' },
   { id:'gps',          label:'GPS Tracking',   ic:'◍', tag:'Beta', roles:['admin','guard'] },
-  { id:'reports',      label:'Reports',        ic:'◪', roles:['admin'] },
+  { id:'reports',      label:'Reports',        ic:'◪', roles:['admin','approver_admin','approver_amb'] },
   { id:'audit',        label:'Audit Logs',     ic:'◻', roles:['admin'] },
   { section: 'System' },
   { id:'accounts',     label:'Accounts',       ic:'◷', roles:['admin'] },
   { id:'driver-app',   label:'Driver App',     ic:'◱', roles:['admin'] },
-  { id:'faq',          label:'FAQ',            ic:'◌', roles:['admin','approver','guard','requester','driver'] },
+  { id:'faq',          label:'FAQ',            ic:'◌', roles:['admin','approver_admin','approver_amb','guard','requester','driver'] },
 ]
 
 function buildSidebar() {
@@ -617,15 +617,27 @@ async function showNotifs() {
 // ════════════════════════════════════════════════
 async function renderDashboard() {
   document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>'
+  const role = currentProfile?.role
+
+  // Build role-specific trip query
+  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,vehicle_type_needed,driver_name,departure_at,created_at,requester_id,driver_id').order('created_at',{ascending:false})
+  if (role === 'requester') tripsQ = tripsQ.eq('requester_id', currentProfile.id)
+  if (role === 'driver')    tripsQ = tripsQ.eq('driver_id', currentProfile.id)
+
   const [{ data: trips }, { data: logs }] = await Promise.all([
-    SB.from('trips').select('id,ticket_no,status,department,purpose,vehicle_type_needed,driver_name,departure_at,created_at').order('created_at',{ascending:false}),
+    tripsQ,
     SB.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(6)
   ])
   const T = trips || []; const L = logs || []
-  const pending  = T.filter(t => t.status==='pending-approval')
-  const active   = T.filter(t => ['approved','assigned','on-trip'].includes(t.status))
-  const done     = T.filter(t => t.status==='completed')
-  updateNavBadge(pending.length)
+
+  // Filter pending by approver type
+  let pending = T.filter(t => t.status==='pending-approval')
+  if (role === 'approver_admin') pending = pending.filter(t => t.vehicle_type_needed !== 'ambulance')
+  if (role === 'approver_amb')   pending = pending.filter(t => t.vehicle_type_needed === 'ambulance')
+
+  const active = T.filter(t => ['approved','assigned','on-trip'].includes(t.status))
+  const done   = T.filter(t => t.status==='completed')
+  if (['admin','approver_admin','approver_amb'].includes(role)) updateNavBadge(pending.length)
 
   document.getElementById('CONTENT').innerHTML = `
   <div class="stats-grid">
@@ -669,13 +681,20 @@ let _tickets = [], _drivers = [], _vehicles = []
 
 async function renderTickets() {
   document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>`
+  const role = currentProfile?.role
+  // Build query — requester sees only their own, driver sees only assigned to them
+  let tripsQuery = SB.from('trips').select('*,vehicle:vehicles(id,plate,type,name)').order('created_at',{ascending:false})
+  if (role === 'requester') tripsQuery = tripsQuery.eq('requester_id', currentProfile.id)
+  if (role === 'driver') tripsQuery = tripsQuery.eq('driver_id', currentProfile.id)
   const [{ data: trips }, { data: drvs }, { data: vehs }] = await Promise.all([
-    SB.from('trips').select('*,vehicle:vehicles(id,plate,type,name)').order('created_at',{ascending:false}),
+    tripsQuery,
     SB.from('drivers').select('*').eq('status','available'),
     SB.from('vehicles').select('*').eq('status','available')
   ])
   _tickets = trips || []; _drivers = drvs || []; _vehicles = vehs || []
-  updateNavBadge(_tickets.filter(t=>t.status==='pending-approval').length)
+  // Only admin/approver see the pending badge count
+  if (['admin','approver_admin','approver_amb'].includes(role))
+    updateNavBadge(_tickets.filter(t=>t.status==='pending-approval').length)
   renderTicketsTable()
 }
 
@@ -717,7 +736,16 @@ function renderTicketsTable() {
     <thead><tr><th>Ticket</th><th>Department</th><th>Purpose</th><th>Date</th><th>Type</th><th>Status</th><th>Driver · Vehicle</th><th>Actions</th></tr></thead>
     <tbody>${filtered.map(t => {
       const acts = []
-      if (['admin','approver'].includes(role) && t.status==='pending-approval') {
+      // Approve/Reject — route by vehicle type
+      if (role==='admin' && t.status==='pending-approval') {
+        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
+        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
+      }
+      if (role==='approver_admin' && t.status==='pending-approval' && t.vehicle_type_needed!=='ambulance') {
+        acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
+        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
+      }
+      if (role==='approver_amb' && t.status==='pending-approval' && t.vehicle_type_needed==='ambulance') {
         acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
         acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
       }
@@ -727,6 +755,11 @@ function renderTicketsTable() {
         acts.push(`<button class="btn btn-teal btn-sm" onclick="event.stopPropagation();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle?.plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}')">Gate Out</button>`)
       if (role==='guard' && t.status==='on-trip')
         acts.push(`<button class="btn btn-purple btn-sm" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
+      // Cancel — requester can cancel their own pending, admin can cancel anything not completed
+      if (role==='requester' && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
+        acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
+      if (role==='admin' && !['completed','cancelled'].includes(t.status))
+        acts.push(`<button class="btn btn-amber btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
       acts.push(`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button>`)
       return `<tr onclick="openViewModal('${t.id}')">
         <td>${chip(t.ticket_no)}</td>
@@ -829,6 +862,30 @@ async function doReject(id, ticketNo) {
   closeMO(); renderTickets()
 }
 
+// CANCEL TICKET
+async function cancelTicket(id, ticketNo, driverId, vehicleId) {
+  if (!confirm(`Cancel ticket ${ticketNo}?\n\nThis cannot be undone.`)) return
+  const { error } = await SB.from('trips').update({
+    status: 'cancelled',
+    rejected_by: currentProfile?.id,
+    rejected_at: new Date().toISOString(),
+    rejection_reason: 'Cancelled by ' + (currentProfile?.full_name || currentProfile?.username)
+  }).eq('id', id)
+  if (error) { alert(error.message); return }
+  // Release driver and vehicle if assigned
+  if (driverId && driverId !== 'null') await SB.from('drivers').update({ status:'available' }).eq('id', driverId)
+  if (vehicleId && vehicleId !== 'null') await SB.from('vehicles').update({ status:'available' }).eq('id', vehicleId)
+  await addAudit(id, ticketNo, 'Ticket Cancelled', 'Cancelled by ' + (currentProfile?.full_name || currentProfile?.username))
+  // Notify driver if assigned
+  if (driverId && driverId !== 'null') {
+    const { data: drvRow } = await SB.from('drivers').select('phone').eq('id', driverId).single()
+    if (drvRow?.phone) await sendSMS([drvRow.phone], `[MedCenter VTS] Trip ${ticketNo} has been CANCELLED. You are no longer assigned to this trip.`)
+    const drvEmails = await getEmailsForRole('driver')
+    if (drvEmails.length) await sendEmail(drvEmails, 'trip_cancelled_driver', { ticket_no: ticketNo, reason: 'Trip cancelled' })
+  }
+  renderTickets()
+}
+
 // ASSIGN DRIVER
 function openAssignModal(id, ticketNo, vtype) {
   const isAmb = vtype==='ambulance'
@@ -919,7 +976,12 @@ function openGateInModal(id, ticketNo, dest, vehicleId, driverId) {
 }
 async function doGateIn(id, ticketNo, vehicleId, driverId) {
   const odo = parseInt(document.getElementById('odoIn')?.value)
-  if (!odo) { alert('Odometer reading required.'); return }
+  if (!odo || odo <= 0) { alert('Valid odometer reading required.'); return }
+  // Fetch odometer out to validate
+  const { data: tripCheck } = await SB.from('trips').select('odometer_out').eq('id',id).single()
+  if (tripCheck?.odometer_out && odo <= tripCheck.odometer_out) {
+    alert(`Odometer In (${odo} km) must be greater than Odometer Out (${tripCheck.odometer_out} km).`); return
+  }
   const btn = document.getElementById('giBtn'); btn.disabled=true; btn.textContent='Recording...'
   const { error } = await SB.from('trips').update({ status:'completed', guard_in_id:currentProfile?.id, gate_in_at:new Date().toISOString(), odometer_in:odo, fuel_in:document.getElementById('fuelIn')?.value, condition_in:document.getElementById('condIn')?.value, guard_in_remarks:document.getElementById('giRem')?.value }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Complete Trip'; return }
@@ -1004,10 +1066,20 @@ async function submitNewTicket() {
   const time    = document.getElementById('ntTime')?.value
   const vtype   = document.getElementById('ntType')?.value||'regular'
   if (!dept||!req||!purpose||!dest||!date||!time) { alert('Please fill all required fields.'); return }
+  // Validate departure is not in the past
+  const departureISO = new Date(`${date}T${time}`).toISOString()
+  if (new Date(departureISO) < new Date()) {
+    alert('Departure date and time cannot be in the past.'); return
+  }
+  // Validate expected return is after departure
+  const retDate = document.getElementById('ntReturn')?.value
+  if (retDate && new Date(retDate) < new Date(date)) {
+    alert('Expected return date must be after the departure date.'); return
+  }
+  const pax = parseInt(document.getElementById('ntPax')?.value)||1
+  if (pax < 1 || pax > 50) { alert('Passengers must be between 1 and 50.'); return }
   const btn = document.getElementById('ntSubmit'); btn.disabled=true; btn.textContent='Submitting...'
   try {
-    const departureISO = new Date(`${date}T${time}`).toISOString()
-    const retDate = document.getElementById('ntReturn')?.value
     const { data: trip, error } = await SB.from('trips').insert([{
       requester_id: currentProfile?.id||null,
       requester_name: req,
@@ -1017,7 +1089,7 @@ async function submitNewTicket() {
       destination: dest,
       departure_at: departureISO,
       expected_return_at: retDate ? new Date(retDate).toISOString() : null,
-      passengers: parseInt(document.getElementById('ntPax')?.value)||1,
+      passengers: pax,
       remarks: document.getElementById('ntNotes')?.value||'',
       priority: document.getElementById('ntPri')?.value||'normal',
       status: 'pending-approval'
