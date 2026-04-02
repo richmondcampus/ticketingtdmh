@@ -160,6 +160,7 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 .b-rejected{background:var(--red-s);color:var(--red)}
 .b-amb{background:var(--red-s);color:var(--red)}
 .b-reg{background:var(--pri-s);color:var(--pri)}
+.b-moto{background:var(--amber-s);color:var(--amber)}
 .b-avail{background:var(--green-s);color:var(--green)}
 .b-maint{background:var(--red-s);color:var(--red)}
 
@@ -220,6 +221,7 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 .ping{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block;position:relative}
 .ping::after{content:'';position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--green);animation:pinga 1.6s ease-out infinite}
 @keyframes pinga{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(2.3)}}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── Floating Action Button (mobile new ticket) ── */
 .fab{display:none;position:fixed;right:16px;bottom:calc(var(--bot-nav) + var(--safe-bottom) + 12px);width:52px;height:52px;border-radius:50%;background:var(--pri);color:#fff;font-size:26px;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(12,111,219,.45);z-index:145;align-items:center;justify-content:center;transition:transform .15s;touch-action:manipulation;line-height:1;font-weight:300}
@@ -528,7 +530,7 @@ function deptOptions(selected='') {
 // ════════════════════════════════════════════════
 const ini = n => (n||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()
 const badge = s => { const m = STATUS_MAP[s]||{cls:'b-pending',lbl:s}; return `<span class="badge ${m.cls}">${m.lbl}</span>` }
-const typeBadge = t => t==='ambulance' ? `<span class="badge b-amb">Ambulance</span>` : `<span class="badge b-reg">Regular</span>`
+const typeBadge = t => t==='ambulance' ? `<span class="badge b-amb">🚑 Ambulance</span>` : t==='motorcycle' ? `<span class="badge b-moto">🏍 Motorcycle</span>` : `<span class="badge b-reg">🚙 Regular</span>`
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : '—'
 const fmtDT = d => d ? new Date(d).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'
 
@@ -1015,6 +1017,7 @@ function renderTicketsTable() {
     <select class="fs" id="tkType" style="width:135px;font-size:12px;padding:7px 11px" onchange="renderTicketsTable()">
       <option value="">All Types</option>
       <option value="regular" ${tf==='regular'?'selected':''}>Regular</option>
+      <option value="motorcycle" ${tf==='motorcycle'?'selected':''}>Motorcycle</option>
       <option value="ambulance" ${tf==='ambulance'?'selected':''}>Ambulance</option>
     </select>`}
     <div style="margin-left:auto;font-size:11px;color:var(--text3)">${filtered.length} tickets</div>
@@ -1146,12 +1149,14 @@ async function openViewModal(id) {
 
 // APPROVE
 function openApproveModal(id, ticketNo, vtype) {
-  const isAmb = vtype === 'ambulance'
-  const avD = _drivers
-  const avV = _vehicles.filter(v => isAmb
-    ? (v.type||'').toLowerCase().includes('ambulance') || (v.type||'').toLowerCase().includes('bls')
-    : !(v.type||'').toLowerCase().includes('ambulance')
-  )
+  const isAmb  = vtype === 'ambulance'
+  const isMoto = vtype === 'motorcycle'
+  const avV = _vehicles.filter(v => {
+    const t = (v.type||'').toLowerCase()
+    if (isAmb)  return t.includes('ambulance') || t.includes('bls')
+    if (isMoto) return t.includes('motorcycle')
+    return !t.includes('ambulance') && !t.includes('motorcycle')
+  })
   openMO(`Approve & Assign — ${ticketNo}`,
     `<div class="info info-green" style="margin-bottom:14px">
        <strong>Step 1 — Approval</strong><br>
@@ -1172,7 +1177,7 @@ function openApproveModal(id, ticketNo, vtype) {
          <option value="">-- Select Vehicle --</option>
          ${avV.map(v=>`<option value="${v.id}">${v.plate} — ${v.type} (${v.capacity} pax)</option>`).join('')}
        </select>
-       ${avV.length === 0 ? `<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available ${isAmb?'ambulance':'regular'} vehicles.</div>` : ''}
+       ${avV.length === 0 ? `<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available ${isAmb?'ambulance':isMoto?'motorcycle':'regular'} vehicles.</div>` : ''}
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-green" id="apBtn" onclick="doApproveAndAssign('${id}','${ticketNo}')">✓ Approve & Assign</button>`
@@ -1298,9 +1303,15 @@ async function doCancelTicket(id, ticketNo, driverId, vehicleId) {
 
 // ASSIGN DRIVER
 function openAssignModal(id, ticketNo, vtype) {
-  const isAmb = vtype==='ambulance'
+  const isAmb  = vtype === 'ambulance'
+  const isMoto = vtype === 'motorcycle'
   const avD = _drivers
-  const avV = _vehicles.filter(v => isAmb ? (v.type||'').toLowerCase().includes('ambulance')||(v.type||'').toLowerCase().includes('bls') : !(v.type||'').toLowerCase().includes('ambulance'))
+  const avV = _vehicles.filter(v => {
+    const t = (v.type||'').toLowerCase()
+    if (isAmb)  return t.includes('ambulance') || t.includes('bls')
+    if (isMoto) return t.includes('motorcycle')
+    return !t.includes('ambulance') && !t.includes('motorcycle')
+  })
   openMO(`Assign Driver & Vehicle — ${ticketNo}`,
     `<div class="fg"><label class="fl">Select Driver</label>
       <select class="fs" id="dSel"><option value="">-- Select Driver --</option>${avD.map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no}</option>`).join('')}</select></div>
@@ -1455,13 +1466,15 @@ function renderNewTicket() {
         <div class="fg"><label class="fl">Requester Name *</label><input class="fi" id="ntReq" value="${currentProfile?.full_name||''}" placeholder="Full name"></div>
       </div>
       <div class="fg"><label class="fl">Vehicle Type *</label>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <button type="button" class="btn" id="typeReg" style="justify-content:center;border:1px solid var(--pri);background:var(--pri-s);color:var(--pri);font-weight:600" onclick="selectVtype('regular')">🚙 Regular Vehicle</button>
-          <button type="button" class="btn" id="typeAmb" style="justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600" onclick="selectVtype('ambulance')">🚑 Ambulance / EMS</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <button type="button" class="btn" id="typeReg" style="justify-content:center;border:1px solid var(--pri);background:var(--pri-s);color:var(--pri);font-weight:600;font-size:11.5px" onclick="selectVtype('regular')">🚙 Regular</button>
+          <button type="button" class="btn" id="typeMoto" style="justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600;font-size:11.5px" onclick="selectVtype('motorcycle')">🏍 Motorcycle</button>
+          <button type="button" class="btn" id="typeAmb" style="justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600;font-size:11.5px" onclick="selectVtype('ambulance')">🚑 Ambulance</button>
         </div>
         <input type="hidden" id="ntType" value="regular">
       </div>
-      <div id="ntAmbNote" class="info info-red" style="display:none;margin-top:8px">Routes to <strong>Ambulance Approver</strong> only.</div>
+      <div id="ntAmbNote" class="info info-red" style="display:none;margin-top:8px">Routes to <strong>Ambulance Approver</strong> only. Priority and return date not applicable.</div>
+      <div id="ntMotoNote" class="info info-blue" style="display:none;margin-top:8px">For quick errands and deliveries. Max <strong>2 persons</strong> (rider + 1 passenger)</div>
       <div id="ntPriWrap" class="fg"><label class="fl">Priority</label>
         <select class="fs" id="ntPri"><option value="normal">Normal — 4 hours</option><option value="low">Low — 24 hours</option><option value="urgent">Urgent — 1 hour</option><option value="emergency">Emergency — 15 minutes</option></select>
         <div style="font-size:10px;color:var(--text3);margin-top:4px">SLA: approval target time from submission</div>
@@ -1486,18 +1499,33 @@ function renderNewTicket() {
 
 function selectVtype(t) {
   document.getElementById('ntType').value = t
-  const isAmb = t==='ambulance'
-  const reg = document.getElementById('typeReg')
-  const amb = document.getElementById('typeAmb')
-  reg.style.cssText = isAmb ? 'justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600' : 'justify-content:center;border:1px solid var(--pri);background:var(--pri-s);color:var(--pri);font-weight:600'
-  amb.style.cssText = isAmb ? 'justify-content:center;border:1px solid var(--red);background:var(--red-s);color:var(--red);font-weight:600' : 'justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600'
-  document.getElementById('ntAmbNote').style.display = isAmb ? 'block' : 'none'
-  // Hide expected return date and priority for ambulance
+  const isAmb  = t === 'ambulance'
+  const isMoto = t === 'motorcycle'
+  const styles = {
+    active:   (color, bg) => `justify-content:center;border:1px solid ${color};background:${bg};color:${color};font-weight:600;font-size:11.5px`,
+    inactive: () => `justify-content:center;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600;font-size:11.5px`
+  }
+  document.getElementById('typeReg').style.cssText  = (!isAmb && !isMoto) ? styles.active('var(--pri)','var(--pri-s)')  : styles.inactive()
+  document.getElementById('typeMoto').style.cssText = isMoto  ? styles.active('var(--amber)','var(--amber-s)') : styles.inactive()
+  document.getElementById('typeAmb').style.cssText  = isAmb   ? styles.active('var(--red)','var(--red-s)')     : styles.inactive()
+
+  // Notes
+  document.getElementById('ntAmbNote').style.display  = isAmb  ? 'block' : 'none'
+  document.getElementById('ntMotoNote').style.display = isMoto ? 'block' : 'none'
+
+  // Hide return date + priority for ambulance only
   const retWrap = document.getElementById('ntReturnWrap')
   const priWrap = document.getElementById('ntPriWrap')
   if (retWrap) { retWrap.style.display = isAmb ? 'none' : ''; if (isAmb) document.getElementById('ntReturn').value = '' }
   if (priWrap) { priWrap.style.display = isAmb ? 'none' : '' }
   if (isAmb) document.getElementById('ntPri').value = 'emergency'
+
+  // Motorcycle: cap passengers at 1
+  const paxEl = document.getElementById('ntPax')
+  if (paxEl) {
+    if (isMoto) { if(parseInt(paxEl.value)>2) paxEl.value = 2; paxEl.max = 2; paxEl.disabled = false }
+    else        { paxEl.max = 50; paxEl.disabled = false }
+  }
 }
 
 async function submitNewTicket() {
@@ -1566,30 +1594,14 @@ async function submitNewTicket() {
       status: 'pending-approval'
     }]).select().single()
     if (error) throw error
-    await addAudit(trip.id, trip.ticket_no, 'Ticket Created', purpose)
-    // SMS → notify correct approver
-    const approverRole = vtype === 'ambulance' ? 'approver_amb' : 'approver_admin'
-    const approverPhones = await getPhonesForRole(approverRole)
-    await sendSMS(approverPhones,
-      `[TDMH VTS] New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nDate: ${date} ${time}\nPlease log in to approve.`
-    )
-    // Email → notify correct approver
-    const approverEmails = await getEmailsForRole(approverRole)
-    await sendEmail(approverEmails, 'ticket_created', {
-      ticket_no: trip.ticket_no, department: dept,
-      requester_name: req, purpose, destination: dest,
-      departure_at: `${date} ${time}`,
-      vehicle_type_needed: vtype,
-      priority: document.getElementById('ntPri')?.value||'normal'
-    })
-    // Close the form and show polished success screen
+
+    // ✅ Show success screen IMMEDIATELY after DB insert — don't wait for notifications
     const approverLabel = vtype==='ambulance' ? 'Ambulance Approver' : 'Admin Approver'
     const priorityLabel = { low:'Low (24h SLA)', normal:'Normal (4h SLA)', urgent:'Urgent (1h SLA)', emergency:'Emergency (15min SLA)' }[document.getElementById('ntPri')?.value||'normal'] || ''
     document.getElementById('CONTENT').innerHTML = `
     <div style="max-width:480px;margin:48px auto;text-align:center">
       <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px 32px;position:relative;overflow:hidden">
         <div style="position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--green),#34d399)"></div>
-        <!-- Animated checkmark -->
         <div style="width:72px;height:72px;margin:0 auto 20px;position:relative">
           <svg viewBox="0 0 72 72" style="width:72px;height:72px">
             <circle cx="36" cy="36" r="34" fill="none" stroke="var(--green-s)" stroke-width="3"/>
@@ -1631,6 +1643,25 @@ async function submitNewTicket() {
         </div>
       </div>
     </div>`
+
+    // 🔥 Fire-and-forget — notifications send in background, don't block UI
+    const approverRole = vtype === 'ambulance' ? 'approver_amb' : 'approver_admin'
+    const priority = document.getElementById('ntPri')?.value || 'normal'
+    Promise.all([
+      addAudit(trip.id, trip.ticket_no, 'Ticket Created', purpose),
+      getPhonesForRole(approverRole).then(phones =>
+        sendSMS(phones, `[TDMH VTS] New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nDate: ${date} ${time}\nPlease log in to approve.`)
+      ),
+      getEmailsForRole(approverRole).then(emails =>
+        sendEmail(emails, 'ticket_created', {
+          ticket_no: trip.ticket_no, department: dept,
+          requester_name: req, purpose, destination: dest,
+          departure_at: `${date} ${time}`,
+          vehicle_type_needed: vtype, priority
+        })
+      )
+    ]).catch(err => console.warn('[TDMH VTS] Background notification error:', err))
+
   } catch(e) {
     btn.disabled=false; btn.textContent='Submit Request'
     const errEl = document.getElementById('ntFormErr')
@@ -1641,7 +1672,7 @@ async function submitNewTicket() {
 // ════════════════════════════════════════════════
 // VEHICLES
 // ════════════════════════════════════════════════
-const VEHICLE_TYPES = ['Service Van','Sedan','Pickup Truck','Service Bus','Utility Van','SUV','Ambulance','BLS Ambulance']
+const VEHICLE_TYPES = ['Service Van','Sedan','Pickup Truck','Service Bus','Utility Van','SUV','Ambulance','BLS Ambulance','Motorcycle']
 
 async function renderVehicles() {
   const { data } = await SB.from('vehicles').select('*').order('plate')
