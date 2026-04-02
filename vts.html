@@ -6,9 +6,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MedCenter VTS">
+<meta name="apple-mobile-web-app-title" content="TDMH VTS">
 <meta name="theme-color" content="#0c2340">
-<title>MedCenter VTS — Vehicle Ticketing System</title>
+<title>TDMH VTS — Vehicle Ticketing System</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -178,10 +178,9 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 .ib{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:14px;color:var(--text2);touch-action:manipulation}
 .ib:hover{background:var(--bg)}
 
-/* ── Modal ── */
-.mo-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:flex-end;justify-content:center;padding:0}
+.mo-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:center;justify-content:center;padding:20px}
 .mo-overlay.open{display:flex}
-.mo{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:600px;max-height:92dvh;overflow-y:auto;border:1px solid var(--border)}
+.mo{background:var(--card);border-radius:var(--radius-lg);width:100%;max-width:560px;max-height:90dvh;overflow-y:auto;border:1px solid var(--border)}
 .mo-hd{padding:16px 18px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--card);z-index:1}
 .mo-title{font-size:14px;font-weight:700}
 .mo-body{padding:18px}
@@ -279,9 +278,9 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
   .fr{grid-template-columns:1fr}
   div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}
 
-  /* Modal — full bottom sheet */
-  .mo-overlay{padding:0;align-items:flex-end}
-  .mo{border-radius:20px 20px 0 0;max-height:94dvh;width:100%}
+  /* Modal — bottom sheet on mobile */
+  .mo-overlay{align-items:flex-end;padding:0}
+  .mo{border-radius:20px 20px 0 0;max-height:94dvh;max-width:100%}
   .mo::before{content:'';display:block;width:36px;height:4px;background:var(--border);border-radius:2px;margin:10px auto 0}
 
   /* Forms larger touch targets */
@@ -319,7 +318,7 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
   <div class="login-card">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:28px">
       <div class="sb-cross" style="width:36px;height:36px;border-radius:9px"><svg viewBox="0 0 18 18" fill="none"><rect x="7" y="1" width="4" height="16" rx="2" fill="#fff"/><rect x="1" y="7" width="16" height="4" rx="2" fill="#fff"/></svg></div>
-      <div><div style="font-size:14px;font-weight:700">MedCenter VTS</div><div style="font-size:11px;color:var(--text3)">Vehicle Ticketing System</div></div>
+      <div><div style="font-size:14px;font-weight:700">TDMH VTS</div><div style="font-size:11px;color:var(--text3)">Vehicle Ticketing System</div></div>
     </div>
     <h2 style="font-size:18px;font-weight:700;margin-bottom:22px">Sign in to your account</h2>
     <div class="fg"><label class="fl">Username</label><input class="fi" type="text" id="loginUsername" placeholder="e.g. admin" autocomplete="username" style="text-transform:lowercase"></div>
@@ -340,7 +339,7 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
     <div class="sb-head">
       <div class="sb-logo">
         <div class="sb-cross"><svg viewBox="0 0 18 18" fill="none"><rect x="7" y="1" width="4" height="16" rx="2" fill="#fff"/><rect x="1" y="7" width="16" height="4" rx="2" fill="#fff"/></svg></div>
-        <div><div class="sb-brand">MedCenter VTS</div><div class="sb-sub">Vehicle Ticketing System</div></div>
+        <div><div class="sb-brand">TDMH VTS</div><div class="sb-sub">Vehicle Ticketing System</div></div>
       </div>
       <div class="sb-user-pill"><div class="sb-user-label">Username</div><div class="sb-user-name" id="sbDept">Loading...</div></div>
     </div>
@@ -490,8 +489,8 @@ let currentPage = 'dashboard'
 let realtimeChannel = null
 let _departments = [] // cached from DB
 
-const ROLE_LABELS = { admin:'Administrator', approver:'Approver', guard:'Guard', requester:'Department User', driver:'Driver' }
-const ROLE_COLORS = { admin:'#0c6fdb', approver:'#7c3aed', guard:'#0d9488', requester:'#d97706', driver:'#16a34a' }
+const ROLE_LABELS = { admin:'Administrator', approver_admin:'Admin Approver', approver_amb:'Ambulance Approver', guard:'Guard', requester:'Department User', driver:'Driver' }
+const ROLE_COLORS = { admin:'#0c6fdb', approver_admin:'#7c3aed', approver_amb:'#dc2626', guard:'#0d9488', requester:'#d97706', driver:'#16a34a' }
 const STATUS_MAP = {
   'pending-approval':{ cls:'b-pending',  lbl:'Pending' },
   'approved':        { cls:'b-assigned', lbl:'Approved' },
@@ -725,7 +724,7 @@ const NAV = [
   { section: 'Fleet' },
   { id:'vehicles',     label:'Vehicles',       ic:'◉', roles:['admin','guard'] },
   { id:'drivers',      label:'Drivers',        ic:'◎', roles:['admin'] },
-  { id:'departments',  label:'Departments',    ic:'◫', roles:['admin','approver_admin','approver_amb','guard','requester'] },
+  { id:'departments',  label:'Departments',    ic:'◫', roles:['admin'] },
   { section: 'Oversight' },
   { id:'gps',          label:'GPS Tracking',   ic:'◍', tag:'Beta', roles:['admin','guard'] },
   { id:'reports',      label:'Reports',        ic:'◪', roles:['admin','approver_admin','approver_amb'] },
@@ -767,8 +766,8 @@ function buildSidebar() {
 // Bottom nav items — pick 4 most important per role + "More"
 const BOT_NAV_MAP = {
   admin:        [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'new-ticket',ic:'➕',lbl:'New'},{id:'vehicles',ic:'🚗',lbl:'Fleet'},{id:'more',ic:'⋯',lbl:'More'}],
-  approver_admin:[{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'reports',ic:'📊',lbl:'Reports'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'more',ic:'⋯',lbl:'More'}],
-  approver_amb: [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'reports',ic:'📊',lbl:'Reports'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'more',ic:'⋯',lbl:'More'}],
+  approver_admin:[{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'reports',ic:'📊',lbl:'Reports'},{id:'more',ic:'⋯',lbl:'More'}],
+  approver_amb: [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'reports',ic:'📊',lbl:'Reports'},{id:'more',ic:'⋯',lbl:'More'}],
   guard:        [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets'},{id:'vehicles',ic:'🚗',lbl:'Fleet'},{id:'gps',ic:'📍',lbl:'GPS'},{id:'more',ic:'⋯',lbl:'More'}],
   requester:    [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'My Trips'},{id:'new-ticket',ic:'➕',lbl:'New'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'faq',ic:'❓',lbl:'FAQ'}],
   driver:       [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'My Trips'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'faq',ic:'❓',lbl:'FAQ'}],
@@ -1216,7 +1215,7 @@ async function doApproveAndAssign(id, ticketNo) {
 
   // SMS → driver (time-critical)
   if (driverRow?.phone) await sendSMS([driverRow.phone],
-    `[MedCenter VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${trip?.purpose||''}\nDestination: ${trip?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(trip?.departure_at)}\nPlease report to the motor pool.`
+    `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${trip?.purpose||''}\nDestination: ${trip?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(trip?.departure_at)}\nPlease report to the motor pool.`
   )
   // Email → driver
   if (driverRow?.user_id) {
@@ -1256,7 +1255,7 @@ async function doReject(id, ticketNo) {
   // SMS + Email → notify driver if already assigned (time-critical — driver needs to know ASAP)
   if (trip?.driver_id) {
     const { data: drvRow } = await SB.from('drivers').select('phone').eq('id', trip.driver_id).single()
-    if (drvRow?.phone) await sendSMS([drvRow.phone], `[MedCenter VTS] Trip ${ticketNo} has been CANCELLED.\nYou are no longer assigned to this trip.`)
+    if (drvRow?.phone) await sendSMS([drvRow.phone], `[TDMH VTS] Trip ${ticketNo} has been CANCELLED.\nYou are no longer assigned to this trip.`)
     const drvEmails = await getEmailsForRole('driver')
     await sendEmail(drvEmails, 'trip_cancelled_driver', { ticket_no: ticketNo, department: trip?.department||'', purpose: trip?.purpose||'', destination: trip?.destination||'', reason })
     await SB.from('drivers').update({ status:'available' }).eq('id', trip.driver_id)
@@ -1267,7 +1266,17 @@ async function doReject(id, ticketNo) {
 
 // CANCEL TICKET
 async function cancelTicket(id, ticketNo, driverId, vehicleId) {
-  if (!confirm(`Cancel ticket ${ticketNo}?\n\nThis cannot be undone.`)) return
+  openMO(`Cancel Ticket`,
+    `<div style="text-align:center;padding:8px 0">
+       <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+       <div style="font-size:16px;font-weight:700;margin-bottom:8px">Cancel ${ticketNo}?</div>
+       <div style="font-size:13px;color:var(--text2)">This action cannot be undone. The ticket will be marked as cancelled.</div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Keep Ticket</button>
+     <button class="btn btn-red" onclick="doCancelTicket('${id}','${ticketNo}','${driverId}','${vehicleId}')">Yes, Cancel Ticket</button>`
+  )
+}
+async function doCancelTicket(id, ticketNo, driverId, vehicleId) {
   const { error } = await SB.from('trips').update({
     status: 'cancelled',
     rejected_by: currentProfile?.id,
@@ -1275,18 +1284,16 @@ async function cancelTicket(id, ticketNo, driverId, vehicleId) {
     rejection_reason: 'Cancelled by ' + (currentProfile?.full_name || currentProfile?.username)
   }).eq('id', id)
   if (error) { alert(error.message); return }
-  // Release driver and vehicle if assigned
   if (driverId && driverId !== 'null') await SB.from('drivers').update({ status:'available' }).eq('id', driverId)
   if (vehicleId && vehicleId !== 'null') await SB.from('vehicles').update({ status:'available' }).eq('id', vehicleId)
   await addAudit(id, ticketNo, 'Ticket Cancelled', 'Cancelled by ' + (currentProfile?.full_name || currentProfile?.username))
-  // Notify driver if assigned
   if (driverId && driverId !== 'null') {
     const { data: drvRow } = await SB.from('drivers').select('phone').eq('id', driverId).single()
-    if (drvRow?.phone) await sendSMS([drvRow.phone], `[MedCenter VTS] Trip ${ticketNo} has been CANCELLED. You are no longer assigned to this trip.`)
+    if (drvRow?.phone) await sendSMS([drvRow.phone], `[TDMH VTS] Trip ${ticketNo} has been CANCELLED. You are no longer assigned to this trip.`)
     const drvEmails = await getEmailsForRole('driver')
     if (drvEmails.length) await sendEmail(drvEmails, 'trip_cancelled_driver', { ticket_no: ticketNo, reason: 'Trip cancelled' })
   }
-  renderTickets()
+  closeMO(); renderTickets()
 }
 
 // ASSIGN DRIVER
@@ -1325,7 +1332,7 @@ async function doAssign(id, ticketNo) {
     driverEmail = du?.email || null
   }
   // SMS → driver only (time-critical: needs to know ASAP to prepare)
-  if (driverRow?.phone) await sendSMS([driverRow.phone], `[MedCenter VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
+  if (driverRow?.phone) await sendSMS([driverRow.phone], `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
   // Email only → driver, requester, guard
   if (driverEmail) await sendEmail([driverEmail], 'driver_assigned', { ticket_no: ticketNo, department: tripData?.department||'', purpose: tripData?.purpose||'', destination: tripData?.destination||'', departure_at: fmtDT(tripData?.departure_at), vehicle_plate: vehiclePlate })
   const reqContacts = await getRequesterContacts(id)
@@ -1364,7 +1371,7 @@ async function doGateOut(id, ticketNo) {
   const { data: gateTrip } = await SB.from('trips').select('driver_id,driver_name,destination,purpose').eq('id',id).single()
   if (gateTrip?.driver_id) {
     const { data: drv } = await SB.from('drivers').select('phone,user_id').eq('id', gateTrip.driver_id).single()
-    if (drv?.phone) await sendSMS([drv.phone], `[MedCenter VTS] Gate Out cleared for ${ticketNo}.\nYou are now cleared to depart.\nDestination: ${gateTrip.destination||''}\nSafe travels!`)
+    if (drv?.phone) await sendSMS([drv.phone], `[TDMH VTS] Gate Out cleared for ${ticketNo}.\nYou are now cleared to depart.\nDestination: ${gateTrip.destination||''}\nSafe travels!`)
     if (drv?.user_id) {
       const { data: du } = await SB.from('users').select('email').eq('id', drv.user_id).single()
       if (du?.email) await sendEmail([du.email], 'gate_out_driver', { ticket_no: ticketNo, purpose: gateTrip.purpose||'', destination: gateTrip.destination||'', odometer_out: odo })
@@ -1468,6 +1475,7 @@ function renderNewTicket() {
         <div class="fg"><label class="fl">No. of Passengers</label><input class="fi" type="number" id="ntPax" value="1" min="1"></div>
       </div>
       <div class="fg"><label class="fl">Additional Notes</label><textarea class="ft" id="ntNotes" placeholder="Special requirements, items to carry, etc."></textarea></div>
+      <div id="ntFormErr" style="display:none;background:var(--red-s);color:var(--red);padding:9px 13px;border-radius:9px;font-size:12px;margin-bottom:12px;border:1px solid rgba(220,38,38,.2)"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
         <button class="btn btn-ghost" onclick="goTo('tickets')">Cancel</button>
         <button class="btn btn-pri" id="ntSubmit" onclick="submitNewTicket()">Submit Request</button>
@@ -1500,19 +1508,47 @@ async function submitNewTicket() {
   const date    = document.getElementById('ntDate')?.value
   const time    = document.getElementById('ntTime')?.value
   const vtype   = document.getElementById('ntType')?.value||'regular'
-  if (!dept||!req||!purpose||!dest||!date||!time) { alert('Please fill all required fields.'); return }
-  // Validate departure is not in the past
+
+  // Highlight empty required fields in red
+  const fields = [
+    ['ntReq', req], ['ntPurpose', purpose], ['ntDest', dest],
+    ['ntDate', date], ['ntTime', time]
+  ]
+  let hasError = false
+  fields.forEach(([id, val]) => {
+    const el = document.getElementById(id)
+    if (!val) { if(el) el.style.borderColor='var(--red)'; hasError=true }
+    else { if(el) el.style.borderColor='' }
+  })
+  if (!dept) {
+    const deptEl = document.getElementById('ntDept')
+    if (deptEl && deptEl.tagName === 'SELECT') { deptEl.style.borderColor='var(--red)'; hasError=true }
+  }
+  if (hasError) {
+    const errEl = document.getElementById('ntFormErr')
+    if (errEl) { errEl.style.display='block'; errEl.textContent='Please fill in all required fields marked with *' }
+    return
+  }
+  const errEl = document.getElementById('ntFormErr')
+  if (errEl) errEl.style.display='none'
+
+  // Validate departure not in the past
   const departureISO = new Date(`${date}T${time}`).toISOString()
   if (new Date(departureISO) < new Date()) {
-    alert('Departure date and time cannot be in the past.'); return
+    const el = document.getElementById('ntDate')
+    if(el) el.style.borderColor='var(--red)'
+    const errEl = document.getElementById('ntFormErr')
+    if(errEl) { errEl.style.display='block'; errEl.textContent='Departure date and time cannot be in the past.' }
+    return
   }
-  // Validate expected return is after departure
   const retDate = document.getElementById('ntReturn')?.value
   if (retDate && new Date(retDate) < new Date(date)) {
-    alert('Expected return date must be after the departure date.'); return
+    const errEl = document.getElementById('ntFormErr')
+    if(errEl) { errEl.style.display='block'; errEl.textContent='Expected return date must be after the departure date.' }
+    return
   }
   const pax = parseInt(document.getElementById('ntPax')?.value)||1
-  if (pax < 1 || pax > 50) { alert('Passengers must be between 1 and 50.'); return }
+  if (pax < 1 || pax > 50) { return }
   const btn = document.getElementById('ntSubmit'); btn.disabled=true; btn.textContent='Submitting...'
   try {
     const { data: trip, error } = await SB.from('trips').insert([{
@@ -1535,7 +1571,7 @@ async function submitNewTicket() {
     const approverRole = vtype === 'ambulance' ? 'approver_amb' : 'approver_admin'
     const approverPhones = await getPhonesForRole(approverRole)
     await sendSMS(approverPhones,
-      `[MedCenter VTS] New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nDate: ${date} ${time}\nPlease log in to approve.`
+      `[TDMH VTS] New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nDate: ${date} ${time}\nPlease log in to approve.`
     )
     // Email → notify correct approver
     const approverEmails = await getEmailsForRole(approverRole)
@@ -1546,61 +1582,139 @@ async function submitNewTicket() {
       vehicle_type_needed: vtype,
       priority: document.getElementById('ntPri')?.value||'normal'
     })
-    openMO('Request Submitted',
-      `<div style="text-align:center;padding:16px 0">
-        <div style="width:52px;height:52px;background:var(--green-s);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;color:var(--green)">✓</div>
-        <div style="font-size:18px;font-weight:700;margin-bottom:5px">${trip.ticket_no}</div>
-        <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Request submitted successfully.</div>
-        <div class="info info-blue" style="text-align:left">Approver: <strong>${vtype==='ambulance'?'Ambulance Approver':'Admin Approver'}</strong><br>A notification has been sent.</div>
-      </div>`,
-      `<button class="btn btn-pri" onclick="closeMO();goTo('tickets')">View All Tickets</button>`
-    )
+    // Close the form and show polished success screen
+    const approverLabel = vtype==='ambulance' ? 'Ambulance Approver' : 'Admin Approver'
+    const priorityLabel = { low:'Low (24h SLA)', normal:'Normal (4h SLA)', urgent:'Urgent (1h SLA)', emergency:'Emergency (15min SLA)' }[document.getElementById('ntPri')?.value||'normal'] || ''
+    document.getElementById('CONTENT').innerHTML = `
+    <div style="max-width:480px;margin:48px auto;text-align:center">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px 32px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--green),#34d399)"></div>
+        <!-- Animated checkmark -->
+        <div style="width:72px;height:72px;margin:0 auto 20px;position:relative">
+          <svg viewBox="0 0 72 72" style="width:72px;height:72px">
+            <circle cx="36" cy="36" r="34" fill="none" stroke="var(--green-s)" stroke-width="3"/>
+            <circle cx="36" cy="36" r="34" fill="none" stroke="var(--green)" stroke-width="3"
+              stroke-dasharray="213" stroke-dashoffset="213"
+              style="animation:circleIn .5s ease forwards;transform-origin:center;transform:rotate(-90deg)"/>
+            <polyline points="22,37 32,47 50,27" fill="none" stroke="var(--green)" stroke-width="3.5"
+              stroke-linecap="round" stroke-linejoin="round"
+              stroke-dasharray="40" stroke-dashoffset="40"
+              style="animation:checkIn .3s ease .4s forwards"/>
+          </svg>
+        </div>
+        <style>
+          @keyframes circleIn{to{stroke-dashoffset:0}}
+          @keyframes checkIn{to{stroke-dashoffset:0}}
+        </style>
+        <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Request Submitted</div>
+        <div style="font-size:28px;font-weight:800;letter-spacing:-0.5px;margin-bottom:6px">${trip.ticket_no}</div>
+        <div style="font-size:14px;color:var(--text2);margin-bottom:24px">Your vehicle request has been submitted successfully.</div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:left;margin-bottom:24px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <span style="font-size:18px">📋</span>
+            <div>
+              <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Sent to</div>
+              <div style="font-size:13px;font-weight:700">${approverLabel}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">⏱</span>
+            <div>
+              <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">SLA Target</div>
+              <div style="font-size:13px;font-weight:700">${priorityLabel}</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="renderNewTicket()">+ New Request</button>
+          <button class="btn btn-pri" style="flex:1;justify-content:center" onclick="goTo('tickets')">View All Tickets</button>
+        </div>
+      </div>
+    </div>`
   } catch(e) {
-    alert('Error: '+e.message)
     btn.disabled=false; btn.textContent='Submit Request'
+    const errEl = document.getElementById('ntFormErr')
+    if(errEl) { errEl.style.display='block'; errEl.textContent='Error: '+e.message }
   }
 }
 
 // ════════════════════════════════════════════════
 // VEHICLES
 // ════════════════════════════════════════════════
+const VEHICLE_TYPES = ['Service Van','Sedan','Pickup Truck','Service Bus','Utility Van','SUV','Ambulance','BLS Ambulance']
+
 async function renderVehicles() {
   const { data } = await SB.from('vehicles').select('*').order('plate')
   const V = data||[]
+  const isAdmin = currentProfile?.role === 'admin'
   document.getElementById('CONTENT').innerHTML = `
   <div class="card card-np" style="overflow:hidden">
-    <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">Vehicle Registry</div><button class="btn btn-pri btn-sm" onclick="openAddVehicle()">+ Add Vehicle</button></div>
-    <table class="tbl"><thead><tr><th>Plate</th><th>Name</th><th>Type</th><th>Capacity</th><th>Fuel</th><th>Status</th></tr></thead><tbody>
+    <div class="card-hd" style="padding:14px 16px 12px">
+      <div class="card-title">Vehicle Registry</div>
+      ${isAdmin ? `<button class="btn btn-pri btn-sm" onclick="openAddVehicle()">+ Add Vehicle</button>` : ''}
+    </div>
+    <table class="tbl"><thead><tr><th>Plate</th><th>Name</th><th>Type</th><th>Capacity</th><th>Odometer</th><th>Fuel</th><th>Status</th>${isAdmin?'<th>Actions</th>':''}</tr></thead><tbody>
     ${V.map(v=>`<tr>
       <td style="font-weight:700;font-size:13px">${v.plate}</td>
       <td>${v.name||'—'}</td>
       <td>${(v.type||'').toLowerCase().includes('ambulance')?`<span style="color:var(--red);font-weight:600">${v.type}</span>`:v.type||'—'}</td>
       <td>${v.capacity||'—'} pax</td>
+      <td style="font-size:11px">${v.odometer!=null?v.odometer.toLocaleString()+' km':'—'}</td>
       <td style="font-size:11px;color:var(--text2)">${v.fuel||'—'}</td>
       <td>${badge(v.status||'available')}</td>
+      ${isAdmin?`<td><button class="btn btn-ghost btn-sm" onclick="openEditVehicle('${v.id}','${v.plate}','${v.name||''}','${v.type||''}',${v.capacity||4},'${v.fuel||'Diesel'}',${v.odometer||0})">Edit</button></td>`:''}
     </tr>`).join('')}
     </tbody></table>
   </div>`
 }
 
+function vTypeOptions(selected='') {
+  return VEHICLE_TYPES.map(t => `<option${t===selected?' selected':''}>${t}</option>`).join('')
+}
+
 function openAddVehicle() {
   openMO('Add Vehicle',
     `<div class="fr">
-       <div class="fg"><label class="fl">Plate *</label><input class="fi" id="vPlate" placeholder="MCH-XXXX"></div>
+       <div class="fg"><label class="fl">Plate *</label><input class="fi" id="vPlate" placeholder="MCH-XXXX" style="text-transform:uppercase"></div>
        <div class="fg"><label class="fl">Name / Description</label><input class="fi" id="vName" placeholder="Hospital Van 1"></div>
-       <div class="fg"><label class="fl">Type *</label><select class="fs" id="vType"><option>Service Van</option><option>Sedan</option><option>Pickup Truck</option><option>Service Bus</option><option>Utility Van</option><option>Ambulance</option><option>BLS Ambulance</option></select></div>
-       <div class="fg"><label class="fl">Capacity (pax)</label><input class="fi" type="number" id="vCap" value="4"></div>
+       <div class="fg"><label class="fl">Type *</label><select class="fs" id="vType">${vTypeOptions()}</select></div>
+       <div class="fg"><label class="fl">Capacity (pax)</label><input class="fi" type="number" id="vCap" value="4" min="1"></div>
        <div class="fg"><label class="fl">Fuel Type</label><select class="fs" id="vFuel"><option>Diesel</option><option>Gasoline</option><option>Electric</option></select></div>
+       <div class="fg"><label class="fl">Current Odometer (km)</label><input class="fi" type="number" id="vOdo" value="0" min="0"></div>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="addVBtn" onclick="doAddVehicle()">Add Vehicle</button>`
   )
 }
 async function doAddVehicle() {
-  const plate = document.getElementById('vPlate')?.value?.trim()
+  const plate = document.getElementById('vPlate')?.value?.trim().toUpperCase()
   if (!plate) { alert('Plate number required.'); return }
-  const btn = document.getElementById('addVBtn'); btn.disabled=true
-  await SB.from('vehicles').insert([{ plate, name:document.getElementById('vName').value, type:document.getElementById('vType').value, capacity:parseInt(document.getElementById('vCap').value)||4, fuel:document.getElementById('vFuel').value, status:'available' }])
+  const btn = document.getElementById('addVBtn'); btn.disabled=true; btn.textContent='Saving...'
+  const { error } = await SB.from('vehicles').insert([{ plate, name:document.getElementById('vName').value, type:document.getElementById('vType').value, capacity:parseInt(document.getElementById('vCap').value)||4, fuel:document.getElementById('vFuel').value, odometer:parseInt(document.getElementById('vOdo').value)||0, status:'available' }])
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Add Vehicle'; return }
+  closeMO(); renderVehicles()
+}
+
+function openEditVehicle(id, plate, name, type, cap, fuel, odometer) {
+  openMO(`Edit Vehicle — ${plate}`,
+    `<div class="fr">
+       <div class="fg"><label class="fl">Plate *</label><input class="fi" id="vPlate" value="${plate}" style="text-transform:uppercase"></div>
+       <div class="fg"><label class="fl">Name / Description</label><input class="fi" id="vName" value="${name}"></div>
+       <div class="fg"><label class="fl">Type *</label><select class="fs" id="vType">${vTypeOptions(type)}</select></div>
+       <div class="fg"><label class="fl">Capacity (pax)</label><input class="fi" type="number" id="vCap" value="${cap}" min="1"></div>
+       <div class="fg"><label class="fl">Fuel Type</label><select class="fs" id="vFuel"><option${fuel==='Diesel'?' selected':''}>Diesel</option><option${fuel==='Gasoline'?' selected':''}>Gasoline</option><option${fuel==='Electric'?' selected':''}>Electric</option></select></div>
+       <div class="fg"><label class="fl">Current Odometer (km)</label><input class="fi" type="number" id="vOdo" value="${odometer}" min="0"></div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="editVBtn" onclick="doEditVehicle('${id}')">Save Changes</button>`
+  )
+}
+async function doEditVehicle(id) {
+  const plate = document.getElementById('vPlate')?.value?.trim().toUpperCase()
+  if (!plate) { alert('Plate number required.'); return }
+  const btn = document.getElementById('editVBtn'); btn.disabled=true; btn.textContent='Saving...'
+  const { error } = await SB.from('vehicles').update({ plate, name:document.getElementById('vName').value, type:document.getElementById('vType').value, capacity:parseInt(document.getElementById('vCap').value)||4, fuel:document.getElementById('vFuel').value, odometer:parseInt(document.getElementById('vOdo').value)||0 }).eq('id', id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Save Changes'; return }
   closeMO(); renderVehicles()
 }
 
@@ -2273,7 +2387,10 @@ function openCreateAccount() {
        <div class="fg"><label class="fl">Role *</label><select class="fs" id="caRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
        <div class="fg"><label class="fl">Department</label><select class="fs" id="caDept">${deptOptions()}</select></div>
      </div>
-     <div class="fg"><label class="fl">Phone</label><input class="fi" id="caPhone" placeholder="09XXXXXXXXX"></div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Phone (for SMS)</label><input class="fi" id="caPhone" placeholder="09XXXXXXXXX"></div>
+       <div class="fg"><label class="fl">Email (for Email notif.)</label><input class="fi" type="email" id="caEmailField" placeholder="user@hospital.com"></div>
+     </div>
      <div class="fg"><label class="fl">Initial Password *</label><input class="fi" type="password" id="caPw" placeholder="Set initial password"></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="caBn" onclick="doCreateAccount()">Create Account</button>`
@@ -2286,12 +2403,13 @@ async function doCreateAccount() {
   const role     = document.getElementById('caRole')?.value
   const dept     = document.getElementById('caDept')?.value
   const phone    = document.getElementById('caPhone')?.value||''
+  const email    = document.getElementById('caEmailField')?.value?.trim()||null
   if (!name||!username||!pw) { alert('Name, username, and password required.'); return }
   const btn = document.getElementById('caBn'); btn.disabled=true; btn.textContent='Creating...'
   try {
     const { error } = await SB.from('users').insert([{
       username, password: pw, full_name: name,
-      role, department: dept, phone, status: 'active'
+      role, department: dept, phone, email, status: 'active'
     }])
     if (error) throw error
     closeMO(); renderAccounts()
@@ -2387,7 +2505,7 @@ async function renderDriverApp() {
       <div class="daf">
         <div style="background:#040a14;padding:3px 12px;display:flex;justify-content:space-between;font-size:9px;color:#374151"><span>9:41</span><span>100%</span></div>
         <div style="background:#0a1424;padding:11px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #0d1e33">
-          <div><div style="font-size:11px;font-weight:700;color:#e2e8f0">Driver Portal</div><div style="font-size:9px;color:#4e7098">MedCenter VTS</div></div>
+          <div><div style="font-size:11px;font-weight:700;color:#e2e8f0">Driver Portal</div><div style="font-size:9px;color:#4e7098">TDMH VTS</div></div>
           <div style="display:flex;align-items:center;gap:5px;font-size:9px;color:#34d399"><span class="ping"></span>GPS On</div>
         </div>
         <div style="padding:8px 8px 4px;font-size:9px;color:#4e7098;text-transform:uppercase;letter-spacing:.5px">My Assignments</div>
