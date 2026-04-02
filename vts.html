@@ -665,7 +665,7 @@ async function renderDashboard() {
     <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Total Tickets</div><div class="stat-val">${T.length}</div><div class="stat-sub">All time</div></div>
     <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Pending Approval</div><div class="stat-val">${pending.length}</div><div class="stat-sub">Requires action</div></div>
     <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Active Trips</div><div class="stat-val">${active.length}</div><div class="stat-sub">In progress</div></div>
-    <div class="stat" style="${overdue.length?'border-color:#fecdd3;':'}"><div class="stat-bar" style="background:${overdue.length?'#e11d48':'var(--teal)'}"></div><div class="stat-lbl">${overdue.length?'⚠ Overdue':'Completed'}</div><div class="stat-val" style="color:${overdue.length?'#e11d48':''}">${overdue.length||done.length}</div><div class="stat-sub">${overdue.length?'Past expected return':'This period'}</div></div>
+    <div class="stat" style="${overdue.length?'border-color:#fecdd3;':''}"><div class="stat-bar" style="background:${overdue.length?'#e11d48':'var(--teal)'}"></div><div class="stat-lbl">${overdue.length?'⚠ Overdue':'Completed'}</div><div class="stat-val" style="color:${overdue.length?'#e11d48':''}">${overdue.length||done.length}</div><div class="stat-sub">${overdue.length?'Past expected return':'This period'}</div></div>
   </div>
   ${overdue.length ? `
   <div class="info info-red" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
