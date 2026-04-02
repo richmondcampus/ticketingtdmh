@@ -973,7 +973,7 @@ async function renderDashboard() {
   const role = currentProfile?.role
 
   // Build role-specific trip query
-  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,vehicle_type_needed,driver_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,is_advance_booking').order('created_at',{ascending:false})
+  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,is_advance_booking').order('created_at',{ascending:false})
   if (role === 'requester')     tripsQ = tripsQ.eq('requester_id', currentProfile.id)
   if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.id)
   if (role === 'approver_admin') tripsQ = tripsQ.neq('vehicle_type_needed', 'ambulance')
@@ -1002,7 +1002,7 @@ async function renderDashboard() {
   let upcomingAdvance = []
   if (['admin','guard','approver_admin','approver_amb'].includes(role)) {
     const { data: adv } = await SB.from('trips')
-      .select('id,ticket_no,department,purpose,destination,driver_name,vehicle_plate,departure_at,vehicle_type_needed,status,is_advance_booking')
+      .select('id,ticket_no,department,purpose,destination,driver_name,vehicle_name,vehicle_plate,departure_at,vehicle_type_needed,status,is_advance_booking')
       .in('status', ['assigned','approved'])
       .gt('departure_at', now.toISOString())
       .lte('departure_at', next7.toISOString())
@@ -1138,7 +1138,7 @@ async function renderDashboard() {
     const gateOutToday = upcomingAdvance.filter(t => t.status === 'assigned')
     // All on-trip (gate-in pending)
     const { data: onTrip } = await SB.from('trips')
-      .select('id,ticket_no,department,purpose,destination,driver_name,vehicle_plate,departure_at,expected_return_at,status')
+      .select('id,ticket_no,department,purpose,destination,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status')
       .eq('status','on-trip')
       .order('expected_return_at',{ascending:true})
     const onTripList = onTrip || []
@@ -1409,7 +1409,7 @@ function renderTicketsTable() {
         </td>
         <td style="padding:13px 16px">
           ${t.driver_name
-            ? `<div style="font-size:11.5px;font-weight:600;color:var(--text1)">${t.driver_name}</div><div style="font-size:10.5px;color:var(--text3);margin-top:1px;font-family:monospace">${t.vehicle?.plate||''}</div>`
+            ? `<div style="font-size:11.5px;font-weight:600;color:var(--text1)">${t.driver_name}</div><div style="font-size:11px;color:var(--text2);margin-top:1px">${t.vehicle_name||''}</div><div style="font-size:10.5px;color:var(--text3);margin-top:1px;font-family:monospace">${t.vehicle?.plate||t.vehicle_plate||''}</div>`
             : `<span style="font-size:11px;color:var(--text3)">—</span>`}
         </td>
         <td style="padding:13px 16px" onclick="event.stopPropagation()">
@@ -1466,7 +1466,10 @@ function buildGuardKanban(tickets) {
         </div>
         <div style="display:flex;justify-content:space-between">
           <span style="font-size:11.5px;color:var(--text3)">🚗 Vehicle</span>
-          <span style="font-size:12px;font-weight:800;font-family:monospace;color:var(--pri)">${t.vehicle?.plate||t.vehicle_plate||'—'}</span>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--text2)">${t.vehicle_name||''}</div>
+            <div style="font-size:12px;font-weight:800;font-family:monospace;color:var(--pri)">${t.vehicle?.plate||t.vehicle_plate||'—'}</div>
+          </div>
         </div>
       </div>
       ${canGateOut
@@ -1501,7 +1504,10 @@ function buildGuardKanban(tickets) {
         </div>
         <div style="display:flex;justify-content:space-between">
           <span style="font-size:11.5px;color:var(--text3)">🚗 Vehicle</span>
-          <span style="font-size:12px;font-weight:800;font-family:monospace;color:#7c3aed">${t.vehicle?.plate||t.vehicle_plate||'—'}</span>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--text2)">${t.vehicle_name||''}</div>
+            <div style="font-size:12px;font-weight:800;font-family:monospace;color:#7c3aed">${t.vehicle?.plate||t.vehicle_plate||'—'}</div>
+          </div>
         </div>
       </div>
       <button onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')"
@@ -1563,7 +1569,7 @@ function buildMobCards(filtered, role) {
       <div class="mob-card-row">
         <span>📅 ${fmtDate(t.departure_at||t.created_at)}</span>
         ${t.driver_name?`<span>· 👤 ${t.driver_name}</span>`:''}
-        ${t.vehicle?.plate||t.vehicle_plate?`<span>· 🚗 ${t.vehicle?.plate||t.vehicle_plate}</span>`:''}
+        ${t.vehicle?.plate||t.vehicle_plate?`<span>· 🚗 ${t.vehicle_name||''} ${t.vehicle?.plate||t.vehicle_plate}</span>`:''}
       </div>
       ${acts.length?`<div class="mob-card-acts" onclick="event.stopPropagation()">${acts.join('')}<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button></div>`:`<div class="mob-card-acts"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View Details</button></div>`}
     </div>`
@@ -1578,7 +1584,7 @@ async function openViewModal(id) {
     ['Department',t.department],['Requester',t.requester_name],
     ['Purpose',t.purpose,'span2'],['Destination',t.destination,'span2'],
     ['Date & Time',fmtDT(t.departure_at)],['Passengers',`${t.passengers||1} pax`],
-    ['Driver',t.driver_name||'Not assigned'],['Vehicle',t.vehicle?.plate||'Not assigned'],
+    ['Driver',t.driver_name||'Not assigned'],['Vehicle',(t.vehicle_name||t.vehicle?.name||'') + (t.vehicle?.plate||t.vehicle_plate ? ' — ' + (t.vehicle?.plate||t.vehicle_plate) : '') || 'Not assigned'],
     ...(t.gate_out_at?[['Gate Out',fmtDT(t.gate_out_at)]]:[]),
     ...(t.gate_in_at?[['Gate In',fmtDT(t.gate_in_at)]]:[]),
     ...(t.odometer_out&&t.odometer_in?[['Distance',`${t.odometer_in-t.odometer_out} km`]]:[]),
@@ -1763,6 +1769,7 @@ async function doApproveAndAssign(id, ticketNo) {
     driver_name: driverName,
     vehicle_id: vv,
     vehicle_plate: _vehicles.find(v => v.id === vv)?.plate || '',
+    vehicle_name: _vehicles.find(v => v.id === vv)?.name || '',
     assigned_by: currentProfile?.id,
     assigned_at: new Date().toISOString()
   }).eq('id', id)
@@ -2096,8 +2103,8 @@ async function renderFleet() {
     SB.from('vehicles').select('*').order('plate'),
     SB.from('drivers').select('*').order('full_name'),
     SB.from('trips').select('*').eq('requester_id', currentProfile?.id).not('status','in','("cancelled","rejected")').order('departure_at',{ascending:false}).limit(20),
-    SB.from('trips').select('id,ticket_no,department,purpose,destination,driver_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
-    SB.from('trips').select('id,ticket_no,department,purpose,destination,driver_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking').eq('is_advance_booking',true).in('status',['assigned','approved']).gt('departure_at', new Date().toISOString()).order('departure_at',{ascending:true}).limit(20)
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking').eq('is_advance_booking',true).in('status',['assigned','approved']).gt('departure_at', new Date().toISOString()).order('departure_at',{ascending:true}).limit(20)
   ])
 
   const V = vehicles || [], D = drivers || []
