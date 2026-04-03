@@ -802,59 +802,94 @@ function QueueWorkspace({user, profile}) {
   const logTimeline = (qid,action,fromS,toS,extra={}) =>
     sb.from('queue_timeline').insert({queue_id:qid,action,from_status:fromS,to_status:toS,performed_by:user.id,...extra})
 
+  // Helper: upsert to tv_serving (puts queue on TV)
+  const tvShow = async (q, winName, winId) => {
+    await sb.from('tv_serving').upsert({
+      queue_id: q.id,
+      queue_number: q.queue_number,
+      service_name: q.services?.name||'',
+      service_color: q.services?.color||'#0ea5e9',
+      window_id: winId||selWin?.id,
+      window_name: winName||selWin?.name||'',
+      visitor_name: q.visitor_name||null,
+      shown_at: new Date().toISOString(),
+      hidden_at: null,
+      date: new Date().toISOString().slice(0,10)
+    },{onConflict:'queue_id'})
+  }
+
+  // Helper: hide from tv_serving after delay (ms)
+  const tvHide = (queueId, delayMs=0) => {
+    setTimeout(async () => {
+      await sb.from('tv_serving').update({
+        hidden_at: new Date().toISOString()
+      }).eq('queue_id', queueId)
+    }, delayMs)
+  }
+
   const serveQueue = async q => {
-    await sb.from('queues').update({status:'serving',window_id:selWin.id,served_by:user.id,serving_start:new Date().toISOString()}).eq('id',q.id)
+    await sb.from('queues').update({
+      status:'serving', window_id:selWin.id,
+      served_by:user.id, serving_start:new Date().toISOString()
+    }).eq('id',q.id)
+    await tvShow(q, selWin.name, selWin.id) // put on TV immediately
     await logTimeline(q.id,'serve',q.status,'serving')
     setTab('serving'); toast('Queue served!','success')
   }
 
   const completeQueue = async q => {
-    await sb.from('queues').update({status:'completed',completed_at:new Date().toISOString()}).eq('id',q.id)
+    await sb.from('queues').update({
+      status:'completed', completed_at:new Date().toISOString()
+    }).eq('id',q.id)
     await logTimeline(q.id,'complete','serving','completed')
+    tvHide(q.id, 30000) // hide from TV after 30 seconds
     setSelQ(null); toast('Queue completed!','success')
   }
 
   const removeQueue = async (q,reason='') => {
     await sb.from('queues').update({status:'removed'}).eq('id',q.id)
     await logTimeline(q.id,'remove',q.status,'removed',{reason})
+    tvHide(q.id, 0) // hide immediately
     if (selQ?.id===q.id) setSelQ(null); toast('Queue removed','info')
   }
 
   const holdQueue = async q => {
     await sb.from('queues').update({status:'held'}).eq('id',q.id)
     await logTimeline(q.id,'hold',q.status,'held')
+    tvHide(q.id, 0) // hide immediately
     if (selQ?.id===q.id) setSelQ(null); toast('Queue put on hold','info')
   }
 
   const skipQueue = async q => {
-    await sb.from('queues').update({status:'waiting',created_at:new Date().toISOString()}).eq('id',q.id)
+    await sb.from('queues').update({
+      status:'waiting', created_at:new Date().toISOString()
+    }).eq('id',q.id)
     await logTimeline(q.id,'skip',q.status,'waiting')
+    tvHide(q.id, 0) // hide immediately
     if (selQ?.id===q.id) setSelQ(null); toast('Queue skipped','info')
   }
 
   const notifyQueue = async q => {
-    // Get window name
     const winName = selWin?.name || q.windows?.name || 'your window'
-    const svcName = q.services?.name || ''
 
-    // 1. Insert notify_event — TV will pick this up via realtime and announce
+    // Ensure it's on TV (in case not yet shown)
+    await tvShow(q, winName, selWin?.id||q.window_id)
+
+    // Insert notify_event — TV announces via realtime
     await sb.from('notify_events').insert({
       queue_id: q.id,
       queue_number: q.queue_number,
       window_name: winName,
-      service_name: svcName,
-      visitor_name: q.visitor_name || null,
+      service_name: q.services?.name||'',
+      visitor_name: q.visitor_name||null,
     })
 
-    // 2. Also announce locally via Web Speech API (for the staff's screen)
+    // Local TTS
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel()
       const msg = new SpeechSynthesisUtterance()
       msg.text = `Queue number ${q.queue_number.split('').join(' ')}, please proceed to ${winName}.`
-      msg.lang = 'en-PH'
-      msg.rate = 0.9
-      msg.pitch = 1
-      msg.volume = 1
+      msg.lang = 'en-PH'; msg.rate = 0.9; msg.pitch = 1; msg.volume = 1
       window.speechSynthesis.speak(msg)
     }
 
@@ -1362,15 +1397,14 @@ function TransferModal({queue:q, type, currentWindowId, onClose, onTransferred})
 // TV DISPLAY  (standalone, no sidebar)
 // ─────────────────────────────────────────────────────────────
 function TVDisplay({slug}) {
-  const [template, setTemplate] = React.useState(null)   // TV template config
-  const [allowedWinIds, setAllowedWinIds] = React.useState(null) // null = all
-  const [serving, setServing] = React.useState([])
-  const [recent, setRecent] = React.useState([])
+  const [template, setTemplate] = React.useState(null)
+  const [allowedWinIds, setAllowedWinIds] = React.useState(null)
+  const [serving, setServing] = React.useState([])   // from tv_serving table
+  const [recent, setRecent] = React.useState([])     // from queues completed
   const [now, setNow] = React.useState(new Date())
   const [flashId, setFlashId] = React.useState(null)
   const [announcement, setAnnouncement] = React.useState(null)
   const [audioReady, setAudioReady] = React.useState(false)
-  const loadedRef = React.useRef(false)
 
   const unlockAudio = () => {
     if (!audioReady) {
@@ -1391,15 +1425,8 @@ function TVDisplay({slug}) {
     setTimeout(()=>setAnnouncement(null), 7000)
   }
 
-  // Filter serving list by allowed windows
-  const filterByWindow = (list, winIds) => {
-    if (!winIds) return list // null = show all
-    return list.filter(q => winIds.includes(q.window_id))
-  }
-
   const loadTemplate = async () => {
-    if (!slug || slug === '1') {
-      // ?tv=1 means main (show all)
+    if (!slug || slug==='1') {
       setTemplate({name:'Main Display', show_all_windows:true})
       setAllowedWinIds(null)
       return
@@ -1413,49 +1440,32 @@ function TVDisplay({slug}) {
       return
     }
     setTemplate(tmpl)
-    if (tmpl.show_all_windows) {
-      setAllowedWinIds(null)
-    } else {
-      setAllowedWinIds(tmpl.tv_template_windows?.map(r=>r.window_id)||[])
-    }
+    setAllowedWinIds(tmpl.show_all_windows ? null : (tmpl.tv_template_windows?.map(r=>r.window_id)||[]))
   }
 
-  // Track queues pending removal (completed but still showing)
-  const pendingRemove = React.useRef(new Set())
+  // Load from tv_serving — this is the ONLY source of truth for the TV
+  const loadServing = async (winIds) => {
+    let q = sb.from('tv_serving')
+      .select('*')
+      .eq('date', today())
+      .is('hidden_at', null)   // only show non-hidden
+      .order('shown_at', {ascending:false})
+      .limit(20)
+    if (winIds && winIds.length > 0) q = q.in('window_id', winIds)
+    const {data} = await q
+    setServing(data||[])
+  }
 
-  const loadQueues = async (winIds) => {
+  const loadRecent = async (winIds) => {
     let q = sb.from('queues')
       .select('*,services(name,color),windows(name)')
       .eq('date', today())
-      .eq('status','serving') // ← ONLY serving, never fetch completed into serving list
-      .order('serving_start', {ascending:false})
-      .limit(40)
+      .eq('status','completed')
+      .order('completed_at',{ascending:false})
+      .limit(12)
     if (winIds && winIds.length > 0) q = q.in('window_id', winIds)
     const {data} = await q
-
-    // Merge: keep pending-remove queues (completed but still showing 30s)
-    // don't remove them just because poll ran
-    setServing(prev => {
-      const fresh = data || []
-      const freshIds = new Set(fresh.map(x=>x.id))
-      // Keep any queue that is in pendingRemove (still counting down)
-      const stillShowing = prev.filter(x => pendingRemove.current.has(x.id))
-      // Combine fresh serving + still-showing completed ones
-      const merged = [...fresh]
-      stillShowing.forEach(q => { if (!freshIds.has(q.id)) merged.push(q) })
-      return merged
-    })
-
-    // Load recent (completed) separately for the sidebar
-    let rq = sb.from('queues')
-      .select('*,services(name,color),windows(name)')
-      .eq('date', today())
-      .eq('status','completed')
-      .order('completed_at', {ascending:false})
-      .limit(12)
-    if (winIds && winIds.length > 0) rq = rq.in('window_id', winIds)
-    const {data:rdata} = await rq
-    setRecent(rdata || [])
+    setRecent(data||[])
   }
 
   React.useEffect(()=>{
@@ -1465,65 +1475,41 @@ function TVDisplay({slug}) {
     loadTemplate()
   },[slug])
 
-  // Start realtime AFTER we know the allowedWinIds
   React.useEffect(()=>{
-    if (template === null) return
-    loadQueues(allowedWinIds)
+    if (template===null) return
+    loadServing(allowedWinIds)
+    loadRecent(allowedWinIds)
     const ti = setInterval(()=>setNow(new Date()), 1000)
 
-    // Poll every 5 seconds as fallback (longer interval to reduce flicker)
-    const pollTimer = setInterval(()=>loadQueues(allowedWinIds), 5000)
-
-    // ── Realtime: queue changes ─────────────────────────
-    const ch = sb.channel(`tv-q-${slug||'main'}`)
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'queues'},payload=>{
-        const q = payload.new
-        if (allowedWinIds && q.window_id && !allowedWinIds.includes(q.window_id)) return
-
-        sb.from('queues').select('*,services(name,color),windows(name)').eq('id',q.id).single()
-          .then(({data:full})=>{
-            if (!full) return
-
-            if (q.status==='serving') {
-              // New queue being served — add/update on TV
-              pendingRemove.current.delete(q.id)
-              setServing(p=>{
-                const exists = p.find(x=>x.id===q.id)
-                return exists ? p.map(x=>x.id===q.id?full:x) : [full,...p]
-              })
-              setFlashId(q.id)
-              setTimeout(()=>setFlashId(null), 4000)
-
-            } else if (q.status==='completed' || q.status==='removed') {
-              // Mark as pending remove — keep showing for 30 seconds
-              pendingRemove.current.add(q.id)
-              setServing(p=>{
-                // Update the card to show "completed" style but keep it visible
-                return p.map(x=>x.id===q.id ? {...full, _pendingRemove:true} : x)
-              })
-
-              // After 30 seconds, actually remove from TV
-              setTimeout(()=>{
-                pendingRemove.current.delete(q.id)
-                setServing(p=>p.filter(x=>x.id!==q.id))
-                if (q.status==='completed') {
-                  setRecent(p=>[full,...p].slice(0,12))
-                }
-              }, 30000)
-            }
-          })
+    // ── Realtime: tv_serving changes (INSERT/UPDATE) ─────
+    // This is the ONLY realtime we need — no polling needed!
+    const ch = sb.channel(`tv-serving-${slug||'main'}`)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'tv_serving'},payload=>{
+        const ev = payload.new
+        if (allowedWinIds && ev.window_id && !allowedWinIds.includes(ev.window_id)) return
+        if (ev.date !== today()) return
+        // Add to serving list
+        setServing(p=>{
+          const exists = p.find(x=>x.queue_id===ev.queue_id)
+          return exists ? p.map(x=>x.queue_id===ev.queue_id?ev:x) : [ev,...p]
+        })
+        setFlashId(ev.queue_id)
+        setTimeout(()=>setFlashId(null), 4000)
       })
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'queues'},payload=>{
-        const q = payload.new
-        if (q.status!=='serving') return
-        if (allowedWinIds && q.window_id && !allowedWinIds.includes(q.window_id)) return
-        sb.from('queues').select('*,services(name,color),windows(name)').eq('id',q.id).single()
-          .then(({data:full})=>{
-            if (!full) return
-            setServing(p=>[full,...p])
-            setFlashId(q.id)
-            setTimeout(()=>setFlashId(null),4000)
-          })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'tv_serving'},payload=>{
+        const ev = payload.new
+        if (ev.hidden_at) {
+          // hidden_at was set → remove from TV
+          setServing(p=>p.filter(x=>x.queue_id!==ev.queue_id))
+          // Refresh recent list
+          loadRecent(allowedWinIds)
+        } else {
+          // Updated but still visible (e.g. re-notify)
+          if (allowedWinIds && ev.window_id && !allowedWinIds.includes(ev.window_id)) return
+          setServing(p=>p.map(x=>x.queue_id===ev.queue_id?ev:x))
+          setFlashId(ev.queue_id)
+          setTimeout(()=>setFlashId(null), 4000)
+        }
       })
       .subscribe()
 
@@ -1531,30 +1517,15 @@ function TVDisplay({slug}) {
     const chNotify = sb.channel(`tv-notify-${slug||'main'}`)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notify_events'},payload=>{
         const ev = payload.new
-        sb.from('queues')
-          .select('*,services(name,color),windows(name)')
-          .eq('id', ev.queue_id)
-          .single()
-          .then(({data:full})=>{
-            if (!full) return
-            if (allowedWinIds && full.window_id && !allowedWinIds.includes(full.window_id)) return
-            setServing(p=>{
-              const exists = p.find(x=>x.id===full.id)
-              return exists ? p : [full,...p]
-            })
-            setFlashId(full.id)
-            setTimeout(()=>setFlashId(null), 6000)
-            announce(ev.queue_number, ev.window_name || full.windows?.name || 'your window')
-          })
+        // Flash the card that matches this queue
+        setFlashId(ev.queue_id)
+        setTimeout(()=>setFlashId(null), 6000)
+        // Announce
+        announce(ev.queue_number, ev.window_name||'your window')
       })
       .subscribe()
 
-    return()=>{
-      clearInterval(ti)
-      clearInterval(pollTimer)
-      ch.unsubscribe()
-      chNotify.unsubscribe()
-    }
+    return()=>{ clearInterval(ti); ch.unsubscribe(); chNotify.unsubscribe() }
   },[template, allowedWinIds])
 
   if (!template) return (
@@ -1565,14 +1536,12 @@ function TVDisplay({slug}) {
 
   return (
     <div className="tv" onClick={unlockAudio}>
-      {/* Audio unlock hint */}
       {!audioReady && (
         <div style={{position:'fixed',bottom:'20px',left:'50%',transform:'translateX(-50%)',background:'rgba(14,165,233,.95)',color:'#fff',padding:'12px 24px',borderRadius:'12px',fontSize:'13px',fontWeight:600,zIndex:999,boxShadow:'0 4px 20px rgba(14,165,233,.4)',whiteSpace:'nowrap'}}>
           🔊 Tap anywhere to enable voice announcements
         </div>
       )}
 
-      {/* Announcement banner — slides down on notify */}
       {announcement && (
         <div style={{position:'fixed',top:0,left:0,right:0,zIndex:998,background:'linear-gradient(90deg,#0369a1,#0ea5e9)',padding:'18px 40px',display:'flex',alignItems:'center',justifyContent:'center',gap:'24px',animation:'slideDown .3s ease',boxShadow:'0 8px 32px rgba(14,165,233,.5)'}}>
           <div style={{fontFamily:'JetBrains Mono',fontSize:'40px',fontWeight:900,color:'#fff',letterSpacing:'.05em'}}>{announcement.qnum}</div>
@@ -1621,21 +1590,17 @@ function TVDisplay({slug}) {
           ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:'14px'}}>
               {serving.map(q=>(
-                <div key={q.id} className={`tv-qcard ${flashId===q.id?'new-item':''}`}
+                <div key={q.queue_id}
+                  className={`tv-qcard ${flashId===q.queue_id?'new-item':''}`}
                   style={{
-                    border: flashId===q.id
-                      ? '2px solid var(--brand)'
-                      : q._pendingRemove ? '1px solid rgba(255,255,255,.04)' : '1px solid rgba(255,255,255,.08)',
-                    boxShadow: flashId===q.id ? '0 0 40px rgba(14,165,233,.5)' : 'none',
-                    opacity: q._pendingRemove ? 0.45 : 1,
-                    transition:'all .6s ease'
+                    border: flashId===q.queue_id ? '2px solid var(--brand)' : '1px solid rgba(255,255,255,.08)',
+                    boxShadow: flashId===q.queue_id ? '0 0 40px rgba(14,165,233,.5)' : 'none',
+                    transition:'all .4s'
                   }}>
-                  <div style={{fontSize:'10px',fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:'8px'}}>{q.windows?.name}</div>
-                  <div className="tv-qnum" style={{color: q._pendingRemove ? '#334155' : (q.services?.color||'var(--brand)'),fontSize:'60px'}}>{q.queue_number}</div>
-                  <div style={{color: q._pendingRemove ? '#334155' : '#94a3b8',fontSize:'13px',marginTop:'8px',fontWeight:600}}>
-                    {q._pendingRemove ? '— Done —' : q.services?.name}
-                  </div>
-                  {!q._pendingRemove && q.visitor_name && <div style={{color:'#64748b',fontSize:'12px',marginTop:'3px'}}>{q.visitor_name}</div>}
+                  <div style={{fontSize:'10px',fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:'8px'}}>{q.window_name}</div>
+                  <div className="tv-qnum" style={{color:q.service_color||'var(--brand)',fontSize:'60px'}}>{q.queue_number}</div>
+                  <div style={{color:'#94a3b8',fontSize:'13px',marginTop:'8px',fontWeight:600}}>{q.service_name}</div>
+                  {q.visitor_name && <div style={{color:'#64748b',fontSize:'12px',marginTop:'3px'}}>{q.visitor_name}</div>}
                 </div>
               ))}
             </div>
