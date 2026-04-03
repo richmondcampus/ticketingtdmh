@@ -711,8 +711,10 @@ function QueueWorkspace({user, profile}) {
     const ch = sb.channel(`qs-win-${winId}`)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'queues'},payload=>{
         const q = payload.new
-        if (!svcIds.includes(q.service_id) && !svcIds.includes(q.current_service_id)) return
         if (q.date !== today()) return
+        // Match if service_id OR current_service_id belongs to this window
+        const matches = svcIds.includes(q.service_id) || svcIds.includes(q.current_service_id)
+        if (!matches) return
         sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
           if (!data) return
           if (data.status==='waiting'||data.status==='held') setOngoing(p=>[...p,data])
@@ -721,16 +723,14 @@ function QueueWorkspace({user, profile}) {
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'queues'},payload=>{
         const q = payload.new
-        // Check both service_id and current_service_id (journey transfers update current_service_id)
         const relevantSvc = svcIds.includes(q.service_id) || svcIds.includes(q.current_service_id)
         if (!relevantSvc || q.date!==today()) return
         sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
           if (!data) return
           const active=['waiting','held']
+          const currentSvcMatch = svcIds.includes(data.current_service_id) || svcIds.includes(data.service_id)
           setOngoing(p=>{
             const exists = p.find(x=>x.id===q.id)
-            // Show in ongoing if current_service_id matches this window's services
-            const currentSvcMatch = svcIds.includes(data.current_service_id||data.service_id)
             if (active.includes(data.status) && currentSvcMatch) {
               return exists ? p.map(x=>x.id===q.id?data:x) : [...p,data]
             }
@@ -776,12 +776,12 @@ function QueueWorkspace({user, profile}) {
     const svcIds = selWin.window_services?.map(ws=>ws.service_id)||[]
     if (!svcIds.length) return
 
-    // Ongoing (waiting/held): show queues whose CURRENT service is for this window
-    // This includes journey patients who were transferred here
+    // Ongoing (waiting/held): match by current_service_id (journey) OR service_id (new queues)
+    // Use OR logic: a queue shows up if EITHER field matches this window's services
     const {data:waitingData} = await sb.from('queues')
       .select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)')
       .eq('date',today())
-      .in('current_service_id',svcIds)  // ← use current_service_id for journey support
+      .or(`current_service_id.in.(${svcIds.join(',')}),service_id.in.(${svcIds.join(',')})`)
       .in('status',['waiting','held'])
       .order('created_at')
 
