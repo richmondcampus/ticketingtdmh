@@ -712,9 +712,7 @@ function QueueWorkspace({user, profile}) {
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'queues'},payload=>{
         const q = payload.new
         if (q.date !== today()) return
-        // Match if service_id OR current_service_id belongs to this window
-        const matches = svcIds.includes(q.service_id) || svcIds.includes(q.current_service_id)
-        if (!matches) return
+        if (!svcIds.includes(q.service_id)) return
         sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
           if (!data) return
           if (data.status==='waiting'||data.status==='held') setOngoing(p=>[...p,data])
@@ -723,24 +721,27 @@ function QueueWorkspace({user, profile}) {
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'queues'},payload=>{
         const q = payload.new
-        const relevantSvc = svcIds.includes(q.service_id) || svcIds.includes(q.current_service_id)
-        if (!relevantSvc || q.date!==today()) return
+        if (q.date !== today()) return
+        // On journey transfer, service_id changes to the new service
+        // So checking service_id covers both normal and journey cases
+        if (!svcIds.includes(q.service_id)) {
+          // Queue left this window's service — remove from our lists
+          setOngoing(p=>p.filter(x=>x.id!==q.id))
+          setServing(p=>p.filter(x=>x.id!==q.id))
+          setSelQ(prev=>prev?.id===q.id ? null : prev)
+          return
+        }
         sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
           if (!data) return
-          const active=['waiting','held']
-          const currentSvcMatch = svcIds.includes(data.current_service_id) || svcIds.includes(data.service_id)
+          const active = ['waiting','held']
           setOngoing(p=>{
             const exists = p.find(x=>x.id===q.id)
-            if (active.includes(data.status) && currentSvcMatch) {
-              return exists ? p.map(x=>x.id===q.id?data:x) : [...p,data]
-            }
+            if (active.includes(data.status)) return exists ? p.map(x=>x.id===q.id?data:x) : [...p,data]
             return p.filter(x=>x.id!==q.id)
           })
           setServing(p=>{
             const exists = p.find(x=>x.id===q.id)
-            if (data.status==='serving' && data.window_id===winId) {
-              return exists ? p.map(x=>x.id===q.id?data:x) : [...p,data]
-            }
+            if (data.status==='serving' && data.window_id===winId) return exists ? p.map(x=>x.id===q.id?data:x) : [...p,data]
             return p.filter(x=>x.id!==q.id)
           })
           setSelQ(prev=>prev?.id===q.id ? data : prev)
@@ -776,25 +777,30 @@ function QueueWorkspace({user, profile}) {
     const svcIds = selWin.window_services?.map(ws=>ws.service_id)||[]
     if (!svcIds.length) return
 
-    // Ongoing (waiting/held): match by current_service_id (journey) OR service_id (new queues)
-    // Use OR logic: a queue shows up if EITHER field matches this window's services
-    const {data:waitingData} = await sb.from('queues')
+    // Fetch waiting/held queues for this window's services
+    // Query by service_id (covers both new queues and journey patients
+    // since we keep service_id = current service after journey transfer)
+    const {data:waitingData, error:we} = await sb.from('queues')
       .select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)')
-      .eq('date',today())
-      .or(`current_service_id.in.(${svcIds.join(',')}),service_id.in.(${svcIds.join(',')})`)
-      .in('status',['waiting','held'])
+      .eq('date', today())
+      .in('service_id', svcIds)
+      .in('status', ['waiting','held'])
       .order('created_at')
 
-    // Serving: only from THIS window
-    const {data:servingData} = await sb.from('queues')
+    if (we) console.error('loadQueues waiting error:', we)
+
+    // Serving: only queues being served at THIS specific window
+    const {data:servingData, error:se} = await sb.from('queues')
       .select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)')
-      .eq('date',today())
-      .eq('window_id',selWin.id)
-      .eq('status','serving')
+      .eq('date', today())
+      .eq('window_id', selWin.id)
+      .eq('status', 'serving')
       .order('serving_start')
 
-    setOngoing(waitingData||[])
-    setServing(servingData||[])
+    if (se) console.error('loadQueues serving error:', se)
+
+    setOngoing(waitingData || [])
+    setServing(servingData || [])
   }
 
   const selectWindow = async w => {
