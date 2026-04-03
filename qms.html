@@ -1502,20 +1502,42 @@ function TVDisplay({slug}) {
     ensureSession().then(()=>loadTemplate())
   },[slug])
 
+  // Use a ref to avoid stale closure in realtime callbacks
+  const allowedWinIdsRef = React.useRef(null)
+
+  React.useEffect(()=>{
+    allowedWinIdsRef.current = allowedWinIds
+  },[allowedWinIds])
+
   React.useEffect(()=>{
     if (template===null) return
     loadServing(allowedWinIds)
     loadRecent(allowedWinIds)
     const ti = setInterval(()=>setNow(new Date()), 1000)
 
-    // ── Channel 1: tv_serving → controls what shows on TV ───
-    // INSERT = new queue served → appear on TV + announce
-    // UPDATE with hidden_at = done → disappear from TV
-    const ch = sb.channel(`tv-serving-${slug||'main'}`)
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'tv_serving'},payload=>{
+    // ── Channel 1: tv_serving INSERT/UPDATE ──────────────
+    // Use Supabase server-side filter when template has exactly ONE window
+    // For multi-window templates, filter client-side via ref (no stale closure)
+    const winIds = allowedWinIdsRef.current
+
+    // Build channel with server-side filter if single window
+    // For multi-window or show_all, receive all and filter client-side via ref
+    let chConfig = {event:'INSERT', schema:'public', table:'tv_serving'}
+    if (winIds && winIds.length === 1) {
+      // Server-side filter — Supabase only sends events for this window_id
+      chConfig.filter = `window_id=eq.${winIds[0]}`
+    }
+
+    const ch = sb.channel(`tv-serving-${slug||'main'}-v2`)
+
+    // INSERT — new queue being served
+    ch.on('postgres_changes', chConfig, payload=>{
         const ev = payload.new
-        if (ev.date !== today()) return
-        if (allowedWinIds && ev.window_id && !allowedWinIds.includes(ev.window_id)) return
+        if (!ev || ev.date !== today()) return
+
+        // Client-side filter for multi-window templates (ref = always current)
+        const currentWinIds = allowedWinIdsRef.current
+        if (currentWinIds && ev.window_id && !currentWinIds.includes(ev.window_id)) return
 
         setServing(p=>{
           const exists = p.find(x=>x.queue_id===ev.queue_id)
@@ -1523,28 +1545,49 @@ function TVDisplay({slug}) {
         })
         setFlashId(ev.queue_id)
         setTimeout(()=>setFlashId(null), 5000)
-        // Announce when served
         announce(ev.queue_number, ev.window_name||'your window')
       })
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'tv_serving'},payload=>{
+
+    // UPDATE — queue hidden (complete/remove/hold/skip)
+    ch.on('postgres_changes',
+      {event:'UPDATE', schema:'public', table:'tv_serving'},
+      payload=>{
         const ev = payload.new
+        if (!ev) return
         if (ev.hidden_at) {
+          // Only remove if this window belongs to our template
+          const currentWinIds = allowedWinIdsRef.current
+          if (currentWinIds && ev.window_id && !currentWinIds.includes(ev.window_id)) return
           setServing(p=>p.filter(x=>x.queue_id!==ev.queue_id))
-          loadRecent(allowedWinIds)
+          loadRecent(allowedWinIdsRef.current)
         }
       })
-      .subscribe((status)=>{ console.log('[TV] tv_serving channel:', status) })
 
-    // ── Channel 2: notify_events → Bell button announce ──
-    // Only from Bell button (not from serve — serve already announces above)
-    const chNotify = sb.channel(`tv-notify-${slug||'main'}`)
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'notify_events'},payload=>{
-        const ev = payload.new
-        setFlashId(ev.queue_id)
-        setTimeout(()=>setFlashId(null), 6000)
-        announce(ev.queue_number, ev.window_name||'your window')
-      })
-      .subscribe((status)=>{ console.log('[TV] notify_events channel:', status) })
+    ch.subscribe((status)=>{ console.log('[TV] tv_serving:', status) })
+
+    // ── Channel 2: notify_events (Bell button only) ──────
+    const chNotify = sb.channel(`tv-notify-${slug||'main'}-v2`)
+      .on('postgres_changes',
+        {event:'INSERT', schema:'public', table:'notify_events'},
+        payload=>{
+          const ev = payload.new
+          if (!ev) return
+
+          // Check if this notify belongs to a window in our template
+          // by looking up the queue_id in our current serving list
+          // Use functional state update to get current serving
+          setServing(currentServing=>{
+            const match = currentServing.find(x=>x.queue_id===ev.queue_id)
+            if (match || !allowedWinIdsRef.current) {
+              // Queue is in our serving list OR we show all — announce
+              setFlashId(ev.queue_id)
+              setTimeout(()=>setFlashId(null), 6000)
+              announce(ev.queue_number, ev.window_name||'your window')
+            }
+            return currentServing // no state change
+          })
+        })
+      .subscribe((status)=>{ console.log('[TV] notify_events:', status) })
 
     return()=>{ clearInterval(ti); ch.unsubscribe(); chNotify.unsubscribe() }
   },[template, allowedWinIds])
