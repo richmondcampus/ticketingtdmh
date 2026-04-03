@@ -706,41 +706,43 @@ function QueueWorkspace({user, profile}) {
     channelRef.current?.unsubscribe()
 
     const svcIds = selWin.window_services?.map(ws=>ws.service_id)||[]
+    const winId  = selWin.id
 
-    const ch = sb.channel(`qs-win-${selWin.id}`)
+    const ch = sb.channel(`qs-win-${winId}`)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'queues'},payload=>{
         const q = payload.new
-        if (!svcIds.includes(q.service_id)) return
+        if (!svcIds.includes(q.service_id) && !svcIds.includes(q.current_service_id)) return
         if (q.date !== today()) return
-        // Fetch full record with joins
         sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
           if (!data) return
           if (data.status==='waiting'||data.status==='held') setOngoing(p=>[...p,data])
-          if (data.status==='serving') setServing(p=>[...p,data])
+          if (data.status==='serving' && data.window_id===winId) setServing(p=>[...p,data])
         })
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'queues'},payload=>{
         const q = payload.new
-        if (!svcIds.includes(q.service_id) && q.date!==today()) return
-        // Fetch full record then surgically update state
+        // Check both service_id and current_service_id (journey transfers update current_service_id)
+        const relevantSvc = svcIds.includes(q.service_id) || svcIds.includes(q.current_service_id)
+        if (!relevantSvc || q.date!==today()) return
         sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
           if (!data) return
           const active=['waiting','held']
           setOngoing(p=>{
             const exists = p.find(x=>x.id===q.id)
-            if (active.includes(data.status)) {
+            // Show in ongoing if current_service_id matches this window's services
+            const currentSvcMatch = svcIds.includes(data.current_service_id||data.service_id)
+            if (active.includes(data.status) && currentSvcMatch) {
               return exists ? p.map(x=>x.id===q.id?data:x) : [...p,data]
             }
             return p.filter(x=>x.id!==q.id)
           })
           setServing(p=>{
             const exists = p.find(x=>x.id===q.id)
-            if (data.status==='serving') {
+            if (data.status==='serving' && data.window_id===winId) {
               return exists ? p.map(x=>x.id===q.id?data:x) : [...p,data]
             }
             return p.filter(x=>x.id!==q.id)
           })
-          // Update selected queue if it's the one that changed
           setSelQ(prev=>prev?.id===q.id ? data : prev)
         })
       })
@@ -773,14 +775,26 @@ function QueueWorkspace({user, profile}) {
     if (!selWin) return
     const svcIds = selWin.window_services?.map(ws=>ws.service_id)||[]
     if (!svcIds.length) return
-    const {data} = await sb.from('queues')
+
+    // Ongoing (waiting/held): show queues whose CURRENT service is for this window
+    // This includes journey patients who were transferred here
+    const {data:waitingData} = await sb.from('queues')
       .select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)')
       .eq('date',today())
-      .in('service_id',svcIds)
-      .in('status',['waiting','serving','held'])
+      .in('current_service_id',svcIds)  // ← use current_service_id for journey support
+      .in('status',['waiting','held'])
       .order('created_at')
-    setOngoing((data||[]).filter(q=>q.status==='waiting'||q.status==='held'))
-    setServing((data||[]).filter(q=>q.status==='serving'))
+
+    // Serving: only from THIS window
+    const {data:servingData} = await sb.from('queues')
+      .select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)')
+      .eq('date',today())
+      .eq('window_id',selWin.id)
+      .eq('status','serving')
+      .order('serving_start')
+
+    setOngoing(waitingData||[])
+    setServing(servingData||[])
   }
 
   const selectWindow = async w => {
@@ -830,8 +844,13 @@ function QueueWorkspace({user, profile}) {
   const serveQueue = async q => {
     const winName = selWin?.name || ''
     await sb.from('queues').update({
-      status:'serving', window_id:selWin.id,
-      served_by:user.id, serving_start:new Date().toISOString()
+      status:             'serving',
+      window_id:          selWin.id,
+      served_by:          user.id,
+      serving_start:      new Date().toISOString(),
+      // Maintain journey fields — set origin on first serve if not set
+      origin_service_id:  q.origin_service_id || q.service_id,
+      current_service_id: q.service_id,
     }).eq('id',q.id)
 
     // 1. Put on TV display
@@ -994,6 +1013,7 @@ function QueueWorkspace({user, profile}) {
                     <span className="qnum qc-num">{q.queue_number}</span>
                     <span className="qc-service" style={{color:q.services?.color||'var(--brand)'}}>{q.services?.name}</span>
                     {q.priority && <span style={{background:'#fef3c7',color:'#92400e',fontSize:'10px',padding:'1px 6px',borderRadius:'4px',fontWeight:700}}>PRIORITY</span>}
+                    {q.is_journey && <span style={{background:'#ede9fe',color:'#6d28d9',fontSize:'10px',padding:'1px 6px',borderRadius:'4px',fontWeight:700}}>Step {q.journey_step}</span>}
                   </div>
                   {q.visitor_name && <div className="qc-name">{q.visitor_name}</div>}
                   <div className="qc-time">{fmt(q.created_at,'short')} · {selWin?.name||q.windows?.name||'—'}</div>
@@ -1009,8 +1029,8 @@ function QueueWorkspace({user, profile}) {
                       {q.status==='waiting'&&<button className="dropdown-item" onClick={()=>{serveQueue(q);setDropMenu(null)}}><Icon n="arrow" s={13}/>Serve Queue</button>}
                       <button className="dropdown-item" onClick={()=>{holdQueue(q);setDropMenu(null)}}><Icon n="clock" s={13}/>Hold Queue</button>
                       <button className="dropdown-item" onClick={()=>{skipQueue(q);setDropMenu(null)}}><Icon n="arrow" s={13}/>Skip Queue</button>
-                      <button className="dropdown-item" onClick={()=>{setSelQ(q);setShowTransfer({type:'service'});setDropMenu(null)}}><Icon n="arrow" s={13}/>Transfer to Service</button>
-                      <button className="dropdown-item" onClick={()=>{setSelQ(q);setShowTransfer({type:'window'});setDropMenu(null)}}><Icon n="arrow" s={13}/>Transfer to Window</button>
+                      <button className="dropdown-item" onClick={()=>{setSelQ(q);setShowTransfer({type:'service'});setDropMenu(null)}}><Icon n="arrow" s={13}/>Send to Next Department</button>
+                      <button className="dropdown-item" onClick={()=>{setSelQ(q);setShowTransfer({type:'window'});setDropMenu(null)}}><Icon n="arrow" s={13}/>Transfer Window</button>
                       <div className="dropdown-divider"/>
                       <button className="dropdown-item danger" onClick={()=>{removeQueue(q);setDropMenu(null)}}><Icon n="trash" s={13}/>Remove Queue</button>
                     </div>
@@ -1267,10 +1287,18 @@ function AddQueueModal({window:win, userId, onClose, onAdded}) {
     try {
       const {data:qnum} = await sb.rpc('get_next_queue_number',{p_service_id:svcId})
       const {data:q, error:qe} = await sb.from('queues').insert({
-        queue_number:qnum, service_id:svcId,
-        visitor_name:name||null, visitor_mobile:mobile||null,
-        tags, priority, status:'waiting',
-        date:today(), waiting_start:new Date().toISOString()
+        queue_number:       qnum,
+        service_id:         svcId,
+        origin_service_id:  svcId,   // where they first queued — never changes
+        current_service_id: svcId,   // current department — changes on journey transfer
+        visitor_name:       name||null,
+        visitor_mobile:     mobile||null,
+        tags, priority,
+        status:             'waiting',
+        is_journey:         false,
+        journey_step:       1,
+        date:               today(),
+        waiting_start:      new Date().toISOString()
       }).select().single()
       if (qe) throw qe
       await sb.from('queue_timeline').insert({queue_id:q.id,action:'add',from_status:null,to_status:'waiting',performed_by:userId})
@@ -1355,14 +1383,68 @@ function TransferModal({queue:q, type, currentWindowId, onClose, onTransferred})
 
   const doTransfer = async () => {
     if (!sel) return; setLoading(true)
-    const updates = type==='service'
-      ? {service_id:sel.id,status:'waiting',window_id:null,served_by:null,serving_start:null}
-      : {window_id:sel.id,status:'waiting'}
-    await sb.from('queues').update(updates).eq('id',q.id)
-    await sb.from('queue_timeline').insert({queue_id:q.id,action:`transfer_${type}`,from_status:q.status,to_status:'waiting',
-      from_window_id:currentWindowId,to_window_id:type==='window'?sel.id:null,
-      from_service_id:q.service_id,to_service_id:type==='service'?sel.id:null,performed_by:null,reason})
-    setLoading(false); onTransferred()
+    try {
+      if (type==='service') {
+        // PATIENT JOURNEY: keep same queue_number, only change service
+        // E001 stays E001 whether in OPD, Lab, Pharmacy, etc.
+        await sb.from('queues').update({
+          service_id:         sel.id,
+          current_service_id: sel.id,
+          status:             'waiting',
+          window_id:          null,
+          served_by:          null,
+          serving_start:      null,
+          waiting_start:      new Date().toISOString(),
+          is_journey:         true,
+          journey_step:       (q.journey_step||1) + 1,
+          // queue_number stays the same ← this is the whole point
+        }).eq('id', q.id)
+
+        await sb.from('queue_timeline').insert({
+          queue_id:        q.id,
+          action:          'journey_transfer',
+          from_status:     q.status,
+          to_status:       'waiting',
+          from_window_id:  currentWindowId,
+          to_window_id:    null,
+          from_service_id: q.service_id,
+          to_service_id:   sel.id,
+          performed_by:    null,
+          reason,
+        })
+
+      } else {
+        // Window transfer — same queue number, same service, just different window
+        await sb.from('queues').update({
+          window_id: sel.id,
+          status:    'waiting'
+        }).eq('id', q.id)
+
+        await sb.from('queue_timeline').insert({
+          queue_id:       q.id,
+          action:         'transfer_window',
+          from_status:    q.status,
+          to_status:      'waiting',
+          from_window_id: currentWindowId,
+          to_window_id:   sel.id,
+          from_service_id: q.service_id,
+          to_service_id:   q.service_id,
+          performed_by:   null,
+          reason,
+        })
+      }
+
+      // Hide from TV display immediately on any transfer
+      await sb.from('tv_serving').update({
+        hidden_at: new Date().toISOString()
+      }).eq('queue_id', q.id)
+
+      onTransferred()
+    } catch(e) {
+      console.error('Transfer error:', e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
