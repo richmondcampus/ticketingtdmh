@@ -1,0 +1,11 @@
+*Siguraduhing hindi matatawag sa tv template ang ibang department na wala sa list kasi nakikita ko sa tv template ng billing nalabas din ang ct scan
+*saka dapat kada notify nag sasalita kasi minsan nailaw na lang sa display hinid nya binabanggit yung queue number saka kung saang window, na observe ko once na tinawag na sya ng sunod sunod hindi agad nagsasalita, kumbaga may cool down pwede ba yun kada pindot ng notify magsalita.
+*YUng sa tv template gawan mo ko iabng design ibang option like yung isang option nandun yung waiting list etc. isipan mo ng mga malulupit saka ibang color way design ng templates isipan mo yung mga nakikita mo sa ibang queuing system na sa tingin mo fit dito sa flow natin
+*Nakita mo naman design nung pinag gayahan nating kyoo dapat mas maganda pa dun bigyan mo kami option sa kulay kung pano yung pwede naming iselect tas okay na halimbawa tick box na ganun yung color way parang night and light mode pero mas madami option kaya ba?
+*Yung sa kiosk mode hindi nagana, balak ko dyan mag lalagay ako computer na may printer dun lalabas yung ticket yung computer na pwede touch screen tas kung may built in na printer mas maganda no
+*yung sa monitoring din parang kulang, walang nalabas sa visiotrs volumes saka team performance pag pinindot, gayahin mo na din mismo yung sa kyoo mas gandahan pa natin
+*Queue History wala ding laman pa 
+*Pwede ba tayo magbigay sa mga client nung pwede nila itaype yung queue number nila tas makikita nila online kung pang ilan sila or ipakita dun yung list ng pila para alam nila bukod sa tv display sa tingin mo feasible naman?
+*saka text message sa client halimbawa pang 10 ka na, gawan mo ko dun ng option na pwede ko bagu baguhin sa ui mismo sa settings ng sms kung pang ilan sya bago mag trigger tas mag text lang 1 time sa client if wala naman ilagay na number yung client ignore na lagn tong function mga ganun ba.
+*tapos yung itchura naman nung button na "Complete Queue" at "Notify" paayos naman ng itchura. yung pang diinan na design pang sr dev saka sr designer 
+*may delay talaga sa tv bago mawala yung number pag complete na queue? binilang ko nasa 20secs ata bago Nawala, may way ba para mas mabilis mawala sa display tv?
