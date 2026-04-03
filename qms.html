@@ -1439,6 +1439,16 @@ function TVDisplay({slug}) {
   }
 
   React.useEffect(()=>{
+    // TV Display needs an auth session for Realtime postgres_changes to work
+    // Sign in anonymously so realtime subscriptions work without staff login
+    sb.auth.getSession().then(({data:{session}})=>{
+      if (!session) {
+        sb.auth.signInAnonymously().catch(()=>{
+          // Fallback: if anon auth not enabled, realtime still works for
+          // broadcast channels — we use a polling fallback
+        })
+      }
+    })
     loadTemplate()
   },[slug])
 
@@ -1448,12 +1458,18 @@ function TVDisplay({slug}) {
     loadQueues(allowedWinIds)
     const ti = setInterval(()=>setNow(new Date()), 1000)
 
-    // ── Realtime: queue changes ─────────────────────────
+    // ── Approach: Poll every 3 seconds + realtime if auth available ──
+    // TV Display may not have auth session, so we use polling as primary
+    // and realtime as enhancement when available
+    let pollTimer = setInterval(()=>loadQueues(allowedWinIds), 3000)
+
+    // ── Try realtime (works if user has session or anon auth enabled) ──
     const ch = sb.channel(`tv-q-${slug||'main'}`)
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'queues'},payload=>{
         const q = payload.new
-        // Check if this window belongs to our template
-        if (allowedWinIds && !allowedWinIds.includes(q.window_id)) return
+        if (allowedWinIds && q.window_id && !allowedWinIds.includes(q.window_id)) return
+        clearInterval(pollTimer)
+        pollTimer = null // realtime is working, no need to poll
 
         sb.from('queues').select('*,services(name,color),windows(name)').eq('id',q.id).single()
           .then(({data:full})=>{
@@ -1465,19 +1481,18 @@ function TVDisplay({slug}) {
               })
               setFlashId(q.id)
               setTimeout(()=>setFlashId(null), 4000)
-            } else if (q.status==='completed' || q.status==='removed') {
-              // Keep on screen for 30 seconds after completing, then fade
+            } else if (q.status==='completed'||q.status==='removed') {
               setTimeout(()=>{
                 setServing(p=>p.filter(x=>x.id!==q.id))
                 if (q.status==='completed') setRecent(p=>[full,...p].slice(0,12))
-              }, 30000) // 30 second delay before removing from TV
+              }, 30000)
             }
           })
       })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'queues'},payload=>{
         const q = payload.new
         if (q.status!=='serving') return
-        if (allowedWinIds && !allowedWinIds.includes(q.window_id)) return
+        if (allowedWinIds && q.window_id && !allowedWinIds.includes(q.window_id)) return
         sb.from('queues').select('*,services(name,color),windows(name)').eq('id',q.id).single()
           .then(({data:full})=>{
             if (!full) return
@@ -1489,24 +1504,34 @@ function TVDisplay({slug}) {
       .subscribe()
 
     // ── Realtime: notify_events (Bell button) ───────────
-    // Uses anon access — no auth required for TV
     const chNotify = sb.channel(`tv-notify-${slug||'main'}`)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notify_events'},payload=>{
         const ev = payload.new
-        // Only announce if this window is in our template
-        const winOk = !allowedWinIds || allowedWinIds.includes(
-          // We need to check by matching queue's window_id
-          serving.find(q=>q.id===ev.queue_id)?.window_id
-        )
-        // For simplicity: always announce if show_all, or if window matches
-        // We'll check via the event's window_name against template windows
-        setFlashId(ev.queue_id)
-        setTimeout(()=>setFlashId(null), 6000)
-        announce(ev.queue_number, ev.window_name || 'your window')
+        sb.from('queues')
+          .select('*,services(name,color),windows(name)')
+          .eq('id', ev.queue_id)
+          .single()
+          .then(({data:full})=>{
+            if (!full) return
+            if (allowedWinIds && full.window_id && !allowedWinIds.includes(full.window_id)) return
+            // Add to serving list if not there yet
+            setServing(p=>{
+              const exists = p.find(x=>x.id===full.id)
+              return exists ? p : [full, ...p]
+            })
+            setFlashId(full.id)
+            setTimeout(()=>setFlashId(null), 6000)
+            announce(ev.queue_number, ev.window_name || full.windows?.name || 'your window')
+          })
       })
       .subscribe()
 
-    return()=>{ clearInterval(ti); ch.unsubscribe(); chNotify.unsubscribe() }
+    return()=>{
+      clearInterval(ti)
+      if (pollTimer) clearInterval(pollTimer)
+      ch.unsubscribe()
+      chNotify.unsubscribe()
+    }
   },[template, allowedWinIds])
 
   if (!template) return (
