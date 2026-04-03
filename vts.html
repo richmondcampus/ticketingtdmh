@@ -985,19 +985,29 @@ async function renderDashboard() {
   ])
   const T = trips || []; const L = logs || []
 
+  const now = new Date()
+
   // Filter pending by approver type
   let pending = T.filter(t => t.status==='pending-approval')
   if (role === 'approver_admin') pending = pending.filter(t => t.vehicle_type_needed !== 'ambulance')
   if (role === 'approver_amb')   pending = pending.filter(t => t.vehicle_type_needed === 'ambulance')
 
-  const active = T.filter(t => ['approved','assigned','on-trip'].includes(t.status))
+  // Active = currently happening — exclude advance bookings that depart in the future
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
+  const active = T.filter(t => {
+    if (!['approved','assigned','on-trip'].includes(t.status)) return false
+    if (t.is_advance_booking && t.departure_at && new Date(t.departure_at) > todayEnd) return false
+    return true
+  })
+  // Scheduled = advance bookings not yet active
+  const scheduled = T.filter(t =>
+    ['approved','assigned'].includes(t.status) &&
+    t.is_advance_booking && t.departure_at && new Date(t.departure_at) > todayEnd
+  )
   const done   = T.filter(t => t.status==='completed')
   if (['admin','approver_admin','approver_amb'].includes(role)) updateNavBadge(pending.length)
 
   const overdue = active.filter(t => isOverdue(t))
-
-  // Upcoming advance bookings in next 7 days
-  const now = new Date()
   const next7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
   let upcomingAdvance = []
   if (['admin','guard','approver_admin','approver_amb'].includes(role)) {
@@ -1089,8 +1099,10 @@ async function renderDashboard() {
     <div class="stats-grid">
       <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Total Tickets</div><div class="stat-val">${T.length}</div><div class="stat-sub">All time</div></div>
       <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Pending Approval</div><div class="stat-val">${pending.length}</div><div class="stat-sub">Requires action</div></div>
-      <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Active Trips</div><div class="stat-val">${active.length}</div><div class="stat-sub">In progress</div></div>
-      <div class="stat" style="${overdue.length?'border-color:#fecdd3;':''}"><div class="stat-bar" style="background:${overdue.length?'#e11d48':'var(--teal)'}"></div><div class="stat-lbl">${overdue.length?'⚠ Overdue':'Completed'}</div><div class="stat-val" style="color:${overdue.length?'#e11d48':''}">${overdue.length||done.length}</div><div class="stat-sub">${overdue.length?'Past expected return':'This period'}</div></div>
+      <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Active Trips</div><div class="stat-val">${active.length}</div><div class="stat-sub">Today / ongoing</div></div>
+      ${scheduled.length > 0
+        ? `<div class="stat" style="border-color:var(--pri-s)"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">📅 Advance Booked</div><div class="stat-val" style="color:var(--pri)">${scheduled.length}</div><div class="stat-sub">Future scheduled</div></div>`
+        : `<div class="stat" style="${overdue.length?'border-color:#fecdd3;':''}"><div class="stat-bar" style="background:${overdue.length?'#e11d48':'var(--teal)'}"></div><div class="stat-lbl">${overdue.length?'⚠ Overdue':'Completed'}</div><div class="stat-val" style="color:${overdue.length?'#e11d48':''}">${overdue.length||done.length}</div><div class="stat-sub">${overdue.length?'Past expected return':'This period'}</div></div>`}
     </div>
     ${overdue.length ? `<div class="info info-red" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px"><div><strong>⚠ ${overdue.length} Overdue Trip${overdue.length>1?'s':''}!</strong> The following vehicle${overdue.length>1?'s have':' has'} not returned past the expected return time.</div><button class="btn btn-red btn-sm" onclick="goTo('tickets')" style="flex-shrink:0">View Tickets</button></div>` : ''}
     ${todayGateOutsHTML}
@@ -2475,9 +2487,12 @@ function addPassengerRow() {
   document.getElementById('ntPassengers').appendChild(div)
 }
 
+let _appliedTemplateAutoApprove = false
+
 async function applyTemplate(id) {
   const t = _templates.find(x => x.id === id)
   if (!t) return
+  _appliedTemplateAutoApprove = t.auto_approve || false
   if (t.vehicle_type) selectVtype(t.vehicle_type)
   if (t.purpose) document.getElementById('ntPurpose').value = t.purpose
   if (t.destination) document.getElementById('ntDest').value = t.destination
@@ -2487,6 +2502,17 @@ async function applyTemplate(id) {
   if (t.department && currentProfile?.role === 'admin') {
     const deptEl = document.getElementById('ntDept')
     if (deptEl?.tagName === 'SELECT') deptEl.value = t.department
+  }
+  // Show auto-approve indicator if set
+  if (t.auto_approve && currentProfile?.role === 'admin') {
+    const errEl = document.getElementById('ntFormErr')
+    if (errEl) {
+      errEl.style.display = 'block'
+      errEl.style.background = 'var(--green-s)'
+      errEl.style.color = 'var(--green)'
+      errEl.style.border = '1px solid rgba(22,163,74,.3)'
+      errEl.textContent = '⚡ Auto-approve template — ticket will be submitted as Approved (admin only)'
+    }
   }
   // Flash effect
   const card = document.querySelector('.card')
@@ -2543,6 +2569,14 @@ async function openSaveTemplateModal() {
        <input type="checkbox" id="tmplRecurring" style="width:15px;height:15px;accent-color:var(--pri)" onchange="toggleRecurringFields()">
        <label for="tmplRecurring" style="font-size:12.5px;font-weight:600;cursor:pointer">🔁 Make this a Recurring Trip</label>
      </div>
+     ${currentProfile?.role === 'admin' ? `
+     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;background:var(--green-s);padding:10px 12px;border-radius:9px;border:1px solid rgba(22,163,74,.2)">
+       <input type="checkbox" id="tmplAutoApprove" style="width:15px;height:15px;accent-color:var(--green)">
+       <label for="tmplAutoApprove" style="font-size:12px;cursor:pointer;flex:1">
+         <span style="font-weight:700;color:var(--green)">⚡ Auto-approve</span>
+         <span style="color:var(--text2)"> — tickets using this template skip the approval step (admin only)</span>
+       </label>
+     </div>` : ''}
      <div id="tmplRecurFields" style="display:none">
        <div class="fr">
          <div class="fg"><label class="fl">Recurrence</label>
@@ -2710,10 +2744,12 @@ async function submitNewTicket() {
       passengers: pax,
       remarks: document.getElementById('ntNotes')?.value||'',
       priority: document.getElementById('ntPri')?.value||'normal',
-      status: 'pending-approval',
+      status: (_appliedTemplateAutoApprove && currentProfile?.role === 'admin') ? 'approved' : 'pending-approval',
       is_advance_booking: isAdvance,
       booking_group_id: groupId
     }
+    // Reset template flag after use
+    _appliedTemplateAutoApprove = false
     const { data: trip, error } = await SB.from('trips').insert([payload]).select().single()
     if (error) throw error
 
@@ -3426,11 +3462,21 @@ async function renderReportContent() {
   const ambulance   = T.filter(t => t.vehicle_type_needed === 'ambulance')
   const regular     = T.filter(t => t.vehicle_type_needed !== 'ambulance')
 
-  // SLA metrics (regular only)
-  const withSLA     = regular.filter(t => t.sla_deadline)
-  const slaBreached = withSLA.filter(t => t.sla_breached)
-  const slaKept     = withSLA.filter(t => !t.sla_breached && t.approved_at)
+  // SLA metrics (regular only, exclude advance bookings that haven't departed yet)
+  const now = new Date()
+  const advancePending = regular.filter(t =>
+    t.is_advance_booking && t.departure_at && new Date(t.departure_at) > now &&
+    t.status === 'pending-approval'
+  )
+  // For SLA: only count tickets where SLA deadline has passed (don't penalize advance bookings prematurely)
+  const withSLA     = regular.filter(t => t.sla_deadline && new Date(t.sla_deadline) <= now)
+  const slaBreached = withSLA.filter(t => t.sla_breached && !['approved','assigned','on-trip','completed'].includes(t.status))
+  const slaKept     = withSLA.filter(t => !t.sla_breached || ['approved','assigned','on-trip','completed'].includes(t.status))
   const slaRate     = withSLA.length ? pct(slaKept.length, withSLA.length) : null
+
+  // Advance booking stats
+  const advanceTotal    = T.filter(t => t.is_advance_booking)
+  const advanceFuture   = advanceTotal.filter(t => t.departure_at && new Date(t.departure_at) > now)
 
   // Response time (approved tickets)
   const withResp    = T.filter(t => t.response_minutes != null)
@@ -3524,6 +3570,12 @@ async function renderReportContent() {
     <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Total Distance</div><div class="stat-val" style="font-size:16px">${totalKm.toLocaleString()} km</div><div class="stat-sub">All completed trips</div></div>
     <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Trip Duration</div><div class="stat-val" style="font-size:16px">${avgDur!=null?fmtMins(avgDur):'—'}</div><div class="stat-sub">Gate Out → Gate In</div></div>
   </div>
+  ${advanceTotal.length > 0 ? `
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px">
+    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">📅 Advance Bookings</div><div class="stat-val">${advanceTotal.length}</div><div class="stat-sub">${pct(advanceTotal.length,total)}% of total requests</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">📅 Future Scheduled</div><div class="stat-val" style="color:var(--pri)">${advanceFuture.length}</div><div class="stat-sub">Upcoming trips</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">📅 Advance SLA Pending</div><div class="stat-val" style="color:var(--amber)">${advancePending.length}</div><div class="stat-sub">Need approval before departure</div></div>
+  </div>` : ''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
     <div class="card">
       <div class="card-title" style="margin-bottom:13px">Tickets by Status</div>
