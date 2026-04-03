@@ -562,7 +562,7 @@ function Dashboard({profile}) {
 
   const load = async () => {
     const [{data:queues},{data:sessions}] = await Promise.all([
-      sb.from('queues').select('status,service_id,waiting_start,serving_start,completed_at,services(name,color)').eq('date',today()),
+      sb.from('queues').select('status,service_id,waiting_start,serving_start,completed_at,services!queues_service_id_fkey(name,color)').eq('date',today()),
       sb.from('staff_sessions').select('*,profiles(first_name,last_name),windows(name)').eq('is_online',true)
     ])
     if (queues) {
@@ -713,7 +713,7 @@ function QueueWorkspace({user, profile}) {
         const q = payload.new
         if (q.date !== today()) return
         if (!svcIds.includes(q.service_id)) return
-        sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
+        sb.from('queues').select('*,services!queues_service_id_fkey(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
           if (!data) return
           if (data.status==='waiting'||data.status==='held') setOngoing(p=>[...p,data])
           if (data.status==='serving' && data.window_id===winId) setServing(p=>[...p,data])
@@ -731,7 +731,7 @@ function QueueWorkspace({user, profile}) {
           setSelQ(prev=>prev?.id===q.id ? null : prev)
           return
         }
-        sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
+        sb.from('queues').select('*,services!queues_service_id_fkey(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
           if (!data) return
           const active = ['waiting','held']
           setOngoing(p=>{
@@ -781,7 +781,7 @@ function QueueWorkspace({user, profile}) {
     // Query by service_id (covers both new queues and journey patients
     // since we keep service_id = current service after journey transfer)
     const {data:waitingData, error:we} = await sb.from('queues')
-      .select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)')
+      .select('*,services!queues_service_id_fkey(name,prefix,color),windows(name),profiles(first_name,last_name)')
       .eq('date', today())
       .in('service_id', svcIds)
       .in('status', ['waiting','held'])
@@ -791,7 +791,7 @@ function QueueWorkspace({user, profile}) {
 
     // Serving: only queues being served at THIS specific window
     const {data:servingData, error:se} = await sb.from('queues')
-      .select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)')
+      .select('*,services!queues_service_id_fkey(name,prefix,color),windows(name),profiles(first_name,last_name)')
       .eq('date', today())
       .eq('window_id', selWin.id)
       .eq('status', 'serving')
@@ -1559,7 +1559,7 @@ function TVDisplay({slug}) {
 
   const loadRecent = async (winIds) => {
     let q = sb.from('queues')
-      .select('*,services(name,color),windows(name)')
+      .select('*,services!queues_service_id_fkey(name,color),windows(name)')
       .eq('date', today())
       .eq('status','completed')
       .order('completed_at',{ascending:false})
@@ -1798,7 +1798,7 @@ function Monitoring() {
 
   React.useEffect(()=>{load()},[])
   const load = async () => {
-    const {data:queues} = await sb.from('queues').select('*,services(name),profiles(first_name,last_name)').eq('date',today())
+    const {data:queues} = await sb.from('queues').select('*,services!queues_service_id_fkey(name),profiles(first_name,last_name)').eq('date',today())
     if (!queues?.length) return
     const completed=queues.filter(q=>q.status==='completed')
     const waiting=queues.filter(q=>q.status==='waiting').length
@@ -1917,14 +1917,14 @@ function Reports() {
     const f=new Date(from+'T00:00:00').toISOString(), t=new Date(to+'T23:59:59').toISOString()
     try {
       if (active==='queue_history') {
-        const {data:rows}=await sb.from('queues').select('queue_number,status,visitor_name,visitor_mobile,services(name),windows(name),created_at,completed_at').gte('created_at',f).lte('created_at',t).order('created_at',{ascending:false}).limit(500)
+        const {data:rows}=await sb.from('queues').select('queue_number,status,visitor_name,visitor_mobile,services!queues_service_id_fkey(name),windows(name),created_at,completed_at').gte('created_at',f).lte('created_at',t).order('created_at',{ascending:false}).limit(500)
         setData((rows||[]).map(r=>({Queue:r.queue_number,Service:r.services?.name,Status:r.status,Visitor:r.visitor_name||'—',Window:r.windows?.name||'—',Queued:fmt(r.created_at,'datetime'),Completed:fmt(r.completed_at,'datetime')})))
       } else if (active==='queue_count') {
-        const {data:rows}=await sb.from('queues').select('status,services(name)').gte('created_at',f).lte('created_at',t)
+        const {data:rows}=await sb.from('queues').select('status,services!queues_service_id_fkey(name)').gte('created_at',f).lte('created_at',t)
         const sm={}; (rows||[]).forEach(q=>{ const n=q.services?.name||'?'; if(!sm[n]) sm[n]={Service:n,Total:0,Completed:0,Removed:0}; sm[n].Total++; if(q.status==='completed') sm[n].Completed++; if(q.status==='removed') sm[n].Removed++ })
         setData(Object.values(sm))
       } else {
-        const {data:rows}=await sb.from('queues').select('status,services(name),waiting_start,serving_start,completed_at').eq('status','completed').gte('created_at',f).lte('created_at',t)
+        const {data:rows}=await sb.from('queues').select('status,services!queues_service_id_fkey(name),waiting_start,serving_start,completed_at').eq('status','completed').gte('created_at',f).lte('created_at',t)
         const sm={}; (rows||[]).forEach(q=>{ const n=q.services?.name||'?'; if(!sm[n]) sm[n]={Service:n,waitMs:[],serveMs:[]}; if(q.serving_start&&q.waiting_start) sm[n].waitMs.push(new Date(q.serving_start)-new Date(q.waiting_start)); if(q.completed_at&&q.serving_start) sm[n].serveMs.push(new Date(q.completed_at)-new Date(q.serving_start)) })
         setData(Object.values(sm).map(s=>({Service:s.Service,'Avg Wait':s.waitMs.length?`${Math.round(s.waitMs.reduce((a,b)=>a+b,0)/s.waitMs.length/60000)} min`:'—','Avg Serve':s.serveMs.length?`${Math.round(s.serveMs.reduce((a,b)=>a+b,0)/s.serveMs.length/60000)} min`:'—',Count:s.waitMs.length})))
       }
