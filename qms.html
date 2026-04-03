@@ -1,0 +1,2145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TDMH Queuing System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<style>
+/* ── RESET & BASE ─────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --brand:#0ea5e9;--brand-dark:#0369a1;--brand-light:#e0f2fe;
+  --sidebar:#0f172a;--bg:#f1f5f9;--surface:#fff;
+  --border:#e2e8f0;--text:#1e293b;--muted:#64748b;--subtle:#94a3b8;
+  --success:#10b981;--warning:#f59e0b;--danger:#ef4444;--purple:#8b5cf6;
+  --radius:10px;--radius-lg:14px;--shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.05);
+  --shadow-md:0 4px 12px rgba(0,0,0,.1);--shadow-lg:0 10px 30px rgba(0,0,0,.15);
+  --sidebar-w:232px;
+}
+html,body,#root{height:100%}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+
+/* ── LAYOUT ───────────────────────────────────────────── */
+.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--sidebar);display:flex;flex-direction:column;overflow:hidden}
+.main{flex:1;overflow-y:auto;overflow-x:hidden}
+
+/* ── SIDEBAR ──────────────────────────────────────────── */
+.sidebar-logo{padding:16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:10px}
+.logo-icon{width:34px;height:34px;background:var(--brand);border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:15px;flex-shrink:0}
+.logo-title{color:#fff;font-weight:700;font-size:13px;line-height:1.3}
+.logo-sub{color:#475569;font-size:11px}
+.sidebar-nav{flex:1;padding:10px 8px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;color:#94a3b8;font-size:13px;font-weight:500;transition:all .15s;border:none;background:none;width:100%;text-align:left}
+.nav-item:hover{color:#fff;background:rgba(255,255,255,.08)}
+.nav-item.active{color:#fff;background:var(--brand)}
+.nav-item svg{width:16px;height:16px;flex-shrink:0}
+.nav-section{padding:10px 12px 4px;font-size:10px;font-weight:700;color:#334155;text-transform:uppercase;letter-spacing:.08em}
+.nav-sub{margin-left:16px;padding-left:12px;border-left:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;gap:2px}
+.nav-sub .nav-item{font-size:12px;padding:7px 10px}
+.sidebar-user{padding:10px 8px;border-top:1px solid rgba(255,255,255,.08)}
+.user-card{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.05)}
+.user-avatar{width:30px;height:30px;border-radius:50%;background:var(--brand-dark);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:11px;flex-shrink:0}
+.user-info{flex:1;min-width:0}
+.user-name{color:#fff;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-role{color:#64748b;font-size:11px;text-transform:capitalize}
+.user-logout{color:#475569;cursor:pointer;padding:4px;border-radius:5px;transition:color .15s;background:none;border:none;display:flex}
+.user-logout:hover{color:#fff}
+
+/* ── PAGE HEADER ─────────────────────────────────────── */
+.page-header{padding:20px 24px 0}
+.page-title{font-size:18px;font-weight:800;color:var(--text)}
+.page-sub{color:var(--muted);font-size:13px;margin-top:2px}
+
+/* ── CARD ────────────────────────────────────────────── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow)}
+.card-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:13px;font-weight:700;color:var(--text)}
+
+/* ── BUTTONS ─────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;border:none;white-space:nowrap}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn-primary{background:var(--brand);color:#fff}
+.btn-primary:hover:not(:disabled){background:var(--brand-dark)}
+.btn-secondary{background:#fff;color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover:not(:disabled){background:#f8fafc}
+.btn-success{background:var(--success);color:#fff}
+.btn-success:hover:not(:disabled){background:#059669}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover:not(:disabled){background:#dc2626}
+.btn-ghost{background:transparent;color:var(--muted);padding:5px 8px}
+.btn-ghost:hover{background:#f1f5f9;color:var(--text)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-icon{padding:6px;border-radius:7px}
+.btn-full{width:100%}
+
+/* ── FORM ────────────────────────────────────────────── */
+.input{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text);background:#fff;transition:border .15s,box-shadow .15s;outline:none}
+.input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(14,165,233,.12)}
+.input::placeholder{color:var(--subtle)}
+.label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.form-group{display:flex;flex-direction:column;gap:0}
+select.input{cursor:pointer}
+textarea.input{resize:none}
+
+/* ── BADGES ──────────────────────────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-waiting{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.badge-serving{background:#d1fae5;color:#065f46;border:1px solid #a7f3d0}
+.badge-completed{background:#f1f5f9;color:#475569;border:1px solid var(--border)}
+.badge-held{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe}
+.badge-removed{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+.badge-role-admin{background:#ede9fe;color:#6d28d9}
+.badge-role-manager{background:#dbeafe;color:#1e40af}
+.badge-role-staff{background:#f1f5f9;color:#475569}
+
+/* ── QUEUE NUMBER ────────────────────────────────────── */
+.qnum{font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.03em}
+
+/* ── TOGGLE ──────────────────────────────────────────── */
+.toggle{position:relative;width:40px;height:22px;border-radius:11px;background:#e2e8f0;border:none;cursor:pointer;transition:background .2s;flex-shrink:0;padding:0}
+.toggle.on{background:var(--brand)}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:left .2s}
+.toggle.on .toggle-thumb{left:21px}
+
+/* ── MODAL ───────────────────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;animation:fadeIn .15s}
+.modal{background:#fff;border-radius:18px;box-shadow:var(--shadow-lg);width:100%;max-width:480px;max-height:90vh;overflow-y:auto;animation:slideUp .2s}
+.modal-header{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:18px 18px 0 0}
+.modal-title{font-size:16px;font-weight:800}
+.modal-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.modal-body{padding:20px}
+.modal-footer{display:flex;gap:8px;padding-top:16px;border-top:1px solid var(--border);margin-top:16px}
+
+/* ── WORKSPACE ───────────────────────────────────────── */
+.workspace{display:flex;height:100vh;overflow:hidden}
+.ws-left{width:300px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;background:#fff}
+.ws-right{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#f8fafc}
+.ws-header{padding:10px 12px;border-bottom:1px solid var(--border)}
+.ws-tabs{display:flex;background:#f1f5f9;border-radius:8px;padding:3px;gap:2px}
+.ws-tab{flex:1;padding:6px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;border:none;background:none;display:flex;align-items:center;justify-content:center;gap:5px;color:var(--muted)}
+.ws-tab.active{background:#fff;color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.tab-count{padding:1px 6px;border-radius:10px;font-size:11px;font-weight:700}
+.ws-tab.active .tab-count{background:var(--brand);color:#fff}
+.ws-tab:not(.active) .tab-count{background:#e2e8f0;color:var(--muted)}
+.ws-list{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px}
+.ws-footer{padding:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.queue-card{padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;transition:all .15s;position:relative;background:#fff}
+.queue-card:hover{border-color:#94a3b8;box-shadow:var(--shadow)}
+.queue-card.selected{border-color:var(--brand);background:#f0f9ff;box-shadow:0 0 0 3px rgba(14,165,233,.1)}
+.queue-card.priority{border-color:#f59e0b}
+.queue-card.held{background:#faf5ff}
+.qc-top{display:flex;align-items:flex-start;justify-content:space-between}
+.qc-num{font-size:14px}
+.qc-service{font-size:11px;font-weight:600}
+.qc-name{font-size:12px;color:var(--muted);margin-top:2px}
+.qc-time{font-size:11px;color:var(--subtle);margin-top:1px}
+.qc-menu-btn{padding:4px;border-radius:5px;cursor:pointer;color:var(--subtle);background:none;border:none;transition:all .15s}
+.qc-menu-btn:hover{background:#f1f5f9;color:var(--text)}
+.dropdown{position:absolute;right:8px;top:34px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-md);z-index:50;min-width:180px;padding:4px;overflow:hidden}
+.dropdown-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;color:var(--text);border:none;background:none;width:100%;text-align:left;transition:background .12s}
+.dropdown-item:hover{background:#f8fafc}
+.dropdown-item.danger{color:var(--danger)}
+.dropdown-item.danger:hover{background:#fff5f5}
+.dropdown-divider{height:1px;background:var(--border);margin:3px 0}
+/* Detail panel */
+.detail-panel{display:flex;flex:1;overflow:hidden}
+.detail-main{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.detail-sidebar{width:220px;border-left:1px solid var(--border);overflow-y:auto;background:#fff}
+.detail-actions{padding:12px;background:#fff;border-top:1px solid var(--border);display:flex;gap:6px}
+.big-qnum{font-family:'JetBrains Mono',monospace;font-size:56px;font-weight:900;letter-spacing:.02em;line-height:1;text-align:center}
+.timeline-dot{width:8px;height:8px;border-radius:50%;background:var(--brand);flex-shrink:0;margin-top:4px}
+.step-circle{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+/* Empty state */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center;color:var(--muted)}
+.empty-icon{width:48px;height:48px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+
+/* ── WINDOW SELECT ───────────────────────────────────── */
+.window-select{display:flex;align-items:center;justify-content:center;height:100vh;padding:24px}
+.window-card{background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 16px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.window-card:hover{border-color:var(--brand);background:#f0f9ff}
+
+/* ── DASHBOARD ───────────────────────────────────────── */
+.kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px 24px 0}
+.kpi-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;display:flex;align-items:flex-start;justify-content:space-between}
+.kpi-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.kpi-value{font-size:30px;font-weight:800;color:var(--text);line-height:1}
+.kpi-sub{font-size:11px;color:var(--subtle);margin-top:4px}
+.kpi-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* ── TV DISPLAY ──────────────────────────────────────── */
+.tv{min-height:100vh;background:#0f172a;color:#fff;display:flex;flex-direction:column}
+.tv-header{background:#1e293b;border-bottom:1px solid rgba(255,255,255,.08);padding:16px 32px;display:flex;align-items:center;justify-content:space-between}
+.tv-body{flex:1;display:flex;overflow:hidden}
+.tv-main{flex:1;padding:28px;overflow-y:auto}
+.tv-sidebar{width:260px;border-left:1px solid rgba(255,255,255,.08);padding:20px;overflow-y:auto}
+.tv-qcard{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px;text-align:center;transition:all .3s}
+.tv-qcard.new-item{animation:tvPop .4s ease}
+.tv-qnum{font-family:'JetBrains Mono',monospace;font-size:60px;font-weight:900;line-height:1}
+.tv-footer{background:var(--brand);padding:10px 32px;display:flex;align-items:center;gap:12px}
+
+/* ── MONITORING ──────────────────────────────────────── */
+.monitor-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 24px}
+.monitor-tab{padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;background:none;border-top:none;border-left:none;border-right:none}
+.monitor-tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+.bar-wrap{height:14px;background:#f1f5f9;border-radius:7px;overflow:hidden;flex:1}
+.bar-fill{height:100%;border-radius:7px;background:var(--brand);transition:width .4s ease}
+
+/* ── TABLE ───────────────────────────────────────────── */
+.table{width:100%;border-collapse:collapse}
+.table th{padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:#f8fafc;border-bottom:1px solid var(--border)}
+.table td{padding:10px 14px;border-bottom:1px solid #f8fafc;font-size:13px;color:var(--text)}
+.table tr:last-child td{border-bottom:none}
+.table tr:hover td{background:#f8fafc}
+
+/* ── SETTINGS ────────────────────────────────────────── */
+.settings-layout{display:flex;height:100vh;overflow:hidden}
+.settings-list{width:240px;border-right:1px solid var(--border);display:flex;flex-direction:column;background:#fff}
+.settings-detail{flex:1;overflow-y:auto;padding:24px}
+.settings-item{padding:10px 14px;cursor:pointer;font-size:13px;font-weight:500;transition:all .12s;display:flex;align-items:center;justify-content:space-between;border-left:3px solid transparent}
+.settings-item:hover{background:#f8fafc}
+.settings-item.active{background:#f0f9ff;color:var(--brand);border-left-color:var(--brand);font-weight:600}
+.settings-item-sub{font-size:11px;color:var(--subtle);margin-top:1px}
+
+/* ── ALERTS / TOASTS ─────────────────────────────────── */
+.toast-wrap{position:fixed;bottom:20px;right:20px;z-index:999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{background:var(--sidebar);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:500;box-shadow:var(--shadow-lg);animation:slideUp .2s ease;pointer-events:all;max-width:300px;display:flex;align-items:center;gap:8px}
+.toast.success{background:#064e3b;border-left:3px solid var(--success)}
+.toast.error{background:#7f1d1d;border-left:3px solid var(--danger)}
+.toast.info{background:#0c4a6e;border-left:3px solid var(--brand)}
+
+/* ── REALTIME PULSE ──────────────────────────────────── */
+.rt-dot{width:8px;height:8px;border-radius:50%;background:var(--success);position:relative}
+.rt-dot::after{content:'';position:absolute;inset:-3px;border-radius:50%;background:var(--success);opacity:.3;animation:pulse 1.5s ease infinite}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:.3}50%{transform:scale(1.5);opacity:0}}
+
+/* ── ANIMATIONS ──────────────────────────────────────── */
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes tvPop{0%{transform:scale(.92);opacity:0}60%{transform:scale(1.03)}100%{transform:scale(1);opacity:1}}
+.animate-in{animation:slideUp .18s ease forwards}
+
+/* ── MISC ────────────────────────────────────────────── */
+.divider{height:1px;background:var(--border);margin:12px 0}
+.flex{display:flex}.flex-col{flex-direction:column}.items-center{align-items:center}.justify-between{justify-content:space-between}.gap-2{gap:8px}.gap-3{gap:12px}.flex-1{flex:1}.min-w-0{min-width:0}
+.text-xs{font-size:11px}.text-sm{font-size:13px}.font-bold{font-weight:700}.font-semibold{font-weight:600}
+.text-muted{color:var(--muted)}.text-subtle{color:var(--subtle)}.text-brand{color:var(--brand)}.text-success{color:var(--success)}.text-danger{color:var(--danger)}
+.truncate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.space-y-2>*+*{margin-top:8px}.space-y-3>*+*{margin-top:12px}.space-y-4>*+*{margin-top:16px}
+.p-4{padding:16px}.p-5{padding:20px}.p-6{padding:24px}.px-4{padding-left:16px;padding-right:16px}
+.mt-1{margin-top:4px}.mt-2{margin-top:8px}.mt-3{margin-top:12px}.mt-4{margin-top:16px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.rounded-full{border-radius:999px}
+.inline-flex{display:inline-flex}
+.color-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.online-dot{width:7px;height:7px;border-radius:50%;background:var(--success);flex-shrink:0}
+.offline-dot{width:7px;height:7px;border-radius:50%;background:#e2e8f0;flex-shrink:0}
+.section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--subtle);margin-bottom:10px}
+.error-box{background:#fff5f5;border:1px solid #fecaca;color:#991b1b;padding:10px 14px;border-radius:8px;font-size:13px}
+.spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+.spinner-dark{border-color:rgba(0,0,0,.1);border-top-color:var(--brand)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.full-center{display:flex;align-items:center;justify-content:center;height:100vh}
+.tag{background:#1e293b;color:#fff;font-size:11px;padding:3px 8px;border-radius:5px;font-weight:600;letter-spacing:.04em}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+// ─────────────────────────────────────────────────────────────
+// CONFIG — paste your Supabase credentials here
+// ─────────────────────────────────────────────────────────────
+const SUPABASE_URL  = 'https://wifttcgyjnksrukxjfep.supabase.co'
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndpZnR0Y2d5am5rc3J1a3hqZmVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxODMxODcsImV4cCI6MjA5MDc1OTE4N30.D9KvH06QPsUsgkciesm3gD9H4dRRgeLkcPhk4D0J0NI'
+
+// ─────────────────────────────────────────────────────────────
+// SUPABASE CLIENT
+// ─────────────────────────────────────────────────────────────
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: { persistSession: true, autoRefreshToken: true }
+})
+
+// ─────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────
+const today = () => new Date().toISOString().slice(0,10)
+const fmt = (dt, f='short') => {
+  if (!dt) return '—'
+  const d = new Date(dt)
+  if (f === 'time') return d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',hour12:true})
+  if (f === 'datetime') return d.toLocaleDateString('en-PH',{month:'2-digit',day:'2-digit',year:'numeric'}) + ' - ' + d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',hour12:true})
+  if (f === 'short') {
+    const mins = Math.floor((Date.now()-d)/60000)
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    return `${Math.floor(mins/60)}h ${mins%60}m ago`
+  }
+  if (f === 'mins') {
+    const mins = Math.floor((Date.now()-d)/60000)
+    return `${Math.floor(mins/60).toString().padStart(2,'0')}:${(mins%60).toString().padStart(2,'0')}:00`
+  }
+}
+const waitMins = (start, end) => {
+  if (!start) return '—'
+  const ms = (end ? new Date(end) : new Date()) - new Date(start)
+  const m = Math.floor(ms/60000)
+  return m < 60 ? `${m} minute${m!==1?'s':''}` : `${Math.floor(m/60)}h ${m%60}m`
+}
+const initials = (fn='',ln='') => `${fn[0]||''}${ln[0]||''}`.toUpperCase()
+const statusBadge = s => {
+  const m={waiting:'badge-waiting',serving:'badge-serving',completed:'badge-completed',held:'badge-held',removed:'badge-removed'}
+  const l={waiting:'Waiting',serving:'Serving',completed:'Completed',held:'On Hold',removed:'Removed'}
+  return <span className={`badge ${m[s]||'badge-completed'}`}>{l[s]||s}</span>
+}
+
+// ─────────────────────────────────────────────────────────────
+// SVG ICONS
+// ─────────────────────────────────────────────────────────────
+const Icon = ({n,s=16,c=''}) => {
+  const icons = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
+    workspace: <><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></>,
+    monitor:   <><path d="M21 16V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2z"/><polyline points="3 20 7 16 12 21 17 16 21 20"/></>,
+    chart:     <><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>,
+    report:    <><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></>,
+    settings:  <><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></>,
+    users:     <><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></>,
+    grid:      <><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></>,
+    git:       <><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></>,
+    tv:        <><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></>,
+    logout:    <><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
+    plus:      <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+    x:         <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    check:     <polyline points="20 6 9 12 4 9"/>,
+    bell:      <><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></>,
+    edit:      <><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></>,
+    trash:     <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></>,
+    more:      <><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></>,
+    arrow:     <><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>,
+    clock:     <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+    search:    <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+    history:   <><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></>,
+    chev_down: <polyline points="6 9 12 15 18 9"/>,
+    chev_right:<polyline points="9 18 15 12 9 6"/>,
+    grip:      <><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></>,
+    download:  <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
+    star:      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>,
+  }
+  return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}>{icons[n]}</svg>
+}
+
+// ─────────────────────────────────────────────────────────────
+// TOAST CONTEXT
+// ─────────────────────────────────────────────────────────────
+const ToastCtx = React.createContext(null)
+function ToastProvider({children}) {
+  const [toasts, setToasts] = React.useState([])
+  const add = React.useCallback((msg, type='info') => {
+    const id = Date.now()
+    setToasts(t => [...t, {id,msg,type}])
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000)
+  }, [])
+  return (
+    <ToastCtx.Provider value={add}>
+      {children}
+      <div className="toast-wrap">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast ${t.type}`}>
+            {t.type==='success' && <Icon n="check" s={14}/>}
+            {t.type==='error' && <Icon n="x" s={14}/>}
+            {t.type==='info' && <Icon n="bell" s={14}/>}
+            {t.msg}
+          </div>
+        ))}
+      </div>
+    </ToastCtx.Provider>
+  )
+}
+const useToast = () => React.useContext(ToastCtx)
+
+// ─────────────────────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────────────────────
+function useAuth() {
+  const [user, setUser] = React.useState(null)
+  const [profile, setProfile] = React.useState(null)
+  const [loading, setLoading] = React.useState(true)
+
+  const fetchProfile = async (u) => {
+    const {data} = await sb.from('profiles').select('*').eq('id', u.id).single()
+    setProfile(data); setUser(u)
+  }
+  React.useEffect(() => {
+    sb.auth.getSession().then(({data:{session}}) => {
+      if (session?.user) fetchProfile(session.user).finally(() => setLoading(false))
+      else setLoading(false)
+    })
+    const {data:{subscription}} = sb.auth.onAuthStateChange((e,s) => {
+      if (e==='SIGNED_IN' && s?.user) fetchProfile(s.user)
+      else if (e==='SIGNED_OUT') { setUser(null); setProfile(null) }
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const login = (email, password) => sb.auth.signInWithPassword({email,password})
+  const logout = async () => {
+    if (user) await sb.from('staff_sessions').update({is_online:false}).eq('user_id',user.id)
+    await sb.auth.signOut()
+  }
+  const isAdmin = () => ['admin','manager'].includes(profile?.role)
+  return {user, profile, loading, login, logout, isAdmin}
+}
+
+// ─────────────────────────────────────────────────────────────
+// LOGIN PAGE
+// ─────────────────────────────────────────────────────────────
+function LoginPage({onLogin}) {
+  const [email,setEmail] = React.useState('')
+  const [pass,setPass] = React.useState('')
+  const [show,setShow] = React.useState(false)
+  const [loading,setLoading] = React.useState(false)
+  const [err,setErr] = React.useState('')
+
+  const submit = async e => {
+    e.preventDefault(); setErr(''); setLoading(true)
+    try {
+      const {error} = await onLogin(email,pass)
+      if (error) throw error
+    } catch(e) { setErr(e.message) }
+    finally { setLoading(false) }
+  }
+  return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%)',position:'relative',overflow:'hidden'}}>
+      <div style={{position:'absolute',inset:0,backgroundImage:'radial-gradient(circle at 2px 2px,rgba(255,255,255,.04) 1px,transparent 0)',backgroundSize:'28px 28px'}}/>
+      <div style={{position:'relative',width:'100%',maxWidth:'380px',padding:'16px'}}>
+        <div style={{textAlign:'center',marginBottom:'28px'}}>
+          <div style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'60px',height:'60px',background:'var(--brand)',borderRadius:'16px',marginBottom:'14px',boxShadow:'0 8px 24px rgba(14,165,233,.4)'}}>
+            <span style={{color:'#fff',fontWeight:900,fontSize:'24px'}}>T</span>
+          </div>
+          <h1 style={{color:'#fff',fontWeight:800,fontSize:'22px'}}>TDMH Queuing</h1>
+          <p style={{color:'#64748b',fontSize:'13px',marginTop:'4px'}}>Taytay Doctors Multispecialty Hospital</p>
+        </div>
+        <div style={{background:'rgba(255,255,255,.05)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'16px',padding:'24px'}}>
+          <h2 style={{color:'#fff',fontWeight:700,fontSize:'16px',marginBottom:'4px'}}>Sign In</h2>
+          <p style={{color:'#64748b',fontSize:'12px',marginBottom:'20px'}}>Enter your credentials to continue</p>
+          <form onSubmit={submit} style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+            <div>
+              <label style={{color:'#94a3b8',fontSize:'12px',fontWeight:600,display:'block',marginBottom:'5px'}}>Email</label>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required
+                style={{width:'100%',padding:'9px 12px',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'8px',color:'#fff',fontSize:'13px',fontFamily:'inherit',outline:'none'}}
+                placeholder="your@email.com"/>
+            </div>
+            <div>
+              <label style={{color:'#94a3b8',fontSize:'12px',fontWeight:600,display:'block',marginBottom:'5px'}}>Password</label>
+              <div style={{position:'relative'}}>
+                <input type={show?'text':'password'} value={pass} onChange={e=>setPass(e.target.value)} required
+                  style={{width:'100%',padding:'9px 40px 9px 12px',background:'rgba(255,255,255,.08)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'8px',color:'#fff',fontSize:'13px',fontFamily:'inherit',outline:'none'}}
+                  placeholder="••••••••"/>
+                <button type="button" onClick={()=>setShow(s=>!s)}
+                  style={{position:'absolute',right:'10px',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:'#64748b',cursor:'pointer',display:'flex'}}>
+                  <Icon n={show?'x':'clock'} s={14}/>
+                </button>
+              </div>
+            </div>
+            {err && <div className="error-box">{err}</div>}
+            <button type="submit" disabled={loading} className="btn btn-primary btn-full" style={{padding:'10px',marginTop:'4px'}}>
+              {loading ? <div className="spinner"/> : <><Icon n="arrow" s={15}/>Sign In</>}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// SIDEBAR LAYOUT
+// ─────────────────────────────────────────────────────────────
+function Sidebar({page, setPage, profile, logout, isAdmin}) {
+  const [settingsOpen, setSettingsOpen] = React.useState(page.startsWith('settings'))
+  const nav = (p) => setPage(p)
+  const ni = (label, icon, p) => (
+    <button className={`nav-item ${page===p?'active':''}`} onClick={()=>nav(p)}>
+      <Icon n={icon} s={15}/>{label}
+    </button>
+  )
+  return (
+    <div className="sidebar">
+      <div className="sidebar-logo">
+        <div className="logo-icon">T</div>
+        <div>
+          <div className="logo-title">TDMH Queuing</div>
+          <div className="logo-sub">Taytay, Rizal</div>
+        </div>
+      </div>
+      <nav className="sidebar-nav">
+        {ni('Dashboard','dashboard','dashboard')}
+        {ni('Queue Workspace','workspace','workspace')}
+        {isAdmin && (<>
+          {ni('Monitoring','monitor','monitoring')}
+          {ni('Reports','report','reports')}
+        </>)}
+        {isAdmin && (
+          <>
+            <button className={`nav-item ${page.startsWith('settings')?'active':''}`}
+              onClick={()=>setSettingsOpen(o=>!o)}
+              style={{justifyContent:'space-between'}}>
+              <span style={{display:'flex',alignItems:'center',gap:'10px'}}><Icon n="settings" s={15}/>Settings</span>
+              <Icon n="chev_down" s={13} c={settingsOpen?'':''}
+                style={{transform:settingsOpen?'rotate(180deg)':'none',transition:'transform .2s'}}/>
+            </button>
+            {settingsOpen && (
+              <div className="nav-sub">
+                {ni('Services','grid','settings-services')}
+                {ni('Windows','workspace','settings-windows')}
+                {ni('Teams','users','settings-teams')}
+                {ni('Procedures','git','settings-procedures')}
+              </div>
+            )}
+          </>
+        )}
+        <button className="nav-item" onClick={()=>window.open('?tv=1','_blank')}>
+          <Icon n="tv" s={15}/>TV Display
+        </button>
+      </nav>
+      <div className="sidebar-user">
+        <div className="user-card">
+          <div className="user-avatar">{initials(profile?.first_name,profile?.last_name)}</div>
+          <div className="user-info">
+            <div className="user-name">{profile?.first_name} {profile?.last_name}</div>
+            <div className="user-role">{profile?.role}</div>
+          </div>
+          <button className="user-logout" onClick={logout} title="Logout"><Icon n="logout" s={15}/></button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────────────────────
+function Dashboard({profile}) {
+  const [stats,setStats] = React.useState({ongoing:0,serving:0,total:0,completed:0,removed:0,avgWait:null})
+  const [services,setServices] = React.useState([])
+  const [activeWindows,setActiveWindows] = React.useState([])
+
+  React.useEffect(()=>{ load(); const t=setInterval(load,30000); return()=>clearInterval(t) },[])
+
+  const load = async () => {
+    const [{data:queues},{data:sessions}] = await Promise.all([
+      sb.from('queues').select('status,service_id,waiting_start,serving_start,completed_at,services(name,color)').eq('date',today()),
+      sb.from('staff_sessions').select('*,profiles(first_name,last_name),windows(name)').eq('is_online',true)
+    ])
+    if (queues) {
+      const waiting=queues.filter(q=>q.status==='waiting').length
+      const serving=queues.filter(q=>q.status==='serving').length
+      const completed=queues.filter(q=>q.status==='completed').length
+      const removed=queues.filter(q=>q.status==='removed').length
+      const withWait=queues.filter(q=>q.serving_start&&q.waiting_start)
+      const avgWait=withWait.length ? Math.round(withWait.reduce((s,q)=>s+(new Date(q.serving_start)-new Date(q.waiting_start)),0)/withWait.length/60000) : null
+      setStats({ongoing:waiting,serving,total:queues.length,completed,removed,avgWait})
+      const sm={}
+      queues.forEach(q=>{
+        const n=q.services?.name||'?'; const c=q.services?.color||'#0ea5e9'
+        if(!sm[n]) sm[n]={name:n,color:c,ongoing:0,serving:0,served:0}
+        if(q.status==='waiting') sm[n].ongoing++
+        if(q.status==='serving') sm[n].serving++
+        if(q.status==='completed') sm[n].served++
+      })
+      setServices(Object.values(sm).filter(s=>s.ongoing+s.serving+s.served>0).sort((a,b)=>(b.ongoing+b.serving+b.served)-(a.ongoing+a.serving+a.served)))
+    }
+    setActiveWindows(sessions||[])
+  }
+
+  const greet = () => { const h=new Date().getHours(); return h<12?'Good morning':h<18?'Good afternoon':'Good evening' }
+  const now = new Date()
+
+  return (
+    <div>
+      <div className="page-header" style={{paddingBottom:'0'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div>
+            <h1 className="page-title">{greet()}, {profile?.first_name}! 👋</h1>
+            <p className="page-sub">{now.toLocaleDateString('en-PH',{weekday:'long',year:'numeric',month:'long',day:'numeric'})} · {now.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',hour12:true})}</p>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:'6px',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:'20px',padding:'5px 12px'}}>
+            <div className="rt-dot"/>
+            <span style={{fontSize:'12px',fontWeight:600,color:'#15803d'}}>Live</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="kpi-grid" style={{marginTop:'16px'}}>
+        {[
+          {label:'Ongoing',val:stats.ongoing,sub:stats.avgWait!=null?`Avg. wait: ${stats.avgWait} min`:'Avg. wait: —',ic:'clock',bg:'#fef3c7',c:'#d97706'},
+          {label:'Currently Serving',val:stats.serving,sub:'Active right now',ic:'workspace',bg:'#e0f2fe',c:'var(--brand)'},
+          {label:'Total Served',val:stats.total,sub:`${stats.completed} completed`,ic:'users',bg:'#d1fae5',c:'var(--success)'},
+        ].map(k=>(
+          <div key={k.label} className="kpi-card">
+            <div>
+              <div className="kpi-label">{k.label}</div>
+              <div className="kpi-value">{k.val}</div>
+              <div className="kpi-sub">{k.sub}</div>
+            </div>
+            <div className="kpi-icon" style={{background:k.bg,color:k.c}}><Icon n={k.ic} s={18}/></div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px',padding:'8px 24px 0'}}>
+        {[['Completed',stats.completed,'success'],['Removed',stats.removed,'danger'],['Cancelled',0,'subtle']].map(([l,v,c])=>(
+          <div key={l} className="card" style={{padding:'12px 16px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <span style={{fontSize:'13px',fontWeight:600,color:`var(--${c})`}}>{l}</span>
+            <span style={{fontSize:'22px',fontWeight:800}}>{v}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',padding:'12px 24px 24px'}}>
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">Occupied Windows</span>
+            <span style={{fontSize:'11px',color:'var(--success)',fontWeight:600}}>{activeWindows.length} Online</span>
+          </div>
+          <div style={{padding:'8px',maxHeight:'260px',overflowY:'auto'}}>
+            {activeWindows.length===0 && <div className="empty-state" style={{padding:'20px'}}><p style={{fontSize:'13px'}}>No active windows</p></div>}
+            {activeWindows.map(s=>(
+              <div key={s.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 10px',borderRadius:'8px',marginBottom:'2px',background:'#f8fafc'}}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:'13px'}}>{s.windows?.name||'—'}</div>
+                  <div style={{fontSize:'11px',color:'var(--muted)',marginTop:'1px'}}>{s.profiles?.first_name} {s.profiles?.last_name}</div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                  <div className="online-dot"/>
+                  <span style={{fontSize:'11px',color:'var(--success)',fontWeight:600}}>Online</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">Services Today</span></div>
+          <div style={{overflowY:'auto',maxHeight:'260px'}}>
+            {services.length===0 && <div className="empty-state" style={{padding:'20px'}}><p>No queues today yet</p></div>}
+            {services.length>0 && (
+              <div style={{display:'grid',gridTemplateColumns:'1fr repeat(3,60px)',gap:'0',padding:'8px 14px 4px',fontSize:'10px',fontWeight:700,color:'var(--subtle)',textTransform:'uppercase',letterSpacing:'.05em'}}>
+                <span>Service</span><span style={{textAlign:'center'}}>Wait</span><span style={{textAlign:'center'}}>Svc</span><span style={{textAlign:'center'}}>Done</span>
+              </div>
+            )}
+            {services.map(s=>(
+              <div key={s.name} style={{display:'grid',gridTemplateColumns:'1fr repeat(3,60px)',alignItems:'center',padding:'6px 14px',borderBottom:'1px solid #f8fafc'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'7px',minWidth:0}}>
+                  <div className="color-dot" style={{background:s.color}}/>
+                  <span style={{fontSize:'12px',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
+                </div>
+                <span style={{textAlign:'center',fontSize:'12px',fontWeight:700,color:'#d97706'}}>{s.ongoing||'—'}</span>
+                <span style={{textAlign:'center',fontSize:'12px',fontWeight:700,color:'var(--brand)'}}>{s.serving||'—'}</span>
+                <span style={{textAlign:'center',fontSize:'12px',color:'var(--muted)'}}>{s.served||'—'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// QUEUE WORKSPACE
+// ─────────────────────────────────────────────────────────────
+function QueueWorkspace({user, profile}) {
+  const toast = useToast()
+  const [windows, setWindows] = React.useState([])
+  const [selWin, setSelWin] = React.useState(null)
+  const [started, setStarted] = React.useState(false)
+  const [ongoing, setOngoing] = React.useState([])
+  const [serving, setServing] = React.useState([])
+  const [selQ, setSelQ] = React.useState(null)
+  const [tab, setTab] = React.useState('ongoing')
+  const [search, setSearch] = React.useState('')
+  const [filterMe, setFilterMe] = React.useState(false)
+  const [showAdd, setShowAdd] = React.useState(false)
+  const [showTransfer, setShowTransfer] = React.useState(null) // {type:'service'|'window'}
+  const [dropMenu, setDropMenu] = React.useState(null)
+  const channelRef = React.useRef(null)
+
+  React.useEffect(()=>{ loadWindows() },[])
+
+  // ── REALTIME: surgical updates, no full refetch ────────────
+  React.useEffect(()=>{
+    if (!selWin) return
+    channelRef.current?.unsubscribe()
+
+    const svcIds = selWin.window_services?.map(ws=>ws.service_id)||[]
+
+    const ch = sb.channel(`qs-win-${selWin.id}`)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'queues'},payload=>{
+        const q = payload.new
+        if (!svcIds.includes(q.service_id)) return
+        if (q.date !== today()) return
+        // Fetch full record with joins
+        sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
+          if (!data) return
+          if (data.status==='waiting'||data.status==='held') setOngoing(p=>[...p,data])
+          if (data.status==='serving') setServing(p=>[...p,data])
+        })
+      })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'queues'},payload=>{
+        const q = payload.new
+        if (!svcIds.includes(q.service_id) && q.date!==today()) return
+        // Fetch full record then surgically update state
+        sb.from('queues').select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)').eq('id',q.id).single().then(({data})=>{
+          if (!data) return
+          const active=['waiting','held']
+          setOngoing(p=>{
+            const exists = p.find(x=>x.id===q.id)
+            if (active.includes(data.status)) {
+              return exists ? p.map(x=>x.id===q.id?data:x) : [...p,data]
+            }
+            return p.filter(x=>x.id!==q.id)
+          })
+          setServing(p=>{
+            const exists = p.find(x=>x.id===q.id)
+            if (data.status==='serving') {
+              return exists ? p.map(x=>x.id===q.id?data:x) : [...p,data]
+            }
+            return p.filter(x=>x.id!==q.id)
+          })
+          // Update selected queue if it's the one that changed
+          setSelQ(prev=>prev?.id===q.id ? data : prev)
+        })
+      })
+      .subscribe()
+
+    channelRef.current = ch
+    loadQueues()
+
+    return () => ch.unsubscribe()
+  },[selWin?.id])
+
+  // Close dropdown when clicking outside
+  React.useEffect(()=>{
+    const close = ()=>setDropMenu(null)
+    window.addEventListener('click',close)
+    return ()=>window.removeEventListener('click',close)
+  },[])
+
+  const loadWindows = async () => {
+    if (['admin','manager'].includes(profile?.role)) {
+      const {data} = await sb.from('windows').select('*,window_services(service_id)').eq('is_active',true).order('name')
+      setWindows(data||[])
+    } else {
+      const {data} = await sb.from('window_staff').select('windows(*,window_services(service_id))').eq('user_id',user.id)
+      setWindows(data?.map(d=>d.windows).filter(Boolean)||[])
+    }
+  }
+
+  const loadQueues = async () => {
+    if (!selWin) return
+    const svcIds = selWin.window_services?.map(ws=>ws.service_id)||[]
+    if (!svcIds.length) return
+    const {data} = await sb.from('queues')
+      .select('*,services(name,prefix,color),windows(name),profiles(first_name,last_name)')
+      .eq('date',today())
+      .in('service_id',svcIds)
+      .in('status',['waiting','serving','held'])
+      .order('created_at')
+    setOngoing((data||[]).filter(q=>q.status==='waiting'||q.status==='held'))
+    setServing((data||[]).filter(q=>q.status==='serving'))
+  }
+
+  const selectWindow = async w => {
+    setSelWin(w); setStarted(true)
+    await sb.from('staff_sessions').upsert({user_id:user.id,window_id:w.id,is_online:true,last_heartbeat:new Date().toISOString()},{onConflict:'user_id'})
+    // Heartbeat every 2 mins
+    const hb = setInterval(async ()=> {
+      await sb.from('staff_sessions').upsert({user_id:user.id,window_id:w.id,is_online:true,last_heartbeat:new Date().toISOString()},{onConflict:'user_id'})
+    },120000)
+    window._hb = hb
+  }
+
+  const leaveWindow = async () => {
+    clearInterval(window._hb)
+    await sb.from('staff_sessions').upsert({user_id:user.id,window_id:null,is_online:true,last_heartbeat:new Date().toISOString()},{onConflict:'user_id'})
+    setStarted(false); setSelWin(null); setSelQ(null); channelRef.current?.unsubscribe()
+  }
+
+  const logTimeline = (qid,action,fromS,toS,extra={}) =>
+    sb.from('queue_timeline').insert({queue_id:qid,action,from_status:fromS,to_status:toS,performed_by:user.id,...extra})
+
+  const serveQueue = async q => {
+    await sb.from('queues').update({status:'serving',window_id:selWin.id,served_by:user.id,serving_start:new Date().toISOString()}).eq('id',q.id)
+    await logTimeline(q.id,'serve',q.status,'serving')
+    setTab('serving'); toast('Queue served!','success')
+  }
+
+  const completeQueue = async q => {
+    await sb.from('queues').update({status:'completed',completed_at:new Date().toISOString()}).eq('id',q.id)
+    await logTimeline(q.id,'complete','serving','completed')
+    setSelQ(null); toast('Queue completed!','success')
+  }
+
+  const removeQueue = async (q,reason='') => {
+    await sb.from('queues').update({status:'removed'}).eq('id',q.id)
+    await logTimeline(q.id,'remove',q.status,'removed',{reason})
+    if (selQ?.id===q.id) setSelQ(null); toast('Queue removed','info')
+  }
+
+  const holdQueue = async q => {
+    await sb.from('queues').update({status:'held'}).eq('id',q.id)
+    await logTimeline(q.id,'hold',q.status,'held')
+    if (selQ?.id===q.id) setSelQ(null); toast('Queue put on hold','info')
+  }
+
+  const skipQueue = async q => {
+    await sb.from('queues').update({status:'waiting',created_at:new Date().toISOString()}).eq('id',q.id)
+    await logTimeline(q.id,'skip',q.status,'waiting')
+    if (selQ?.id===q.id) setSelQ(null); toast('Queue skipped','info')
+  }
+
+  const notifyQueue = async q => {
+    await logTimeline(q.id,'notify',q.status,q.status)
+    toast(`Notified: ${q.queue_number}`,'info')
+  }
+
+  const filtered = (list) => list.filter(q=>{
+    if (filterMe && q.served_by && q.served_by!==user.id) return false
+    const s=search.toLowerCase()
+    return !s || q.queue_number.toLowerCase().includes(s) || q.visitor_name?.toLowerCase().includes(s)
+  })
+
+  // ── WINDOW SELECT SCREEN ───────────────────────────────────
+  if (!started) {
+    const h=new Date().getHours()
+    return (
+      <div className="window-select">
+        <div style={{maxWidth:'480px',width:'100%'}}>
+          <div style={{textAlign:'center',marginBottom:'28px'}}>
+            <h1 style={{fontSize:'22px',fontWeight:800}}>{h<12?'Good morning':h<18?'Good afternoon':'Good evening'}, {profile?.first_name}! 😎</h1>
+            <p style={{color:'var(--muted)',marginTop:'6px',fontSize:'13px'}}>Please select a window where you want to serve queues</p>
+          </div>
+          <div className="card" style={{padding:'4px',maxHeight:'380px',overflowY:'auto'}}>
+            {windows.length===0 && <div className="empty-state" style={{padding:'24px'}}><p>No windows assigned</p></div>}
+            {windows.map(w=>(
+              <div key={w.id} className="window-card" style={{margin:'4px'}} onClick={()=>selectWindow(w)}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:'14px'}}>{w.name}</div>
+                  <div style={{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}>{w.window_services?.length||0} service{w.window_services?.length!==1?'s':''}</div>
+                </div>
+                <Icon n="chev_right" s={16} c="text-muted"/>
+              </div>
+            ))}
+          </div>
+          <button className="btn btn-primary btn-full" style={{marginTop:'12px',padding:'11px'}}
+            onClick={()=>{setStarted(true);setSelWin(null)}}>
+            Okay, let's go! 🚀
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const dispQ = tab==='ongoing' ? filtered(ongoing) : filtered(serving)
+
+  return (
+    <div className="workspace">
+      {/* ── LEFT PANEL ── */}
+      <div className="ws-left">
+        <div className="ws-header" style={{paddingBottom:'8px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'8px'}}>
+            <span style={{fontSize:'11px',fontWeight:700,color:'var(--muted)'}}>FROM</span>
+            <span style={{background:'var(--sidebar)',color:'#fff',padding:'3px 9px',borderRadius:'6px',fontSize:'12px',fontWeight:700}}>{selWin?.name||'All Services'}</span>
+          </div>
+          <div className="ws-tabs">
+            {[['ongoing','Ongoing',ongoing.length],['serving','Serving',serving.length]].map(([id,lbl,cnt])=>(
+              <button key={id} className={`ws-tab ${tab===id?'active':''}`} onClick={()=>setTab(id)}>
+                {lbl}{cnt>0&&<span className="tab-count">{cnt}</span>}
+              </button>
+            ))}
+          </div>
+          <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
+            <div style={{position:'relative',flex:1}}>
+              <Icon n="search" s={12} c="text-subtle" style={{position:'absolute',left:'9px',top:'50%',transform:'translateY(-50%)'}}/>
+              <input className="input" style={{paddingLeft:'28px',paddingTop:'6px',paddingBottom:'6px',fontSize:'12px'}}
+                value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..."/>
+            </div>
+            <button className={`btn btn-sm ${filterMe?'btn-primary':'btn-secondary'}`}
+              onClick={()=>setFilterMe(f=>!f)} style={{padding:'5px 10px',fontSize:'11px'}}>Me</button>
+          </div>
+        </div>
+
+        <div className="ws-list">
+          {dispQ.length===0 && (
+            <div className="empty-state">
+              <div className="empty-icon"><Icon n="clock" s={20}/></div>
+              <p style={{fontWeight:600,fontSize:'13px'}}>No {tab} queues</p>
+              <p style={{fontSize:'12px',marginTop:'3px'}}>Add a queue to get started</p>
+            </div>
+          )}
+          {dispQ.map(q=>(
+            <div key={q.id}
+              className={`queue-card ${selQ?.id===q.id?'selected':''} ${q.priority?'priority':''} ${q.status==='held'?'held':''}`}
+              onClick={()=>setSelQ(q)}>
+              <div className="qc-top">
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'7px',flexWrap:'wrap'}}>
+                    <span className="qnum qc-num">{q.queue_number}</span>
+                    <span className="qc-service" style={{color:q.services?.color||'var(--brand)'}}>{q.services?.name}</span>
+                    {q.priority && <span style={{background:'#fef3c7',color:'#92400e',fontSize:'10px',padding:'1px 6px',borderRadius:'4px',fontWeight:700}}>PRIORITY</span>}
+                  </div>
+                  {q.visitor_name && <div className="qc-name">{q.visitor_name}</div>}
+                  <div className="qc-time">{fmt(q.created_at,'short')} · {selWin?.name||q.windows?.name||'—'}</div>
+                  {q.tags?.length>0 && <div style={{display:'flex',gap:'4px',marginTop:'4px',flexWrap:'wrap'}}>{q.tags.map(t=><span key={t} className="tag">{t}</span>)}</div>}
+                  {q.status==='held' && <span className="badge badge-held" style={{marginTop:'5px',display:'inline-flex'}}>On Hold</span>}
+                </div>
+                <div style={{position:'relative'}} onClick={e=>e.stopPropagation()}>
+                  <button className="qc-menu-btn" onClick={e=>{e.stopPropagation();setDropMenu(dropMenu===q.id?null:q.id)}}>
+                    <Icon n="more" s={14}/>
+                  </button>
+                  {dropMenu===q.id && (
+                    <div className="dropdown" onClick={e=>e.stopPropagation()}>
+                      {q.status==='waiting'&&<button className="dropdown-item" onClick={()=>{serveQueue(q);setDropMenu(null)}}><Icon n="arrow" s={13}/>Serve Queue</button>}
+                      <button className="dropdown-item" onClick={()=>{holdQueue(q);setDropMenu(null)}}><Icon n="clock" s={13}/>Hold Queue</button>
+                      <button className="dropdown-item" onClick={()=>{skipQueue(q);setDropMenu(null)}}><Icon n="arrow" s={13}/>Skip Queue</button>
+                      <button className="dropdown-item" onClick={()=>{setSelQ(q);setShowTransfer({type:'service'});setDropMenu(null)}}><Icon n="arrow" s={13}/>Transfer to Service</button>
+                      <button className="dropdown-item" onClick={()=>{setSelQ(q);setShowTransfer({type:'window'});setDropMenu(null)}}><Icon n="arrow" s={13}/>Transfer to Window</button>
+                      <div className="dropdown-divider"/>
+                      <button className="dropdown-item danger" onClick={()=>{removeQueue(q);setDropMenu(null)}}><Icon n="trash" s={13}/>Remove Queue</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="ws-footer">
+          <button className="btn btn-primary btn-full" onClick={()=>setShowAdd(true)}>
+            <Icon n="plus" s={15}/>Add Queue
+          </button>
+          <div style={{display:'flex',gap:'6px'}}>
+            <button className="btn btn-secondary" style={{flex:1,fontSize:'12px'}} onClick={()=>toast('Queue History — coming soon','info')}>
+              <Icon n="history" s={14}/>History
+            </button>
+            <button className="btn btn-secondary" style={{flex:1,fontSize:'12px',color:'var(--danger)'}} onClick={leaveWindow}>
+              <Icon n="logout" s={14}/>Leave
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── RIGHT PANEL ── */}
+      <div className="ws-right">
+        <div style={{background:'#fff',borderBottom:'1px solid var(--border)',padding:'11px 20px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <h2 style={{fontWeight:800,fontSize:'15px'}}>{selWin?.name||'Queue Workspace'}</h2>
+          <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+            <div className="rt-dot"/>
+            <span style={{fontSize:'12px',color:'var(--success)',fontWeight:600}}>Realtime Active</span>
+          </div>
+        </div>
+
+        {selQ ? (
+          <QueueDetail
+            queue={selQ}
+            onComplete={()=>completeQueue(selQ)}
+            onNotify={()=>notifyQueue(selQ)}
+            onServe={()=>serveQueue(selQ)}
+            onRemove={()=>removeQueue(selQ)}
+            onHold={()=>holdQueue(selQ)}
+            onSkip={()=>skipQueue(selQ)}
+            onTransferService={()=>setShowTransfer({type:'service'})}
+            onTransferWindow={()=>setShowTransfer({type:'window'})}
+          />
+        ) : (
+          <div className="empty-state" style={{height:'100%'}}>
+            <div className="empty-icon" style={{width:'60px',height:'60px'}}><Icon n="workspace" s={26}/></div>
+            <p style={{fontWeight:700,fontSize:'15px',color:'var(--text)'}}>Select a Queue</p>
+            <p style={{marginTop:'4px'}}>Click any queue to view details and take action</p>
+          </div>
+        )}
+      </div>
+
+      {showAdd && <AddQueueModal window={selWin} userId={user.id} onClose={()=>setShowAdd(false)} onAdded={()=>{setShowAdd(false);toast('Queue added!','success')}}/>}
+      {showTransfer && selQ && (
+        <TransferModal queue={selQ} type={showTransfer.type} currentWindowId={selWin?.id}
+          onClose={()=>setShowTransfer(null)}
+          onTransferred={()=>{setShowTransfer(null);setSelQ(null);toast('Queue transferred!','success')}}/>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// QUEUE DETAIL PANEL
+// ─────────────────────────────────────────────────────────────
+function QueueDetail({queue:q, onComplete, onNotify, onServe, onRemove, onHold, onSkip, onTransferService, onTransferWindow}) {
+  const [timeline, setTimeline] = React.useState([])
+  const [procedure, setProcedure] = React.useState(null)
+  const [steps, setSteps] = React.useState([])
+  const [menuOpen, setMenuOpen] = React.useState(false)
+
+  React.useEffect(()=>{
+    fetchTimeline()
+    if (q.procedure_id) fetchProcedure()
+    else { setProcedure(null); setSteps([]) }
+  },[q.id])
+
+  React.useEffect(()=>{
+    const close=()=>setMenuOpen(false)
+    window.addEventListener('click',close)
+    return()=>window.removeEventListener('click',close)
+  },[])
+
+  const fetchTimeline = async () => {
+    const {data} = await sb.from('queue_timeline')
+      .select('*,profiles(first_name,last_name),windows(name)')
+      .eq('queue_id',q.id).order('created_at',{ascending:false})
+    setTimeline(data||[])
+  }
+  const fetchProcedure = async () => {
+    const {data} = await sb.from('procedures').select('*,procedure_steps(*,services(name))').eq('id',q.procedure_id).single()
+    if (data) { setProcedure(data); setSteps(data.procedure_steps?.sort((a,b)=>a.step_order-b.step_order)||[]) }
+  }
+
+  const tlLabel = a => ({serve:'Served Queue',complete:'Completed Queue',remove:'Removed Queue',hold:'Put on Hold',skip:'Skipped Queue',notify:'Notified Visitor',transfer_service:'Transferred to Service',transfer_window:'Transferred to Window',add:'Queue Added'}[a]||a)
+
+  return (
+    <div className="detail-panel">
+      <div className="detail-main">
+        {/* Queue number */}
+        <div className="card" style={{padding:'20px',textAlign:'center'}}>
+          <p style={{fontSize:'11px',fontWeight:700,color:'var(--subtle)',textTransform:'uppercase',letterSpacing:'.1em',marginBottom:'8px'}}>Queue Number</p>
+          <div className="big-qnum" style={{color:q.services?.color||'var(--brand)'}}>{q.queue_number}</div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',marginTop:'10px'}}>
+            <span style={{fontWeight:600,fontSize:'13px',color:q.services?.color||'var(--brand)'}}>{q.services?.name}</span>
+            {statusBadge(q.status)}
+          </div>
+        </div>
+
+        {/* Details */}
+        <div className="card" style={{padding:'16px'}}>
+          <div className="grid-2">
+            {[
+              ['Visitor Name', q.visitor_name||'—'],
+              ['Mobile', q.visitor_mobile||'—'],
+              ['Waiting Time', waitMins(q.waiting_start, q.serving_start||null)],
+              ['Date / Time Queued', fmt(q.created_at,'datetime')],
+              q.windows?.name && ['Window', q.windows.name],
+              q.profiles && ['Served By', `${q.profiles.first_name} ${q.profiles.last_name}`],
+            ].filter(Boolean).map(([lbl,val])=>(
+              <div key={lbl}>
+                <div style={{fontSize:'11px',color:'var(--subtle)',marginBottom:'2px',fontWeight:600,textTransform:'uppercase',letterSpacing:'.04em'}}>{lbl}</div>
+                <div style={{fontSize:'13px',fontWeight:500}}>{val}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Tags */}
+        {(q.tags?.length>0) && (
+          <div className="card" style={{padding:'12px 16px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--subtle)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px'}}>Tags</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:'6px'}}>
+              {q.tags.map(t=><span key={t} className="tag">{t}</span>)}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Right side: procedure + timeline */}
+      <div className="detail-sidebar">
+        {q.status==='serving' && (
+          <div style={{padding:'10px 14px',background:'#f0fdf4',borderBottom:'1px solid #bbf7d0'}}>
+            <div style={{fontSize:'10px',fontWeight:700,color:'var(--success)',textTransform:'uppercase',letterSpacing:'.06em'}}>Serving Time</div>
+            <div style={{fontFamily:'JetBrains Mono',fontSize:'16px',fontWeight:700,color:'var(--success)',marginTop:'2px'}}>{fmt(q.serving_start,'mins')}</div>
+          </div>
+        )}
+
+        {procedure && steps.length>0 && (
+          <div style={{padding:'12px 14px',borderBottom:'1px solid var(--border)'}}>
+            <div className="section-label">Procedures List</div>
+            <div style={{fontWeight:700,fontSize:'13px',marginBottom:'3px'}}>{procedure.name}</div>
+            <div style={{fontSize:'11px',color:'var(--brand)',fontWeight:600,marginBottom:'12px'}}>Step-by-Step | {steps.length} steps</div>
+            <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+              {steps.map((step,i)=>{
+                const n=i+1, done=n<(q.current_step||1), curr=n===(q.current_step||1)
+                return (
+                  <div key={step.id} style={{display:'flex',alignItems:'flex-start',gap:'8px'}}>
+                    <div className="step-circle" style={{background:done?'var(--success)':curr?'var(--brand)':'#e2e8f0',color:done||curr?'#fff':'var(--muted)'}}>
+                      {done?'✓':n}
+                    </div>
+                    <div>
+                      <div style={{fontSize:'11px',fontWeight:600,color:'var(--muted)'}}>Step {n}</div>
+                      <div style={{fontSize:'12px',fontWeight:600}}>{step.services?.name}</div>
+                      <div style={{fontSize:'11px',fontWeight:600,color:done?'var(--success)':curr?'var(--brand)':'var(--subtle)',marginTop:'2px'}}>
+                        {done?'Completed':curr?'Current Serving':'Pending'}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        <div style={{padding:'12px 14px',flex:1,overflowY:'auto'}}>
+          <div className="section-label">Timeline</div>
+          {timeline.length===0 && <p style={{fontSize:'12px',color:'var(--subtle)'}}>No activity yet</p>}
+          <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+            {timeline.map((t,i)=>(
+              <div key={t.id} style={{display:'flex',gap:'8px',position:'relative'}}>
+                {i<timeline.length-1 && <div style={{position:'absolute',left:'3px',top:'12px',bottom:'-10px',width:'1px',background:'var(--border)'}}/>}
+                <div className="timeline-dot"/>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'12px',fontWeight:600}}>{tlLabel(t.action)}</div>
+                  <div style={{fontSize:'11px',color:'var(--muted)',marginTop:'1px'}}>{fmt(t.created_at,'datetime')}</div>
+                  {t.profiles && <div style={{fontSize:'11px',color:'var(--subtle)'}}>by {t.profiles.first_name} {t.profiles.last_name}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="detail-actions">
+        <div style={{position:'relative'}} onClick={e=>e.stopPropagation()}>
+          <button className="btn btn-secondary btn-icon" onClick={()=>setMenuOpen(o=>!o)}><Icon n="more" s={15}/></button>
+          {menuOpen && (
+            <div className="dropdown" style={{bottom:'44px',left:0,top:'auto'}}>
+              <button className="dropdown-item" onClick={()=>{onHold();setMenuOpen(false)}}><Icon n="clock" s={13}/>Hold Queue</button>
+              {q.status==='serving'&&<button className="dropdown-item" onClick={()=>{onSkip();setMenuOpen(false)}}><Icon n="arrow" s={13}/>Skip Queue</button>}
+              <button className="dropdown-item" onClick={()=>{onTransferService();setMenuOpen(false)}}><Icon n="arrow" s={13}/>Transfer to Service</button>
+              <button className="dropdown-item" onClick={()=>{onTransferWindow();setMenuOpen(false)}}><Icon n="arrow" s={13}/>Transfer to Window</button>
+              <div className="dropdown-divider"/>
+              <button className="dropdown-item danger" onClick={()=>{onRemove();setMenuOpen(false)}}><Icon n="trash" s={13}/>Remove Queue</button>
+            </div>
+          )}
+        </div>
+        <button className="btn btn-secondary" style={{flex:1}} onClick={onNotify}><Icon n="bell" s={14}/>Notify</button>
+        {q.status==='waiting'
+          ? <button className="btn btn-primary" style={{flex:1}} onClick={onServe}><Icon n="check" s={14}/>Serve Queue</button>
+          : <button className="btn btn-success" style={{flex:1}} onClick={onComplete}><Icon n="check" s={14}/>Complete Queue</button>
+        }
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// ADD QUEUE MODAL
+// ─────────────────────────────────────────────────────────────
+function AddQueueModal({window:win, userId, onClose, onAdded}) {
+  const [services, setServices] = React.useState([])
+  const [svcId, setSvcId] = React.useState('')
+  const [name, setName] = React.useState('')
+  const [mobile, setMobile] = React.useState('')
+  const [tags, setTags] = React.useState([])
+  const [tagIn, setTagIn] = React.useState('')
+  const [priority, setPriority] = React.useState(false)
+  const [loading, setLoading] = React.useState(false)
+  const [err, setErr] = React.useState('')
+
+  React.useEffect(()=>{
+    const ids = win?.window_services?.map(ws=>ws.service_id)||[]
+    sb.from('services').select('id,name,prefix,color').eq('is_active',true)
+      .in('id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000'])
+      .order('name').then(({data})=>setServices(data||[]))
+  },[])
+
+  const addTag = () => {
+    const t = tagIn.trim().toUpperCase()
+    if (t && !tags.includes(t)) setTags(p=>[...p,t])
+    setTagIn('')
+  }
+
+  const submit = async e => {
+    e.preventDefault(); if (!svcId) { setErr('Select a service'); return }
+    setLoading(true); setErr('')
+    try {
+      const {data:qnum} = await sb.rpc('get_next_queue_number',{p_service_id:svcId})
+      const {data:q, error:qe} = await sb.from('queues').insert({
+        queue_number:qnum, service_id:svcId,
+        visitor_name:name||null, visitor_mobile:mobile||null,
+        tags, priority, status:'waiting',
+        date:today(), waiting_start:new Date().toISOString()
+      }).select().single()
+      if (qe) throw qe
+      await sb.from('queue_timeline').insert({queue_id:q.id,action:'add',from_status:null,to_status:'waiting',performed_by:userId})
+      onAdded(q)
+    } catch(e) { setErr(e.message) }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal animate-in" onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <div><div className="modal-title">Add Queue</div><div className="modal-sub">Enter visitor info. Fields optional unless stated.</div></div>
+          <button className="btn btn-ghost btn-icon" onClick={onClose}><Icon n="x" s={16}/></button>
+        </div>
+        <form onSubmit={submit} className="modal-body">
+          <div className="space-y-3">
+            <div>
+              <label className="label">Add Queue On *</label>
+              <select className="input" value={svcId} onChange={e=>setSvcId(e.target.value)} required>
+                <option value="">Please Select Service</option>
+                {services.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div style={{paddingTop:'4px'}}>
+              <div className="label" style={{marginBottom:'8px'}}>Visitor Details</div>
+              <div className="space-y-2">
+                <div>
+                  <label className="label" style={{textTransform:'none',letterSpacing:0,fontSize:'12px',fontWeight:500,color:'var(--muted)'}}>Full Name (Optional)</label>
+                  <input className="input" value={name} onChange={e=>setName(e.target.value)} placeholder="Enter full name"/>
+                </div>
+                <div>
+                  <label className="label" style={{textTransform:'none',letterSpacing:0,fontSize:'12px',fontWeight:500,color:'var(--muted)'}}>Mobile Number (Optional)</label>
+                  <div style={{display:'flex',gap:'6px'}}>
+                    <span style={{padding:'8px 10px',background:'#f8fafc',border:'1px solid var(--border)',borderRadius:'8px',fontSize:'13px',color:'var(--muted)',whiteSpace:'nowrap'}}>+63</span>
+                    <input className="input" style={{flex:1}} value={mobile} onChange={e=>setMobile(e.target.value)} placeholder="9XX-XXX-XXXX" type="tel"/>
+                  </div>
+                  <p style={{fontSize:'11px',color:'var(--subtle)',marginTop:'3px'}}>SMS will be sent if number provided</p>
+                </div>
+              </div>
+            </div>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer'}}>
+              <input type="checkbox" checked={priority} onChange={e=>setPriority(e.target.checked)} style={{width:'15px',height:'15px',accentColor:'var(--brand)'}}/>
+              <span style={{fontSize:'13px',fontWeight:500}}>Mark as Priority</span>
+            </label>
+            <div>
+              <label className="label">Tags</label>
+              <div style={{display:'flex',gap:'6px'}}>
+                <input className="input" style={{flex:1}} value={tagIn} onChange={e=>setTagIn(e.target.value)}
+                  onKeyDown={e=>e.key==='Enter'&&(e.preventDefault(),addTag())} placeholder="Enter a tag and press Enter"/>
+                <button type="button" className="btn btn-secondary btn-icon" onClick={addTag}><Icon n="plus" s={14}/></button>
+              </div>
+              {tags.length>0 && <div style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'7px'}}>{tags.map(t=><span key={t} className="tag" style={{cursor:'pointer'}} onClick={()=>setTags(p=>p.filter(x=>x!==t))}>{t} ×</span>)}</div>}
+            </div>
+            {err && <div className="error-box">{err}</div>}
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" style={{flex:1}} onClick={onClose}>Cancel</button>
+            <button type="submit" disabled={loading} className="btn btn-primary" style={{flex:1}}>
+              {loading?<div className="spinner"/>:'Confirm'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// TRANSFER MODAL
+// ─────────────────────────────────────────────────────────────
+function TransferModal({queue:q, type, currentWindowId, onClose, onTransferred}) {
+  const [items, setItems] = React.useState([])
+  const [sel, setSel] = React.useState(null)
+  const [reason, setReason] = React.useState('')
+  const [loading, setLoading] = React.useState(false)
+
+  React.useEffect(()=>{
+    if (type==='service') sb.from('services').select('id,name,color').eq('is_active',true).neq('id',q.service_id).order('name').then(({data})=>setItems(data||[]))
+    else sb.from('windows').select('id,name').eq('is_active',true).neq('id',currentWindowId||'x').order('name').then(({data})=>setItems(data||[]))
+  },[])
+
+  const doTransfer = async () => {
+    if (!sel) return; setLoading(true)
+    const updates = type==='service'
+      ? {service_id:sel.id,status:'waiting',window_id:null,served_by:null,serving_start:null}
+      : {window_id:sel.id,status:'waiting'}
+    await sb.from('queues').update(updates).eq('id',q.id)
+    await sb.from('queue_timeline').insert({queue_id:q.id,action:`transfer_${type}`,from_status:q.status,to_status:'waiting',
+      from_window_id:currentWindowId,to_window_id:type==='window'?sel.id:null,
+      from_service_id:q.service_id,to_service_id:type==='service'?sel.id:null,performed_by:null,reason})
+    setLoading(false); onTransferred()
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal animate-in" style={{maxWidth:'400px'}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Transfer to {type==='service'?'Service':'Window'}</div>
+            <div className="modal-sub">Queue <strong>{q.queue_number}</strong></div>
+          </div>
+          <button className="btn btn-ghost btn-icon" onClick={onClose}><Icon n="x" s={16}/></button>
+        </div>
+        <div className="modal-body">
+          <div style={{maxHeight:'220px',overflowY:'auto',display:'flex',flexDirection:'column',gap:'4px',marginBottom:'12px'}}>
+            {items.map(item=>(
+              <div key={item.id} onClick={()=>setSel(item)}
+                style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',border:`1.5px solid ${sel?.id===item.id?'var(--brand)':'var(--border)'}`,
+                  borderRadius:'9px',cursor:'pointer',background:sel?.id===item.id?'#f0f9ff':'#fff',transition:'all .12s'}}>
+                <div style={{width:'18px',height:'18px',border:`2px solid ${sel?.id===item.id?'var(--brand)':'#cbd5e1'}`,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',flex:'shrink-0'}}>
+                  {sel?.id===item.id&&<div style={{width:'8px',height:'8px',borderRadius:'50%',background:'var(--brand)'}}/>}
+                </div>
+                {item.color&&<div className="color-dot" style={{background:item.color}}/>}
+                <span style={{fontSize:'13px',fontWeight:500}}>{item.name}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{marginBottom:'12px'}}>
+            <label className="label">Reason (Optional)</label>
+            <input className="input" value={reason} onChange={e=>setReason(e.target.value)} placeholder="Enter reason..."/>
+          </div>
+          <p style={{fontSize:'11px',color:'var(--subtle)',marginBottom:'14px'}}>Note: Please advise the visitor regarding this transfer.</p>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button className="btn btn-secondary" style={{flex:1}} onClick={onClose}>Back</button>
+            <button className="btn btn-primary" style={{flex:1}} disabled={!sel||loading} onClick={doTransfer}>
+              {loading?<div className="spinner"/>:'Confirm'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// TV DISPLAY  (standalone, no sidebar)
+// ─────────────────────────────────────────────────────────────
+function TVDisplay() {
+  const [serving, setServing] = React.useState([])
+  const [recent, setRecent] = React.useState([])
+  const [now, setNow] = React.useState(new Date())
+  const [newIds, setNewIds] = React.useState(new Set())
+
+  React.useEffect(()=>{
+    fetch(); const ti=setInterval(()=>setNow(new Date()),1000)
+    const ch = sb.channel('tv-global')
+      .on('postgres_changes',{event:'*',schema:'public',table:'queues'},payload=>{
+        if (payload.new?.status==='serving') {
+          setNewIds(p=>new Set([...p,payload.new.id]))
+          setTimeout(()=>setNewIds(p=>{const n=new Set(p);n.delete(payload.new.id);return n}),500)
+        }
+        fetch()
+      }).subscribe()
+    return()=>{ clearInterval(ti); ch.unsubscribe() }
+  },[])
+
+  const fetch = async () => {
+    const {data} = await sb.from('queues')
+      .select('*,services(name,color),windows(name)')
+      .eq('date',today()).in('status',['serving','completed'])
+      .order('serving_start',{ascending:false}).limit(20)
+    setServing((data||[]).filter(q=>q.status==='serving'))
+    setRecent((data||[]).filter(q=>q.status==='completed').slice(0,10))
+  }
+
+  return (
+    <div className="tv">
+      <div className="tv-header">
+        <div style={{display:'flex',alignItems:'center',gap:'14px'}}>
+          <div style={{width:'48px',height:'48px',background:'var(--brand)',borderRadius:'12px',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:'22px',color:'#fff'}}>T</div>
+          <div>
+            <div style={{fontWeight:800,fontSize:'18px'}}>Taytay Doctors Multispecialty Hospital</div>
+            <div style={{color:'#64748b',fontSize:'12px',marginTop:'2px'}}>Queue Management System — Taytay, Rizal</div>
+          </div>
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div style={{fontFamily:'JetBrains Mono',fontSize:'30px',fontWeight:700,color:'var(--brand)'}}>
+            {now.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}
+          </div>
+          <div style={{color:'#64748b',fontSize:'12px',marginTop:'2px'}}>
+            {now.toLocaleDateString('en-PH',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}
+          </div>
+        </div>
+      </div>
+      <div className="tv-body">
+        <div className="tv-main">
+          <div style={{fontSize:'11px',fontWeight:800,textTransform:'uppercase',letterSpacing:'.12em',color:'var(--brand)',marginBottom:'20px'}}>Now Serving</div>
+          {serving.length===0 ? (
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'300px',color:'#475569'}}>
+              <div style={{fontSize:'26px',fontWeight:800,marginBottom:'8px'}}>No Active Queue</div>
+              <div style={{fontSize:'14px'}}>Please wait for your number to be called</div>
+            </div>
+          ) : (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:'16px'}}>
+              {serving.map(q=>(
+                <div key={q.id} className={`tv-qcard ${newIds.has(q.id)?'new-item':''}`}>
+                  <div style={{fontSize:'11px',fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:'10px'}}>{q.windows?.name}</div>
+                  <div className="tv-qnum" style={{color:q.services?.color||'var(--brand)'}}>{q.queue_number}</div>
+                  <div style={{color:'#94a3b8',fontSize:'14px',marginTop:'8px',fontWeight:600}}>{q.services?.name}</div>
+                  {q.visitor_name&&<div style={{color:'#64748b',fontSize:'13px',marginTop:'4px'}}>{q.visitor_name}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="tv-sidebar">
+          <div style={{fontSize:'10px',fontWeight:800,color:'#475569',textTransform:'uppercase',letterSpacing:'.1em',marginBottom:'14px'}}>Recently Called</div>
+          <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+            {recent.map(q=>(
+              <div key={q.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',background:'rgba(255,255,255,.05)',borderRadius:'8px'}}>
+                <div>
+                  <span style={{fontFamily:'JetBrains Mono',fontWeight:700,fontSize:'14px',color:'#94a3b8'}}>{q.queue_number}</span>
+                  <span style={{fontSize:'11px',color:'#475569',marginLeft:'7px'}}>{q.services?.name}</span>
+                </div>
+                <span style={{fontSize:'11px',color:'#334155'}}>{q.windows?.name?.replace('Window','W.')}</span>
+              </div>
+            ))}
+            {recent.length===0&&<p style={{color:'#475569',fontSize:'13px'}}>No recent queues</p>}
+          </div>
+        </div>
+      </div>
+      <div className="tv-footer">
+        <div style={{width:'6px',height:'6px',borderRadius:'50%',background:'rgba(255,255,255,.6)'}}/>
+        <span style={{fontSize:'13px',color:'rgba(255,255,255,.85)'}}>Please proceed to your designated window when your number is called. Thank you for your patience.</span>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// MONITORING
+// ─────────────────────────────────────────────────────────────
+function Monitoring() {
+  const [tab,setTab]=React.useState('branch')
+  const [kpis,setKpis]=React.useState({total:0,avgWait:0,avgServe:0,waiting:0})
+  const [hourly,setHourly]=React.useState([])
+  const [peak,setPeak]=React.useState('—')
+  const [topSvc,setTopSvc]=React.useState('—')
+  const [topStaff,setTopStaff]=React.useState('—')
+  const [svcStats,setSvcStats]=React.useState([])
+
+  React.useEffect(()=>{load()},[])
+  const load = async () => {
+    const {data:queues} = await sb.from('queues').select('*,services(name),profiles(first_name,last_name)').eq('date',today())
+    if (!queues?.length) return
+    const completed=queues.filter(q=>q.status==='completed')
+    const waiting=queues.filter(q=>q.status==='waiting').length
+    const withWait=completed.filter(q=>q.serving_start&&q.waiting_start)
+    const withServe=completed.filter(q=>q.completed_at&&q.serving_start)
+    const avgWait=withWait.length?Math.round(withWait.reduce((s,q)=>s+(new Date(q.serving_start)-new Date(q.waiting_start)),0)/withWait.length/60000):0
+    const avgServe=withServe.length?Math.round(withServe.reduce((s,q)=>s+(new Date(q.completed_at)-new Date(q.serving_start)),0)/withServe.length/60000):0
+    setKpis({total:queues.length,avgWait,avgServe,waiting})
+    // Hourly
+    const hm={}; for(let h=7;h<=21;h++) hm[h]={h,label:`${h%12||12}${h<12?'am':'pm'}`,count:0}
+    queues.forEach(q=>{ const h=new Date(q.created_at).getHours(); if(hm[h]) hm[h].count++ })
+    const ho=Object.values(hm)
+    setHourly(ho)
+    const pk=ho.reduce((m,h)=>h.count>m.count?h:m,{count:0,label:'—'})
+    setPeak(pk.label)
+    // Top service
+    const sm={}; queues.forEach(q=>{ const n=q.services?.name||'?'; sm[n]=(sm[n]||0)+1 })
+    const ts=Object.entries(sm).sort((a,b)=>b[1]-a[1])[0]
+    if(ts) setTopSvc(`${ts[0]} (${ts[1]})`)
+    // Top staff
+    const stm={}; completed.forEach(q=>{ if(q.profiles){ const n=`${q.profiles.first_name} ${q.profiles.last_name}`; stm[n]=(stm[n]||0)+1 }})
+    const tst=Object.entries(stm).sort((a,b)=>b[1]-a[1])[0]
+    if(tst) setTopStaff(`${tst[0]} (${tst[1]})`)
+    // Service stats
+    const stats={}; queues.forEach(q=>{ const n=q.services?.name||'?'; if(!stats[n]) stats[n]={name:n,total:0,completed:0,removed:0}; stats[n].total++; if(q.status==='completed') stats[n].completed++; if(q.status==='removed') stats[n].removed++ })
+    setSvcStats(Object.values(stats).sort((a,b)=>b.total-a.total))
+  }
+  const maxCount=Math.max(...hourly.map(h=>h.count),1)
+
+  return (
+    <div>
+      <div className="page-header"><h1 className="page-title">Monitoring</h1><p className="page-sub">See how the branch is performing today</p></div>
+      <div className="monitor-tabs" style={{marginTop:'16px'}}>
+        {[['branch','Branch Performance'],['visitors','Visitor Volumes'],['team','Team Performance']].map(([id,lbl])=>(
+          <button key={id} className={`monitor-tab ${tab===id?'active':''}`} onClick={()=>setTab(id)}>{lbl}</button>
+        ))}
+      </div>
+      <div style={{padding:'20px 24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+        <div className="grid-3">
+          {[['Total Queues',kpis.total,'Today'],['Avg. Waiting Time',`${kpis.avgWait} mins`,'Today'],['Avg. Serving Time',`${kpis.avgServe} mins`,'Today']].map(([lbl,val,sub])=>(
+            <div key={lbl} className="card" style={{padding:'16px'}}>
+              <div style={{fontSize:'11px',color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'6px'}}>{lbl}</div>
+              <div style={{fontSize:'28px',fontWeight:800}}>{val}</div>
+              <div style={{fontSize:'11px',color:'var(--subtle)',marginTop:'3px'}}>{sub}</div>
+            </div>
+          ))}
+        </div>
+        {/* Bar chart */}
+        <div className="card" style={{padding:'16px'}}>
+          <div style={{fontWeight:700,fontSize:'13px',marginBottom:'4px'}}>Total Queues — Today 🔥</div>
+          <div style={{fontSize:'12px',color:'var(--muted)',marginBottom:'14px'}}>See what time your branch is busiest</div>
+          <div style={{display:'flex',alignItems:'flex-end',gap:'4px',height:'120px'}}>
+            {hourly.map(h=>(
+              <div key={h.h} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:'4px',height:'100%',justifyContent:'flex-end'}}>
+                <div style={{width:'100%',background:'var(--brand)',borderRadius:'3px 3px 0 0',height:`${(h.count/maxCount)*100}%`,minHeight:h.count>0?'4px':'0',transition:'height .3s',opacity:h.count>0?1:.15}}/>
+                <div style={{fontSize:'9px',color:'var(--subtle)',writing:'vertical-lr',transform:'rotate(-45deg)',whiteSpace:'nowrap'}}>{h.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
+          {/* Highlights */}
+          <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+            {[['Queue Length',kpis.waiting,'Waiting right now'],['Peak Hour',peak,'Based on today'],['Most Queued',topSvc,'Service'],['Top Staff',topStaff,'Most completed']].map(([lbl,val,sub])=>(
+              <div key={lbl} className="card" style={{padding:'12px 14px'}}>
+                <div style={{fontSize:'10px',color:'var(--subtle)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'4px'}}>{lbl}</div>
+                <div style={{fontSize:'16px',fontWeight:800,lineHeight:1.2}}>{val}</div>
+                <div style={{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}>{sub}</div>
+              </div>
+            ))}
+          </div>
+          {/* Service table */}
+          <div className="card" style={{overflow:'hidden'}}>
+            <div className="card-header"><span className="card-title">Services Today</span></div>
+            <div style={{overflowY:'auto',maxHeight:'260px'}}>
+              <table className="table">
+                <thead><tr><th>Service</th><th>Total</th><th>Done</th></tr></thead>
+                <tbody>
+                  {svcStats.map(s=>(
+                    <tr key={s.name}>
+                      <td style={{maxWidth:'120px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</td>
+                      <td style={{fontWeight:700}}>{s.total}</td>
+                      <td style={{color:'var(--success)',fontWeight:600}}>{s.completed}</td>
+                    </tr>
+                  ))}
+                  {svcStats.length===0&&<tr><td colSpan="3" style={{color:'var(--muted)',textAlign:'center',padding:'20px'}}>No data</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// REPORTS
+// ─────────────────────────────────────────────────────────────
+function Reports() {
+  const TYPES=[
+    {id:'queue_history',label:'Queue History',desc:'List of previous queues or transactions'},
+    {id:'queue_count',label:'Queue Count Report',desc:'Count of served, removed and cancelled'},
+    {id:'avg_wait',label:'Average Waiting Time',desc:'Average waiting time per service'},
+    {id:'avg_serve',label:'Average Serving Time',desc:'Average serving time per service'},
+  ]
+  const [active,setActive]=React.useState(null)
+  const [from,setFrom]=React.useState(new Date(Date.now()-7*86400000).toISOString().slice(0,10))
+  const [to,setTo]=React.useState(new Date().toISOString().slice(0,10))
+  const [data,setData]=React.useState([])
+  const [loading,setLoading]=React.useState(false)
+  const [done,setDone]=React.useState(false)
+
+  const generate = async () => {
+    setLoading(true); setDone(false)
+    const f=new Date(from+'T00:00:00').toISOString(), t=new Date(to+'T23:59:59').toISOString()
+    try {
+      if (active==='queue_history') {
+        const {data:rows}=await sb.from('queues').select('queue_number,status,visitor_name,visitor_mobile,services(name),windows(name),created_at,completed_at').gte('created_at',f).lte('created_at',t).order('created_at',{ascending:false}).limit(500)
+        setData((rows||[]).map(r=>({Queue:r.queue_number,Service:r.services?.name,Status:r.status,Visitor:r.visitor_name||'—',Window:r.windows?.name||'—',Queued:fmt(r.created_at,'datetime'),Completed:fmt(r.completed_at,'datetime')})))
+      } else if (active==='queue_count') {
+        const {data:rows}=await sb.from('queues').select('status,services(name)').gte('created_at',f).lte('created_at',t)
+        const sm={}; (rows||[]).forEach(q=>{ const n=q.services?.name||'?'; if(!sm[n]) sm[n]={Service:n,Total:0,Completed:0,Removed:0}; sm[n].Total++; if(q.status==='completed') sm[n].Completed++; if(q.status==='removed') sm[n].Removed++ })
+        setData(Object.values(sm))
+      } else {
+        const {data:rows}=await sb.from('queues').select('status,services(name),waiting_start,serving_start,completed_at').eq('status','completed').gte('created_at',f).lte('created_at',t)
+        const sm={}; (rows||[]).forEach(q=>{ const n=q.services?.name||'?'; if(!sm[n]) sm[n]={Service:n,waitMs:[],serveMs:[]}; if(q.serving_start&&q.waiting_start) sm[n].waitMs.push(new Date(q.serving_start)-new Date(q.waiting_start)); if(q.completed_at&&q.serving_start) sm[n].serveMs.push(new Date(q.completed_at)-new Date(q.serving_start)) })
+        setData(Object.values(sm).map(s=>({Service:s.Service,'Avg Wait':s.waitMs.length?`${Math.round(s.waitMs.reduce((a,b)=>a+b,0)/s.waitMs.length/60000)} min`:'—','Avg Serve':s.serveMs.length?`${Math.round(s.serveMs.reduce((a,b)=>a+b,0)/s.serveMs.length/60000)} min`:'—',Count:s.waitMs.length})))
+      }
+      setDone(true)
+    } finally { setLoading(false) }
+  }
+
+  const exportCSV = () => {
+    if (!data.length) return
+    const h=Object.keys(data[0])
+    const csv=[h.join(','),...data.map(r=>h.map(k=>String(r[k]??'')).join(','))].join('\n')
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}))
+    a.download=`${active}_${from}_${to}.csv`; a.click()
+  }
+
+  return (
+    <div style={{padding:'20px 24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div><h1 className="page-title">Reports</h1><p className="page-sub">Generate and export business reports</p></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'10px'}}>
+        {TYPES.map(rt=>(
+          <div key={rt.id} className="card" onClick={()=>{setActive(rt.id);setDone(false);setData([])}}
+            style={{padding:'14px 16px',cursor:'pointer',border:`1.5px solid ${active===rt.id?'var(--brand)':'var(--border)'}`,background:active===rt.id?'#f0f9ff':'#fff',transition:'all .15s'}}>
+            <div style={{fontWeight:700,fontSize:'13px',marginBottom:'3px'}}>{rt.label}</div>
+            <div style={{fontSize:'12px',color:'var(--muted)'}}>{rt.desc}</div>
+          </div>
+        ))}
+      </div>
+      {active && (
+        <div className="card" style={{padding:'14px 16px',display:'flex',alignItems:'flex-end',gap:'10px',flexWrap:'wrap'}}>
+          <div><label className="label">Date From</label><input type="date" className="input" style={{width:'160px'}} value={from} onChange={e=>setFrom(e.target.value)}/></div>
+          <div><label className="label">Date To</label><input type="date" className="input" style={{width:'160px'}} value={to} onChange={e=>setTo(e.target.value)}/></div>
+          <button className="btn btn-primary" onClick={generate} disabled={loading}>{loading?<div className="spinner"/>:<><Icon n="report" s={14}/>Generate</>}</button>
+          {done&&data.length>0&&<button className="btn btn-secondary" onClick={exportCSV}><Icon n="download" s={14}/>Export CSV</button>}
+        </div>
+      )}
+      {done && (
+        <div className="card" style={{overflow:'hidden'}}>
+          <div className="card-header"><span className="card-title">{TYPES.find(r=>r.id===active)?.label} — {data.length} records</span></div>
+          <div style={{overflowX:'auto',maxHeight:'400px',overflowY:'auto'}}>
+            {data.length===0
+              ? <div style={{padding:'30px',textAlign:'center',color:'var(--muted)'}}>No data for this period</div>
+              : <table className="table">
+                  <thead><tr>{Object.keys(data[0]).map(h=><th key={h}>{h}</th>)}</tr></thead>
+                  <tbody>{data.map((r,i)=><tr key={i}>{Object.values(r).map((v,j)=><td key={j}>{String(v??'—')}</td>)}</tr>)}</tbody>
+                </table>
+            }
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// SETTINGS PAGES
+// ─────────────────────────────────────────────────────────────
+function ServicesSettings() {
+  const toast=useToast()
+  const [services,setServices]=React.useState([])
+  const [sel,setSel]=React.useState(null)
+  const [edit,setEdit]=React.useState({})
+  const [showAdd,setShowAdd]=React.useState(false)
+  const [newName,setNewName]=React.useState('')
+  const COLORS=['#0ea5e9','#6366f1','#8b5cf6','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4']
+
+  React.useEffect(()=>{ load() },[])
+  const load=async()=>{ const {data}=await sb.from('services').select('*').order('name'); setServices(data||[]); if(data?.length&&!sel) setSel(data[0]) }
+  const val=(k)=>edit[k]!==undefined?edit[k]:sel?.[k]
+  const set=(k,v)=>setEdit(p=>({...p,[k]:v}))
+  const hasChanges=Object.keys(edit).length>0
+
+  const save=async()=>{
+    const {data}=await sb.from('services').update({name:val('name'),prefix:val('prefix'),color:val('color'),is_active:val('is_active'),is_hidden_on_kiosk:val('is_hidden_on_kiosk')}).eq('id',sel.id).select().single()
+    if(data){setSel(data);setEdit({});await load();toast('Saved!','success')}
+  }
+  const addSvc=async(e)=>{e.preventDefault();if(!newName.trim())return;const pre=newName.trim().substring(0,2).toUpperCase();const {data}=await sb.from('services').insert({name:newName.trim(),prefix:pre}).select().single();if(data){await load();setSel(data);setNewName('');setShowAdd(false)}}
+  const Toggle=({k})=>(<button type="button" className={`toggle ${val(k)?'on':''}`} onClick={()=>set(k,!val(k))}><div className="toggle-thumb"/></button>)
+
+  return (
+    <div className="settings-layout">
+      <div className="settings-list">
+        <div style={{padding:'14px 16px',borderBottom:'1px solid var(--border)'}}>
+          <div style={{fontWeight:800,fontSize:'14px'}}>Services</div>
+          <div style={{fontSize:'11px',color:'var(--muted)',marginTop:'1px'}}>Manage branch services</div>
+        </div>
+        <div style={{flex:1,overflowY:'auto'}}>
+          {services.map(s=>(
+            <div key={s.id} className={`settings-item ${sel?.id===s.id?'active':''}`} onClick={()=>{setSel(s);setEdit({})}}>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0}}>
+                <div className="color-dot" style={{background:s.color||'var(--brand)'}}/>
+                <span style={{truncate:true,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
+              </div>
+              {!s.is_active&&<span style={{fontSize:'10px',color:'var(--subtle)',marginLeft:'4px'}}>Off</span>}
+            </div>
+          ))}
+        </div>
+        <div style={{padding:'10px'}}>
+          {showAdd
+            ? <form onSubmit={addSvc} style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                <input autoFocus className="input" style={{fontSize:'12px'}} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Service name"/>
+                <div style={{display:'flex',gap:'5px'}}>
+                  <button type="submit" className="btn btn-primary btn-sm" style={{flex:1}}>Add</button>
+                  <button type="button" className="btn btn-secondary btn-icon btn-sm" onClick={()=>{setShowAdd(false);setNewName('')}}><Icon n="x" s={13}/></button>
+                </div>
+              </form>
+            : <button className="btn btn-primary btn-full btn-sm" onClick={()=>setShowAdd(true)}><Icon n="plus" s={13}/>Add Services</button>
+          }
+        </div>
+      </div>
+      <div className="settings-detail">
+        {!sel ? <div className="full-center" style={{height:'auto',padding:'40px',color:'var(--muted)'}}>Select a service</div> : (
+          <div style={{maxWidth:'640px',display:'flex',flexDirection:'column',gap:'16px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <h2 style={{fontWeight:800,fontSize:'16px'}}>Service Details — {sel.name}</h2>
+                <p style={{fontSize:'12px',color:'var(--muted)',marginTop:'2px'}}>Update this service's info or settings</p>
+              </div>
+              <div style={{display:'flex',gap:'8px'}}>
+                <button className="btn btn-secondary btn-sm" style={{color:'var(--danger)'}} onClick={async()=>{if(confirm(`Delete "${sel.name}"?`)){await sb.from('services').delete().eq('id',sel.id);setSel(null);setEdit({});await load()}}}>
+                  <Icon n="trash" s={13}/>Delete
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={async()=>{const {data}=await sb.from('services').update({is_active:!sel.is_active}).eq('id',sel.id).select().single();if(data){setSel(data);await load()}}}>
+                  {sel.is_active?'Disable':'Enable'}
+                </button>
+              </div>
+            </div>
+
+            <div className="card" style={{padding:'16px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'14px',marginBottom:'16px'}}>
+                <div style={{width:'56px',height:'56px',borderRadius:'12px',background:val('color')||'var(--brand)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'JetBrains Mono',fontWeight:700,color:'#fff',fontSize:'18px'}}>
+                  {val('prefix')||'A'}
+                </div>
+                <div style={{flex:1}}>
+                  <label className="label">Service Name</label>
+                  <input className="input" value={val('name')||''} onChange={e=>set('name',e.target.value)}/>
+                </div>
+              </div>
+              <div className="grid-2" style={{marginBottom:'14px'}}>
+                <div>
+                  <label className="label">Queue Prefix</label>
+                  <input className="input" value={val('prefix')||''} onChange={e=>set('prefix',e.target.value.toUpperCase())} maxLength={3}/>
+                </div>
+                <div>
+                  <label className="label">Color</label>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:'6px',marginTop:'2px'}}>
+                    {COLORS.map(c=>(
+                      <button key={c} type="button" onClick={()=>set('color',c)}
+                        style={{width:'24px',height:'24px',borderRadius:'50%',background:c,border:`2px solid ${val('color')===c?c:'transparent'}`,outline:val('color')===c?`2px solid ${c}`:'none',outlineOffset:'2px',cursor:'pointer',transition:'transform .15s'}}/>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div style={{borderTop:'1px solid var(--border)',paddingTop:'14px',display:'flex',flexDirection:'column',gap:'12px'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <div>
+                    <div style={{fontWeight:600,fontSize:'13px'}}>Hide on Kiosk/Site</div>
+                    <div style={{fontSize:'12px',color:'var(--muted)',marginTop:'2px'}}>Customer won't see this on the Kiosk</div>
+                  </div>
+                  <Toggle k="is_hidden_on_kiosk"/>
+                </div>
+              </div>
+            </div>
+
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+                <span style={{fontWeight:700,fontSize:'13px'}}>Queue Number</span>
+                <button className="btn btn-ghost btn-sm" style={{color:'var(--brand)',fontSize:'12px'}} onClick={async()=>{if(confirm('Reset to 001?')){await sb.from('services').update({current_number:0}).eq('id',sel.id);await load();toast('Reset!','success')}}}>
+                  ↺ Reset Queue Number
+                </button>
+              </div>
+              <div className="grid-2">
+                <div style={{background:'#f8fafc',borderRadius:'8px',padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontSize:'12px',color:'var(--muted)'}}>Current Number</span>
+                  <span style={{fontFamily:'JetBrains Mono',fontWeight:700}}>{val('prefix')}{String((sel.current_number||0)+1).padStart(3,'0')}</span>
+                </div>
+                <div style={{background:'#f8fafc',borderRadius:'8px',padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontSize:'12px',color:'var(--muted)'}}>Prefix</span>
+                  <span style={{fontFamily:'JetBrains Mono',fontWeight:700}}>{val('prefix')||'A'}</span>
+                </div>
+              </div>
+            </div>
+
+            {hasChanges && (
+              <div style={{display:'flex',gap:'8px',position:'sticky',bottom:'16px'}}>
+                <button className="btn btn-secondary" style={{flex:1}} onClick={()=>setEdit({})}>Cancel</button>
+                <button className="btn btn-primary" style={{flex:1}} onClick={save}><Icon n="check" s={14}/>Save Changes</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function WindowsSettings() {
+  const toast=useToast()
+  const [windows,setWindows]=React.useState([])
+  const [sel,setSel]=React.useState(null)
+  const [allSvcs,setAllSvcs]=React.useState([])
+  const [allStaff,setAllStaff]=React.useState([])
+  const [asgSvcs,setAsgSvcs]=React.useState([])
+  const [asgStaff,setAsgStaff]=React.useState([])
+  const [sessions,setSessions]=React.useState({})
+  const [showAdd,setShowAdd]=React.useState(false)
+  const [newName,setNewName]=React.useState('')
+  const [editName,setEditName]=React.useState(false)
+  const [nameVal,setNameVal]=React.useState('')
+
+  React.useEffect(()=>{ loadAll() },[])
+  React.useEffect(()=>{ if(sel) loadDetail(sel.id) },[sel?.id])
+
+  const loadAll=async()=>{
+    const [{data:wins},{data:svcs},{data:staff},{data:sess}]=await Promise.all([
+      sb.from('windows').select('*').order('name'),
+      sb.from('services').select('id,name,color').eq('is_active',true).order('name'),
+      sb.from('profiles').select('id,first_name,last_name').eq('is_active',true).order('first_name'),
+      sb.from('staff_sessions').select('user_id,is_online'),
+    ])
+    setWindows(wins||[]); setAllSvcs(svcs||[]); setAllStaff(staff||[])
+    const sm={}; (sess||[]).forEach(s=>{ sm[s.user_id]=s.is_online }); setSessions(sm)
+    if(wins?.length&&!sel) setSel(wins[0])
+  }
+  const loadDetail=async(wid)=>{
+    const [{data:ws},{data:wst}]=await Promise.all([
+      sb.from('window_services').select('service_id').eq('window_id',wid),
+      sb.from('window_staff').select('user_id').eq('window_id',wid),
+    ])
+    setAsgSvcs(ws?.map(r=>r.service_id)||[])
+    setAsgStaff(wst?.map(r=>r.user_id)||[])
+  }
+  const addWin=async(e)=>{e.preventDefault();if(!newName.trim())return;const {data}=await sb.from('windows').insert({name:newName.trim()}).select().single();if(data){await loadAll();setSel(data);setNewName('');setShowAdd(false)}}
+  const saveName=async()=>{if(!nameVal.trim())return;const {data}=await sb.from('windows').update({name:nameVal.trim()}).eq('id',sel.id).select().single();if(data){setSel(data);await loadAll();setEditName(false);toast('Saved!','success')}}
+  const toggleSvc=async(id)=>{ const has=asgSvcs.includes(id); if(has){await sb.from('window_services').delete().eq('window_id',sel.id).eq('service_id',id);setAsgSvcs(p=>p.filter(x=>x!==id))}else{await sb.from('window_services').insert({window_id:sel.id,service_id:id});setAsgSvcs(p=>[...p,id])} }
+  const toggleStaff=async(id)=>{ const has=asgStaff.includes(id); if(has){await sb.from('window_staff').delete().eq('window_id',sel.id).eq('user_id',id);setAsgStaff(p=>p.filter(x=>x!==id))}else{await sb.from('window_staff').insert({window_id:sel.id,user_id:id});setAsgStaff(p=>[...p,id])} }
+
+  return (
+    <div className="settings-layout">
+      <div className="settings-list">
+        <div style={{padding:'14px 16px',borderBottom:'1px solid var(--border)'}}><div style={{fontWeight:800,fontSize:'14px'}}>Windows</div><div style={{fontSize:'11px',color:'var(--muted)'}}>Manage counters/windows</div></div>
+        <div style={{flex:1,overflowY:'auto'}}>
+          {windows.map(w=>(
+            <div key={w.id} className={`settings-item ${sel?.id===w.id?'active':''}`} onClick={()=>setSel(w)}>
+              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{w.name}</span>
+              {!w.is_active&&<span style={{fontSize:'10px',color:'var(--subtle)'}}>Off</span>}
+            </div>
+          ))}
+        </div>
+        <div style={{padding:'10px'}}>
+          {showAdd
+            ? <form onSubmit={addWin} style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                <input autoFocus className="input" style={{fontSize:'12px'}} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Window name"/>
+                <div style={{display:'flex',gap:'5px'}}><button type="submit" className="btn btn-primary btn-sm" style={{flex:1}}>Add</button><button type="button" className="btn btn-secondary btn-icon btn-sm" onClick={()=>setShowAdd(false)}><Icon n="x" s={13}/></button></div>
+              </form>
+            : <button className="btn btn-primary btn-full btn-sm" onClick={()=>setShowAdd(true)}><Icon n="plus" s={13}/>Add Window</button>
+          }
+        </div>
+      </div>
+      <div className="settings-detail">
+        {!sel ? <div style={{padding:'40px',color:'var(--muted)',textAlign:'center'}}>Select a window</div> : (
+          <div style={{maxWidth:'640px',display:'flex',flexDirection:'column',gap:'14px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div><h2 style={{fontWeight:800,fontSize:'16px'}}>Window Details — {sel.name}</h2><p style={{fontSize:'12px',color:'var(--muted)'}}>Update this window's info or settings</p></div>
+              <div style={{display:'flex',gap:'6px'}}>
+                <button className="btn btn-secondary btn-sm" style={{color:'var(--danger)'}} onClick={async()=>{if(confirm(`Delete "${sel.name}"?`)){await sb.from('windows').delete().eq('id',sel.id);setSel(null);await loadAll()}}}>Delete</button>
+                <button className="btn btn-secondary btn-sm" onClick={async()=>{const {data}=await sb.from('windows').update({is_active:!sel.is_active}).eq('id',sel.id).select().single();if(data){setSel(data);await loadAll()}}}>{sel.is_active?'Disable':'Enable'}</button>
+              </div>
+            </div>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <label className="label">Window Name</label>
+              {editName
+                ? <div style={{display:'flex',gap:'6px'}}><input autoFocus className="input" style={{flex:1}} value={nameVal} onChange={e=>setNameVal(e.target.value)}/><button className="btn btn-primary btn-icon" onClick={saveName}><Icon n="check" s={14}/></button><button className="btn btn-secondary btn-icon" onClick={()=>setEditName(false)}><Icon n="x" s={14}/></button></div>
+                : <div style={{display:'flex',alignItems:'center',gap:'8px'}}><span style={{fontWeight:500}}>{sel.name}</span><button className="btn btn-ghost btn-icon btn-sm" onClick={()=>{setNameVal(sel.name);setEditName(true)}}><Icon n="edit" s={13}/></button></div>
+              }
+            </div>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+                <div style={{fontSize:'11px',fontWeight:700,color:'#f59e0b',textTransform:'uppercase',letterSpacing:'.06em'}}>Assigned Staff</div>
+              </div>
+              <div style={{maxHeight:'200px',overflowY:'auto',display:'flex',flexDirection:'column',gap:'1px'}}>
+                {allStaff.map(s=>(
+                  <label key={s.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 8px',borderRadius:'7px',cursor:'pointer',transition:'background .12s'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                      <div style={{width:'26px',height:'26px',borderRadius:'50%',background:'#e2e8f0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:700,color:'var(--muted)'}}>{initials(s.first_name,s.last_name)}</div>
+                      <span style={{fontSize:'13px',fontWeight:500}}>{s.first_name} {s.last_name}</span>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                      <div className={sessions[s.id]?'online-dot':'offline-dot'}/>
+                      <span style={{fontSize:'11px',color:sessions[s.id]?'var(--success)':'var(--subtle)'}}>{sessions[s.id]?'Online':'Offline'}</span>
+                      <input type="checkbox" checked={asgStaff.includes(s.id)} onChange={()=>toggleStaff(s.id)} style={{width:'14px',height:'14px',accentColor:'var(--brand)',cursor:'pointer'}}/>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div style={{fontSize:'11px',fontWeight:700,color:'#f59e0b',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'10px'}}>Assigned Services</div>
+              <div style={{maxHeight:'200px',overflowY:'auto',display:'flex',flexDirection:'column',gap:'1px'}}>
+                {allSvcs.map(s=>(
+                  <label key={s.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 8px',borderRadius:'7px',cursor:'pointer'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                      <div className="color-dot" style={{background:s.color||'var(--brand)'}}/>
+                      <span style={{fontSize:'13px',fontWeight:500}}>{s.name}</span>
+                    </div>
+                    <input type="checkbox" checked={asgSvcs.includes(s.id)} onChange={()=>toggleSvc(s.id)} style={{width:'14px',height:'14px',accentColor:'var(--brand)',cursor:'pointer'}}/>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function TeamsSettings() {
+  const toast=useToast()
+  const [staff,setStaff]=React.useState([])
+  const [search,setSearch]=React.useState('')
+  const [showAdd,setShowAdd]=React.useState(false)
+  const [form,setForm]=React.useState({email:'',first_name:'',last_name:'',role:'staff',password:''})
+  const [adding,setAdding]=React.useState(false)
+  const [err,setErr]=React.useState('')
+
+  React.useEffect(()=>{ load() },[])
+  const load=async()=>{ const {data}=await sb.from('profiles').select('*').order('created_at',{ascending:false}); setStaff(data||[]) }
+
+  const addAccount=async(e)=>{
+    e.preventDefault(); setAdding(true); setErr('')
+    try {
+      const {error}=await sb.auth.admin.createUser({email:form.email,password:form.password,email_confirm:true,user_metadata:{first_name:form.first_name,last_name:form.last_name,role:form.role}})
+      if(error) throw error
+      await load(); setShowAdd(false); setForm({email:'',first_name:'',last_name:'',role:'staff',password:''}); toast('Account created!','success')
+    } catch(e){ setErr(e.message) }
+    finally{ setAdding(false) }
+  }
+
+  const filtered=staff.filter(s=>{ const q=search.toLowerCase(); return !q||`${s.first_name} ${s.last_name}`.toLowerCase().includes(q) })
+
+  return (
+    <div style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div><h1 className="page-title">Team</h1><p className="page-sub">Manage your team member accounts · {staff.length} total</p></div>
+        <button className="btn btn-primary" onClick={()=>setShowAdd(true)}><Icon n="plus" s={15}/>Add Account</button>
+      </div>
+      <div style={{display:'flex',gap:'10px',maxWidth:'360px'}}>
+        <div style={{position:'relative',flex:1}}>
+          <Icon n="search" s={13} style={{position:'absolute',left:'9px',top:'50%',transform:'translateY(-50%)',color:'var(--subtle)'}}/>
+          <input className="input" style={{paddingLeft:'28px',fontSize:'12px'}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search staff..."/>
+        </div>
+      </div>
+      <div className="card" style={{overflow:'hidden'}}>
+        <table className="table">
+          <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Date Added</th></tr></thead>
+          <tbody>
+            {filtered.map(s=>(
+              <tr key={s.id}>
+                <td>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                    <div style={{width:'30px',height:'30px',borderRadius:'50%',background:'#e2e8f0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'var(--muted)',flexShrink:0}}>{initials(s.first_name,s.last_name)}</div>
+                    <span style={{fontWeight:600}}>{s.first_name} {s.last_name}</span>
+                  </div>
+                </td>
+                <td><span className={`badge badge-role-${s.role}`} style={{textTransform:'capitalize'}}>{s.role}</span></td>
+                <td><span className={`badge ${s.is_active?'badge-serving':'badge-removed'}`}>{s.is_active?'Active':'Inactive'}</span></td>
+                <td style={{color:'var(--muted)',fontSize:'12px'}}>{fmt(s.created_at,'datetime')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{padding:'8px 14px',fontSize:'11px',color:'var(--subtle)',borderTop:'1px solid var(--border)'}}>Showing {filtered.length} of {staff.length} entries</div>
+      </div>
+      {showAdd && (
+        <div className="modal-overlay" onClick={()=>setShowAdd(false)}>
+          <div className="modal animate-in" onClick={e=>e.stopPropagation()}>
+            <div className="modal-header">
+              <div><div className="modal-title">Add Account</div><div className="modal-sub">Step 1 — Account Setup</div></div>
+              <button className="btn btn-ghost btn-icon" onClick={()=>setShowAdd(false)}><Icon n="x" s={16}/></button>
+            </div>
+            <form onSubmit={addAccount} className="modal-body">
+              <div className="space-y-3">
+                <div className="grid-2">
+                  <div><label className="label">First Name</label><input className="input" value={form.first_name} onChange={e=>setForm(f=>({...f,first_name:e.target.value}))} required/></div>
+                  <div><label className="label">Last Name</label><input className="input" value={form.last_name} onChange={e=>setForm(f=>({...f,last_name:e.target.value}))} required/></div>
+                </div>
+                <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} required/></div>
+                <div><label className="label">Password</label><input type="password" className="input" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))} required minLength={6}/></div>
+                <div><label className="label">Role</label>
+                  <select className="input" value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
+                    <option value="staff">Staff</option><option value="manager">Branch Manager</option><option value="admin">Admin</option>
+                  </select>
+                </div>
+                {err && <div className="error-box">{err}</div>}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" style={{flex:1}} onClick={()=>setShowAdd(false)}>Cancel</button>
+                <button type="submit" disabled={adding} className="btn btn-primary" style={{flex:1}}>{adding?<div className="spinner"/>:'Confirm'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProceduresSettings() {
+  const toast=useToast()
+  const [procs,setProcs]=React.useState([])
+  const [svcs,setSvcs]=React.useState([])
+  const [showAdd,setShowAdd]=React.useState(false)
+  const [form,setForm]=React.useState({name:'',type:'step_by_step',description:'',origin_ids:[]})
+  const [steps,setSteps]=React.useState([])
+  const [saving,setSaving]=React.useState(false)
+  const [err,setErr]=React.useState('')
+
+  React.useEffect(()=>{ load() },[])
+  const load=async()=>{
+    const [{data:p},{data:s}]=await Promise.all([
+      sb.from('procedures').select('*,procedure_steps(*,services(name)),procedure_origins(service_id,services(name))').order('name'),
+      sb.from('services').select('id,name,color').eq('is_active',true).order('name'),
+    ]); setProcs(p||[]); setSvcs(s||[])
+  }
+  const toggleOrigin=id=>setForm(f=>({...f,origin_ids:f.origin_ids.includes(id)?f.origin_ids.filter(x=>x!==id):[...f.origin_ids,id]}))
+  const save=async(e)=>{
+    e.preventDefault(); if(steps.some(s=>!s.service_id)){setErr('All steps need a service');return}
+    setSaving(true); setErr('')
+    try {
+      const {data:proc,error:pe}=await sb.from('procedures').insert({name:form.name,type:form.type,description:form.description||null}).select().single()
+      if(pe) throw pe
+      if(steps.length) await sb.from('procedure_steps').insert(steps.map((s,i)=>({procedure_id:proc.id,service_id:s.service_id,step_order:i+1,is_optional:s.is_optional})))
+      if(form.origin_ids.length) await sb.from('procedure_origins').insert(form.origin_ids.map(sid=>({procedure_id:proc.id,service_id:sid})))
+      await load(); setShowAdd(false); setForm({name:'',type:'step_by_step',description:'',origin_ids:[]}); setSteps([]); toast('Procedure created!','success')
+    } catch(e){ setErr(e.message) }
+    finally{ setSaving(false) }
+  }
+
+  return (
+    <div style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div><h1 className="page-title">Service Procedures</h1><p className="page-sub">List of all available procedures</p></div>
+        <button className="btn btn-primary" onClick={()=>setShowAdd(true)}><Icon n="plus" s={15}/>New Procedure</button>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+        {procs.length===0&&<div className="card" style={{padding:'32px',textAlign:'center',color:'var(--muted)'}}>No procedures yet</div>}
+        {procs.map(p=>{
+          const sorted=p.procedure_steps?.sort((a,b)=>a.step_order-b.step_order)||[]
+          const origins=p.procedure_origins||[]
+          return (
+            <div key={p.id} className="card" style={{padding:'18px'}}>
+              <div style={{display:'flex',alignItems:'flex-start',gap:'16px'}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:800,fontSize:'15px',marginBottom:'12px'}}>{p.name}</div>
+                  {sorted.length>0&&(
+                    <div style={{display:'flex',alignItems:'center',gap:'0',flexWrap:'wrap',marginBottom:'12px'}}>
+                      {sorted.map((step,i)=>(
+                        <div key={step.id} style={{display:'flex',alignItems:'center',gap:'0'}}>
+                          <div style={{display:'flex',flexDirection:'column',alignItems:'center',minWidth:'80px'}}>
+                            <div style={{width:'28px',height:'28px',borderRadius:'50%',background:'#e2e8f0',border:'2px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'var(--muted)'}}>{i+1}</div>
+                            <div style={{fontSize:'10px',color:'var(--muted)',marginTop:'4px',fontWeight:600,textAlign:'center'}}>Step {i+1}</div>
+                            <div style={{fontSize:'11px',fontWeight:700,textAlign:'center',maxWidth:'80px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{step.services?.name}</div>
+                          </div>
+                          {i<sorted.length-1&&<div style={{width:'32px',height:'2px',background:'#e2e8f0',marginBottom:'24px'}}/>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {origins.length>0&&(
+                    <div>
+                      <div style={{fontSize:'10px',fontWeight:700,color:'var(--subtle)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'5px'}}>Origin</div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:'5px'}}>{origins.map(o=><span key={o.service_id} className="tag">{o.services?.name}</span>)}</div>
+                    </div>
+                  )}
+                </div>
+                <div style={{minWidth:'160px',display:'flex',flexDirection:'column',gap:'10px',alignItems:'flex-end'}}>
+                  <div style={{fontSize:'12px',color:'var(--muted)',display:'flex',flexDirection:'column',gap:'3px',textAlign:'right'}}>
+                    <div>Type: <strong>Step-by-Step</strong></div>
+                    <div>Total Steps: <strong>{sorted.length}</strong></div>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                    <span style={{fontSize:'11px',color:'var(--muted)'}}>Active</span>
+                    <button className={`toggle ${p.is_active?'on':''}`} onClick={async()=>{await sb.from('procedures').update({is_active:!p.is_active}).eq('id',p.id);await load()}}>
+                      <div className="toggle-thumb"/>
+                    </button>
+                  </div>
+                  <button className="btn btn-secondary btn-sm" style={{color:'var(--danger)'}} onClick={async()=>{if(confirm('Delete?')){await sb.from('procedures').delete().eq('id',p.id);await load()}}}>
+                    <Icon n="trash" s={12}/>Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {showAdd && (
+        <div className="modal-overlay" onClick={()=>setShowAdd(false)}>
+          <div className="modal animate-in" style={{maxWidth:'560px',maxHeight:'90vh'}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-header" style={{position:'sticky',top:0}}>
+              <div><div className="modal-title">New Procedure</div><div className="modal-sub">All fields are required</div></div>
+              <button className="btn btn-ghost btn-icon" onClick={()=>setShowAdd(false)}><Icon n="x" s={16}/></button>
+            </div>
+            <form onSubmit={save} className="modal-body">
+              <div className="space-y-4">
+                <div><label className="label">Template Name</label><input className="input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g., HMO OB Ultrasound" required/></div>
+                <div><label className="label">Procedure Type</label><select className="input" value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}><option value="step_by_step">Step-by-Step</option><option value="flexible">Flexible</option></select></div>
+                <div>
+                  <label className="label">Select Origin (services that trigger this procedure)</label>
+                  <div style={{border:'1px solid var(--border)',borderRadius:'8px',padding:'8px',maxHeight:'120px',overflowY:'auto',display:'flex',flexDirection:'column',gap:'2px'}}>
+                    {svcs.map(s=>(
+                      <label key={s.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'5px 6px',borderRadius:'6px',cursor:'pointer'}}>
+                        <input type="checkbox" checked={form.origin_ids.includes(s.id)} onChange={()=>toggleOrigin(s.id)} style={{accentColor:'var(--brand)',width:'14px',height:'14px'}}/>
+                        <div className="color-dot" style={{background:s.color}}/><span style={{fontSize:'13px'}}>{s.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'6px'}}>
+                    <label className="label" style={{marginBottom:0}}>Procedure Steps</label>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={()=>setSteps(p=>[...p,{service_id:'',is_optional:false}])}><Icon n="plus" s={12}/>Add Step</button>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'5px'}}>
+                    {steps.length===0&&<div style={{textAlign:'center',padding:'12px',border:'1px dashed var(--border)',borderRadius:'8px',fontSize:'12px',color:'var(--muted)'}}>Click "Add Step" to add procedure steps</div>}
+                    {steps.map((step,i)=>(
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',background:'#f8fafc',borderRadius:'8px',border:'1px solid var(--border)'}}>
+                        <Icon n="grip" s={14} c="text-muted"/>
+                        <div style={{width:'22px',height:'22px',borderRadius:'50%',background:'var(--brand)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,flexShrink:0}}>{i+1}</div>
+                        <select className="input" style={{flex:1,fontSize:'12px'}} value={step.service_id} onChange={e=>setSteps(p=>p.map((s,idx)=>idx===i?{...s,service_id:e.target.value}:s))} required>
+                          <option value="">Select Service</option>
+                          {svcs.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        <label style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'var(--muted)',whiteSpace:'nowrap',cursor:'pointer'}}>
+                          <input type="checkbox" checked={step.is_optional} onChange={e=>setSteps(p=>p.map((s,idx)=>idx===i?{...s,is_optional:e.target.checked}:s))} style={{accentColor:'var(--brand)'}}/>Optional
+                        </label>
+                        <button type="button" className="btn btn-ghost btn-icon btn-sm" style={{color:'var(--danger)'}} onClick={()=>setSteps(p=>p.filter((_,idx)=>idx!==i))}><Icon n="x" s={13}/></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {err&&<div className="error-box">{err}</div>}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" style={{flex:1}} onClick={()=>setShowAdd(false)}>Cancel</button>
+                <button type="submit" disabled={saving} className="btn btn-primary" style={{flex:1}}>{saving?<div className="spinner"/>:<><Icon n="check" s={14}/>Proceed</>}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// ROOT APP
+// ─────────────────────────────────────────────────────────────
+function App() {
+  // TV mode — check URL param
+  const isTv = new URLSearchParams(window.location.search).get('tv')==='1'
+  if (isTv) return <TVDisplay/>
+
+  const {user, profile, loading, login, logout, isAdmin} = useAuth()
+  const [page, setPage] = React.useState('dashboard')
+
+  if (loading) return <div className="full-center"><div className="spinner spinner-dark" style={{width:'32px',height:'32px',borderWidth:'3px'}}/></div>
+  if (!user) return <LoginPage onLogin={login}/>
+
+  const renderPage = () => {
+    if (page==='dashboard') return <Dashboard profile={profile}/>
+    if (page==='workspace') return <QueueWorkspace user={user} profile={profile}/>
+    if (page==='monitoring') return <Monitoring/>
+    if (page==='reports') return <Reports/>
+    if (page==='settings-services') return <ServicesSettings/>
+    if (page==='settings-windows') return <WindowsSettings/>
+    if (page==='settings-teams') return <TeamsSettings/>
+    if (page==='settings-procedures') return <ProceduresSettings/>
+    return <Dashboard profile={profile}/>
+  }
+
+  return (
+    <div className="app">
+      <Sidebar page={page} setPage={setPage} profile={profile} logout={logout} isAdmin={isAdmin()}/>
+      <div className="main">{renderPage()}</div>
+    </div>
+  )
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <ToastProvider><App/></ToastProvider>
+)
+</script>
+</body>
+</html>
