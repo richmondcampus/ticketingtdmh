@@ -828,11 +828,24 @@ function QueueWorkspace({user, profile}) {
   }
 
   const serveQueue = async q => {
+    const winName = selWin?.name || ''
     await sb.from('queues').update({
       status:'serving', window_id:selWin.id,
       served_by:user.id, serving_start:new Date().toISOString()
     }).eq('id',q.id)
-    await tvShow(q, selWin.name, selWin.id) // put on TV immediately
+
+    // 1. Put on TV display
+    await tvShow(q, winName, selWin.id)
+
+    // 2. Announce on TV — insert notify_event so TV announces via voice
+    await sb.from('notify_events').insert({
+      queue_id: q.id,
+      queue_number: q.queue_number,
+      window_name: winName,
+      service_name: q.services?.name||'',
+      visitor_name: q.visitor_name||null,
+    })
+
     await logTimeline(q.id,'serve',q.status,'serving')
     setTab('serving'); toast('Queue served!','success')
   }
