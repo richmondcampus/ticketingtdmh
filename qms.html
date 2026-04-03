@@ -1482,10 +1482,24 @@ function TVDisplay({slug}) {
   }
 
   React.useEffect(()=>{
-    sb.auth.getSession().then(({data:{session}})=>{
-      if (!session) sb.auth.signInAnonymously().catch(()=>{})
-    })
-    loadTemplate()
+    // TV Display needs an authenticated session for Supabase Realtime
+    // to receive postgres_changes events.
+    // We use a dedicated read-only TV account for this purpose.
+    const ensureSession = async () => {
+      const {data:{session}} = await sb.auth.getSession()
+      if (!session) {
+        // Try anon first (if enabled in Supabase dashboard)
+        const {error: anonErr} = await sb.auth.signInAnonymously()
+        if (anonErr) {
+          // Fallback: use dedicated TV display account
+          await sb.auth.signInWithPassword({
+            email: 'tv.display@tdmh.internal',
+            password: 'TvDisplay@TDMH2024!'
+          })
+        }
+      }
+    }
+    ensureSession().then(()=>loadTemplate())
   },[slug])
 
   React.useEffect(()=>{
@@ -1494,49 +1508,43 @@ function TVDisplay({slug}) {
     loadRecent(allowedWinIds)
     const ti = setInterval(()=>setNow(new Date()), 1000)
 
-    // ── Realtime: tv_serving changes (INSERT/UPDATE) ─────
-    // This is the ONLY realtime we need — no polling needed!
+    // ── Channel 1: tv_serving → controls what shows on TV ───
+    // INSERT = new queue served → appear on TV + announce
+    // UPDATE with hidden_at = done → disappear from TV
     const ch = sb.channel(`tv-serving-${slug||'main'}`)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'tv_serving'},payload=>{
         const ev = payload.new
-        if (allowedWinIds && ev.window_id && !allowedWinIds.includes(ev.window_id)) return
         if (ev.date !== today()) return
-        // Add to serving list
+        if (allowedWinIds && ev.window_id && !allowedWinIds.includes(ev.window_id)) return
+
         setServing(p=>{
           const exists = p.find(x=>x.queue_id===ev.queue_id)
           return exists ? p.map(x=>x.queue_id===ev.queue_id?ev:x) : [ev,...p]
         })
         setFlashId(ev.queue_id)
-        setTimeout(()=>setFlashId(null), 4000)
+        setTimeout(()=>setFlashId(null), 5000)
+        // Announce when served
+        announce(ev.queue_number, ev.window_name||'your window')
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'tv_serving'},payload=>{
         const ev = payload.new
         if (ev.hidden_at) {
-          // hidden_at was set → remove from TV
           setServing(p=>p.filter(x=>x.queue_id!==ev.queue_id))
-          // Refresh recent list
           loadRecent(allowedWinIds)
-        } else {
-          // Updated but still visible (e.g. re-notify)
-          if (allowedWinIds && ev.window_id && !allowedWinIds.includes(ev.window_id)) return
-          setServing(p=>p.map(x=>x.queue_id===ev.queue_id?ev:x))
-          setFlashId(ev.queue_id)
-          setTimeout(()=>setFlashId(null), 4000)
         }
       })
-      .subscribe()
+      .subscribe((status)=>{ console.log('[TV] tv_serving channel:', status) })
 
-    // ── Realtime: notify_events (Bell button) ───────────
+    // ── Channel 2: notify_events → Bell button announce ──
+    // Only from Bell button (not from serve — serve already announces above)
     const chNotify = sb.channel(`tv-notify-${slug||'main'}`)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'notify_events'},payload=>{
         const ev = payload.new
-        // Flash the card that matches this queue
         setFlashId(ev.queue_id)
         setTimeout(()=>setFlashId(null), 6000)
-        // Announce
         announce(ev.queue_number, ev.window_name||'your window')
       })
-      .subscribe()
+      .subscribe((status)=>{ console.log('[TV] notify_events channel:', status) })
 
     return()=>{ clearInterval(ti); ch.unsubscribe(); chNotify.unsubscribe() }
   },[template, allowedWinIds])
