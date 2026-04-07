@@ -57,9 +57,9 @@ const LOCS = [
   {id:"motopark", name:"Motorcycle Parking",short:"Moto Park",icon:"🏍️",color:"#8b5cf6"},
 ];
 const LOC_SLOTS = {
-  compound:[{type:"car",total:20},{type:"motorcycle",total:10}],
-  quality: [{type:"car",total:14}],
-  motopark:[{type:"motorcycle",total:70}],
+  compound:[{type:"car",total:25},{type:"motorcycle",total:15}],
+  quality: [{type:"car",total:19}],
+  motopark:[{type:"motorcycle",total:75}],
 };
 const VT = {
   car:       {label:"Car",       icon:"🚗",color:"#0ea5e9",fh:3,fr:30,sr:15,ovr:150},
@@ -68,8 +68,8 @@ const VT = {
 };
 const PERMS = {
   admin:    {earn:true, allLocs:true, act:true, ci:true,co:true,rates:true,users:true, rep:true, search:true},
-  cashier:  {earn:true, allLocs:true, act:true, ci:true,co:true,rates:true,users:false,rep:false,search:true},
-  attendant:{earn:false,allLocs:false,act:false,ci:true,co:true,rates:true,users:false,rep:false,search:true},
+  cashier:  {earn:true, allLocs:true, act:true, ci:false,co:true,rates:true,users:false,rep:false,search:true},
+  attendant:{earn:false,allLocs:false,act:false,ci:true,co:false,rates:true,users:false,rep:false,search:true},
 };
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -101,10 +101,10 @@ function calcFee(iso,vt){
     // Each overnight window charged at flat rate, remaining hours at regular rate
     const ovrHrs=overnightCount*9;
     const regHrs=Math.max(0,hrs-ovrHrs);
-    const regFee=regHrs<=v.fh?v.fr:v.fr+Math.ceil(regHrs-v.fh)*v.sr;
+    const regFee=regHrs<=v.fh?v.fr:v.fr+Math.floor(regHrs-v.fh)*v.sr;
     fee=(overnightCount*v.ovr)+(regHrs>0?regFee:0);
   }else{
-    fee=hrs<=v.fh?v.fr:v.fr+Math.ceil(hrs-v.fh)*v.sr;
+    fee=hrs<=v.fh?v.fr:v.fr+Math.floor(hrs-v.fh)*v.sr;
   }
   return{fee,dur:`${Math.floor(tm/60)}h ${tm%60}m`,overnight:isO};
 }
@@ -138,13 +138,15 @@ function mapSlot(s){
 
 // ─── THERMAL PRINTER ────────────────────────────────────────────────────────
 function printThermal(payload){
-  const{isCheckIn,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName}=payload;
+  const{isCheckIn,isVoid,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName}=payload;
   const vObj=VT[vtype]||VT.car;
   const line="================================";const dline="--------------------------------";
-  const head=`<div style="text-align:center;font-weight:bold;font-size:13px;line-height:1.5">TAYTAY DOCTORS<br>MULTISPECIALTY HOSPITAL<br><span style="font-size:10px;font-weight:normal">Parking Management System</span></div><pre style="margin:4px 0">${line}</pre><div style="text-align:center;font-weight:bold;font-size:12px">${isCheckIn?"★ PARKING TICKET ★":"★ PAYMENT RECEIPT ★"}</div><pre style="margin:4px 0">${line}</pre>`;
-  const bodyCI=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\nDATE    : ${fmtFull(checkin)}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\n  RATE INFORMATION\nFirst ${vObj.fh}hrs: ${P(vObj.fr)}\nPer hour : ${P(vObj.sr)}/hr\nOvernight: ${P(vObj.ovr)}\n${line}</pre><div style="text-align:center;margin:8px 0;font-size:11px"><div style="font-weight:bold">PLEASE KEEP THIS TICKET</div><div style="font-size:10px">Present upon exit for payment</div></div><pre style="margin:0;font-size:11px">${dline}\nAttendant: ${cashierName}\nIssued   : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you! Drive safely.</div>`;
+  const title=isVoid?"★ VOID / LOSS RECORD ★":isCheckIn?"★ PARKING TICKET ★":"★ PAYMENT RECEIPT ★";
+  const head=`<div style="text-align:center;font-weight:bold;font-size:13px;line-height:1.5">TAYTAY DOCTORS<br>MULTISPECIALTY HOSPITAL<br><span style="font-size:10px;font-weight:normal">Parking Management System</span></div><pre style="margin:4px 0">${line}</pre><div style="text-align:center;font-weight:bold;font-size:12px">${title}</div><pre style="margin:4px 0">${line}</pre>`;
+  const bodyCI=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\nDATE    : ${fmtFull(checkin)}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\n  RATE INFORMATION\nFirst ${vObj.fh}hrs: ${P(vObj.fr)}\nPer hour : ${P(vObj.sr)}/hr\nOvernight: ${P(vObj.ovr)}\n${line}</pre><div style="text-align:center;margin:8px 0;font-size:11px"><div style="font-weight:bold">PLEASE KEEP THIS TICKET</div><div style="font-size:10px">Present upon exit for payment</div><div style="font-size:10px;font-weight:bold;margin-top:3px">Lost Parking Ticket: ₱50.00</div></div><pre style="margin:0;font-size:11px">${dline}\nAttendant: ${cashierName}\nIssued   : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you! Drive safely.</div>`;
   const bodyCO=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\nTIME IN : ${fmtFull(checkin)}\nTIME OUT: ${fmtFull(new Date().toISOString())}\nDURATION: ${dur}\n${dline}\nRATE    : ${overnight?"OVERNIGHT":"REGULAR"}\n${line}</pre><div style="text-align:center;margin:10px 0"><div style="font-size:11px">TOTAL AMOUNT DUE</div><div style="font-size:24px;font-weight:bold;margin:4px 0">${P(fee)}</div>${overnight?`<div style="font-size:10px">🌙 Overnight Rate (10PM-7AM)</div>`:""}</div><pre style="margin:0;font-size:11px">${dline}\nCashier  : ${cashierName}\nPrinted  : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you for parking!<br>Drive safely.</div>`;
-  const html=`<!DOCTYPE html><html><head><title>${isCheckIn?"Ticket":"Receipt"} ${ticketNo}</title><style>@page{margin:2mm;size:58mm auto}body{font-family:'Courier New',monospace;font-size:11px;width:58mm;margin:0;padding:4px;color:#000}pre{font-family:inherit;font-size:11px;white-space:pre-wrap}@media print{.np{display:none}}</style></head><body>${head}${isCheckIn?bodyCI:bodyCO}<div class="np" style="margin-top:14px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">🖨️ Print</button><button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;font-size:13px;margin-left:8px">Close</button><p style="font-size:10px;color:#64748b;margin-top:8px">Select your Bluetooth/POS printer from the print dialog</p></div></body></html>`;
+  const bodyVOID=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\nTIME IN : ${fmtFull(checkin)}\nVOID AT : ${fmtFull(new Date().toISOString())}\nDURATION: ${dur}\n${dline}\nEXP FEE : ${P(fee)}\n${line}</pre><div style="text-align:center;margin:10px 0;border:2px solid #000;padding:8px"><div style="font-size:12px;font-weight:bold">LOST PARKING TICKET</div><div style="font-size:22px;font-weight:bold;margin:4px 0">₱50.00</div><div style="font-size:10px">Lost Parking Ticket Fee</div></div><pre style="margin:0;font-size:11px">${dline}\nVoided by: ${cashierName}\nPrinted  : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">This serves as official void record.</div>`;
+  const html=`<!DOCTYPE html><html><head><title>${isVoid?"Void":isCheckIn?"Ticket":"Receipt"} ${ticketNo}</title><style>@page{margin:2mm;size:58mm auto}body{font-family:'Courier New',monospace;font-size:11px;width:58mm;margin:0;padding:4px;color:#000}pre{font-family:inherit;font-size:11px;white-space:pre-wrap}@media print{.np{display:none}}</style></head><body>${head}${isVoid?bodyVOID:isCheckIn?bodyCI:bodyCO}<div class="np" style="margin-top:14px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">🖨️ Print</button><button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;font-size:13px;margin-left:8px">Close</button><p style="font-size:10px;color:#64748b;margin-top:8px">Select your Bluetooth/POS printer from the print dialog</p></div></body></html>`;
   const w=window.open("","_blank","width=420,height=620,toolbar=0,menubar=0,scrollbars=1");
   if(w){w.document.write(html);w.document.close();}else alert("Please allow popups to print tickets.");
 }
@@ -445,6 +447,31 @@ function DonutChart({data,size=110}){
 function ReportsPanel(){
   const [from,setFrom]=useState(dAgo(6));
   const [to,setTo]=useState(todayStr());
+
+  function exportCSV(){
+    const rows=[['Date/Time','Ticket','Plate','Vehicle','Location','Duration','Type','Checked In By','Checked Out By','Status','Fee']];
+    [...filtered,...voided].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).forEach(e=>{
+      rows.push([
+        fmtDT(e.checkout_at||e.checkout_time||e.checkin_at),
+        e.ticket_no||'',
+        e.plate||'',
+        VT[e.vtype]?.label||e.vtype||'',
+        LOCS.find(l=>l.id===e.loc_id)?.name||e.loc_id||'',
+        e.dur||e.duration||'',
+        e.overnight?'Overnight':'Regular',
+        e.checkin_by||'',
+        e.cashier||'',
+        e.status||'completed',
+        e.fee||0
+      ]);
+    });
+    const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=`TDMH_Parking_${from}_to_${to}.csv`;
+    a.click();URL.revokeObjectURL(url);
+  }
   const [preset,setPreset]=useState("week");
   const [locF,setLocF]=useState({compound:true,quality:true,motopark:true});
   const [vtF,setVtF]=useState({car:true,motorcycle:true,tricycle:true});
@@ -478,11 +505,14 @@ function ReportsPanel(){
     else if(p==="month"){setFrom(dAgo(29));setTo(todayStr());}
   }
 
-  const filtered=useMemo(()=>txns.filter(e=>{
+  const allFiltered=useMemo(()=>txns.filter(e=>{
     const d=dOnly(e.checkout_at||e.checkout_time||e.checkin_at||e.checkin_time);
     if(!d)return false;
     return d>=from&&d<=to&&locF[e.loc_id]!==false&&vtF[e.vtype]!==false;
   }),[txns,from,to,locF,vtF]);
+  const filtered=useMemo(()=>allFiltered.filter(e=>e.status!=="voided"),[allFiltered]);
+  const voided=useMemo(()=>allFiltered.filter(e=>e.status==="voided"),[allFiltered]);
+  const lossTotal=voided.reduce((s,e)=>s+Number(e.fee||0),0);
 
   const total=filtered.reduce((s,e)=>s+Number(e.fee||0),0);
   const cnt=filtered.length;
@@ -546,10 +576,11 @@ function ReportsPanel(){
 
       <div className="rmain">
         <div className="rkpis">
-          <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Revenue</div><div className="kv">{P(total)}</div><div className="ks">{cnt} txn</div></div>
+          <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Revenue</div><div className="kv">{P(total)}</div><div className="ks">{cnt} transactions</div></div>
           <div className="rkpi" style={{"--kc":"#0ea5e9"}}><div className="kl">Daily Average</div><div className="kv">{P(avgD)}</div><div className="ks">{days} day{days!==1?"s":""}</div></div>
           <div className="rkpi" style={{"--kc":"#10b981"}}><div className="kl">Avg/Txn</div><div className="kv">{P(avg)}</div><div className="ks">per vehicle</div></div>
           <div className="rkpi" style={{"--kc":"#8b5cf6"}}><div className="kl">Overnight</div><div className="kv">{ovrCnt}</div><div className="ks">{P(filtered.filter(e=>e.overnight).reduce((s,e)=>s+Number(e.fee||0),0))}</div></div>
+          <div className="rkpi" style={{"--kc":"#ef4444"}}><div className="kl">⚠️ Voided</div><div className="kv">{voided.length}</div><div className="ks" style={{color:"#ef4444"}}>{P(lossTotal)} lost</div></div>
         </div>
         <div className="rcc">
           <h4>📈 Daily Revenue Trend</h4>
@@ -570,7 +601,7 @@ function ReportsPanel(){
         <div className="rcc">
           <h4>👤 Cashier Performance</h4>
           {byCash.length===0?<div className="nod"><div className="ni">👤</div>No data</div>:(
-            <div className="cbg">{byCash.map((c,i)=>(<div className="cbr" key={i}><div className="cbl">{(c.name||"").split(" ")[0]}</div><div className="cbt"><div className="cbf" style={{width:`${(c.total/maxC)*100}%`,background:"#0ea5e9"}}>{c.count} txn</div></div><div className="cbv">{P(c.total)}</div></div>))}</div>
+            <div className="cbg">{byCash.map((c,i)=>(<div className="cbr" key={i}><div className="cbl">{(c.name||"").split(" ")[0]}</div><div className="cbt"><div className="cbf" style={{width:`${(c.total/maxC)*100}%`,background:"#0ea5e9"}}>{c.count} transactions</div></div><div className="cbv">{P(c.total)}</div></div>))}</div>
           )}
         </div>
         <div className="rcc">
@@ -593,7 +624,10 @@ function ReportsPanel(){
         <div className="rcc">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11,flexWrap:"wrap",gap:7}}>
             <h4 style={{margin:0}}>📄 Transaction Log</h4>
-            <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}</span>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}</span>
+              <button className="btn" style={{padding:"4px 10px",fontSize:11,background:"#f0fdf4",color:"#166534",border:"1px solid #86efac"}} onClick={exportCSV}>⬇️ Export CSV</button>
+            </div>
           </div>
           {fetching?<div className="nod"><div className="ni">⏳</div>Loading transactions…</div>:filtered.length===0?<div className="nod"><div className="ni">📭</div>No transactions found</div>:(
             <div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table className="rtbl">
@@ -613,6 +647,28 @@ function ReportsPanel(){
                 </tr>
               ))}</tbody>
             </table></div>
+          )}
+          {voided.length>0&&(
+            <div className="rc" style={{marginTop:12}}>
+              <div className="rch" style={{background:"#fef2f2",borderColor:"#fca5a5"}}>
+                <h4 style={{color:"#991b1b",margin:0}}>⚠️ Voided Transactions — {P(lossTotal)} lost</h4>
+              </div>
+              <div style={{overflowX:"auto",maxHeight:300,overflowY:"auto"}}><table className="rtbl">
+                <thead><tr><th>Date/Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Duration</th><th>Voided By</th><th>Expected Fee</th></tr></thead>
+                <tbody>{voided.map((e,i)=>(
+                  <tr key={i} style={{background:"#fef2f2"}}>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_at||e.checkout_time||e.checkin_at)}</td>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#7c3aed"}}>{e.ticket_no||"—"}</td>
+                    <td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{e.plate}</span></td>
+                    <td>{VT[e.vtype]?.icon} {VT[e.vtype]?.label||e.vtype}</td>
+                    <td style={{fontSize:10}}>{LOCS.find(l=>l.id===e.loc_id)?.short||e.loc_id}</td>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur||e.duration||"—"}</td>
+                    <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
+                    <td><span style={{color:"#dc2626",fontFamily:"'Space Mono',monospace",fontWeight:700}}>{P(e.fee||0)}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
           )}
         </div>
       </div>
@@ -736,7 +792,9 @@ function UserManagement({currentUser,toast}){
 function TDMHParking(){
   const {add:toast,Toasts}=useToast();
 
-  const [user,setUser]       = useState(null);
+  // Restore session from localStorage on load
+  const savedUser = (()=>{ try{ const u=localStorage.getItem('tdmh_user'); return u?JSON.parse(u):null; }catch{return null;} })();
+  const [user,setUser]       = useState(savedUser);
   const [attLoc,setAttLoc]   = useState(null);
   const [slots,setSlots]     = useState(initSlotsLocal);
   const [tab,setTab]         = useState("overview");
@@ -751,6 +809,17 @@ function TDMHParking(){
   const [lf,setLf]           = useState({username:"",password:"",err:"",loading:false});
   const [dbReady,setDbReady] = useState(false);
   const [rtConnected,setRtConnected] = useState(false);
+  const [battery,setBattery] = useState({level:null,charging:false});
+
+  // Receive battery updates from Android
+  React.useEffect(()=>{
+    window.updateBattery=(level,charging)=>setBattery({level,charging});
+    // Get initial value if on Android
+    if(window.AndroidBattery){
+      setBattery({level:window.AndroidBattery.getLevel(),charging:window.AndroidBattery.isCharging()});
+    }
+    return()=>{ window.updateBattery=null; };
+  },[]);
 
   // clock
   useEffect(()=>{const t=setInterval(()=>setClock(new Date()),1000);return()=>clearInterval(t);},[]);
@@ -875,7 +944,7 @@ function TDMHParking(){
 
   const perms   = user ? PERMS[user.role] : {};
   const all     = Object.values(slots).flat();
-  const todayE  = txns.filter(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at)===todayStr());
+  const todayE  = txns.filter(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at)===todayStr()&&e.status!=="voided");
   const todayT  = todayE.reduce((s,e)=>s+Number(e.fee||0),0);
   const totOcc  = all.filter(s=>s.occupied).length;
   const searchSlots = (user?.role==="attendant"&&attLoc) ? (slots[attLoc]||[]) : all;
@@ -889,10 +958,12 @@ function TDMHParking(){
     setLf(p=>({...p,loading:true,err:""}));
     const{data,error}=await sb.from("users").select("*").eq("username",lf.username).eq("password",lf.password).maybeSingle();
     if(error||!data){setLf(p=>({...p,loading:false,err:"Invalid username or password."}));return;}
+    try{ localStorage.setItem('tdmh_user', JSON.stringify(data)); }catch{}
     setUser(data);setTab("overview");setLf(p=>({...p,loading:false}));
   }
 
   function doLogout(){
+    try{ localStorage.removeItem('tdmh_user'); }catch{}
     if(user?.role==="attendant")setAttLoc(null);
     setUser(null);
     setTxns([]);
@@ -904,8 +975,14 @@ function TDMHParking(){
   function openSlot(locId,slot){
     if(!perms.ci&&!perms.co)return;
     setSel(slot);
-    if(slot.occupied)setModal("checkout");
-    else{setForm({plate:"",name:"",vtype:slot.type==="motorcycle"?"motorcycle":"car"});setModal("checkin");}
+    if(slot.occupied){
+      if(!perms.co){toast("⛔ Attendants cannot check out vehicles. Please call a cashier.","error");return;}
+      setModal("checkout");
+    }
+    else{
+      if(!perms.ci){toast("⛔ Cashiers cannot check in vehicles. Please call an attendant.","error");return;}
+      setForm({plate:"",name:"",vtype:slot.type==="motorcycle"?"motorcycle":"car"});setModal("checkin");
+    }
   }
 
   async function doCheckin(){
@@ -957,6 +1034,36 @@ function TDMHParking(){
     toast(`💰 ${v.plate} checked out — ${P(fee)}`,"ok");
     printThermal({isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name});
     setModal("receipt");
+  }
+
+  async function doVoid(){
+    const v=sel.vehicle;const l=sel.locId;const locName=LOCS.find(x=>x.id===l)?.name;
+    if(!v){toast("No vehicle data on slot","err");return;}
+    if(!sel.id){toast("No slot ID","err");return;}
+    const{fee,dur,overnight}=calcFee(v.checkin,v.vtype);
+    const tix=v.ticketNo||nextTix();
+    toast("Voiding... clearing slot #"+sel.number,"ok");
+    // Always clear the slot first
+    const{error:slotErr}=await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null,v_checkin_by:null}).eq("id",sel.id);
+    if(slotErr){toast("Slot clear failed: "+slotErr.message,"err");console.error("Slot error:",slotErr);return;}
+    // Update local state immediately
+    setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:false,vehicle:null}:s);return c;});
+    setModal(null);
+    toast(`✅ Slot #${sel.number} cleared`,"ok");
+    // Then try to insert transaction record
+    const txn={
+      ticket_no:tix,plate:v.plate,name:v.name,driver_name:v.name,vtype:v.vtype,loc_id:l,
+      slot_number:sel.number,fee,dur,duration:dur,overnight,cashier:user.name,
+      checkin_by:v.checkinBy||"—",
+      checkin_time:v.checkin,checkin_at:v.checkin,
+      checkout_time:new Date().toISOString(),checkout_at:new Date().toISOString(),
+      status:"voided"
+    };
+    const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
+    if(txnErr){console.error("Void txn error:",txnErr.message);toast("Warning: slot cleared but record not saved: "+txnErr.message,"err");}
+    else if(txnRow) setTxns(p=>{if(p.find(x=>x.id===txnRow.id))return p;return[txnRow,...p];});
+    addLog(`⚠️ VOID: ${v.plate} from ${locName} · lost ${P(fee)} · by ${user.name}`,"#ef4444");
+    printThermal({isVoid:true,isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name});
   }
 
   const visLocs=(user?.role==="attendant"&&attLoc)?LOCS.filter(l=>l.id===attLoc):LOCS;
@@ -1022,6 +1129,9 @@ function TDMHParking(){
         </div>
         <div className="hr2">
           {rtConnected&&<div className="rtind"><div className="rtdot"/>Live</div>}
+          {battery.level!==null&&<div className="rtind" style={{background:battery.level<=20?"rgba(239,68,68,.15)":"rgba(16,185,129,.15)",borderColor:battery.level<=20?"rgba(239,68,68,.3)":"rgba(16,185,129,.3)",color:battery.level<=20?"#fca5a5":"#6ee7b7"}}>
+            {battery.charging?"⚡":"🔋"} {battery.level}%
+          </div>}
           <div className="hck">{clock.toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div>
           <span className={`rbdg rb-${user.role}`}>{user.role==="admin"?"👑":user.role==="cashier"?"💳":"🅿️"} {user.role}</span>
           {user.role==="attendant"&&<button className="hbtn" onClick={()=>setAttLoc(null)} style={{background:"rgba(139,92,246,.2)",borderColor:"rgba(139,92,246,.4)",color:"#c4b5fd"}}>Change Location</button>}
@@ -1042,7 +1152,7 @@ function TDMHParking(){
               <div className="ebs" key={l.id}>
                 <div className="ebsl">{l.icon} {l.short}</div>
                 <div className="ebsv">{P(le.reduce((s,e)=>s+Number(e.fee||0),0))}</div>
-                <div className="ebsc">{le.length} txn</div>
+                <div className="ebsc">{le.length} transactions</div>
               </div>
             );})}
             <div className="ebs"><div className="ebsl">Transactions</div><div className="ebsv">{todayE.length}</div><div className="ebsc">today</div></div>
@@ -1057,7 +1167,7 @@ function TDMHParking(){
         <div className="sc" style={{"--c":"#0ea5e9"}}><div className="sl2">Cars</div><div className="sv">{all.filter(s=>s.occupied&&s.vehicle?.vtype==="car").length}</div><div className="ss">parked</div></div>
         <div className="sc" style={{"--c":"#8b5cf6"}}><div className="sl2">Motorcycles</div><div className="sv">{all.filter(s=>s.occupied&&s.vehicle?.vtype==="motorcycle").length}</div><div className="ss">parked</div></div>
         <div className="sc" style={{"--c":"#10b981"}}><div className="sl2">Tricycles</div><div className="sv">{all.filter(s=>s.occupied&&s.vehicle?.vtype==="tricycle").length}</div><div className="ss">parked</div></div>
-        {perms.earn&&<div className="sc" style={{"--c":"#d97706"}}><div className="sl2">Today Earned</div><div className="sv" style={{fontSize:"clamp(12px,2vw,15px)"}}>{P(todayT)}</div><div className="ss">{todayE.length} txn</div></div>}
+        {perms.earn&&<div className="sc" style={{"--c":"#d97706"}}><div className="sl2">Today Earned</div><div className="sv" style={{fontSize:"clamp(12px,2vw,15px)"}}>{P(todayT)}</div><div className="ss">{todayE.length} transactions</div></div>}
       </div>
 
       {/* RATES */}
@@ -1220,6 +1330,32 @@ function TDMHParking(){
       {/* USERS */}
       {tab==="users"&&perms.users&&<UserManagement currentUser={user} toast={toast}/>}
 
+      {/* MODAL: VOID CONFIRMATION */}
+      {modal==="void"&&sel?.vehicle&&(()=>{
+        const{fee,dur}=calcFee(sel.vehicle.checkin,sel.vehicle.vtype);
+        const vt=VT[sel.vehicle.vtype];
+        return(
+          <div className="ov" onClick={e=>e.target===e.currentTarget&&setModal("checkout")}>
+            <div className="mo">
+              <div className="mh" style={{background:"#fef2f2",borderBottom:"1px solid #fca5a5"}}><h2>⚠️ Void Transaction</h2><p style={{color:"#dc2626"}}>This will mark the slot as vacant with no payment collected.</p></div>
+              <div className="mb">
+                <div className="ir"><span className="ik">Plate</span><span className="iv">{sel.vehicle.plate}</span></div>
+                <div className="ir"><span className="ik">Vehicle</span><span className="iv">{vt?.icon} {vt?.label}</span></div>
+                <div className="ir"><span className="ik">Duration</span><span className="iv">{dur}</span></div>
+                <div className="ir"><span className="ik">Expected Fee</span><span className="iv" style={{color:"#dc2626",fontWeight:700}}>{P(fee)}</span></div>
+                <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"10px 12px",fontSize:12,color:"#991b1b",marginTop:8}}>
+                  ⚠️ <strong>{P(fee)}</strong> will be recorded as a <strong>loss</strong> in reports. This action cannot be undone.
+                </div>
+              </div>
+              <div className="mf">
+                <button className="btn bg" onClick={()=>setModal("checkout")}>Back</button>
+                <button className="btn" style={{background:"#dc2626",color:"white",border:"none"}} onClick={doVoid}>Confirm Void</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* MODAL: CHECK IN */}
       {modal==="checkin"&&sel&&(
         <div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
@@ -1268,6 +1404,7 @@ function TDMHParking(){
               </div>
               <div className="mf">
                 <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
+                {user?.role==="admin"&&<button className="btn" style={{background:"#fee2e2",color:"#991b1b",border:"1px solid #fca5a5"}} onClick={()=>setModal("void")}>⚠️ Void</button>}
                 <button className="btn bd2" onClick={doCheckout}>Confirm &amp; Print Receipt</button>
               </div>
             </div>
