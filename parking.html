@@ -953,7 +953,7 @@ function TDMHParking(){
 
   // ── LOGIN ────────────────────────────────────────────────────────────────
   if(!user)return(
-    <><style>{CSS}</style><Toasts/>
+    <><Toasts/>
     <div className="lp"><div className="lb">
       <div className="ll-logo">🏥</div>
       <div className="lt"><h1>Taytay Doctors Multispecialty Hospital</h1><p>Parking Management System</p></div>
@@ -966,7 +966,7 @@ function TDMHParking(){
 
   // ── ATTENDANT LOC SELECT ─────────────────────────────────────────────────
   if(user.role==="attendant"&&!attLoc)return(
-    <><style>{CSS}</style><Toasts/>
+    <><Toasts/>
     <div className="app">
       <div className="hdr">
         <div className="hl"><div className="hlogo">🏥</div><div className="ht"><h1>Taytay Doctors Multispecialty Hospital</h1><p>Parking Management System</p></div></div>
@@ -997,7 +997,7 @@ function TDMHParking(){
   const dupLoc = dupPlate ? LOCS.find(l=>l.id===dupPlate.locId) : null;
 
   return(
-    <><style>{CSS}</style><Toasts/>
+    <><Toasts/>
     <div className="app">
 
       {/* HEADER */}
@@ -1337,7 +1337,7 @@ const manifest = {
   name: "TDMH Parking System",
   short_name: "TDMH Parking",
   description: "Taytay Doctors Multispecialty Hospital — Parking Management System",
-  start_url: "./",
+  start_url: "/",
   display: "standalone",
   orientation: "any",
   background_color: "#0f172a",
@@ -1355,52 +1355,7 @@ const blob = new Blob([JSON.stringify(manifest)], {type:"application/json"});
 const manifestURL = URL.createObjectURL(blob);
 document.getElementById("pwa-manifest").setAttribute("href", manifestURL);
 
-// ─── SERVICE WORKER ──────────────────────────────────────────────────────────
-if("serviceWorker" in navigator){
-  const swCode = `
-const CACHE = "tdmh-parking-v1";
-const PRECACHE = [
-  "https://unpkg.com/react@18/umd/react.production.min.js",
-  "https://unpkg.com/react-dom@18/umd/react-dom.production.min.js",
-  "https://unpkg.com/@babel/standalone/babel.min.js",
-  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
-  "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Space+Mono:wght@400;700&display=swap"
-];
-self.addEventListener("install", e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(PRECACHE).catch(()=>{})).then(()=>self.skipWaiting())
-  );
-});
-self.addEventListener("activate", e => {
-  e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
-      .then(()=>self.clients.claim())
-  );
-});
-self.addEventListener("fetch", e => {
-  // Always go network-first for Supabase API calls
-  if(e.request.url.includes("supabase.co")){
-    e.respondWith(fetch(e.request).catch(()=>new Response(JSON.stringify({error:"offline"}),{headers:{"Content-Type":"application/json"}})));
-    return;
-  }
-  // Cache-first for static assets
-  e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
-      if(res.ok){
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-      }
-      return res;
-    }))
-  );
-});
-  `;
-  const swBlob = new Blob([swCode], {type:"application/javascript"});
-  const swURL = URL.createObjectURL(swBlob);
-  navigator.serviceWorker.register(swURL, {scope:"./"})
-    .then(r => console.log("✅ Service Worker registered", r.scope))
-    .catch(e => console.warn("SW registration failed:", e));
-}
+// Service Worker disabled — blob: URL not supported in hosted environments
 
 // ─── INSTALL BANNER ──────────────────────────────────────────────────────────
 let deferredPrompt = null;
