@@ -388,104 +388,107 @@ function printThermal(payload,preWin){
   const EQ="================================";
   const DQ="--------------------------------";
 
-  const lines=[];
-  lines.push(EQ);
-  lines.push("     TAYTAY DOCTORS");
-  lines.push("  MULTISPECIALTY HOSPITAL");
-  lines.push("   Parking Management System");
-  lines.push(EQ);
-  lines.push(isVoid?"  ** VOID / LOSS RECORD **":isCheckIn?"  *** PARKING TICKET ***":"  *** PAYMENT RECEIPT ***");
-  lines.push(EQ);
-  lines.push("TICKET# : "+ticketNo);
-  lines.push(DQ);
-  lines.push("PLATE    : "+(plate||"---").substring(0,20));
-  lines.push("NAME     : "+(name||"---").substring(0,20));
-  lines.push("VEHICLE  : "+vObj.label);
-  lines.push("LOCATION : "+locName.substring(0,20));
-  lines.push("SLOT     : #"+slotNum);
-  lines.push(DQ);
+  // Use <br> lines — no pre, no table, no line-height issues
+  const R=[];
+  const ln=(t)=>R.push("<div>"+t+"</div>");
+  const ct=(t)=>R.push("<div style='text-align:center'>"+t+"</div>");
+  const sp=()=>R.push("<div style='height:3px'></div>");
+
+  ln(EQ);
+  ct("TAYTAY DOCTORS");
+  ct("MULTISPECIALTY HOSPITAL");
+  ct("Parking Management System");
+  ln(EQ);
+  ct(isVoid?"** VOID / LOSS RECORD **":isCheckIn?"*** PARKING TICKET ***":"*** PAYMENT RECEIPT ***");
+  ln(EQ);
+  ln("TICKET#  : "+ticketNo);
+  ln(DQ);
+  ln("PLATE    : "+(plate||"---"));
+  ln("NAME     : "+(name||"---"));
+  ln("VEHICLE  : "+vObj.label);
+  ln("LOCATION : "+locName);
+  ln("SLOT     : #"+slotNum);
+  ln(DQ);
+
   if(isCheckIn){
-    lines.push("DATE IN  : "+fmt(checkin).substring(0,20));
-    lines.push(DQ);
-    lines.push("First "+vObj.fh+"hrs  : "+P(vObj.fr));
-    lines.push("Per hour  : "+P(vObj.sr)+"/hr");
-    lines.push("Overnight : "+P(vObj.ovr));
-    lines.push(EQ);
-    lines.push("  PLEASE KEEP THIS TICKET");
-    lines.push("  Present upon exit for payment");
-    lines.push("  Lost Parking Ticket: P50.00");
-    lines.push(DQ);
-    lines.push("Attendant : "+cashierName.substring(0,18));
-    lines.push("Issued    : "+fmt(new Date().toISOString()).substring(0,20));
-    lines.push(EQ);
-    lines.push("    Thank you! Drive safely.");
+    ln("DATE IN  : "+fmt(checkin));
+    ln(DQ);
+    ln("First "+vObj.fh+"hrs : "+P(vObj.fr));
+    ln("Per hour  : "+P(vObj.sr)+"/hr");
+    ln("Overnight : "+P(vObj.ovr));
+    ln(EQ);
+    ct("PLEASE KEEP THIS TICKET");
+    ct("Present upon exit for payment");
+    ct("Lost Parking Ticket: P50.00");
+    ln(DQ);
+    ln("Attendant : "+cashierName);
+    ln("Issued    : "+fmt(new Date().toISOString()));
+    ln(EQ);
+    ct("Thank you! Drive safely.");
   } else if(isVoid){
-    lines.push("TIME IN  : "+fmt(checkin).substring(0,20));
-    lines.push("VOID AT  : "+fmt(new Date().toISOString()).substring(0,20));
-    lines.push("DURATION : "+dur);
-    lines.push("EXP FEE  : "+P(fee));
-    lines.push(EQ);
-    lines.push("    LOST PARKING TICKET");
-    lines.push("           P50.00");
-    lines.push(DQ);
-    lines.push("Voided by : "+cashierName.substring(0,18));
-    lines.push(EQ);
-    lines.push("    Official void record.");
+    ln("TIME IN  : "+fmt(checkin));
+    ln("VOID AT  : "+fmt(new Date().toISOString()));
+    ln("DURATION : "+dur);
+    ln("EXP FEE  : "+P(fee));
+    ln(EQ);
+    ct("LOST PARKING TICKET");
+    ct("P50.00");
+    ln(DQ);
+    ln("Voided by : "+cashierName);
+    ln(EQ);
+    ct("Official void record.");
   } else {
-    lines.push("TIME IN  : "+fmt(checkin).substring(0,20));
-    lines.push("TIME OUT : "+fmt(new Date().toISOString()).substring(0,20));
-    lines.push("DURATION : "+dur);
-    lines.push(DQ);
-    lines.push("RATE     : "+(overnight?"OVERNIGHT":"REGULAR"));
-    lines.push(EQ);
-    lines.push("      TOTAL AMOUNT DUE");
-    lines.push("          "+P(fee));
-    if(overnight) lines.push("    Overnight Rate 10PM-7AM");
-    lines.push(DQ);
-    lines.push("Cashier  : "+cashierName.substring(0,18));
-    lines.push(EQ);
-    lines.push("  Thank you for parking!");
-    lines.push("       Drive safely.");
+    ln("TIME IN  : "+fmt(checkin));
+    ln("TIME OUT : "+fmt(new Date().toISOString()));
+    ln("DURATION : "+dur);
+    ln(DQ);
+    ln("RATE     : "+(overnight?"OVERNIGHT":"REGULAR"));
+    ln(EQ);
+    ct("TOTAL AMOUNT DUE");
+    R.push("<div style='text-align:center;font-size:20pt;font-weight:900;line-height:1.3'>"+P(fee)+"</div>");
+    if(overnight) ct("Overnight Rate 10PM-7AM");
+    ln(DQ);
+    ln("Cashier  : "+cashierName);
+    ln(EQ);
+    ct("Thank you for parking!");
+    ct("Drive safely.");
   }
-  lines.push("");lines.push("");lines.push("");
-  const txt=lines.join("\n");
+  R.push("<div style='height:20px'></div>");
+
+  const body=R.join("");
 
   const style=""
     +"@page{margin:0;size:58mm auto}"
     +"*{margin:0;padding:0;box-sizing:border-box}"
-    +"html,body{margin:0;padding:0;width:58mm;background:#fff;color:#000}"
-    +"pre{"
+    +"html,body{"
+      +"width:58mm;margin:0;padding:2px;"
+      +"background:#fff;color:#000;"
       +"font-family:'Courier New',Courier,monospace;"
-      +"font-size:9pt;"
-      +"font-weight:800;"
-      +"line-height:0.9;"
-      +"white-space:pre;"
-      +"margin:0;padding:0;"
-      +"width:58mm;"
-      +"color:#000;"
+      +"font-size:9.5pt;"
+      +"font-weight:normal;"
+      +"line-height:1.25;"
     +"}"
-    +".np{margin-top:12px;text-align:center;font-family:Arial,sans-serif}"
+    +"div{margin:0;padding:0;line-height:1.25;word-break:keep-all;white-space:nowrap;overflow:hidden}"
+    +".np{margin-top:12px;text-align:center;font-family:Arial,sans-serif;white-space:normal;overflow:visible}"
     +"@media print{"
       +".np{display:none}"
       +"@page{size:58mm auto;margin:0}"
-      +"html,body,pre{width:58mm;margin:0;padding:0}"
+      +"html,body{width:58mm;margin:0;padding:2px}"
     +"}";
 
   const html="<!DOCTYPE html><html><head>"
-    +"<meta charset='UTF-8'/>"
-    +"<title>Receipt</title>"
+    +"<meta charset='UTF-8'/><title>Receipt</title>"
     +"<style>"+style+"</style>"
-    +"</head><body>"
-    +"<pre>"+txt+"</pre>"
-    +"<div class='np'>"
+    +"</head><body>"+body
+    +"<div class='np' style='white-space:normal'>"
     +"<button onclick='window.print()' style='padding:8px 16px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold'>Print</button>"
     +"<button onclick='window.close()' style='padding:8px 12px;background:#f1f5f9;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px;margin-left:6px'>Close</button>"
-    +"<p style='font-size:10px;color:#666;margin-top:8px'>Paper: 58x3276mm · Margins: None · Scale: 100%</p>"
+    +"<p style='font-size:10px;color:#666;margin-top:8px'>Paper: 58x3276mm &middot; Margins: None &middot; Scale: 100%</p>"
     +"</div>"
     +"<script>setTimeout(function(){window.print();},500);<\/script>"
     +"</body></html>";
 
-  const w=preWin||window.open("","_blank","width=400,height=600,toolbar=0,menubar=0,scrollbars=1");
+  const w=preWin||window.open("","_blank","width=420,height=620,toolbar=0,menubar=0,scrollbars=1");
   if(w){w.document.open();w.document.write(html);w.document.close();}
   else alert("Please allow popups to print.");
 }
