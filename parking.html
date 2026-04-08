@@ -450,21 +450,16 @@ function printThermal(payload,preWin){
   }
   lines.push("");lines.push("");lines.push("");
   const txt=lines.join("\n");
-  const html=`<!DOCTYPE html><html><head><title>Receipt</title><style>
-    @page{margin:0;size:58mm auto}
-    *{margin:0;padding:0;box-sizing:border-box}
-    html,body{width:58mm;font-family:'Courier New',monospace;font-size:9.5pt;line-height:1.15;color:#000;background:#fff}
-    pre{font-family:'Courier New',monospace;font-size:9.5pt;line-height:1.15;white-space:pre-wrap;word-break:break-all;margin:0;padding:0}
-    .np{margin-top:10px;text-align:center;font-family:Arial,sans-serif}
-    @media print{.np{display:none}@page{size:58mm auto;margin:0}}
-  </style></head><body><pre>${txt}</pre>
-  <div class="np">
-    <button onclick="window.print()" style="padding:8px 16px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">Print</button>
-    <button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px;margin-left:6px">Close</button>
-    <p style="font-size:10px;color:#666;margin-top:8px">Printer: XP-58 · Paper: Roll 58x3276mm · Margins: None</p>
-  </div>
-  <script>setTimeout(()=>window.print(),400);</script>
-  </body></html>`;
+  // Build HTML using string concat — NO template literals to avoid Babel parse issues
+  const style="@page{margin:0;size:58mm auto}*{margin:0;padding:0;box-sizing:border-box}html,body{width:58mm;font-family:'Courier New',monospace;font-size:9.5pt;line-height:1.15;color:#000;background:#fff}pre{font-family:'Courier New',monospace;font-size:9.5pt;line-height:1.15;white-space:pre-wrap;word-break:break-all;margin:0;padding:0}.np{margin-top:10px;text-align:center;font-family:Arial,sans-serif}@media print{.np{display:none}@page{size:58mm auto;margin:0}}";
+  const html="<!DOCTYPE html><html><head><title>Receipt</title><style>"+style+"</style></head><body><pre>"+txt+"</pre>"
+    +"<div class='np'>"
+    +"<button onclick='window.print()' style='padding:8px 16px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold'>Print</button>"
+    +"<button onclick='window.close()' style='padding:8px 12px;background:#f1f5f9;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px;margin-left:6px'>Close</button>"
+    +"<p style='font-size:10px;color:#666;margin-top:8px'>Paper: Roll 58x3276mm · Margins: None</p>"
+    +"</div>"
+    +"<script>setTimeout(function(){window.print();},400);<\/script>"
+    +"</body></html>";
   const w=preWin||window.open("","_blank","width=380,height=560,toolbar=0,menubar=0,scrollbars=1");
   if(w){w.document.open();w.document.write(html);w.document.close();}
   else alert("Please allow popups to print.");
