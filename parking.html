@@ -393,7 +393,7 @@ function printThermal(payload,preWin){
     +"<div style='margin:0;padding:0'>"+L+"</div>"
     +"<div style='margin:0;padding:0'>TAYTAY DOCTORS</div>"
     +"<div style='margin:0;padding:0'>MULTISPECIALTY HOSPITAL</div>"
-    +"<div style='font-weight:700;font-size:10pt;margin:0;padding:0'>Parking Management System</div>"
+    +"<div style='font-weight:900;font-size:7.5pt;margin:0;padding:0'>Parking Mgmt System</div>"
     +"<div style='margin:0;padding:0'>"+L+"</div>"
     +"<div style='margin:0;padding:0'>"+(isVoid?"*** VOID / LOSS RECORD ***":isCheckIn?"*** PARKING TICKET ***":"*** PAYMENT RECEIPT ***")+"</div>"
     +"<div style='margin:0;padding:0'>"+L+"</div>"
@@ -454,7 +454,7 @@ function printThermal(payload,preWin){
   lines.push("");lines.push("");lines.push("");
   const txt=lines.join("\n");
   // Build HTML using string concat — NO template literals to avoid Babel parse issues
-  const style="@page{margin:0;size:58mm auto}*{margin:0;padding:0;box-sizing:border-box}html,body{width:58mm;font-family:'Courier New',monospace;font-size:11pt;font-weight:900;line-height:1.0;color:#000;background:#fff}pre{font-family:'Courier New',monospace;font-size:11pt;font-weight:900;line-height:1.0;white-space:pre;word-break:normal;overflow:hidden;width:48mm;margin:0;padding:0}.np{margin-top:10px;text-align:center;font-family:Arial,sans-serif}@media print{.np{display:none}@page{size:58mm auto;margin:0}}";
+  const style="@page{margin:0;size:58mm auto}*{margin:0;padding:0;box-sizing:border-box}html,body{width:56mm;font-family:'Courier New',monospace;font-size:8pt;font-weight:900;line-height:1.0;color:#000;background:#fff}pre{font-family:'Courier New',monospace;font-size:8pt;font-weight:900;line-height:1.0;white-space:pre;word-break:normal;overflow:hidden;width:56mm;margin:0;padding:0}.np{margin-top:10px;text-align:center;font-family:Arial,sans-serif}@media print{.np{display:none}@page{size:58mm auto;margin:0}}";
   const html="<!DOCTYPE html><html><head><title>Receipt</title><style>"+style+"</style></head><body>"+hdr+"<pre>"+txt+"</pre>"
     +"<div class='np'>"
     +"<button onclick='window.print()' style='padding:8px 16px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold'>Print</button>"
