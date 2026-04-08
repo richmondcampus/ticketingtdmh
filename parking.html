@@ -136,6 +136,20 @@ function mapSlot(s){
   };
 }
 
+// ─── THERMAL PRINTER ────────────────────────────────────────────────────────
+function printThermal(payload){
+  const{isCheckIn,isVoid,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName}=payload;
+  const vObj=VT[vtype]||VT.car;
+  const line="================================";const dline="--------------------------------";
+  const title=isVoid?"★ VOID / LOSS RECORD ★":isCheckIn?"★ PARKING TICKET ★":"★ PAYMENT RECEIPT ★";
+  const head=`<div style="text-align:center;font-weight:bold;font-size:13px;line-height:1.5">TAYTAY DOCTORS<br>MULTISPECIALTY HOSPITAL<br><span style="font-size:10px;font-weight:normal">Parking Management System</span></div><pre style="margin:4px 0">${line}</pre><div style="text-align:center;font-weight:bold;font-size:12px">${title}</div><pre style="margin:4px 0">${line}</pre>`;
+  const bodyCI=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\nDATE    : ${fmtFull(checkin)}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\n  RATE INFORMATION\nFirst ${vObj.fh}hrs: ${P(vObj.fr)}\nPer hour : ${P(vObj.sr)}/hr\nOvernight: ${P(vObj.ovr)}\n${line}</pre><div style="text-align:center;margin:8px 0;font-size:11px"><div style="font-weight:bold">PLEASE KEEP THIS TICKET</div><div style="font-size:10px">Present upon exit for payment</div><div style="font-size:10px;font-weight:bold;margin-top:3px">Lost Parking Ticket: ₱50.00</div></div><pre style="margin:0;font-size:11px">${dline}\nAttendant: ${cashierName}\nIssued   : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you! Drive safely.</div>`;
+  const bodyCO=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\nTIME IN : ${fmtFull(checkin)}\nTIME OUT: ${fmtFull(new Date().toISOString())}\nDURATION: ${dur}\n${dline}\nRATE    : ${overnight?"OVERNIGHT":"REGULAR"}\n${line}</pre><div style="text-align:center;margin:10px 0"><div style="font-size:11px">TOTAL AMOUNT DUE</div><div style="font-size:24px;font-weight:bold;margin:4px 0">${P(fee)}</div>${overnight?`<div style="font-size:10px">🌙 Overnight Rate (10PM-7AM)</div>`:""}</div><pre style="margin:0;font-size:11px">${dline}\nCashier  : ${cashierName}\nPrinted  : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">Thank you for parking!<br>Drive safely.</div>`;
+  const bodyVOID=`<pre style="margin:0;font-size:11px">TICKET# : ${ticketNo}\n${dline}\nPLATE   : ${plate}\nNAME    : ${name||"---"}\nVEHICLE : ${vObj.label}\nLOCATION: ${locName}\nSLOT    : #${slotNum}\n${dline}\nTIME IN : ${fmtFull(checkin)}\nVOID AT : ${fmtFull(new Date().toISOString())}\nDURATION: ${dur}\n${dline}\nEXP FEE : ${P(fee)}\n${line}</pre><div style="text-align:center;margin:10px 0;border:2px solid #000;padding:8px"><div style="font-size:12px;font-weight:bold">LOST PARKING TICKET</div><div style="font-size:22px;font-weight:bold;margin:4px 0">₱50.00</div><div style="font-size:10px">Lost Parking Ticket Fee</div></div><pre style="margin:0;font-size:11px">${dline}\nVoided by: ${cashierName}\nPrinted  : ${fmtFull(new Date().toISOString())}\n${line}</pre><div style="text-align:center;font-size:10px;margin-top:6px">This serves as official void record.</div>`;
+  const html=`<!DOCTYPE html><html><head><title>${isVoid?"Void":isCheckIn?"Ticket":"Receipt"} ${ticketNo}</title><style>@page{margin:2mm;size:58mm auto}body{font-family:'Courier New',monospace;font-size:11px;width:58mm;margin:0;padding:4px;color:#000}pre{font-family:inherit;font-size:11px;white-space:pre-wrap}@media print{.np{display:none}}</style></head><body>${head}${isVoid?bodyVOID:isCheckIn?bodyCI:bodyCO}<div class="np" style="margin-top:14px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">🖨️ Print</button><button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;font-size:13px;margin-left:8px">Close</button><p style="font-size:10px;color:#64748b;margin-top:8px">Select your Bluetooth/POS printer from the print dialog</p></div></body></html>`;
+  const w=window.open("","_blank","width=420,height=620,toolbar=0,menubar=0,scrollbars=1");
+  if(w){w.document.write(html);w.document.close();}else alert("Please allow popups to print tickets.");
+}
 
 // ─── CSS ────────────────────────────────────────────────────────────────────
 const CSS=`
@@ -379,121 +393,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 }
 `;
 
-// ─── THERMAL PRINTER ────────────────────────────────────────────────────────
-function printThermal(payload,preWin){
-  if(window.isNativeAndroid) return;
-  const{isCheckIn,isVoid,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName}=payload;
-  const vObj=VT[vtype]||VT.car;
-  const fmt=iso=>new Date(iso).toLocaleString("en-PH",{month:"short",day:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
-  const EQ="================================";
-  const DQ="--------------------------------";
-
-  // Use <br> lines — no pre, no table, no line-height issues
-  const R=[];
-  const ln=(t)=>R.push("<div>"+t+"</div>");
-  const ct=(t)=>R.push("<div style='text-align:center'>"+t+"</div>");
-  const sp=()=>R.push("<div style='height:3px'></div>");
-
-  ln(EQ);
-  ct("TAYTAY DOCTORS");
-  ct("MULTISPECIALTY HOSPITAL");
-  ct("Parking Management System");
-  ln(EQ);
-  ct(isVoid?"** VOID / LOSS RECORD **":isCheckIn?"*** PARKING TICKET ***":"*** PAYMENT RECEIPT ***");
-  ln(EQ);
-  ln("TICKET#  : "+ticketNo);
-  ln(DQ);
-  ln("PLATE    : "+(plate||"---"));
-  ln("NAME     : "+(name||"---"));
-  ln("VEHICLE  : "+vObj.label);
-  ln("LOCATION : "+locName);
-  ln("SLOT     : #"+slotNum);
-  ln(DQ);
-
-  if(isCheckIn){
-    ln("DATE IN  : "+fmt(checkin));
-    ln(DQ);
-    ln("First "+vObj.fh+"hrs : "+P(vObj.fr));
-    ln("Per hour  : "+P(vObj.sr)+"/hr");
-    ln("Overnight : "+P(vObj.ovr));
-    ln(EQ);
-    ct("PLEASE KEEP THIS TICKET");
-    ct("Present upon exit for payment");
-    ct("Lost Parking Ticket: P50.00");
-    ln(DQ);
-    ln("Attendant : "+cashierName);
-    ln("Issued    : "+fmt(new Date().toISOString()));
-    ln(EQ);
-    ct("Thank you! Drive safely.");
-  } else if(isVoid){
-    ln("TIME IN  : "+fmt(checkin));
-    ln("VOID AT  : "+fmt(new Date().toISOString()));
-    ln("DURATION : "+dur);
-    ln("EXP FEE  : "+P(fee));
-    ln(EQ);
-    ct("LOST PARKING TICKET");
-    ct("P50.00");
-    ln(DQ);
-    ln("Voided by : "+cashierName);
-    ln(EQ);
-    ct("Official void record.");
-  } else {
-    ln("TIME IN  : "+fmt(checkin));
-    ln("TIME OUT : "+fmt(new Date().toISOString()));
-    ln("DURATION : "+dur);
-    ln(DQ);
-    ln("RATE     : "+(overnight?"OVERNIGHT":"REGULAR"));
-    ln(EQ);
-    ct("TOTAL AMOUNT DUE");
-    R.push("<div style='text-align:center;font-size:20pt;font-weight:900;line-height:1.3'>"+P(fee)+"</div>");
-    if(overnight) ct("Overnight Rate 10PM-7AM");
-    ln(DQ);
-    ln("Cashier  : "+cashierName);
-    ln(EQ);
-    ct("Thank you for parking!");
-    ct("Drive safely.");
-  }
-  R.push("<div style='height:20px'></div>");
-
-  const body=R.join("");
-
-  const style=""
-    +"@page{margin:0;size:58mm auto}"
-    +"*{margin:0;padding:0;box-sizing:border-box}"
-    +"html,body{"
-      +"width:58mm;margin:0;padding:2px;"
-      +"background:#fff;color:#000;"
-      +"font-family:'Courier New',Courier,monospace;"
-      +"font-size:9.5pt;"
-      +"font-weight:normal;"
-      +"line-height:1.25;"
-    +"}"
-    +"div{margin:0;padding:0;line-height:1.25;word-break:keep-all;white-space:nowrap;overflow:hidden}"
-    +".np{margin-top:12px;text-align:center;font-family:Arial,sans-serif;white-space:normal;overflow:visible}"
-    +"@media print{"
-      +".np{display:none}"
-      +"@page{size:58mm auto;margin:0}"
-      +"html,body{width:58mm;margin:0;padding:2px}"
-    +"}";
-
-  const html="<!DOCTYPE html><html><head>"
-    +"<meta charset='UTF-8'/><title>Receipt</title>"
-    +"<style>"+style+"</style>"
-    +"</head><body>"+body
-    +"<div class='np' style='white-space:normal'>"
-    +"<button onclick='window.print()' style='padding:8px 16px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold'>Print</button>"
-    +"<button onclick='window.close()' style='padding:8px 12px;background:#f1f5f9;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px;margin-left:6px'>Close</button>"
-    +"<p style='font-size:10px;color:#666;margin-top:8px'>Paper: 58x3276mm &middot; Margins: None &middot; Scale: 100%</p>"
-    +"</div>"
-    +"<script>setTimeout(function(){window.print();},500);<\/script>"
-    +"</body></html>";
-
-  const w=preWin||window.open("","_blank","width=420,height=620,toolbar=0,menubar=0,scrollbars=1");
-  if(w){w.document.open();w.document.write(html);w.document.close();}
-  else alert("Please allow popups to print.");
-}
-
-
+// ─── TOAST ──────────────────────────────────────────────────────────────────
 function useToast(){
   const [toasts,setToasts]=useState([]);
   const add=useCallback((msg,type="ok")=>{
@@ -1096,21 +996,19 @@ function TDMHParking(){
       toast(`⚠️ ${plateUpper} is already parked at ${dupLoc?.name} — Slot #${duplicate.number}`,"err");
       return;
     }
-    // Pre-open print window NOW (before async) to avoid popup blocker
-    const printWin=window.isNativeAndroid?null:window.open("","_blank","width=400,height=580,toolbar=0,menubar=0,scrollbars=1");
     const l=sel.locId;const tix=nextTix();const now=new Date().toISOString();
     const vehicle={plate:plateUpper,name:form.name.trim()||"—",vtype:form.vtype,checkin:now,ticketNo:tix,checkinBy:user.name};
     const{error}=await sb.from("slots").update({
       occupied:true,v_plate:vehicle.plate,v_name:vehicle.name,v_vtype:vehicle.vtype,
       v_checkin:vehicle.checkin,v_ticket:vehicle.ticketNo,v_checkin_by:vehicle.checkinBy
     }).eq("id",sel.id);
-    if(error){toast("Check-in failed: "+error.message,"err");if(printWin)printWin.close();return;}
+    if(error){toast("Check-in failed: "+error.message,"err");return;}
     // optimistic local update (realtime will also fire)
     setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:true,vehicle}:s);return c;});
     const locName=LOCS.find(x=>x.id===l)?.name;
     addLog(`${vehicle.plate} checked in @ ${locName} · Slot #${sel.number} · ${tix}`,"#10b981");
     toast(`✅ ${vehicle.plate} checked in — ${tix}`,"ok");
-    printThermal({isCheckIn:true,ticketNo:tix,plate:vehicle.plate,name:vehicle.name,vtype:form.vtype,locName,slotNum:sel.number,checkin:now,cashierName:user.name},printWin);
+    printThermal({isCheckIn:true,ticketNo:tix,plate:vehicle.plate,name:vehicle.name,vtype:form.vtype,locName,slotNum:sel.number,checkin:now,cashierName:user.name});
     setModal(null);
   }
 
@@ -1557,7 +1455,7 @@ const manifest = {
   name: "TDMH Parking System",
   short_name: "TDMH Parking",
   description: "Taytay Doctors Multispecialty Hospital — Parking Management System",
-  start_url: "/",
+  start_url: "./",
   display: "standalone",
   orientation: "any",
   background_color: "#0f172a",
@@ -1575,7 +1473,52 @@ const blob = new Blob([JSON.stringify(manifest)], {type:"application/json"});
 const manifestURL = URL.createObjectURL(blob);
 document.getElementById("pwa-manifest").setAttribute("href", manifestURL);
 
-// Service Worker disabled — blob: URL not supported in hosted environments
+// ─── SERVICE WORKER ──────────────────────────────────────────────────────────
+if("serviceWorker" in navigator){
+  const swCode = `
+const CACHE = "tdmh-parking-v1";
+const PRECACHE = [
+  "https://unpkg.com/react@18/umd/react.production.min.js",
+  "https://unpkg.com/react-dom@18/umd/react-dom.production.min.js",
+  "https://unpkg.com/@babel/standalone/babel.min.js",
+  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
+  "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Space+Mono:wght@400;700&display=swap"
+];
+self.addEventListener("install", e => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll(PRECACHE).catch(()=>{})).then(()=>self.skipWaiting())
+  );
+});
+self.addEventListener("activate", e => {
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
+      .then(()=>self.clients.claim())
+  );
+});
+self.addEventListener("fetch", e => {
+  // Always go network-first for Supabase API calls
+  if(e.request.url.includes("supabase.co")){
+    e.respondWith(fetch(e.request).catch(()=>new Response(JSON.stringify({error:"offline"}),{headers:{"Content-Type":"application/json"}})));
+    return;
+  }
+  // Cache-first for static assets
+  e.respondWith(
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
+      if(res.ok){
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+      }
+      return res;
+    }))
+  );
+});
+  `;
+  const swBlob = new Blob([swCode], {type:"application/javascript"});
+  const swURL = URL.createObjectURL(swBlob);
+  navigator.serviceWorker.register(swURL, {scope:"./"})
+    .then(r => console.log("✅ Service Worker registered", r.scope))
+    .catch(e => console.warn("SW registration failed:", e));
+}
 
 // ─── INSTALL BANNER ──────────────────────────────────────────────────────────
 let deferredPrompt = null;
