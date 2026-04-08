@@ -385,79 +385,71 @@ function printThermal(payload,preWin){
   const{isCheckIn,isVoid,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName}=payload;
   const vObj=VT[vtype]||VT.car;
   const fmt=iso=>new Date(iso).toLocaleString("en-PH",{month:"short",day:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
-  const L="================================";
-  const S="--------------------------------";
-
-  // 32 chars per line — pad/truncate to keep alignment
-  const pad=(s,n)=>(s+"").substring(0,n).padEnd(n);
-  const ctr=(s)=>{const sp=Math.max(0,Math.floor((32-s.length)/2));return " ".repeat(sp)+s;};
+  const EQ="================================";
+  const DQ="--------------------------------";
 
   const lines=[];
-  lines.push(ctr(L.substring(0,32)));
-  lines.push(ctr("TAYTAY DOCTORS"));
-  lines.push(ctr("MULTISPECIALTY HOSPITAL"));
-  lines.push(ctr("Parking Mgmt System"));
-  lines.push(ctr(L.substring(0,32)));
-  lines.push(ctr(isVoid?"** VOID / LOSS RECORD **":isCheckIn?"*** PARKING TICKET ***":"*** PAYMENT RECEIPT ***"));
-  lines.push(ctr(L.substring(0,32)));
+  lines.push(EQ);
+  lines.push("     TAYTAY DOCTORS");
+  lines.push("  MULTISPECIALTY HOSPITAL");
+  lines.push("   Parking Management System");
+  lines.push(EQ);
+  lines.push(isVoid?"  ** VOID / LOSS RECORD **":isCheckIn?"  *** PARKING TICKET ***":"  *** PAYMENT RECEIPT ***");
+  lines.push(EQ);
   lines.push("TICKET# : "+ticketNo);
-  lines.push(S);
-  lines.push("PLATE   : "+(plate||"---").substring(0,22));
-  lines.push("NAME    : "+(name||"---").substring(0,22));
-  lines.push("VEHICLE : "+vObj.label);
-  lines.push("LOCATION: "+locName.substring(0,22));
-  lines.push("SLOT    : #"+slotNum);
-  lines.push(S);
+  lines.push(DQ);
+  lines.push("PLATE    : "+(plate||"---").substring(0,20));
+  lines.push("NAME     : "+(name||"---").substring(0,20));
+  lines.push("VEHICLE  : "+vObj.label);
+  lines.push("LOCATION : "+locName.substring(0,20));
+  lines.push("SLOT     : #"+slotNum);
+  lines.push(DQ);
   if(isCheckIn){
-    lines.push("DATE IN : "+fmt(checkin).substring(0,22));
-    lines.push(S);
-    lines.push(ctr("RATE INFORMATION"));
-    lines.push("First "+vObj.fh+"hrs : "+P(vObj.fr));
+    lines.push("DATE IN  : "+fmt(checkin).substring(0,20));
+    lines.push(DQ);
+    lines.push("First "+vObj.fh+"hrs  : "+P(vObj.fr));
     lines.push("Per hour  : "+P(vObj.sr)+"/hr");
     lines.push("Overnight : "+P(vObj.ovr));
-    lines.push(L);
-    lines.push(ctr("PLEASE KEEP TICKET"));
-    lines.push(ctr("Present on exit"));
-    lines.push(ctr("Lost Ticket: P50.00"));
-    lines.push(S);
-    lines.push("Attendant : "+cashierName.substring(0,20));
-    lines.push("Issued    : "+fmt(new Date().toISOString()).substring(0,22));
-    lines.push(L);
-    lines.push(ctr("Thank you! Drive safely."));
+    lines.push(EQ);
+    lines.push("  PLEASE KEEP THIS TICKET");
+    lines.push("  Present upon exit for payment");
+    lines.push("  Lost Parking Ticket: P50.00");
+    lines.push(DQ);
+    lines.push("Attendant : "+cashierName.substring(0,18));
+    lines.push("Issued    : "+fmt(new Date().toISOString()).substring(0,20));
+    lines.push(EQ);
+    lines.push("    Thank you! Drive safely.");
   } else if(isVoid){
-    lines.push("TIME IN : "+fmt(checkin).substring(0,22));
-    lines.push("VOID AT : "+fmt(new Date().toISOString()).substring(0,22));
-    lines.push("DURATION: "+dur);
-    lines.push("EXP FEE : "+P(fee));
-    lines.push(L);
-    lines.push(ctr("LOST PARKING TICKET"));
-    lines.push(ctr("P50.00"));
-    lines.push(S);
-    lines.push("Voided by: "+cashierName.substring(0,20));
-    lines.push(L);
-    lines.push(ctr("Official void record."));
+    lines.push("TIME IN  : "+fmt(checkin).substring(0,20));
+    lines.push("VOID AT  : "+fmt(new Date().toISOString()).substring(0,20));
+    lines.push("DURATION : "+dur);
+    lines.push("EXP FEE  : "+P(fee));
+    lines.push(EQ);
+    lines.push("    LOST PARKING TICKET");
+    lines.push("           P50.00");
+    lines.push(DQ);
+    lines.push("Voided by : "+cashierName.substring(0,18));
+    lines.push(EQ);
+    lines.push("    Official void record.");
   } else {
-    lines.push("TIME IN : "+fmt(checkin).substring(0,22));
-    lines.push("TIME OUT: "+fmt(new Date().toISOString()).substring(0,22));
-    lines.push("DURATION: "+dur);
-    lines.push(S);
-    lines.push("RATE    : "+(overnight?"OVERNIGHT":"REGULAR"));
-    lines.push(L);
-    lines.push(ctr("TOTAL AMOUNT DUE"));
-    lines.push(ctr(P(fee)));
-    if(overnight) lines.push(ctr("Overnight 10PM-7AM"));
-    lines.push(S);
-    lines.push("Cashier : "+cashierName.substring(0,20));
-    lines.push(L);
-    lines.push(ctr("Thank you for parking!"));
-    lines.push(ctr("Drive safely."));
+    lines.push("TIME IN  : "+fmt(checkin).substring(0,20));
+    lines.push("TIME OUT : "+fmt(new Date().toISOString()).substring(0,20));
+    lines.push("DURATION : "+dur);
+    lines.push(DQ);
+    lines.push("RATE     : "+(overnight?"OVERNIGHT":"REGULAR"));
+    lines.push(EQ);
+    lines.push("      TOTAL AMOUNT DUE");
+    lines.push("          "+P(fee));
+    if(overnight) lines.push("    Overnight Rate 10PM-7AM");
+    lines.push(DQ);
+    lines.push("Cashier  : "+cashierName.substring(0,18));
+    lines.push(EQ);
+    lines.push("  Thank you for parking!");
+    lines.push("       Drive safely.");
   }
   lines.push("");lines.push("");lines.push("");
   const txt=lines.join("\n");
 
-  // CSS: match XP-58H selftest font exactly
-  // Selftest normal text = clean, medium weight, ~8-9pt equivalent
-  // Use 'Courier New' at exactly the right size so 32 chars = 48mm
   const style=""
     +"@page{margin:0;size:58mm auto}"
     +"*{margin:0;padding:0;box-sizing:border-box}"
@@ -465,13 +457,12 @@ function printThermal(payload,preWin){
     +"pre{"
       +"font-family:'Courier New',Courier,monospace;"
       +"font-size:9pt;"
-      +"font-weight:900;"
-      +"line-height:0.75;"
+      +"font-weight:800;"
+      +"line-height:0.9;"
       +"white-space:pre;"
       +"margin:0;padding:0;"
       +"width:58mm;"
       +"color:#000;"
-      +"print-color-adjust:exact;"
     +"}"
     +".np{margin-top:12px;text-align:center;font-family:Arial,sans-serif}"
     +"@media print{"
