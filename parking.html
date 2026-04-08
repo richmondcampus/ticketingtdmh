@@ -388,13 +388,16 @@ function printThermal(payload,preWin){
   const L="================================";
   const S="--------------------------------";
   const lines=[];
-  lines.push(L);
-  lines.push("   TAYTAY DOCTORS");
-  lines.push("   MULTISPECIALTY HOSPITAL");
-  lines.push("   Parking Management System");
-  lines.push(L);
-  lines.push(isVoid?"  *** VOID / LOSS RECORD ***":isCheckIn?"  *** PARKING TICKET ***":"  *** PAYMENT RECEIPT ***");
-  lines.push(L);
+  // Header uses HTML for proper centering + bold
+  const hdr="<div style='text-align:center;font-weight:bold;font-size:9pt;line-height:1.2;font-family:Courier New,monospace'>"
+    +"<div>"+L+"</div>"
+    +"<div>TAYTAY DOCTORS</div>"
+    +"<div>MULTISPECIALTY HOSPITAL</div>"
+    +"<div style='font-weight:normal;font-size:7.5pt'>Parking Management System</div>"
+    +"<div>"+L+"</div>"
+    +"<div>"+(isVoid?"*** VOID / LOSS RECORD ***":isCheckIn?"*** PARKING TICKET ***":"*** PAYMENT RECEIPT ***")+"</div>"
+    +"<div>"+L+"</div>"
+    +"</div>";
   lines.push("TICKET# : "+ticketNo);
   lines.push(S);
   lines.push("PLATE   : "+(plate||"---"));
@@ -451,8 +454,8 @@ function printThermal(payload,preWin){
   lines.push("");lines.push("");lines.push("");
   const txt=lines.join("\n");
   // Build HTML using string concat — NO template literals to avoid Babel parse issues
-  const style="@page{margin:0;size:58mm auto}*{margin:0;padding:0;box-sizing:border-box}html,body{width:58mm;font-family:'Courier New',monospace;font-size:6pt;line-height:1.0;color:#000;background:#fff}pre{font-family:'Courier New',monospace;font-size:6pt;line-height:1.0;white-space:pre;word-break:normal;overflow:hidden;margin:0;padding:0}.np{margin-top:10px;text-align:center;font-family:Arial,sans-serif}@media print{.np{display:none}@page{size:58mm auto;margin:0}}";
-  const html="<!DOCTYPE html><html><head><title>Receipt</title><style>"+style+"</style></head><body><pre>"+txt+"</pre>"
+  const style="@page{margin:0;size:58mm auto}*{margin:0;padding:0;box-sizing:border-box}html,body{width:58mm;font-family:'Courier New',monospace;font-size:8pt;line-height:1.1;color:#000;background:#fff}pre{font-family:'Courier New',monospace;font-size:8pt;line-height:1.1;white-space:pre;word-break:normal;overflow:hidden;width:48mm;margin:0;padding:0}.np{margin-top:10px;text-align:center;font-family:Arial,sans-serif}@media print{.np{display:none}@page{size:58mm auto;margin:0}}";
+  const html="<!DOCTYPE html><html><head><title>Receipt</title><style>"+style+"</style></head><body>"+hdr+"<pre>"+txt+"</pre>"
     +"<div class='np'>"
     +"<button onclick='window.print()' style='padding:8px 16px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold'>Print</button>"
     +"<button onclick='window.close()' style='padding:8px 12px;background:#f1f5f9;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px;margin-left:6px'>Close</button>"
