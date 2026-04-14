@@ -9,7 +9,13 @@
 <meta name="apple-mobile-web-app-title" content="TDMH VTS">
 <meta name="theme-color" content="#0c2340">
 <title>TDMH VTS — Vehicle Ticketing System</title>
-<script src="https://unpkg.com/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+// CDN fallback — if unpkg fails, load from jsdelivr
+if (typeof supabase === 'undefined') {
+  document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"><\/script>')
+}
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 /* ── Reset & Base ── */
@@ -428,12 +434,29 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 
 <script>
 // ════════════════════════════════════════════════
-// SUPABASE INIT
+// SUPABASE INIT — defensive, handles CDN failures
 // ════════════════════════════════════════════════
-const { createClient } = supabase
+function initSupabase() {
+  // Try multiple possible global names (UMD bundles differ by version)
+  const lib = window.supabase || window.Supabase || window.supabaseJs
+  if (!lib || !lib.createClient) {
+    console.error('[VTS] Supabase library not loaded. Check network or CDN.')
+    document.getElementById('APP').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:16px;font-family:sans-serif;padding:24px;text-align:center">
+        <div style="font-size:32px">⚠️</div>
+        <div style="font-size:16px;font-weight:700;color:#dc2626">Failed to load system</div>
+        <div style="font-size:13px;color:#64748b;max-width:300px">Could not connect to the required library. Please check your internet connection and reload the page.</div>
+        <button onclick="location.reload()" style="padding:10px 24px;background:#0c6fdb;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600">🔄 Reload</button>
+      </div>`
+    return false
+  }
+  return lib.createClient
+}
+
+const createClient = initSupabase()
 const SB_URL  = 'https://blgscwtseqvhgdoksvjh.supabase.co'
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsZ3Njd3RzZXF2aGdkb2tzdmpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0ODkwNzAsImV4cCI6MjA5MDA2NTA3MH0.NoJ8ASqwyJBMCkbufoYZy9iCYkZvZIi6bz2vLamlQG0'
-const SB = createClient(SB_URL, SB_ANON)
+const SB = createClient ? createClient(SB_URL, SB_ANON) : null
 
 // ════════════════════════════════════════════════
 // SMS — TextBee via Edge Function
@@ -1012,7 +1035,7 @@ async function renderDashboard() {
   let upcomingAdvance = []
   if (['admin','guard','approver_admin','approver_amb'].includes(role)) {
     const { data: adv } = await SB.from('trips')
-      .select('id,ticket_no,department,purpose,destination,driver_name,vehicle_name,vehicle_plate,departure_at,vehicle_type_needed,status,is_advance_booking')
+      .select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,vehicle_type_needed,status,is_advance_booking')
       .in('status', ['assigned','approved'])
       .gt('departure_at', now.toISOString())
       .lte('departure_at', next7.toISOString())
@@ -1150,7 +1173,7 @@ async function renderDashboard() {
     const gateOutToday = upcomingAdvance.filter(t => t.status === 'assigned')
     // All on-trip (gate-in pending)
     const { data: onTrip } = await SB.from('trips')
-      .select('id,ticket_no,department,purpose,destination,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status')
+      .select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status')
       .eq('status','on-trip')
       .order('expected_return_at',{ascending:true})
     const onTripList = onTrip || []
@@ -1409,7 +1432,12 @@ function renderTicketsTable() {
         </td>
         <td style="padding:13px 16px;max-width:180px">
           <div style="font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${t.purpose||''}">${t.purpose||'—'}</div>
-          ${t.destination?`<div style="font-size:10.5px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">→ ${t.destination}</div>`:''}
+          ${(() => {
+            const s = t.stops && Array.isArray(t.stops) && t.stops.length > 0 ? t.stops : (t.destination ? [t.destination] : [])
+            if (s.length === 0) return ''
+            const label = s.length > 1 ? `→ ${s[0]} <span style="background:var(--pri-s);color:var(--pri);font-size:9px;font-weight:700;padding:1px 5px;border-radius:20px">+${s.length-1} stops</span>` : `→ ${s[0]}`
+            return `<div style="font-size:10.5px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>`
+          })()}
         </td>
         <td style="padding:13px 16px;white-space:nowrap">
           <div style="font-size:11.5px;color:var(--text1)">${fmtDate(t.departure_at||t.created_at)}</div>
@@ -1594,7 +1622,13 @@ async function openViewModal(id) {
   if (!t) return
   const fields = [
     ['Department',t.department],['Requester',t.requester_name],
-    ['Purpose',t.purpose,'span2'],['Destination',t.destination,'span2'],
+    ['Purpose',t.purpose,'span2'],
+    ['Route', (() => {
+      const s = t.stops && Array.isArray(t.stops) && t.stops.length > 0 ? t.stops : (t.destination ? [t.destination] : [])
+      if (s.length === 0) return '—'
+      if (s.length === 1) return s[0]
+      return s.map((stop, i) => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="font-size:10px;background:var(--pri-s);color:var(--pri);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${i+1}</span>${stop}</span>`).join('<span style="color:var(--text3);margin:0 4px">→</span>')
+    })(), 'span2'],
     ['Date & Time',fmtDT(t.departure_at)],['Passengers',`${t.passengers||1} pax`],
     ['Driver',t.driver_name||'Not assigned'],['Vehicle',(t.vehicle_name||t.vehicle?.name||'') + (t.vehicle?.plate||t.vehicle_plate ? ' — ' + (t.vehicle?.plate||t.vehicle_plate) : '') || 'Not assigned'],
     ...(t.gate_out_at?[['Gate Out',fmtDT(t.gate_out_at)]]:[]),
@@ -1829,7 +1863,7 @@ async function doReject(id, ticketNo) {
   const reason = document.getElementById('rejR')?.value?.trim()
   if (!reason) { alert('Reason required.'); return }
   const btn = document.getElementById('rejBtn'); btn.disabled=true; btn.textContent='Rejecting...'
-  const { data: trip } = await SB.from('trips').select('purpose,department,destination,driver_id,vehicle_id').eq('id',id).single()
+  const { data: trip } = await SB.from('trips').select('purpose,department,destination,stops,driver_id,vehicle_id').eq('id',id).single()
   const { error } = await SB.from('trips').update({ status:'rejected', rejected_by:currentProfile?.id, rejected_at:new Date().toISOString(), rejection_reason:reason }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Reject Ticket'; return }
   await addAudit(id, ticketNo, 'Ticket Rejected', reason)
@@ -1912,7 +1946,7 @@ async function doAssign(id, ticketNo) {
   await SB.from('vehicles').update({ status:'on-trip' }).eq('id',vv)
   await addAudit(id, ticketNo, 'Driver Assigned', `Driver: ${driverName}`)
   // Get trip + driver details for notifications
-  const { data: tripData }  = await SB.from('trips').select('purpose,destination,departure_at,department,vehicle_plate,requester_id').eq('id',id).single()
+  const { data: tripData }  = await SB.from('trips').select('purpose,destination,stops,departure_at,department,vehicle_plate,requester_id').eq('id',id).single()
   const { data: driverRow } = await SB.from('drivers').select('phone,user_id').eq('id',driverId).single()
   const vehiclePlate = _vehicles.find(v => v.id === vv)?.plate || ''
   // Get driver's email via their linked user account (user_id on drivers table)
@@ -1934,11 +1968,37 @@ async function doAssign(id, ticketNo) {
 
 // GATE OUT
 function openGateOutModal(id, ticketNo, purpose, driverName, plate, dest) {
+  // Fetch stops for this trip to show full route
+  SB.from('trips').select('stops,destination').eq('id',id).single().then(({data}) => {
+    const stops = (data?.stops && Array.isArray(data.stops) && data.stops.length > 0)
+      ? data.stops : [data?.destination || dest].filter(Boolean)
+    const routeHTML = stops.length > 1
+      ? `<div style="margin-top:8px">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Route</div>
+          ${stops.map((s,i) =>
+            `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;${i<stops.length-1?'border-bottom:1px solid var(--border)':''}">
+              <span style="width:18px;height:18px;background:${i===0?'var(--green)':i===stops.length-1?'var(--red)':'var(--pri)'};color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex-shrink:0">${i+1}</span>
+              <span style="font-size:12px;font-weight:600">${s}</span>
+            </div>`
+          ).join('')}
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 0;margin-top:2px">
+            <span style="width:18px;height:18px;background:var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0">🏥</span>
+            <span style="font-size:11.5px;color:var(--text3)">Return to Hospital</span>
+          </div>
+        </div>`
+      : `<div style="font-size:11.5px;color:var(--text2);margin-top:4px">Destination: <strong>${stops[0]||dest}</strong></div>`
+    const modalBody = document.querySelector('#MO .mo-body')
+    if (modalBody) {
+      const routeEl = modalBody.querySelector('#goRouteSection')
+      if (routeEl) routeEl.innerHTML = routeHTML
+    }
+  }).catch(() => {})
+
   openMO(`Gate Out — ${ticketNo}`,
     `<div style="background:var(--bg);padding:12px;border-radius:9px;margin-bottom:13px">
-       <div style="font-size:12px;font-weight:700;margin-bottom:6px">${purpose}</div>
+       <div style="font-size:12px;font-weight:700;margin-bottom:5px">${purpose}</div>
        <div style="font-size:11.5px;color:var(--text2)">Driver: <strong>${driverName}</strong> · Vehicle: <strong>${plate}</strong></div>
-       <div style="font-size:11.5px;color:var(--text2)">Destination: <strong>${dest}</strong></div>
+       <div id="goRouteSection"><div style="font-size:11.5px;color:var(--text2);margin-top:4px">Destination: <strong>${dest}</strong></div></div>
      </div>
      <div class="fr">
        <div class="fg"><label class="fl">Odometer Out (km) *</label><input class="fi" type="number" id="odoOut" placeholder="e.g. 42500"></div>
@@ -1958,7 +2018,7 @@ async function doGateOut(id, ticketNo) {
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Record Gate Out'; return }
   await addAudit(id, ticketNo, 'Gate Out', `Odometer: ${odo} km`)
   // SMS → notify driver that vehicle has been cleared for departure
-  const { data: gateTrip } = await SB.from('trips').select('driver_id,driver_name,destination,purpose').eq('id',id).single()
+  const { data: gateTrip } = await SB.from('trips').select('driver_id,driver_name,destination,stops,purpose').eq('id',id).single()
   if (gateTrip?.driver_id) {
     const { data: drv } = await SB.from('drivers').select('phone,user_id').eq('id', gateTrip.driver_id).single()
     if (drv?.phone) await sendSMS([drv.phone], `[TDMH VTS] Gate Out cleared for ${ticketNo}.\nYou are now cleared to depart.\nDestination: ${gateTrip.destination||''}\nSafe travels!`)
@@ -2115,8 +2175,8 @@ async function renderFleet() {
     SB.from('vehicles').select('*').order('plate'),
     SB.from('drivers').select('*').order('full_name'),
     SB.from('trips').select('*').eq('requester_id', currentProfile?.id).not('status','in','("cancelled","rejected")').order('departure_at',{ascending:false}).limit(20),
-    SB.from('trips').select('id,ticket_no,department,purpose,destination,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
-    SB.from('trips').select('id,ticket_no,department,purpose,destination,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking').eq('is_advance_booking',true).in('status',['assigned','approved']).gt('departure_at', new Date().toISOString()).order('departure_at',{ascending:true}).limit(20)
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking').eq('is_advance_booking',true).in('status',['assigned','approved']).gt('departure_at', new Date().toISOString()).order('departure_at',{ascending:true}).limit(20)
   ])
 
   const V = vehicles || [], D = drivers || []
@@ -2367,7 +2427,7 @@ async function renderNewTicket() {
         <input type="hidden" id="ntType" value="regular">
       </div>
       <div id="ntAmbNote" class="info info-red" style="display:none;margin-top:8px">Routes to <strong>Ambulance Approver</strong> only. Priority and return date not applicable.</div>
-      <div id="ntMotoNote" class="info info-blue" style="display:none;margin-top:8px">For solo errands and quick deliveries only. <strong>Solo rider</strong> — max 1 passenger.</div>
+      <div id="ntMotoNote" class="info info-blue" style="display:none;margin-top:8px">Best for quick errands and deliveries. Maximum of <strong>1 passenger</strong> (driver + 1) as required by traffic law.</div>
 
       <div id="ntPriWrap" class="fg"><label class="fl">Urgency</label>
         <select class="fs" id="ntPri">
@@ -2380,7 +2440,21 @@ async function renderNewTicket() {
       </div>
 
       <div class="fg"><label class="fl">Purpose / Reason *</label><textarea class="ft" id="ntPurpose" placeholder="Describe the purpose of the trip..."></textarea></div>
-      <div class="fg"><label class="fl">Destination *</label><input class="fi" id="ntDest" placeholder="Full destination address"></div>
+      <div class="fg">
+        <label class="fl">Destination / Route *</label>
+        <div id="ntStopsContainer">
+          <div class="ntStop" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0">
+              <span style="width:10px;height:10px;background:var(--green);border-radius:50%;display:block"></span>
+              <span style="width:2px;height:16px;background:var(--border);display:block"></span>
+              <span style="width:10px;height:10px;background:var(--red);border-radius:50%;display:block;opacity:.3"></span>
+            </div>
+            <input class="fi ntStopInput" placeholder="First destination (required)" style="flex:1">
+          </div>
+        </div>
+        <button type="button" onclick="addStop()" style="margin-top:4px;padding:6px 14px;border:1px dashed var(--pri);border-radius:8px;background:transparent;color:var(--pri);font-size:11.5px;cursor:pointer;font-weight:600;width:100%">+ Add another stop</button>
+        <div style="font-size:10.5px;color:var(--text3);margin-top:5px">The vehicle returns to the hospital after the last stop.</div>
+      </div>
 
       <!-- Passenger Manifest (optional, collapsible) -->
       <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px">
@@ -2442,6 +2516,43 @@ function onDateChange() {
   if (banner) banner.style.display = isAdvance ? 'block' : 'none'
 }
 
+function addStop() {
+  const container = document.getElementById('ntStopsContainer')
+  if (!container) return
+  const count = container.querySelectorAll('.ntStop').length
+  if (count >= 8) { alert('Maximum of 8 stops per trip.'); return }
+  const div = document.createElement('div')
+  div.className = 'ntStop'
+  div.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:7px'
+  div.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0">
+      <span style="width:2px;height:10px;background:var(--border);display:block"></span>
+      <span style="width:10px;height:10px;background:var(--pri);border-radius:50%;display:block;opacity:.5"></span>
+      <span style="width:2px;height:10px;background:var(--border);display:block"></span>
+    </div>
+    <input class="fi ntStopInput" placeholder="Next stop" style="flex:1">
+    <button type="button" onclick="this.closest('.ntStop').remove();updateStopMarkers()" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0">✕</button>`
+  container.appendChild(div)
+  updateStopMarkers()
+  div.querySelector('input').focus()
+}
+
+function updateStopMarkers() {
+  const stops = document.querySelectorAll('#ntStopsContainer .ntStop')
+  stops.forEach((s, i) => {
+    const dot = s.querySelectorAll('span')[1]
+    if (!dot) return
+    if (i === 0) { dot.style.background = 'var(--green)'; dot.style.opacity = '1' }
+    else if (i === stops.length - 1) { dot.style.background = 'var(--red)'; dot.style.opacity = '.6' }
+    else { dot.style.background = 'var(--pri)'; dot.style.opacity = '.5' }
+  })
+}
+
+function getStops() {
+  return [...document.querySelectorAll('#ntStopsContainer .ntStopInput')]
+    .map(i => i.value.trim()).filter(Boolean)
+}
+
 function togglePassengerManifest() {
   const wrap = document.getElementById('ntPassengersWrap')
   const arrow = document.getElementById('ntPaxManifestArrow')
@@ -2449,7 +2560,6 @@ function togglePassengerManifest() {
   const isOpen = wrap.style.display !== 'none'
   wrap.style.display = isOpen ? 'none' : 'block'
   if (arrow) { arrow.style.transform = isOpen ? '' : 'rotate(90deg)' }
-  // Auto-add first row when opening
   if (!isOpen && document.getElementById('ntPassengers').children.length === 0) addPassengerRow()
 }
 
@@ -2507,7 +2617,10 @@ async function applyTemplate(id) {
   _appliedTemplateAutoApprove = t.auto_approve || false
   if (t.vehicle_type) selectVtype(t.vehicle_type)
   if (t.purpose) document.getElementById('ntPurpose').value = t.purpose
-  if (t.destination) document.getElementById('ntDest').value = t.destination
+  if (t.destination) {
+    const firstStop = document.querySelector('#ntStopsContainer .ntStopInput')
+    if (firstStop) firstStop.value = t.destination
+  }
   if (t.passengers) document.getElementById('ntPax').value = t.passengers
   if (t.priority) document.getElementById('ntPri').value = t.priority
   if (t.remarks) document.getElementById('ntNotes').value = t.remarks
@@ -2669,10 +2782,23 @@ function selectVtype(t) {
   if (retWrap) { retWrap.style.display = isAmb ? 'none' : ''; if (isAmb) document.getElementById('ntReturn').value = '' }
   if (priWrap) { priWrap.style.display = isAmb ? 'none' : '' }
   if (isAmb) document.getElementById('ntPri').value = 'emergency'
-  const paxEl = document.getElementById('ntPax')
+  const paxEl   = document.getElementById('ntPax')
+  const paxWrap = document.getElementById('ntPaxWrap')
   if (paxEl) {
-    if (isMoto) { paxEl.value = 1; paxEl.max = 1; paxEl.disabled = true }
-    else        { paxEl.max = 50; paxEl.disabled = false }
+    if (isMoto) {
+      paxEl.min = 0; paxEl.max = 1; paxEl.value = 0
+      paxEl.disabled = false
+      if (paxWrap) {
+        const lbl = paxWrap.querySelector('label')
+        if (lbl) lbl.textContent = 'Passenger (0 = rider only, 1 = with passenger)'
+      }
+    } else {
+      paxEl.min = 1; paxEl.max = 50; paxEl.disabled = false
+      if (paxWrap) {
+        const lbl = paxWrap.querySelector('label')
+        if (lbl) lbl.textContent = 'No. of Passengers'
+      }
+    }
   }
 }
 
@@ -2680,7 +2806,8 @@ async function submitNewTicket() {
   const dept    = document.getElementById('ntDept')?.value
   const req     = document.getElementById('ntReq')?.value?.trim()
   const purpose = document.getElementById('ntPurpose')?.value?.trim()
-  const dest    = document.getElementById('ntDest')?.value?.trim()
+  const stops   = getStops()
+  const dest    = stops[0] || ''  // primary destination = first stop
   const date    = document.getElementById('ntDate')?.value
   const time    = document.getElementById('ntTime')?.value
   const vtype   = document.getElementById('ntType')?.value||'regular'
@@ -2691,8 +2818,9 @@ async function submitNewTicket() {
   })()
   const isMultiple = document.getElementById('ntMultiple')?.checked || false
 
+  // Validate required fields
   const fields = [
-    ['ntReq', req], ['ntPurpose', purpose], ['ntDest', dest],
+    ['ntReq', req], ['ntPurpose', purpose],
     ['ntDate', date], ['ntTime', time]
   ]
   let hasError = false
@@ -2701,6 +2829,12 @@ async function submitNewTicket() {
     if (!val) { if(el) el.style.borderColor='var(--red)'; hasError=true }
     else { if(el) el.style.borderColor='' }
   })
+  // Validate at least one stop
+  if (stops.length === 0) {
+    const firstInput = document.querySelector('#ntStopsContainer .ntStopInput')
+    if (firstInput) { firstInput.style.borderColor='var(--red)'; firstInput.focus() }
+    hasError = true
+  }
   if (!dept) {
     const deptEl = document.getElementById('ntDept')
     if (deptEl && deptEl.tagName === 'SELECT') { deptEl.style.borderColor='var(--red)'; hasError=true }
@@ -2754,7 +2888,7 @@ async function submitNewTicket() {
       requester_name: req,
       department: dept,
       vehicle_type_needed: vtype,
-      purpose, destination: dest,
+      purpose, destination: dest, stops: stops,
       departure_at: departureISO,
       expected_return_at: retDate ? new Date(`${retDate}T23:59`).toISOString() : null,
       passengers: pax,
@@ -2786,7 +2920,7 @@ async function submitNewTicket() {
           requester_id: currentProfile?.id||null,
           requester_name: req, department: dept,
           vehicle_type_needed: slotType,
-          purpose: slotPurp, destination: slotDest,
+          purpose: slotPurp, destination: slotDest, stops: [slotDest],
           departure_at: departureISO,
           expected_return_at: retDate ? new Date(`${retDate}T23:59`).toISOString() : null,
           passengers: slotPax,
@@ -2808,7 +2942,7 @@ async function submitNewTicket() {
     if (saveTemplate && templateName) {
       await SB.from('trip_templates').insert({
         name: templateName, department: dept,
-        vehicle_type: vtype, purpose, destination: dest,
+        vehicle_type: vtype, purpose, destination: dest, stops: stops,
         passengers: pax, priority: document.getElementById('ntPri')?.value||'normal',
         remarks: document.getElementById('ntNotes')?.value||'',
         created_by: currentProfile?.id
@@ -3372,7 +3506,7 @@ async function deleteDept(id, name) {
 // GPS
 // ════════════════════════════════════════════════
 async function renderGPS() {
-  const { data } = await SB.from('trips').select('ticket_no,status,destination,driver_name,vehicle:vehicles(plate)').in('status',['assigned','on-trip'])
+  const { data } = await SB.from('trips').select('ticket_no,status,destination,stops,driver_name,vehicle:vehicles(plate)').in('status',['assigned','on-trip'])
   const active = data||[]
   document.getElementById('CONTENT').innerHTML = `
   <div class="info info-blue" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -3980,7 +4114,7 @@ async function toggleUser(id, status) {
 // DRIVER APP
 // ════════════════════════════════════════════════
 async function renderDriverApp() {
-  const { data } = await SB.from('trips').select('ticket_no,status,purpose,destination,departure_at').in('status',['assigned','on-trip']).limit(3)
+  const { data } = await SB.from('trips').select('ticket_no,status,purpose,destination,stops,departure_at').in('status',['assigned','on-trip']).limit(3)
   const assigned = data||[]
   document.getElementById('CONTENT').innerHTML = `
   <div style="display:grid;grid-template-columns:1fr auto;gap:20px;align-items:start">
