@@ -25,8 +25,8 @@
       --ac:#00d4aa;--ac2:#0099ff;--ac3:#7c5cfc;
       --red:#ff4d6a;--orange:#ff9f43;--yellow:#ffd32a;
       --r:12px;--r2:8px;
-      --sh:0 2px 16px rgba(0,0,0,.4);
-      --sl:0 8px 40px rgba(0,0,0,.6);
+      --sh:0 2px 16px rgba(0,0,0,.08);
+      --sl:0 8px 40px rgba(0,0,0,.14);
     }
     body.dark{
       --bg:#0a0f1a;--bg2:#0f1623;--bg3:#141d2e;--bg4:#1a2438;
@@ -460,19 +460,12 @@ function getMaintDisplay(a){
 function getCatIcon(cat){ return CATEGORIES.find(c=>c.id===cat)?.icon||'📦'; }
 function getCatColor(cat){ return CATEGORIES.find(c=>c.id===cat)?.color||'var(--ac)'; }
 
-// ── ID generation: query DB for true max to avoid race conditions ──
+// ── ID generation ────────────────────────────────────────────────────────────
 async function genId(){
-  const prefix = 'HA';
-  const {data} = await sb.from('assets').select('id').order('id', {ascending:false}).limit(1);
-  const last = data?.[0]?.id || 'HA-000';
-  const num = parseInt(last.replace(/[^0-9]/g,''))||0;
-  return `${prefix}-${String(num+1).padStart(3,'0')}`;
-}
-
-async function genTag(){
-  const {data} = await sb.from('assets').select('asset_tag').order('asset_tag', {ascending:false}).limit(1);
-  const last = parseInt(data?.[0]?.asset_tag||'100000')||100000;
-  return String(last+1);
+  const {data} = await sb.from('assets').select('id').order('created_at', {ascending:false}).limit(50);
+  const nums = (data||[]).map(a=>parseInt((a.id||'').replace(/[^0-9]/g,''))||0);
+  const max = nums.length ? Math.max(...nums) : 0;
+  return 'HA-' + String(max+1).padStart(3,'0');
 }
 
 
@@ -742,7 +735,7 @@ async function loadAssets(){
 async function loadPmHistory(assetId=null){
   let q = sb.from('pm_history').select('*').order('date',{ascending:false});
   if(assetId) q = q.eq('asset_id', assetId);
-  else q = q.limit(500); // cap for in-memory use
+  else q = q.limit(5000); // increased cap for reports
   const {data,error} = await q;
   if(!error && data){
     if(assetId){
@@ -775,6 +768,7 @@ async function saveAsset(asset, isNew){
 }
 
 async function deleteAsset(id){
+  if(!currentUser || currentUser.role==='viewer'){ toast('Access denied','err'); return false; }
   const a = assets.find(x=>x.id===id);
   const {error} = await sb.from('assets').delete().eq('id',id);
   if(error){ toast('Failed to delete: '+error.message,'err'); return false; }
@@ -785,6 +779,7 @@ async function deleteAsset(id){
 }
 
 async function savePm(entry){
+  if(!currentUser || currentUser.role==='viewer'){ toast('Access denied','err'); return false; }
   const {data,error} = await sb.from('pm_history').insert(entry).select().single();
   if(error){ toast('Failed to log PM: '+error.message,'err'); return false; }
   pmHistory.unshift(data);
@@ -809,16 +804,16 @@ async function deletePm(id){
 }
 
 // ─── AUTO STATUS SYNC ─────────────────────────────────────────────────────────
+let _autoStatusDone = false;
 async function autoUpdateStatuses(){
-  for(const a of assets){
-    if(a.status==='Active'){
-      const days = getDaysUntil(a.next_maintenance);
-      if(days !== null && days < 0){
-        await sb.from('assets').update({status:'Maintenance'}).eq('id',a.id);
-        a.status = 'Maintenance';
-      }
-    }
-  }
+  if(_autoStatusDone) return;
+  _autoStatusDone = true;
+  const today = new Date().toISOString().split('T')[0];
+  await sb.from('assets')
+    .update({status:'Maintenance'})
+    .eq('status','Active')
+    .lt('next_maintenance', today)
+    .not('next_maintenance','is',null);
 }
 
 // ─── EXPORT CSV ──────────────────────────────────────────────────────────────
@@ -861,7 +856,6 @@ async function exportCSV(){
 
 // ─── RENDER ───────────────────────────────────────────────────────────────────
 function render(){
-  autoUpdateStatuses();
   const app = document.getElementById('app');
   if(!currentUser){ renderLogin(app); return; }
   app.innerHTML = `
@@ -1449,6 +1443,7 @@ function renderModal(mode, asset){
 }
 
 async function doSaveAsset(isEdit, existingId){
+  if(!currentUser || currentUser.role==='viewer'){ toast('Access denied — Viewer role cannot modify assets','err'); return; }
   const name = document.getElementById('m-name')?.value?.trim();
   if(!name){ toast('Asset name is required','err'); return; }
 
@@ -1481,7 +1476,9 @@ async function doSaveAsset(isEdit, existingId){
 
 async function confirmDelete(id){
   const a = assets.find(x=>x.id===id);
-  if(!confirm(`Delete "${a?.name}"? This cannot be undone.`)) return;
+  const pmCount = pmHistory.filter(p=>p.asset_id===id).length;
+  const pmWarn = pmCount > 0 ? '\n\nThis will also permanently delete ' + pmCount + ' PM record' + (pmCount>1?'s':'') + '.' : '';
+  if(!confirm('Delete "' + a?.name + '"? This cannot be undone.' + pmWarn)) return;
   if(await deleteAsset(id)){
     toast('Asset deleted');
     if(selectedAsset===id) selectedAsset=null;
@@ -1640,6 +1637,7 @@ async function doLogin(){
   localStorage.setItem('session_user', JSON.stringify(data));
   loading=false;
   render(); // show app immediately after auth
+  autoUpdateStatuses(); // run status sync once on login
 
   // load all data in parallel in the background
   const isAdmin = currentUser.role==='admin';
@@ -1657,6 +1655,8 @@ function showErr(msg){ const e=document.getElementById('login-err'); if(e){e.tex
 function doLogout(){
   localStorage.removeItem('session_user');
   currentUser=null; assets=[]; pmHistory=[]; users=[]; activityLogs=[]; loading=true; selectedAsset=null; searchQuery=''; filterStatus='All'; filterCat='All'; currentPage=0; totalCount=0; statsCache={total:0,active:0,maint:0,inactive:0,totalCost:0,dueSoon:[]};
+  _autoStatusDone = false;
+  if(searchTimer){ clearTimeout(searchTimer); searchTimer=null; }
   render();
 }
 
@@ -1739,6 +1739,22 @@ async function init(){
 
   render(); // no saved session — show login
 }
+
+setInterval(async () => {
+  if(!currentUser) return;
+  try {
+    const {data} = await sb.from('users').select('*').eq('id', currentUser.id).maybeSingle();
+    if(!data){
+      toast('Session expired. Please log in again.', 'err');
+      setTimeout(doLogout, 2000);
+      return;
+    }
+    currentUser = data;
+    localStorage.setItem('session_user', JSON.stringify(data));
+  } catch(e) {
+    console.warn('[session verify]', e.message);
+  }
+}, 30 * 60 * 1000);
 
 // ─── SERVICE WORKER ──────────────────────────────────────────────────────────
 if('serviceWorker' in navigator){
