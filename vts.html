@@ -9,6 +9,8 @@
 <meta name="apple-mobile-web-app-title" content="TDMH VTS">
 <meta name="theme-color" content="#0c2340">
 <title>TDMH VTS — Vehicle Ticketing System</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c2340'/%3E%3Crect x='4' y='18' width='24' height='3' rx='1.5' fill='%230c6fdb' opacity='.5'/%3E%3Crect x='8' y='20' width='4' height='1' rx='.5' fill='%23ffffff' opacity='.7'/%3E%3Crect x='14' y='20' width='4' height='1' rx='.5' fill='%23ffffff' opacity='.7'/%3E%3Crect x='20' y='20' width='4' height='1' rx='.5' fill='%23ffffff' opacity='.7'/%3E%3Cpath d='M6 18 L8 13 L24 13 L26 18 Z' fill='%230c6fdb'/%3E%3Crect x='7' y='15' width='18' height='3' rx='1' fill='%231e88e5'/%3E%3Ccircle cx='10' cy='19.5' r='2.5' fill='%23334155'/%3E%3Ccircle cx='10' cy='19.5' r='1.2' fill='%2394a3b8'/%3E%3Ccircle cx='22' cy='19.5' r='2.5' fill='%23334155'/%3E%3Ccircle cx='22' cy='19.5' r='1.2' fill='%2394a3b8'/%3E%3Ctext x='16' y='12' text-anchor='middle' font-family='Arial,sans-serif' font-weight='900' font-size='5.5' fill='%23ffffff' letter-spacing='.5'%3EVTS%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230c2340'/%3E%3Cpath d='M30 110 L50 65 L130 65 L150 110 Z' fill='%230c6fdb'/%3E%3Crect x='35' y='85' width='110' height='25' rx='6' fill='%231e88e5'/%3E%3Crect x='25' y='108' width='130' height='18' rx='9' fill='%230c6fdb' opacity='.4'/%3E%3Ccircle cx='58' cy='118' r='16' fill='%23334155'/%3E%3Ccircle cx='58' cy='118' r='8' fill='%2394a3b8'/%3E%3Ccircle cx='122' cy='118' r='16' fill='%23334155'/%3E%3Ccircle cx='122' cy='118' r='8' fill='%2394a3b8'/%3E%3Ctext x='90' y='62' text-anchor='middle' font-family='Arial,sans-serif' font-weight='900' font-size='28' fill='%23ffffff' letter-spacing='2'%3EVTS%3C/text%3E%3C/svg%3E">
 <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 // CDN fallback — if unpkg fails, load from jsdelivr
@@ -2599,6 +2601,14 @@ function addVehicleSlot() {
 
 let _passengerCount = 0
 function addPassengerRow() {
+  const container = document.getElementById('ntPassengers')
+  if (!container) return
+  // Motorcycle: max 1 passenger only
+  const isMoto = document.getElementById('ntType')?.value === 'motorcycle'
+  if (isMoto && container.children.length >= 1) {
+    alert('Motorcycle allows maximum 1 passenger only (driver + 1).')
+    return
+  }
   _passengerCount++
   const div = document.createElement('div')
   div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-bottom:6px;align-items:center'
@@ -2606,7 +2616,7 @@ function addPassengerRow() {
     <input class="fi pax-name" placeholder="Full Name" style="font-size:12px;padding:7px 10px">
     <input class="fi pax-id" placeholder="Dept / ID No." style="font-size:12px;padding:7px 10px">
     <button type="button" onclick="this.parentElement.remove()" style="padding:7px 10px;background:var(--red-s);color:var(--red);border:none;border-radius:8px;cursor:pointer;font-size:13px">✕</button>`
-  document.getElementById('ntPassengers').appendChild(div)
+  container.appendChild(div)
 }
 
 let _appliedTemplateAutoApprove = false
@@ -2791,6 +2801,11 @@ function selectVtype(t) {
       if (paxWrap) {
         const lbl = paxWrap.querySelector('label')
         if (lbl) lbl.textContent = 'Passenger (0 = rider only, 1 = with passenger)'
+      }
+      // Trim passenger manifest to max 1 row
+      const paxRows = document.getElementById('ntPassengers')
+      if (paxRows) {
+        while (paxRows.children.length > 1) paxRows.lastElementChild.remove()
       }
     } else {
       paxEl.min = 1; paxEl.max = 50; paxEl.disabled = false
