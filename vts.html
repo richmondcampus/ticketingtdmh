@@ -2346,20 +2346,16 @@ async function renderNewTicket() {
         <div class="fg"><label class="fl">Requester Name *</label><input class="fi" id="ntReq" value="${currentProfile?.full_name||''}" placeholder="Full name"></div>
       </div>
 
-      <!-- Advance Booking Toggle -->
-      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:12.5px;font-weight:700">📅 Advance Booking</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">Book a vehicle for a future date</div>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="ntAdvance" onchange="toggleAdvanceBooking()" style="width:16px;height:16px;accent-color:var(--pri)">
-          <span id="ntAdvanceLabel" style="font-size:12px;font-weight:600;color:var(--text3)">Off</span>
-        </label>
+      <!-- Departure Date auto-detects advance booking -->
+      <div class="fr">
+        <div class="fg"><label class="fl">Departure Date *</label><input class="fi" type="date" id="ntDate" value="${today}" min="${today}" oninput="onDateChange()"></div>
+        <div class="fg"><label class="fl">Departure Time *</label><input class="fi" type="time" id="ntTime" oninput="onDateChange()"></div>
+        <div class="fg" id="ntReturnWrap"><label class="fl">Expected Return Date</label><input class="fi" type="date" id="ntReturn" min="${today}"></div>
+        <div class="fg" id="ntPaxWrap"><label class="fl">No. of Passengers</label><input class="fi" type="number" id="ntPax" value="1" min="1" max="50"></div>
       </div>
-
-      <div id="ntAdvanceBanner" style="display:none" class="info info-blue">
-        📅 <strong>Advance booking</strong> — This request will be queued for the selected future date. Approvers will review it ahead of time.
+      <!-- Auto-detected advance booking indicator -->
+      <div id="ntAdvanceBanner" style="display:none;margin-bottom:12px" class="info info-blue">
+        📅 <strong>Advance Booking detected</strong> — Your trip will be scheduled for the selected date. You'll receive reminders automatically 1 day and 1 hour before departure.
       </div>
 
       <div class="fg"><label class="fl">Vehicle Type *</label>
@@ -2372,49 +2368,53 @@ async function renderNewTicket() {
       </div>
       <div id="ntAmbNote" class="info info-red" style="display:none;margin-top:8px">Routes to <strong>Ambulance Approver</strong> only. Priority and return date not applicable.</div>
       <div id="ntMotoNote" class="info info-blue" style="display:none;margin-top:8px">For solo errands and quick deliveries only. <strong>Solo rider</strong> — max 1 passenger.</div>
-      <div id="ntPriWrap" class="fg"><label class="fl">Priority</label>
+
+      <div id="ntPriWrap" class="fg"><label class="fl">Urgency</label>
         <select class="fs" id="ntPri">
-          <option value="normal">Normal — 4 hours SLA</option>
-          <option value="low">Low — 24 hours SLA</option>
-          <option value="urgent">Urgent — 1 hour SLA</option>
-          <option value="emergency">Emergency — 15 minutes SLA</option>
+          <option value="normal">Normal — regular scheduled trip</option>
+          <option value="low">Low — flexible, can wait</option>
+          <option value="urgent">Urgent — needed within the hour</option>
+          <option value="emergency">Emergency — critical, immediate</option>
         </select>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px">SLA: approval target time from submission</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">This affects how quickly an approver needs to act on your request.</div>
       </div>
+
       <div class="fg"><label class="fl">Purpose / Reason *</label><textarea class="ft" id="ntPurpose" placeholder="Describe the purpose of the trip..."></textarea></div>
       <div class="fg"><label class="fl">Destination *</label><input class="fi" id="ntDest" placeholder="Full destination address"></div>
-      <div class="fr">
-        <div class="fg"><label class="fl">Departure Date *</label><input class="fi" type="date" id="ntDate" value="${today}" min="${today}"></div>
-        <div class="fg"><label class="fl">Departure Time *</label><input class="fi" type="time" id="ntTime"></div>
-        <div class="fg" id="ntReturnWrap"><label class="fl">Expected Return Date</label><input class="fi" type="date" id="ntReturn" min="${today}"></div>
-        <div class="fg" id="ntPaxWrap"><label class="fl">Passengers</label><input class="fi" type="number" id="ntPax" value="1" min="1" max="50"></div>
-      </div>
 
-      <!-- Passenger Manifest (optional) -->
-      <div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div style="font-size:12px;font-weight:700">👥 Passenger Manifest <span style="font-weight:400;color:var(--text3);font-size:11px">(optional)</span></div>
-          <button type="button" onclick="addPassengerRow()" style="padding:4px 10px;border:1px solid var(--pri);border-radius:20px;background:transparent;color:var(--pri);font-size:11px;cursor:pointer;font-weight:600">+ Add</button>
+      <!-- Passenger Manifest (optional, collapsible) -->
+      <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;cursor:pointer;background:var(--bg)" onclick="togglePassengerManifest()">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:13px">👥</span>
+            <div>
+              <div style="font-size:12px;font-weight:700">Name the passengers <span style="font-weight:400;color:var(--text3)">(optional)</span></div>
+              <div style="font-size:11px;color:var(--text3)">Tap to add passenger names for your records</div>
+            </div>
+          </div>
+          <span id="ntPaxManifestArrow" style="font-size:16px;color:var(--text3);transition:transform .2s">›</span>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Record names and IDs of passengers for safety and accountability.</div>
-        <div id="ntPassengers"></div>
+        <div id="ntPassengersWrap" style="display:none;padding:0 14px 12px">
+          <div id="ntPassengers" style="margin-top:8px"></div>
+          <button type="button" onclick="addPassengerRow()" style="margin-top:6px;padding:6px 14px;border:1px solid var(--pri);border-radius:8px;background:transparent;color:var(--pri);font-size:11.5px;cursor:pointer;font-weight:600">+ Add Passenger</button>
+        </div>
       </div>
 
-      <!-- Multiple vehicle slots (shown only in bulk mode) -->
+      <!-- Multiple vehicle slots -->
       <div id="ntMultiSlots" style="display:none;border:2px dashed var(--pri-s);border-radius:12px;padding:14px;margin-bottom:14px;background:var(--pri-s)">
         <div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:10px">🚗 Additional Vehicles in this Booking Group</div>
         <div id="ntExtraSlots"></div>
         <button type="button" onclick="addVehicleSlot()" style="margin-top:8px;padding:7px 14px;border:1px dashed var(--pri);border-radius:8px;background:transparent;color:var(--pri);font-size:11.5px;cursor:pointer;font-weight:600;width:100%">+ Add Another Vehicle</button>
       </div>
 
-      <div class="fg"><label class="fl">Additional Notes</label><textarea class="ft" id="ntNotes" placeholder="Special requirements, items to carry, etc."></textarea></div>
+      <div class="fg"><label class="fl">Additional Notes</label><textarea class="ft" id="ntNotes" placeholder="Special instructions, items to carry, pick-up point, etc."></textarea></div>
 
       <!-- Save as template -->
       <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:10px;margin-bottom:14px">
         <input type="checkbox" id="ntSaveTemplate" onchange="document.getElementById('ntTemplateName').style.display=this.checked?'':'none'" style="width:15px;height:15px;accent-color:var(--pri)">
         <label for="ntSaveTemplate" style="font-size:12px;cursor:pointer;flex:1">
           <span style="font-weight:600">Save as Template</span>
-          <span style="color:var(--text3)"> — Reuse this trip for future bookings</span>
+          <span style="color:var(--text3)"> — Reuse this trip setup for future requests</span>
         </label>
         <input class="fi" id="ntTemplateName" placeholder="Template name..." style="width:180px;font-size:12px;padding:6px 10px;display:none">
       </div>
@@ -2431,14 +2431,26 @@ async function renderNewTicket() {
   document.getElementById('ntDate').min = today
 }
 
-function toggleAdvanceBooking() {
-  const checked = document.getElementById('ntAdvance')?.checked
-  document.getElementById('ntAdvanceBanner').style.display = checked ? 'block' : 'none'
-  document.getElementById('ntAdvanceLabel').textContent = checked ? 'On' : 'Off'
-  document.getElementById('ntAdvanceLabel').style.color = checked ? 'var(--pri)' : 'var(--text3)'
-  // If advance booking, remove the "past date" restriction
-  const dateEl = document.getElementById('ntDate')
-  if (dateEl) dateEl.min = checked ? '' : new Date().toISOString().slice(0,10)
+function onDateChange() {
+  const dateVal = document.getElementById('ntDate')?.value
+  const timeVal = document.getElementById('ntTime')?.value
+  if (!dateVal) return
+  const today = new Date().toISOString().slice(0,10)
+  const todayPlus1 = new Date(Date.now() + 86400000).toISOString().slice(0,10)
+  const isAdvance = dateVal > todayPlus1
+  const banner = document.getElementById('ntAdvanceBanner')
+  if (banner) banner.style.display = isAdvance ? 'block' : 'none'
+}
+
+function togglePassengerManifest() {
+  const wrap = document.getElementById('ntPassengersWrap')
+  const arrow = document.getElementById('ntPaxManifestArrow')
+  if (!wrap) return
+  const isOpen = wrap.style.display !== 'none'
+  wrap.style.display = isOpen ? 'none' : 'block'
+  if (arrow) { arrow.style.transform = isOpen ? '' : 'rotate(90deg)' }
+  // Auto-add first row when opening
+  if (!isOpen && document.getElementById('ntPassengers').children.length === 0) addPassengerRow()
 }
 
 function toggleMultipleMode() {
@@ -2672,7 +2684,11 @@ async function submitNewTicket() {
   const date    = document.getElementById('ntDate')?.value
   const time    = document.getElementById('ntTime')?.value
   const vtype   = document.getElementById('ntType')?.value||'regular'
-  const isAdvance = document.getElementById('ntAdvance')?.checked || false
+  const isAdvance = (() => {
+    const dateVal = document.getElementById('ntDate')?.value || ''
+    const todayPlus1 = new Date(Date.now() + 86400000).toISOString().slice(0,10)
+    return dateVal > todayPlus1
+  })()
   const isMultiple = document.getElementById('ntMultiple')?.checked || false
 
   const fields = [
@@ -2702,7 +2718,7 @@ async function submitNewTicket() {
   if (!isAdvance && new Date(departureISO) < new Date()) {
     const el = document.getElementById('ntDate')
     if(el) el.style.borderColor='var(--red)'
-    if(errEl) { errEl.style.display='block'; errEl.textContent='Departure date and time cannot be in the past. Enable "Advance Booking" for future dates.' }
+    if(errEl) { errEl.style.display='block'; errEl.textContent='Departure date and time cannot be in the past. Please select a valid date and time.' }
     return
   }
   const retDate = document.getElementById('ntReturn')?.value
