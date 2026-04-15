@@ -108,6 +108,34 @@ function calcFee(iso,vt){
   }
   return{fee,dur:`${Math.floor(tm/60)}h ${tm%60}m`,overnight:isO};
 }
+function calcFeeManual(checkinISO, vtype){
+  const v=VT[vtype];if(!v)return{fee:0,dur:"0h 0m",overnight:false};
+  const cin=new Date(checkinISO);const cout=new Date();
+  const ms=cout-cin;if(ms<=0)return{fee:0,dur:"0h 0m",overnight:false};
+  const hrs=ms/3600000;
+  const tm=Math.floor(ms/60000);
+  let overnightCount=0;
+  let winStart=new Date(cin);winStart.setHours(22,0,0,0);
+  if(cin.getHours()<7)winStart.setDate(winStart.getDate()-1);
+  while(winStart<cout){
+    const winEnd=new Date(winStart);winEnd.setDate(winEnd.getDate()+1);winEnd.setHours(7,0,0,0);
+    const oStart=Math.max(cin.getTime(),winStart.getTime());
+    const oEnd=Math.min(cout.getTime(),winEnd.getTime());
+    if((oEnd-oStart)/3600000>=8)overnightCount++;
+    winStart=new Date(winEnd);winStart.setHours(22,0,0,0);
+  }
+  const isO=overnightCount>0;
+  let fee;
+  if(isO){
+    const ovrHrs=overnightCount*9;
+    const regHrs=Math.max(0,hrs-ovrHrs);
+    const regFee=regHrs<=v.fh?v.fr:v.fr+Math.ceil(regHrs-v.fh)*v.sr;
+    fee=(overnightCount*v.ovr)+(regHrs>0?regFee:0);
+  }else{
+    fee=hrs<=v.fh?v.fr:v.fr+Math.ceil(hrs-v.fh)*v.sr;
+  }
+  return{fee,dur:`${Math.floor(tm/60)}h ${tm%60}m`,overnight:isO};
+}
 const fmtT   =iso=>new Date(iso).toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit"});
 const fmtDT  =iso=>new Date(iso).toLocaleString("en-PH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 const fmtFull=iso=>new Date(iso).toLocaleString("en-PH",{weekday:"short",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
@@ -919,6 +947,9 @@ function TDMHParking(){
   const [receipt,setReceipt] = useState(null);
   const [lastPrintPayload,setLastPrintPayload] = useState(null);
   const [processing,setProcessing] = useState(false);
+  const [manualModal,setManualModal] = useState(false);
+  const [manualForm,setManualForm] = useState({plate:"",name:"",vtype:"car",locId:"compound",slotNum:"",checkin:""});
+  const [manualFee,setManualFee] = useState(null);
   const [lf,setLf]           = useState({username:"",password:"",err:"",loading:false});
   const [dbReady,setDbReady] = useState(false);
   const [rtConnected,setRtConnected] = useState(false);
@@ -1319,6 +1350,7 @@ function TDMHParking(){
       <div className="tabs">
         <button className={`tab ${tab==="overview"?"active":""}`} onClick={()=>setTab("overview")}>🗺️ Overview</button>
         {perms.search&&<button className={`tab ${tab==="search"?"active":""}`} onClick={()=>setTab("search")}>🔍 Search</button>}
+        {perms.co&&<button className={`tab ${tab==="manual"?"active":""}`} onClick={()=>setTab("manual")} style={{background:tab==="manual"?"#d97706":undefined,borderColor:tab==="manual"?"#d97706":undefined}}>🧾 Manual Receipt</button>}
         {perms.earn&&<button className={`tab ${tab==="earnings"?"active":""}`} onClick={()=>setTab("earnings")}>💰 Earnings</button>}
         {perms.rep&&<button className={`tab ${tab==="reports"?"active":""}`} onClick={()=>setTab("reports")}>📊 Reports</button>}
         {perms.act&&<button className={`tab ${tab==="activity"?"active":""}`} onClick={()=>setTab("activity")}>📋 Activity{actLog.length>0&&<span className="tbdg">{actLog.length}</span>}</button>}
@@ -1403,6 +1435,68 @@ function TDMHParking(){
       )}
 
       {/* EARNINGS */}
+      {tab==="manual"&&perms.co&&(()=>{
+        const locName=LOCS.find(l=>l.id===manualForm.locId)?.name||"";
+        const computed=manualForm.checkin&&manualForm.plate?calcFeeManual(manualForm.checkin,manualForm.vtype):null;
+        function doManualPrint(){
+          if(!manualForm.plate.trim()||!manualForm.checkin){return;}
+          const{fee,dur,overnight}=computed||{fee:0,dur:"—",overnight:false};
+          const tix="MAN-"+Date.now().toString().slice(-6);
+          printThermal({isCheckIn:false,ticketNo:tix,plate:manualForm.plate.toUpperCase().trim(),name:manualForm.name||"—",vtype:manualForm.vtype,locName,slotNum:manualForm.slotNum||"?",checkin:manualForm.checkin,fee,dur,overnight,cashierName:user.name});
+          toast("🧾 Manual receipt printed — "+tix,"ok");
+          addLog("MANUAL RECEIPT: "+(manualForm.plate.toUpperCase())+" · "+P(fee)+" · by "+user.name,"#d97706");
+        }
+        return(
+          <div className="pnl">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:700}}>🧾 Manual Receipt Generator</div>
+                <div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>Para sa mga kaso na hindi na makita sa system — i-enter ang detalye at i-print ang resibo.</div>
+              </div>
+            </div>
+            <div style={{background:"#fff8e1",border:"1px solid #fcd34d",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#92400e",fontWeight:600}}>
+              ⚠️ Ang manual receipt ay hindi nire-record sa database — para lang sa pag-print ng resibo sa mga exceptional cases.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              <div className="fg">
+                <label className="fl">Plate Number *</label>
+                <input className="fi" placeholder="e.g. ABC 1234" value={manualForm.plate} onChange={e=>setManualForm(p=>({...p,plate:e.target.value.toUpperCase()}))} autoFocus/>
+              </div>
+              <div className="fg">
+                <label className="fl">Driver / Owner Name</label>
+                <input className="fi" placeholder="Optional" value={manualForm.name} onChange={e=>setManualForm(p=>({...p,name:e.target.value}))}/>
+              </div>
+              <div className="fg">
+                <label className="fl">Vehicle Type *</label>
+                <div className="rrow">{Object.entries(VT).map(([k,v])=><div key={k} className={`rbt ${manualForm.vtype===k?"active":""}`} onClick={()=>setManualForm(p=>({...p,vtype:k}))}>{v.icon} {v.label}</div>)}</div>
+              </div>
+              <div className="fg">
+                <label className="fl">Location</label>
+                <div className="rrow">{LOCS.map(l=><div key={l.id} className={`rbt ${manualForm.locId===l.id?"active":""}`} onClick={()=>setManualForm(p=>({...p,locId:l.id}))} style={{fontSize:10}}>{l.icon} {l.short}</div>)}</div>
+              </div>
+              <div className="fg">
+                <label className="fl">Slot Number</label>
+                <input className="fi" placeholder="e.g. 5" value={manualForm.slotNum} onChange={e=>setManualForm(p=>({...p,slotNum:e.target.value}))}/>
+              </div>
+              <div className="fg">
+                <label className="fl">Date & Time In *</label>
+                <input className="fi" type="datetime-local" value={manualForm.checkin} onChange={e=>setManualForm(p=>({...p,checkin:e.target.value}))}/>
+              </div>
+            </div>
+            {computed&&(
+              <div className="fb" style={{marginBottom:12}}>
+                <div className="fbl">Computed Fee</div>
+                <div className="fbv">{P(computed.fee)}</div>
+                <div className="fbn">Duration: {computed.dur} · {computed.overnight?"🌙 Overnight Rate":"Regular Rate"}</div>
+              </div>
+            )}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button className="btn bg" onClick={()=>{setManualForm({plate:"",name:"",vtype:"car",locId:"compound",slotNum:"",checkin:""});}}>🗑️ Clear</button>
+              <button className="btn bp" style={{background:"#d97706",boxShadow:"0 3px 10px rgba(217,119,6,.3)"}} onClick={doManualPrint} disabled={!manualForm.plate.trim()||!manualForm.checkin}>🖨️ Print Manual Receipt</button>
+            </div>
+          </div>
+        );
+      })()}
       {tab==="earnings"&&(
         <div className="pnl">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:7}}>
