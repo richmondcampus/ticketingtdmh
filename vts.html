@@ -544,8 +544,8 @@ let currentPage = 'dashboard'
 let realtimeChannel = null
 let _departments = [] // cached from DB
 
-const ROLE_LABELS = { admin:'Administrator', approver_admin:'Admin Approver', approver_amb:'Ambulance Approver', guard:'Guard', requester:'Department User', driver:'Driver' }
-const ROLE_COLORS = { admin:'#0c6fdb', approver_admin:'#7c3aed', approver_amb:'#dc2626', guard:'#0d9488', requester:'#d97706', driver:'#16a34a' }
+const ROLE_LABELS = { admin:'Administrator', approver_admin:'Admin Approver', approver_amb:'Ambulance Approver', guard:'Guard', requester:'Department User', driver:'Driver', owner:'Hospital Owner', super_approver:'Super Approver' }
+const ROLE_COLORS = { admin:'#0c6fdb', approver_admin:'#7c3aed', approver_amb:'#dc2626', guard:'#0d9488', requester:'#d97706', driver:'#16a34a', owner:'#0f766e', super_approver:'#0891b2' }
 const STATUS_MAP = {
   'pending-approval':{ cls:'b-pending',  lbl:'Pending' },
   'approved':        { cls:'b-assigned', lbl:'Approved' },
@@ -832,25 +832,25 @@ function closeSidebar() {
 // ════════════════════════════════════════════════
 const NAV = [
   { section: 'Overview' },
-  { id:'dashboard',    label:'Dashboard',      ic:'⊞', roles:['admin','approver_admin','approver_amb','guard','requester','driver'] },
-  { id:'tickets',      label:'All Tickets',    ic:'◈', roles:['admin','approver_admin','approver_amb','guard','requester','driver'], badge: true },
-  { id:'new-ticket',   label:'New Request',    ic:'+', roles:['admin','requester'] },
+  { id:'dashboard',    label:'Dashboard',      ic:'⊞', roles:['admin','super_approver','approver_admin','approver_amb','guard','requester','driver','owner'] },
+  { id:'tickets',      label:'All Tickets',    ic:'◈', roles:['admin','super_approver','approver_admin','approver_amb','guard','requester','driver','owner'], badge: true },
+  { id:'new-ticket',   label:'New Request',    ic:'+', roles:['admin','super_approver','approver_admin','approver_amb','requester'] },
   { id:'fleet',        label:'Fleet Status',   ic:'🚦', roles:['requester'], tag:'New' },
   { section: 'Fleet' },
-  { id:'vehicles',     label:'Vehicles',       ic:'◉', roles:['admin','guard'] },
-  { id:'drivers',      label:'Drivers',        ic:'◎', roles:['admin'] },
-  { id:'maintenance',  label:'Maintenance',    ic:'🔧', roles:['admin'], tag:'New' },
-  { id:'departments',  label:'Departments',    ic:'◫', roles:['admin'] },
+  { id:'vehicles',     label:'Vehicles',       ic:'◉', roles:['admin','super_approver','guard','owner'] },
+  { id:'drivers',      label:'Drivers',        ic:'◎', roles:['admin','super_approver','owner'] },
+  { id:'maintenance',  label:'Maintenance',    ic:'🔧', roles:['admin','super_approver'], tag:'New' },
+  { id:'departments',  label:'Departments',    ic:'◫', roles:['admin','super_approver'] },
   { section: 'Planning' },
-  { id:'templates',    label:'Trip Templates', ic:'📋', roles:['admin','approver_admin'], tag:'New' },
+  { id:'templates',    label:'Trip Templates', ic:'📋', roles:['admin','super_approver','approver_admin'], tag:'New' },
   { section: 'Oversight' },
-  { id:'gps',          label:'GPS Tracking',   ic:'◍', tag:'Beta', roles:['admin','guard'] },
-  { id:'reports',      label:'Reports',        ic:'◪', roles:['admin','approver_admin','approver_amb'] },
-  { id:'audit',        label:'Audit Logs',     ic:'◻', roles:['admin'] },
+  { id:'gps',          label:'GPS Tracking',   ic:'◍', tag:'Beta', roles:['admin','super_approver','guard'] },
+  { id:'reports',      label:'Reports',        ic:'◪', roles:['admin','super_approver','approver_admin','approver_amb','owner'] },
+  { id:'audit',        label:'Audit Logs',     ic:'◻', roles:['admin','super_approver','owner'] },
   { section: 'System' },
   { id:'accounts',     label:'Accounts',       ic:'◷', roles:['admin'] },
   { id:'driver-app',   label:'Driver App',     ic:'◱', roles:['admin'] },
-  { id:'faq',          label:'FAQ',            ic:'◌', roles:['admin','approver_admin','approver_amb','guard','requester','driver'] },
+  { id:'faq',          label:'FAQ',            ic:'◌', roles:['admin','super_approver','approver_admin','approver_amb','guard','requester','driver','owner'] },
 ]
 
 function buildSidebar() {
@@ -862,7 +862,7 @@ function buildSidebar() {
   document.getElementById('sbFullName').textContent = currentProfile?.full_name || 'User'
   document.getElementById('sbRole').textContent = ROLE_LABELS[role] || role
   document.getElementById('sbRole').style.color = col
-  const showNewTicket = ['admin','requester'].includes(role)
+  const showNewTicket = ['admin','requester','approver_admin','approver_amb','super_approver'].includes(role)
   document.getElementById('newTicketBtn').style.display = showNewTicket ? '' : 'none'
   const fab = document.getElementById('fabBtn')
   if (fab) fab.classList.toggle('visible', showNewTicket)
@@ -889,6 +889,8 @@ const BOT_NAV_MAP = {
   guard:        [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets'},{id:'vehicles',ic:'🚗',lbl:'Fleet'},{id:'gps',ic:'📍',lbl:'GPS'},{id:'more',ic:'⋯',lbl:'More'}],
   requester:    [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'My Trips'},{id:'new-ticket',ic:'➕',lbl:'New'},{id:'fleet',ic:'🚦',lbl:'Fleet'},{id:'faq',ic:'❓',lbl:'FAQ'}],
   driver:       [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'My Trips'},{id:'departments',ic:'🏥',lbl:'Depts'},{id:'faq',ic:'❓',lbl:'FAQ'}],
+  super_approver:[{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets',badge:true},{id:'new-ticket',ic:'➕',lbl:'New'},{id:'vehicles',ic:'🚗',lbl:'Fleet'},{id:'more',ic:'⋯',lbl:'More'}],
+  owner:        [{id:'dashboard',ic:'🏠',lbl:'Home'},{id:'tickets',ic:'🎫',lbl:'Tickets'},{id:'reports',ic:'📊',lbl:'Reports'},{id:'audit',ic:'📋',lbl:'Audit'},{id:'more',ic:'⋯',lbl:'More'}],
 }
 
 function buildBottomNav(role) {
@@ -997,7 +999,8 @@ async function renderDashboard() {
   document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>'
   const role = currentProfile?.role
 
-  // Build role-specific trip query
+  // Owner gets their own executive dashboard
+  if (role === 'owner') { await renderOwnerDashboard(); return }
   let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,is_advance_booking').order('created_at',{ascending:false})
   if (role === 'requester')     tripsQ = tripsQ.eq('requester_id', currentProfile.id)
   if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.id)
@@ -1014,8 +1017,9 @@ async function renderDashboard() {
 
   // Filter pending by approver type
   let pending = T.filter(t => t.status==='pending-approval')
-  if (role === 'approver_admin') pending = pending.filter(t => t.vehicle_type_needed !== 'ambulance')
-  if (role === 'approver_amb')   pending = pending.filter(t => t.vehicle_type_needed === 'ambulance')
+  if (role === 'approver_admin')   pending = pending.filter(t => t.vehicle_type_needed !== 'ambulance')
+  if (role === 'approver_amb')     pending = pending.filter(t => t.vehicle_type_needed === 'ambulance')
+  // super_approver sees all pending (no filter)
 
   // Active = currently happening — exclude advance bookings that depart in the future
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
@@ -1030,7 +1034,7 @@ async function renderDashboard() {
     t.is_advance_booking && t.departure_at && new Date(t.departure_at) > todayEnd
   )
   const done   = T.filter(t => t.status==='completed')
-  if (['admin','approver_admin','approver_amb'].includes(role)) updateNavBadge(pending.length)
+  if (['admin','approver_admin','approver_amb','super_approver'].includes(role)) updateNavBadge(pending.length)
 
   const overdue = active.filter(t => isOverdue(t))
   const next7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -1321,8 +1325,9 @@ async function renderTickets() {
   let tripsQuery = SB.from('trips').select('*,vehicle:vehicles(id,plate,type,name)').order('created_at',{ascending:false})
   if (role === 'requester')      tripsQuery = tripsQuery.eq('requester_id', currentProfile.id)
   if (role === 'driver')         tripsQuery = tripsQuery.eq('driver_id', currentProfile.id)
-  if (role === 'approver_admin') tripsQuery = tripsQuery.neq('vehicle_type_needed', 'ambulance')
-  if (role === 'approver_amb')   tripsQuery = tripsQuery.eq('vehicle_type_needed', 'ambulance')
+  if (role === 'approver_admin')   tripsQuery = tripsQuery.neq('vehicle_type_needed', 'ambulance')
+  if (role === 'approver_amb')     tripsQuery = tripsQuery.eq('vehicle_type_needed', 'ambulance')
+  // super_approver sees all tickets (no filter)
   const [{ data: trips }, { data: drvs }, { data: vehs }] = await Promise.all([
     tripsQuery,
     SB.from('drivers').select('*').eq('status','available'),
@@ -1393,15 +1398,22 @@ function renderTicketsTable() {
     </thead>
     <tbody>${filtered.map((t,i) => {
       const acts = []
-      const canApprove =
-        (role==='admin' && t.status==='pending-approval') ||
-        (role==='approver_admin' && t.status==='pending-approval' && t.vehicle_type_needed!=='ambulance') ||
-        (role==='approver_amb' && t.status==='pending-approval' && t.vehicle_type_needed==='ambulance')
+      const isOwnTicket = t.requester_id === currentProfile?.id
+      const canApprove = t.status==='pending-approval' && (
+        role==='admin' ||
+        role==='super_approver' ||
+        (!isOwnTicket && role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (!isOwnTicket && role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      )
       if (canApprove) {
         acts.push(`<button class="tbl-act tbl-act-green" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">✓ Approve</button>`)
         acts.push(`<button class="tbl-act tbl-act-red" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">✕ Reject</button>`)
       }
-      if (role==='admin' && t.status==='approved')
+      if (t.status==='approved' && (
+        role==='admin' || role==='super_approver' ||
+        (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      ))
         acts.push(`<button class="tbl-act tbl-act-blue" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign</button>`)
       if (role==='guard' && t.status==='assigned') {
         const depDate = t.departure_at ? new Date(t.departure_at) : null
@@ -1417,9 +1429,9 @@ function renderTicketsTable() {
       }
       if (role==='guard' && t.status==='on-trip')
         acts.push(`<button class="tbl-act tbl-act-purple" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
-      if (role==='requester' && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
+      if ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-      if (role==='admin' && !['completed','cancelled'].includes(t.status))
+      if ((role==='admin' || role==='super_approver') && !['completed','cancelled'].includes(t.status))
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
       const isPending = t.status==='pending-approval'
       const rowBg = isPending ? 'background:color-mix(in srgb,var(--amber-s) 40%,transparent)' : ''
@@ -1582,19 +1594,26 @@ function buildMobCards(filtered, role) {
   if (filtered.length === 0) return '<div style="text-align:center;padding:32px;color:var(--text3)">No tickets found.</div>'
   return filtered.map(t => {
     const acts = []
-    const canApprove =
-      (role==='admin' && t.status==='pending-approval') ||
-      (role==='approver_admin' && t.status==='pending-approval' && t.vehicle_type_needed!=='ambulance') ||
-      (role==='approver_amb' && t.status==='pending-approval' && t.vehicle_type_needed==='ambulance')
+    const isOwnTicket = t.requester_id === currentProfile?.id
+    const canApprove = t.status==='pending-approval' && (
+      role==='admin' ||
+      role==='super_approver' ||
+      (!isOwnTicket && role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+      (!isOwnTicket && role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+    )
     if (canApprove) {
       acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
       acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
     }
-    if (role==='admin' && t.status==='approved')
+    if (t.status==='approved' && (
+      role==='admin' || role==='super_approver' ||
+      (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+      (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+    ))
       acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign Driver</button>`)
-    if (role==='requester' && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
+    if ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
       acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-    if (role==='admin' && !['completed','cancelled'].includes(t.status))
+    if ((role==='admin' || role==='super_approver') && !['completed','cancelled'].includes(t.status))
       acts.push(`<button class="btn btn-amber btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
     return `<div class="mob-card" onclick="openViewModal('${t.id}')">
       <div class="mob-card-hd">
@@ -1920,25 +1939,40 @@ async function doCancelTicket(id, ticketNo, driverId, vehicleId) {
 function openAssignModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
-  const avD = _drivers
+  const role   = currentProfile?.role
+  const avD = _drivers.filter(d => d.status === 'available')
   const avV = _vehicles.filter(v => {
     const t = (v.type||'').toLowerCase()
     if (isAmb)  return t.includes('ambulance') || t.includes('bls')
     if (isMoto) return t.includes('motorcycle')
     return !t.includes('ambulance') && !t.includes('motorcycle')
   })
+  const scopeLabel = isAmb ? '🚑 Ambulance' : isMoto ? '🏍 Motorcycle' : '🚙 Regular'
   openMO(`Assign Driver & Vehicle — ${ticketNo}`,
-    `<div class="fg"><label class="fl">Select Driver</label>
-      <select class="fs" id="dSel"><option value="">-- Select Driver --</option>${avD.map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no}</option>`).join('')}</select></div>
-     <div class="fg"><label class="fl">Select Vehicle</label>
-      <select class="fs" id="vSel"><option value="">-- Select Vehicle --</option>${avV.map(v=>`<option value="${v.id}">${v.plate} — ${v.type} (${v.capacity} pax)</option>`).join('')}</select></div>`,
+    `<div class="info info-blue" style="margin-bottom:12px">
+       Assigning for: <strong>${scopeLabel}</strong> ticket
+     </div>
+     <div class="fg"><label class="fl">Select Driver *</label>
+       <select class="fs" id="asDrv">
+         <option value="">-- Select Driver --</option>
+         ${avD.map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}</option>`).join('')}
+       </select>
+       ${avD.length===0?'<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available drivers.</div>':''}
+     </div>
+     <div class="fg"><label class="fl">Select Vehicle *</label>
+       <select class="fs" id="asVeh">
+         <option value="">-- Select Vehicle --</option>
+         ${avV.map(v=>`<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)</option>`).join('')}
+       </select>
+       ${avV.length===0?`<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available ${isAmb?'ambulance':isMoto?'motorcycle':'regular'} vehicles.</div>`:''}
+     </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="asBtn" onclick="doAssign('${id}','${ticketNo}')">Assign & Notify Driver</button>`
   )
 }
 async function doAssign(id, ticketNo) {
-  const dv = document.getElementById('dSel')?.value
-  const vv = document.getElementById('vSel')?.value
+  const dv = document.getElementById('asDrv')?.value
+  const vv = document.getElementById('asVeh')?.value
   if (!dv||!vv) { alert('Select both driver and vehicle.'); return }
   const [driverId, driverName] = dv.split('|')
   const btn = document.getElementById('asBtn'); btn.disabled=true; btn.textContent='Assigning...'
@@ -2161,6 +2195,292 @@ async function submitRating(tripId) {
 // ════════════════════════════════════════════════
 // FLEET VISIBILITY (requester view)
 // ════════════════════════════════════════════════
+// ════════════════════════════════════════════════
+// OWNER EXECUTIVE DASHBOARD
+// ════════════════════════════════════════════════
+async function renderOwnerDashboard() {
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+  const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString()
+
+  const [
+    { data: allTrips },
+    { data: vehicles },
+    { data: drivers },
+    { data: upcoming },
+    { data: auditLogs }
+  ] = await Promise.all([
+    SB.from('trips').select('*').order('created_at',{ascending:false}),
+    SB.from('vehicles').select('*').order('plate'),
+    SB.from('drivers').select('*').order('full_name'),
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking')
+      .in('status',['assigned','approved'])
+      .gt('departure_at', now.toISOString())
+      .order('departure_at',{ascending:true}).limit(10),
+    SB.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(25)
+  ])
+
+  const T = allTrips || [], V = vehicles || [], D = drivers || []
+  const monthTrips     = T.filter(t => t.created_at >= monthStart)
+  const todayTrips     = T.filter(t => t.created_at >= todayStart && t.created_at <= todayEnd)
+  const onTrip         = T.filter(t => t.status === 'on-trip')
+  const pending        = T.filter(t => t.status === 'pending-approval')
+  const completed      = T.filter(t => t.status === 'completed')
+  const completedMonth = monthTrips.filter(t => t.status === 'completed')
+  const advance        = (upcoming||[])
+
+  const vAvail = V.filter(v => v.status === 'available')
+  const vOnTrip= V.filter(v => v.status === 'on-trip')
+  const vMaint = V.filter(v => v.status === 'maintenance')
+  const dAvail = D.filter(d => d.status === 'available')
+
+  const totalFuelCost = T.reduce((s,t) => s + parseFloat(t.fuel_cost||0), 0)
+  const monthFuelCost = monthTrips.reduce((s,t) => s + parseFloat(t.fuel_cost||0), 0)
+  const totalKm = T.reduce((s,t) => { const d=(t.odometer_in||0)-(t.odometer_out||0); return s+(d>0?d:0) }, 0)
+  const monthKm = monthTrips.reduce((s,t) => { const d=(t.odometer_in||0)-(t.odometer_out||0); return s+(d>0?d:0) }, 0)
+
+  const withSLA  = T.filter(t => t.sla_deadline && new Date(t.sla_deadline) <= now && t.vehicle_type_needed !== 'ambulance')
+  const slaKept  = withSLA.filter(t => !t.sla_breached || ['approved','assigned','on-trip','completed'].includes(t.status))
+  const slaRate  = withSLA.length ? Math.round(slaKept.length/withSLA.length*100) : 100
+
+  const deptMap = {}; T.forEach(t => { if(t.department) deptMap[t.department]=(deptMap[t.department]||0)+1 })
+  const topDepts = Object.entries(deptMap).sort((a,b)=>b[1]-a[1]).slice(0,8)
+
+  const driverMap = {}; T.forEach(t => { if(t.driver_name) driverMap[t.driver_name]=(driverMap[t.driver_name]||0)+1 })
+  const topDrivers = Object.entries(driverMap).sort((a,b)=>b[1]-a[1]).slice(0,6)
+
+  const pct = (n,d) => d ? Math.round(n/d*100) : 0
+  const peso = n => '₱' + parseFloat(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})
+
+  // Monthly trend
+  const monthlyData = {}
+  for (let i=5;i>=0;i--) {
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1)
+    const key = d.toLocaleString('en-PH',{month:'short',year:'2-digit'})
+    monthlyData[key] = {total:0,completed:0}
+  }
+  T.forEach(t => {
+    const d = new Date(t.created_at)
+    const key = d.toLocaleString('en-PH',{month:'short',year:'2-digit'})
+    if (monthlyData[key]) { monthlyData[key].total++; if(t.status==='completed') monthlyData[key].completed++ }
+  })
+  const monthKeys = Object.keys(monthlyData)
+  const maxMonthly = Math.max(...Object.values(monthlyData).map(m=>m.total), 1)
+  const maxDept = topDepts[0]?.[1]||1, maxDrv = topDrivers[0]?.[1]||1
+
+  const slaColor = slaRate>=80?'var(--green)':slaRate>=60?'var(--amber)':'var(--red)'
+
+  document.getElementById('CONTENT').innerHTML = `
+  <!-- LIVE BANNER -->
+  <div style="background:linear-gradient(135deg,#0c2340,#1a3a6e);border-radius:14px;padding:18px 22px;color:#fff;display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="background:var(--green);color:#fff;font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;display:flex;align-items:center;gap:5px;text-transform:uppercase">
+          <span style="width:6px;height:6px;background:#fff;border-radius:50%;display:inline-block;animation:pulse-overdue 1.5s infinite"></span>Live
+        </span>
+        <span style="font-size:12px;opacity:.6">${new Date().toLocaleString('en-PH',{weekday:'long',month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}</span>
+      </div>
+      <div style="font-size:20px;font-weight:900">${onTrip.length > 0 ? onTrip.length+' Vehicle'+(onTrip.length>1?'s':'')+' On Trip' : '✅ All Vehicles In'}</div>
+    </div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      ${[['Available Vehicles',vAvail.length,'#22d3ee'],['On Trip Now',vOnTrip.length,'#a78bfa'],['Available Drivers',dAvail.length,'#34d399'],['Pending Approval',pending.length,'#fbbf24'],['Requests Today',todayTrips.length,'#fff']].map(([lbl,val,col])=>
+        '<div style="text-align:center"><div style="font-size:28px;font-weight:900;color:'+col+'">'+val+'</div><div style="font-size:10.5px;opacity:.7;margin-top:2px">'+lbl+'</div></div>'
+      ).join('')}
+    </div>
+  </div>
+
+  <!-- KPI STATS -->
+  <div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">This Month — Trips</div><div class="stat-val">${monthTrips.length}</div><div class="stat-sub">${T.length} all time</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Completion Rate</div><div class="stat-val">${pct(completedMonth.length,monthTrips.length||1)}%</div><div class="stat-sub">${completedMonth.length} completed this month</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Fuel Spend — Month</div><div class="stat-val" style="font-size:18px;padding-top:4px">${peso(monthFuelCost)}</div><div class="stat-sub">${peso(totalFuelCost)} all time</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Distance — Month</div><div class="stat-val" style="font-size:18px;padding-top:4px">${monthKm.toLocaleString()} km</div><div class="stat-sub">${totalKm.toLocaleString()} km all time</div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+
+    <!-- FLEET STATUS -->
+    <div class="card card-np">
+      <div class="card-hd"><div class="card-title">🚗 Fleet Status</div>
+        <div style="display:flex;gap:6px">
+          <span class="badge b-gout" style="font-size:10px">${vAvail.length} Available</span>
+          <span class="badge b-ontrip" style="font-size:10px">${vOnTrip.length} On Trip</span>
+          ${vMaint.length?'<span class="badge b-rejected" style="font-size:10px">'+vMaint.length+' Maint.</span>':''}
+        </div>
+      </div>
+      <div style="padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">
+        ${V.map(v => {
+          const col = v.status==='available'?'var(--green)':v.status==='on-trip'?'var(--purple)':'var(--red)'
+          const bg  = v.status==='available'?'var(--green-s)':v.status==='on-trip'?'rgba(124,58,237,.08)':'var(--red-s)'
+          return '<div style="background:'+bg+';border:1.5px solid '+col+';border-radius:10px;padding:11px 13px">'
+            + '<div style="font-size:13px;font-weight:900;font-family:monospace;color:'+col+'">'+v.plate+'</div>'
+            + '<div style="font-size:11px;color:var(--text2);margin:2px 0">'+( v.name||v.type||'—')+'</div>'
+            + '<span style="font-size:10px;font-weight:700;color:'+col+'">● '+(v.status==='available'?'Available':v.status==='on-trip'?'On Trip':'Maintenance')+'</span>'
+            + '</div>'
+        }).join('')}
+      </div>
+    </div>
+
+    <!-- DRIVERS + SLA -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <!-- SLA -->
+      <div class="card">
+        <div class="card-hd"><div class="card-title">⏱ SLA Compliance</div>
+          <span style="font-size:13px;font-weight:800;color:${slaColor}">${slaRate}%</span>
+        </div>
+        <div style="padding:14px 16px">
+          <div style="background:var(--bg);border-radius:20px;height:10px;overflow:hidden;margin-bottom:10px">
+            <div style="height:100%;width:${slaRate}%;background:${slaColor};border-radius:20px;transition:width .8s"></div>
+          </div>
+          <div style="font-size:11.5px;color:var(--text2);margin-bottom:12px">${slaKept.length} of ${withSLA.length} tickets approved on time</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            ${[['Pending Now',pending.length,'var(--amber)'],['Rejected',T.filter(t=>t.status==='rejected').length,'var(--red)'],['Advance Booked',advance.length,'var(--pri)']].map(([l,v,c])=>
+              '<div style="background:var(--bg);border-radius:9px;padding:10px;text-align:center"><div style="font-size:18px;font-weight:800;color:'+c+'">'+v+'</div><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">'+l+'</div></div>'
+            ).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- DRIVERS -->
+      <div class="card card-np" style="flex:1;overflow:hidden">
+        <div class="card-hd"><div class="card-title">👤 Drivers (${D.length})</div>
+          <span class="badge b-gout" style="font-size:10px">${dAvail.length} Available</span>
+        </div>
+        <div style="padding:8px 16px">
+          ${D.map(d => {
+            const col = d.status==='available'?'var(--green)':d.status==='on-trip'?'var(--purple)':'var(--text3)'
+            const ini2 = (d.full_name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()
+            return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+              + '<div style="width:32px;height:32px;border-radius:50%;background:var(--bg);border:2px solid '+col+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:'+col+';flex-shrink:0">'+ini2+'</div>'
+              + '<div style="flex:1"><div style="font-size:12px;font-weight:700">'+d.full_name+'</div>'
+              + '<div style="font-size:10.5px;color:var(--text3)">'+(driverMap[d.full_name]||0)+' trips total</div></div>'
+              + '<span style="font-size:10px;font-weight:700;color:'+col+'">'+( d.status==='available'?'Available':d.status==='on-trip'?'On Trip':'Off Duty')+'</span>'
+              + '</div>'
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DEPT USAGE + DRIVER PERFORMANCE -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="card">
+      <div class="card-hd"><div class="card-title">🏥 Department Usage</div><span style="font-size:11px;color:var(--text3)">All time</span></div>
+      <div style="padding:14px 16px">
+        ${topDepts.length ? topDepts.map(([dept,count]) =>
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">'
+          + '<div style="font-size:11.5px;color:var(--text2);width:130px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+dept+'</div>'
+          + '<div style="flex:1;background:var(--bg);border-radius:20px;height:8px;overflow:hidden"><div style="height:100%;width:'+pct(count,maxDept)+'%;background:var(--pri);border-radius:20px"></div></div>'
+          + '<div style="font-size:11.5px;font-weight:700;color:var(--text2);width:24px;text-align:right">'+count+'</div></div>'
+        ).join('') : '<div style="color:var(--text3);font-size:12px">No data yet</div>'}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><div class="card-title">🚗 Driver Performance</div><span style="font-size:11px;color:var(--text3)">Trip count</span></div>
+      <div style="padding:14px 16px">
+        ${topDrivers.length ? topDrivers.map(([driver,count]) =>
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">'
+          + '<div style="font-size:11.5px;color:var(--text2);width:130px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+driver+'</div>'
+          + '<div style="flex:1;background:var(--bg);border-radius:20px;height:8px;overflow:hidden"><div style="height:100%;width:'+pct(count,maxDrv)+'%;background:var(--teal);border-radius:20px"></div></div>'
+          + '<div style="font-size:11.5px;font-weight:700;color:var(--text2);width:24px;text-align:right">'+count+'</div></div>'
+        ).join('') : '<div style="color:var(--text3);font-size:12px">No data yet</div>'}
+      </div>
+    </div>
+  </div>
+
+  <!-- MONTHLY TREND -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-hd"><div class="card-title">📈 Monthly Trip Trend (Last 6 Months)</div></div>
+    <div style="padding:14px 16px">
+      <div style="display:flex;align-items:flex-end;gap:10px;height:110px;padding-bottom:22px;position:relative">
+        ${monthKeys.map(k => {
+          const d = monthlyData[k]
+          const h  = Math.max(pct(d.total,maxMonthly), d.total>0?8:2)
+          const hc = Math.max(pct(d.completed,maxMonthly), d.completed>0?5:0)
+          return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative">'
+            + '<div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:2px">'+d.total+'</div>'
+            + '<div style="width:100%;display:flex;gap:3px;align-items:flex-end;height:72px">'
+            + '<div style="flex:1;height:'+h+'%;background:var(--pri-s);border-radius:4px 4px 0 0;min-height:'+(d.total>0?'6px':'2px')+'"></div>'
+            + '<div style="flex:1;height:'+hc+'%;background:var(--green);border-radius:4px 4px 0 0;min-height:'+(d.completed>0?'4px':'0')+'"></div></div>'
+            + '<div style="font-size:9.5px;color:var(--text3);position:absolute;bottom:-16px;white-space:nowrap">'+k+'</div></div>'
+        }).join('')}
+      </div>
+      <div style="display:flex;gap:14px;margin-top:14px;justify-content:center">
+        <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;background:var(--pri-s);border-radius:3px"></div><span style="font-size:11px;color:var(--text2)">Total Requests</span></div>
+        <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;background:var(--green);border-radius:3px"></div><span style="font-size:11px;color:var(--text2)">Completed</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UPCOMING ADVANCE BOOKINGS -->
+  ${advance.length > 0 ? `
+  <div class="card card-np" style="margin-bottom:16px">
+    <div class="card-hd"><div class="card-title">📅 Upcoming Scheduled Trips</div><span class="badge b-assigned" style="font-size:10px">${advance.length} scheduled</span></div>
+    <div style="padding:8px 16px">
+    ${advance.map(t => {
+      const dep = new Date(t.departure_at)
+      const daysAway = Math.ceil((dep-now)/(1000*60*60*24))
+      const urgColor = daysAway<=1?'var(--red)':daysAway<=3?'var(--amber)':'var(--pri)'
+      const urgBg = daysAway<=1?'var(--red-s)':daysAway<=3?'var(--amber-s)':'var(--pri-s)'
+      return '<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)">'
+        + '<div style="width:42px;height:42px;background:'+urgBg+';border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0">'
+        + '<div style="font-size:16px;font-weight:900;color:'+urgColor+';line-height:1">'+dep.getDate()+'</div>'
+        + '<div style="font-size:9px;font-weight:700;color:'+urgColor+';opacity:.8">'+dep.toLocaleString('en-PH',{month:'short'}).toUpperCase()+'</div></div>'
+        + '<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;font-family:monospace;color:var(--pri)">'+t.ticket_no+'</div>'
+        + '<div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+t.department+' — '+(t.purpose||'—')+'</div>'
+        + '<div style="font-size:11px;color:var(--text3)">→ '+(t.destination||'—')+' · '+(t.driver_name||'No driver')+'</div></div>'
+        + '<div style="text-align:right;flex-shrink:0">'
+        + '<div style="font-size:11px;font-weight:700;color:'+urgColor+'">'+(daysAway===0?'Today':daysAway===1?'Tomorrow':'In '+daysAway+'d')+'</div></div></div>'
+    }).join('')}
+    </div>
+  </div>` : ''}
+
+  <!-- ON TRIP NOW -->
+  ${onTrip.length > 0 ? `
+  <div class="card card-np" style="margin-bottom:16px">
+    <div class="card-hd"><div class="card-title">🔵 Currently On Trip</div><span class="badge b-ontrip" style="font-size:10px">${onTrip.length} active</span></div>
+    <div style="overflow-x:auto">
+    <table class="tbl" style="font-size:12px">
+      <thead><tr><th>Ticket</th><th>Department</th><th>Destination</th><th>Driver</th><th>Vehicle</th><th>Gate Out</th><th>Exp. Return</th></tr></thead>
+      <tbody>
+      ${onTrip.map(t => {
+        const late = t.expected_return_at && new Date(t.expected_return_at) < now
+        return '<tr>'
+          + '<td style="font-weight:700;font-family:monospace;color:var(--pri)">'+t.ticket_no+'</td>'
+          + '<td style="font-weight:600">'+( t.department||'—')+'</td>'
+          + '<td style="color:var(--text2)">'+( t.destination||'—')+'</td>'
+          + '<td>'+(t.driver_name||'—')+'</td>'
+          + '<td style="font-family:monospace;font-weight:700">'+(t.vehicle_plate||'—')+'</td>'
+          + '<td style="white-space:nowrap;color:var(--text2)">'+fmtDT(t.gate_out_at)+'</td>'
+          + '<td style="white-space:nowrap;color:'+(late?'var(--red)':'var(--text2)')+'">'+fmtDate(t.expected_return_at)+(late?' ⚠':'')+'</td>'
+          + '</tr>'
+      }).join('')}
+      </tbody>
+    </table></div>
+  </div>` : ''}
+
+  <!-- RECENT AUDIT ACTIVITY -->
+  <div class="card card-np" style="margin-bottom:32px">
+    <div class="card-hd"><div class="card-title">📋 Recent System Activity</div><span style="font-size:11px;color:var(--text3)">Last 25 actions</span></div>
+    <div style="overflow-x:auto">
+    <table class="tbl" style="font-size:12px">
+      <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Ticket</th><th>Detail</th></tr></thead>
+      <tbody>
+      ${(auditLogs||[]).map(l =>
+        '<tr>'
+        + '<td style="white-space:nowrap;color:var(--text3);font-size:11px">'+fmtDT(l.created_at)+'</td>'
+        + '<td style="font-weight:600">'+(l.user_name||'—')+'</td>'
+        + '<td>'+(l.action||'—')+'</td>'
+        + '<td style="font-family:monospace;font-size:11.5px;color:var(--pri)">'+(l.ticket_no||'—')+'</td>'
+        + '<td style="color:var(--text2);font-size:11px">'+(l.details||'')+'</td>'
+        + '</tr>'
+      ).join('')}
+      </tbody>
+    </table></div>
+  </div>`
+}
+
 async function renderFleet() {
   document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading fleet status...</div>'
   const dept = currentProfile?.department || ''
@@ -3332,22 +3652,22 @@ async function doAddVehicle() {
 function openEditVehicle(id, plate, name, type, cap, fuel, odometer) {
   openMO(`Edit Vehicle — ${plate}`,
     `<div class="fr">
-       <div class="fg"><label class="fl">Plate *</label><input class="fi" id="vPlate" value="${plate}" style="text-transform:uppercase"></div>
-       <div class="fg"><label class="fl">Name / Description</label><input class="fi" id="vName" value="${name}"></div>
-       <div class="fg"><label class="fl">Type *</label><select class="fs" id="vType">${vTypeOptions(type)}</select></div>
-       <div class="fg"><label class="fl">Capacity (pax)</label><input class="fi" type="number" id="vCap" value="${cap}" min="1"></div>
-       <div class="fg"><label class="fl">Fuel Type</label><select class="fs" id="vFuel"><option${fuel==='Diesel'?' selected':''}>Diesel</option><option${fuel==='Gasoline'?' selected':''}>Gasoline</option><option${fuel==='Electric'?' selected':''}>Electric</option></select></div>
-       <div class="fg"><label class="fl">Current Odometer (km)</label><input class="fi" type="number" id="vOdo" value="${odometer}" min="0"></div>
+       <div class="fg"><label class="fl">Plate *</label><input class="fi" id="evPlate" value="${plate}" style="text-transform:uppercase"></div>
+       <div class="fg"><label class="fl">Name / Description</label><input class="fi" id="evName" value="${name}"></div>
+       <div class="fg"><label class="fl">Type *</label><select class="fs" id="evType">${vTypeOptions(type)}</select></div>
+       <div class="fg"><label class="fl">Capacity (pax)</label><input class="fi" type="number" id="evCap" value="${cap}" min="1"></div>
+       <div class="fg"><label class="fl">Fuel Type</label><select class="fs" id="evFuel"><option${fuel==='Diesel'?' selected':''}>Diesel</option><option${fuel==='Gasoline'?' selected':''}>Gasoline</option><option${fuel==='Electric'?' selected':''}>Electric</option></select></div>
+       <div class="fg"><label class="fl">Current Odometer (km)</label><input class="fi" type="number" id="evOdo" value="${odometer}" min="0"></div>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="editVBtn" onclick="doEditVehicle('${id}')">Save Changes</button>`
   )
 }
 async function doEditVehicle(id) {
-  const plate = document.getElementById('vPlate')?.value?.trim().toUpperCase()
+  const plate = document.getElementById('evPlate')?.value?.trim().toUpperCase()
   if (!plate) { alert('Plate number required.'); return }
   const btn = document.getElementById('editVBtn'); btn.disabled=true; btn.textContent='Saving...'
-  const { error } = await SB.from('vehicles').update({ plate, name:document.getElementById('vName').value, type:document.getElementById('vType').value, capacity:parseInt(document.getElementById('vCap').value)||4, fuel:document.getElementById('vFuel').value, odometer:parseInt(document.getElementById('vOdo').value)||0 }).eq('id', id)
+  const { error } = await SB.from('vehicles').update({ plate, name:document.getElementById('evName').value, type:document.getElementById('evType').value, capacity:parseInt(document.getElementById('evCap').value)||4, fuel:document.getElementById('evFuel').value, odometer:parseInt(document.getElementById('evOdo').value)||0 }).eq('id', id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Save Changes'; return }
   closeMO(); renderVehicles()
 }
@@ -3480,27 +3800,27 @@ async function doAddDept() {
 function openEditDept(id, name, code, head, phone, email) {
   openMO(`Edit — ${name}`,
     `<div class="fr">
-       <div class="fg"><label class="fl">Department Name *</label><input class="fi" id="dpName" value="${name}"></div>
-       <div class="fg"><label class="fl">Code</label><input class="fi" id="dpCode" value="${code}" style="text-transform:uppercase"></div>
-       <div class="fg" style="grid-column:span 2"><label class="fl">Department Head</label><input class="fi" id="dpHead" value="${head}"></div>
-       <div class="fg"><label class="fl">Phone</label><input class="fi" id="dpPhone" value="${phone}"></div>
-       <div class="fg"><label class="fl">Email</label><input class="fi" type="email" id="dpEmail" value="${email}"></div>
+       <div class="fg"><label class="fl">Department Name *</label><input class="fi" id="edpName" value="${name}"></div>
+       <div class="fg"><label class="fl">Code</label><input class="fi" id="edpCode" value="${code}" style="text-transform:uppercase"></div>
+       <div class="fg" style="grid-column:span 2"><label class="fl">Department Head</label><input class="fi" id="edpHead" value="${head}"></div>
+       <div class="fg"><label class="fl">Phone</label><input class="fi" id="edpPhone" value="${phone}"></div>
+       <div class="fg"><label class="fl">Email</label><input class="fi" type="email" id="edpEmail" value="${email}"></div>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-pri" id="dpSaveBtn" onclick="doEditDept('${id}')">Save Changes</button>`
+     <button class="btn btn-pri" id="edpSaveBtn" onclick="doEditDept('${id}')">Save Changes</button>`
   )
 }
 
 async function doEditDept(id) {
-  const name = document.getElementById('dpName')?.value?.trim()
+  const name = document.getElementById('edpName')?.value?.trim()
   if (!name) { alert('Department name is required.'); return }
-  const btn = document.getElementById('dpSaveBtn'); btn.disabled=true; btn.textContent='Saving...'
+  const btn = document.getElementById('edpSaveBtn'); btn.disabled=true; btn.textContent='Saving...'
   const { error } = await SB.from('departments').update({
     name,
-    code: document.getElementById('dpCode')?.value?.trim().toUpperCase()||null,
-    head: document.getElementById('dpHead')?.value?.trim()||null,
-    phone: document.getElementById('dpPhone')?.value?.trim()||null,
-    email: document.getElementById('dpEmail')?.value?.trim()||null
+    code: document.getElementById('edpCode')?.value?.trim().toUpperCase()||null,
+    head: document.getElementById('edpHead')?.value?.trim()||null,
+    phone: document.getElementById('edpPhone')?.value?.trim()||null,
+    email: document.getElementById('edpEmail')?.value?.trim()||null
   }).eq('id', id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Save Changes'; return }
   await loadDepartments()
@@ -3996,6 +4316,7 @@ function filterAudit(q) {
 // ACCOUNTS
 // ════════════════════════════════════════════════
 async function renderAccounts() {
+  if (currentProfile?.role === 'super_approver') { goTo('dashboard'); return }
   const { data } = await SB.from('users').select('*').order('full_name')
   const U = data||[]
   document.getElementById('CONTENT').innerHTML = `
