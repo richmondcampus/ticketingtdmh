@@ -437,7 +437,7 @@ function printThermal(payload,preWin){
 }
 
 function printBrowser(payload,preWin){
-  const{isCheckIn,isVoid,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName}=payload;
+  const{isCheckIn,isVoid,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName,lostTicket}=payload;
   const vObj=VT[vtype]||VT.car;
   const fmt=iso=>new Date(iso).toLocaleString("en-PH",{month:"short",day:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
   const EQ="================================";
@@ -1427,7 +1427,8 @@ function TDMHParking(){
                       </div>
                       <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
                         <span className={`bdg ${bc}`}>{vt?.label}</span>
-                        {perms.co&&<button className="btn bd2" style={{padding:"6px 12px",flex:"none",fontSize:11}} onClick={()=>{setSel(s);setModal("checkout");}}>Check Out</button>}
+                        {perms.co&&<button className="btn bd2" style={{padding:"6px 12px",flex:"none",fontSize:11}} onClick={()=>{setLostTicket(false);setSel(s);setModal("checkout");}}>Check Out</button>}
+                        {perms.co&&<button className="btn" style={{padding:"6px 10px",flex:"none",fontSize:11,background:"#fee2e2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:9,fontWeight:700,cursor:"pointer"}} title="Lost ticket — auto adds ₱50" onClick={()=>{setLostTicket(true);setSel(s);setModal("checkout");}}>🎫 Lost</button>}
                         <button className="btn bg" style={{padding:"6px 10px",flex:"none",fontSize:11}} title="Reprint ticket" onClick={()=>printThermal({isCheckIn:true,ticketNo:s.vehicle.ticketNo||"—",plate:s.vehicle.plate,name:s.vehicle.name,vtype:s.vehicle.vtype,locName:s.locName,slotNum:s.number,checkin:s.vehicle.checkin,cashierName:user.name})}>🖨️</button>
                       </div>
                     </div>
