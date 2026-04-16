@@ -1212,7 +1212,7 @@ function TDMHParking(){
       const l=sel.locId;const locName=LOCS.find(x=>x.id===l)?.name;const tix=v.ticketNo||nextTix();
       // Duplicate guard — check if ticket already checked out
       const{data:existing}=await sb.from("transactions").select("id").eq("ticket_no",tix).eq("status","completed").maybeSingle();
-      if(existing){toast("⚠️ "+tix+" already checked out!","err");setModal(null);return;}
+      if(existing){toast("⚠️ "+tix+" already checked out!","err");setModal(null);setProcessing(false);return;}
       const txn={
         ticket_no:tix,plate:v.plate,name:v.name,driver_name:v.name,vtype:v.vtype,loc_id:l,
         slot_number:sel.number,fee,dur,duration:dur,overnight,cashier:user.name,
@@ -1223,7 +1223,7 @@ function TDMHParking(){
         notes:lostTicket?"LOST_TICKET":null
       };
       const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
-      if(txnErr){toast("Checkout failed: "+txnErr.message,"err");return;}
+      if(txnErr){toast("Checkout failed: "+txnErr.message,"err");setProcessing(false);return;}
       await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null,v_checkin_by:null}).eq("id",sel.id);
       setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:false,vehicle:null}:s);return c;});
       setTxns(p=>{if(p.find(x=>x.id===txnRow.id))return p;return[txnRow,...p];});
