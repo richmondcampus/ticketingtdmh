@@ -500,6 +500,7 @@ function printBrowser(payload,preWin){
     R.push("<div style='text-align:center;font-size:16pt;font-weight:900;line-height:1.2'>"+P(fee)+"</div>");
     if(overnight) ct("Overnight Rate 10PM-7AM");
     ln(DQ);
+    if(payload.lostTicket) ln("Lost Ticket: +PHP 50.00");
     ln("Cashier  : "+cashierName);
     ln(EQ);
     ct("Thank you for parking!");
@@ -950,6 +951,7 @@ function TDMHParking(){
   const [manualModal,setManualModal] = useState(false);
   const [manualForm,setManualForm] = useState({plate:"",name:"",vtype:"car",locId:"compound",slotNum:"",checkin:""});
   const [manualFee,setManualFee] = useState(null);
+  const [lostTicket,setLostTicket] = useState(false);
   const [lf,setLf]           = useState({username:"",password:"",err:"",loading:false});
   const [dbReady,setDbReady] = useState(false);
   const [rtConnected,setRtConnected] = useState(false);
@@ -1164,7 +1166,8 @@ function TDMHParking(){
     if(processing) return;  // prevent double-click
     setProcessing(true);
     try{
-      const v=sel.vehicle;const{fee,dur,overnight}=calcFee(v.checkin,v.vtype);
+      const v=sel.vehicle;const{fee:baseFee,dur,overnight}=calcFee(v.checkin,v.vtype);
+      const fee=baseFee+(lostTicket?50:0);
       const l=sel.locId;const locName=LOCS.find(x=>x.id===l)?.name;const tix=v.ticketNo||nextTix();
       // Duplicate guard — check if ticket already checked out
       const{data:existing}=await sb.from("transactions").select("id").eq("ticket_no",tix).eq("status","completed").maybeSingle();
@@ -1175,7 +1178,8 @@ function TDMHParking(){
         checkin_by:v.checkinBy||"—",
         checkin_time:v.checkin,checkin_at:v.checkin,
         checkout_time:new Date().toISOString(),checkout_at:new Date().toISOString(),
-        status:"completed"
+        status:"completed",
+        notes:lostTicket?"Lost Parking Ticket +₱50":null
       };
       const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
       if(txnErr){toast("Checkout failed: "+txnErr.message,"err");return;}
@@ -1185,9 +1189,10 @@ function TDMHParking(){
       setReceipt({v,fee,dur,overnight,slot:sel,loc:LOCS.find(x=>x.id===l),ticketNo:tix});
       addLog(`${v.plate} checked out from ${locName} · ${P(fee)} · ${tix}`,"#f59e0b");
       toast(`💰 ${v.plate} checked out — ${P(fee)}`,"ok");
-      const coPayload={isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name};
+      const coPayload={isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name,lostTicket};
       setLastPrintPayload(coPayload);
       printThermal(coPayload);
+      setLostTicket(false);
       setModal("receipt");
     }finally{
       setProcessing(false);
@@ -1438,13 +1443,48 @@ function TDMHParking(){
       {tab==="manual"&&perms.co&&(()=>{
         const locName=LOCS.find(l=>l.id===manualForm.locId)?.name||"";
         const computed=manualForm.checkin&&manualForm.plate?calcFeeManual(manualForm.checkin,manualForm.vtype):null;
-        function doManualPrint(){
+        async function doManualPrint(){
           if(!manualForm.plate.trim()||!manualForm.checkin){return;}
-          const{fee,dur,overnight}=computed||{fee:0,dur:"—",overnight:false};
+          const{fee:baseFee2,dur,overnight}=computed||{fee:0,dur:"0h 0m",overnight:false};
+          const fee2=baseFee2+(lostTicket?50:0);
           const tix="MAN-"+Date.now().toString().slice(-6);
-          printThermal({isCheckIn:false,ticketNo:tix,plate:manualForm.plate.toUpperCase().trim(),name:manualForm.name||"—",vtype:manualForm.vtype,locName,slotNum:manualForm.slotNum||"?",checkin:manualForm.checkin,fee,dur,overnight,cashierName:user.name});
-          toast("🧾 Manual receipt printed — "+tix,"ok");
-          addLog("MANUAL RECEIPT: "+(manualForm.plate.toUpperCase())+" · "+P(fee)+" · by "+user.name,"#d97706");
+          const plate=manualForm.plate.toUpperCase().trim();
+          const checkinISO=new Date(manualForm.checkin).toISOString();
+          const checkoutISO=new Date().toISOString();
+          // Save to DB as manual transaction
+          const txn={
+            ticket_no:tix,
+            plate,
+            name:manualForm.name||"—",
+            driver_name:manualForm.name||"—",
+            vtype:manualForm.vtype,
+            loc_id:manualForm.locId,
+            slot_number:manualForm.slotNum?parseInt(manualForm.slotNum):null,
+            fee:fee2,
+            dur,
+            duration:dur,
+            overnight,
+            cashier:user.name,
+            checkin_by:"Manual Entry",
+            checkin_time:checkinISO,
+            checkin_at:checkinISO,
+            checkout_time:checkoutISO,
+            checkout_at:checkoutISO,
+            status:"completed",
+            notes:"Manual Receipt"+(lostTicket?" · Lost Ticket +₱50":"")
+          };
+          const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
+          if(txnErr){
+            toast("⚠️ DB save failed: "+txnErr.message+". Printing anyway…","err");
+          } else {
+            setTxns(p=>{if(p.find(x=>x.id===txnRow.id))return p;return[txnRow,...p];});
+          }
+          printThermal({isCheckIn:false,ticketNo:tix,plate,name:manualForm.name||"—",vtype:manualForm.vtype,locName,slotNum:manualForm.slotNum||"?",checkin:checkinISO,fee:fee2,dur,overnight,cashierName:user.name,lostTicket});
+          toast("🧾 Manual receipt saved & printed — "+tix+(lostTicket?" (+₱50 Lost Ticket)":""),"ok");
+          addLog("MANUAL RECEIPT: "+plate+" · "+P(fee2)+" · "+tix+" · by "+user.name,"#d97706");
+          // Reset form after successful print
+          setManualForm({plate:"",name:"",vtype:"car",locId:"compound",slotNum:"",checkin:""});
+          setLostTicket(false);
         }
         return(
           <div className="pnl">
@@ -1454,8 +1494,8 @@ function TDMHParking(){
                 <div style={{fontSize:11,color:"var(--mu)",marginTop:2}}>Para sa mga kaso na hindi na makita sa system — i-enter ang detalye at i-print ang resibo.</div>
               </div>
             </div>
-            <div style={{background:"#fff8e1",border:"1px solid #fcd34d",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#92400e",fontWeight:600}}>
-              ⚠️ Ang manual receipt ay hindi nire-record sa database — para lang sa pag-print ng resibo sa mga exceptional cases.
+            <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#166534",fontWeight:600}}>
+              ✅ Ang manual receipt ay nire-record sa database na may status na <strong>completed</strong> at notes na "Manual Receipt". Makikita ito sa Earnings at Reports.
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
               <div className="fg">
@@ -1483,15 +1523,25 @@ function TDMHParking(){
                 <input className="fi" type="datetime-local" value={manualForm.checkin} onChange={e=>setManualForm(p=>({...p,checkin:e.target.value}))}/>
               </div>
             </div>
+            <div className="fg">
+              <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",background:lostTicket?"#fee2e2":"#f8fafc",border:"1.5px solid "+(lostTicket?"#fca5a5":"var(--bd)"),borderRadius:9,padding:"10px 13px",transition:"all .15s"}}>
+                <input type="checkbox" checked={lostTicket} onChange={e=>setLostTicket(e.target.checked)} style={{width:18,height:18,cursor:"pointer",accentColor:"#ef4444"}}/>
+                <div>
+                  <div style={{fontWeight:700,fontSize:13,color:lostTicket?"#dc2626":"var(--tx)"}}>🎫 Lost Parking Ticket</div>
+                  <div style={{fontSize:11,color:lostTicket?"#dc2626":"var(--mu)"}}>Dagdag na ₱50.00 lost ticket fee</div>
+                </div>
+                {lostTicket&&<span style={{marginLeft:"auto",fontFamily:"'Space Mono',monospace",fontWeight:700,color:"#dc2626",fontSize:13}}>+₱50</span>}
+              </label>
+            </div>
             {computed&&(
               <div className="fb" style={{marginBottom:12}}>
                 <div className="fbl">Computed Fee</div>
-                <div className="fbv">{P(computed.fee)}</div>
-                <div className="fbn">Duration: {computed.dur} · {computed.overnight?"🌙 Overnight Rate":"Regular Rate"}</div>
+                <div className="fbv">{P(computed.fee+(lostTicket?50:0))}</div>
+                <div className="fbn">Duration: {computed.dur} · {computed.overnight?"🌙 Overnight Rate":"Regular Rate"}{lostTicket?" · +₱50 Lost Ticket Fee":""}</div>
               </div>
             )}
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <button className="btn bg" onClick={()=>{setManualForm({plate:"",name:"",vtype:"car",locId:"compound",slotNum:"",checkin:""});}}>🗑️ Clear</button>
+              <button className="btn bg" onClick={()=>{setManualForm({plate:"",name:"",vtype:"car",locId:"compound",slotNum:"",checkin:""});setLostTicket(false);}}>🗑️ Clear</button>
               <button className="btn bp" style={{background:"#d97706",boxShadow:"0 3px 10px rgba(217,119,6,.3)"}} onClick={doManualPrint} disabled={!manualForm.plate.trim()||!manualForm.checkin}>🖨️ Print Manual Receipt</button>
             </div>
           </div>
@@ -1621,11 +1671,21 @@ function TDMHParking(){
                 <div className="ir"><span className="ik">Checked In By</span><span className="iv" style={{color:"#7c3aed"}}>{sel.vehicle.checkinBy||"—"}</span></div>
                 <div className="ir"><span className="ik">Check-in Time</span><span className="iv">{fmtDT(sel.vehicle.checkin)}</span></div>
                 <div className="ir"><span className="ik">Duration</span><span className="iv">{dur}</span></div>
-                <div className="fb"><div className="fbl">Total Fee</div><div className="fbv">{P(fee)}</div><div className="fbn">{overnight?"🌙 Overnight rate (10PM–7AM)":"Regular rate applied"}</div></div>
+                <div className="fg" style={{marginTop:8}}>
+                  <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",background:lostTicket?"#fee2e2":"#f8fafc",border:"1.5px solid "+(lostTicket?"#fca5a5":"var(--bd)"),borderRadius:9,padding:"10px 13px",transition:"all .15s"}}>
+                    <input type="checkbox" checked={lostTicket} onChange={e=>{setLostTicket(e.target.checked);}} style={{width:18,height:18,cursor:"pointer",accentColor:"#ef4444"}}/>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:13,color:lostTicket?"#dc2626":"var(--tx)"}}>🎫 Lost Parking Ticket</div>
+                      <div style={{fontSize:11,color:lostTicket?"#dc2626":"var(--mu)"}}>Dagdag na ₱50.00 lost ticket fee</div>
+                    </div>
+                    {lostTicket&&<span style={{marginLeft:"auto",fontFamily:"'Space Mono',monospace",fontWeight:700,color:"#dc2626",fontSize:13}}>+₱50</span>}
+                  </label>
+                </div>
+                <div className="fb"><div className="fbl">Total Fee</div><div className="fbv">{P(fee+(lostTicket?50:0))}</div><div className="fbn">{overnight?"🌙 Overnight rate (10PM–7AM)":"Regular rate applied"}{lostTicket?" · +₱50 Lost Ticket Fee":""}</div></div>
                 <div className="phint">🖨️ Payment receipt will print automatically.</div>
               </div>
               <div className="mf">
-                <button className="btn bg" onClick={()=>setModal(null)}>Cancel</button>
+                <button className="btn bg" onClick={()=>{setModal(null);setLostTicket(false);}}>Cancel</button>
                 <button className="btn bg" style={{background:"#f0f9ff",color:"#0369a1",border:"1px solid #bae6fd",flex:"none",padding:"9px 11px"}} title="Reprint check-in ticket" onClick={()=>printThermal({isCheckIn:true,ticketNo:sel.vehicle.ticketNo||"—",plate:sel.vehicle.plate,name:sel.vehicle.name,vtype:sel.vehicle.vtype,locName:LOCS.find(l=>l.id===sel.locId)?.name,slotNum:sel.number,checkin:sel.vehicle.checkin,cashierName:user.name})}>🖨️ Reprint Ticket</button>
                 {user?.role==="admin"&&<button className="btn" style={{background:"#fee2e2",color:"#991b1b",border:"1px solid #fca5a5"}} onClick={()=>setModal("void")}>⚠️ Void</button>}
                 <button className="btn bd2" onClick={doCheckout} disabled={processing}>{processing&&<span className="spin"/>}{processing?"Processing…":"Confirm & Print Receipt"}</button>
