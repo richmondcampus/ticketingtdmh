@@ -624,11 +624,20 @@ function ReportsPanel(){
     async function fetchData(){
       setFetching(true);
       try{
-        const{data,error}=await sb.from("transactions")
+        // Fetch by checkout_at, also catch records where checkout_at is null but checkout_time is set
+        const{data:d1,error:e1}=await sb.from("transactions")
           .select("*")
           .gte("checkout_at",from+"T00:00:00")
           .lte("checkout_at",to+"T23:59:59")
           .order("checkout_at",{ascending:false});
+        const{data:d2}=await sb.from("transactions")
+          .select("*")
+          .is("checkout_at",null)
+          .gte("checkout_time",from+"T00:00:00")
+          .lte("checkout_time",to+"T23:59:59");
+        const seen=new Set();
+        const data=[...(d1||[]),...(d2||[])].filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
+        const error=e1;
         if(!cancelled&&!error&&data) setTxns(data);
       }catch(e){console.error("Reports fetch error:",e);}
       if(!cancelled) setFetching(false);
@@ -653,7 +662,7 @@ function ReportsPanel(){
   const filtered=useMemo(()=>allFiltered.filter(e=>e.status!=="voided"),[allFiltered]);
   const voided=useMemo(()=>allFiltered.filter(e=>e.status==="voided"),[allFiltered]);
   const lossTotal=voided.reduce((s,e)=>s+Number(e.fee||0),0);
-  const lostTxns=filtered.filter(e=>e.notes&&e.notes.includes("Lost Ticket"));
+  const lostTxns=useMemo(()=>filtered.filter(e=>e.notes&&(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking Ticket")||e.notes.toLowerCase().includes("lost"))),[filtered]);
   const lostTotal=lostTxns.length*50;
 
   const total=filtered.reduce((s,e)=>s+Number(e.fee||0),0);
@@ -786,7 +795,7 @@ function ReportsPanel(){
                   <td>{e.overnight?<span style={{background:"#ede9fe",color:"#5b21b6",padding:"1px 5px",borderRadius:100,fontSize:9,fontWeight:700}}>🌙</span>:<span style={{background:"#f0f9ff",color:"#0369a1",padding:"1px 5px",borderRadius:100,fontSize:9,fontWeight:700}}>REG</span>}</td>
                   <td style={{fontSize:10,color:"var(--mu)"}}>{(e.checkin_by||"—").split(" ")[0]}</td>
                   <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
-                  <td>{e.notes?<span style={{fontSize:9,background:e.notes.includes("Lost Ticket")?"#fff8e1":e.notes.includes("Manual")?"#f0f9ff":"#f1f5f9",color:e.notes.includes("Lost Ticket")?"#d97706":e.notes.includes("Manual")?"#0369a1":"#64748b",padding:"2px 6px",borderRadius:100,fontWeight:700,whiteSpace:"nowrap"}}>{e.notes.includes("Lost Ticket")?"🎫 Lost Ticket":e.notes.includes("Manual")?"🧾 Manual":"📝 "+e.notes.substring(0,15)}</span>:"—"}</td>
+                  <td>{e.notes?<span style={{fontSize:9,background:(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking"))?"#fff8e1":e.notes.includes("MANUAL")?"#f0f9ff":"#f1f5f9",color:(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking"))?"#d97706":e.notes.includes("MANUAL")?"#0369a1":"#64748b",padding:"2px 6px",borderRadius:100,fontWeight:700,whiteSpace:"nowrap"}}>{(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking"))?"🎫 Lost Ticket":(e.notes.includes("MANUAL")||e.notes.includes("Manual"))?"🧾 Manual":"📝 "+e.notes.substring(0,15)}</span>:"—"}</td>
                   <td><span className="eam">{P(e.fee||0)}</span></td>
                 </tr>
               ))}</tbody>
@@ -818,7 +827,7 @@ function ReportsPanel(){
             <div className="rcc" style={{marginTop:12}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11,flexWrap:"wrap",gap:7}}>
                 <h4 style={{margin:0,color:"#d97706"}}>🎫 Lost Ticket Transactions — {P(lostTotal)} collected</h4>
-                <span style={{fontSize:11,color:"var(--mu)"}}>{lostTxns.length} records</span>
+                <span style={{fontSize:11,color:"var(--mu)"}}>{lostTxns.length} records · based on checkout date</span>
               </div>
               <div style={{overflowX:"auto",maxHeight:300,overflowY:"auto"}}><table className="rtbl">
                 <thead><tr><th>Date/Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Duration</th><th>Cashier</th><th>Parking Fee</th><th>Lost Fee</th><th>Total</th></tr></thead>
@@ -1211,7 +1220,7 @@ function TDMHParking(){
         checkin_time:v.checkin,checkin_at:v.checkin,
         checkout_time:new Date().toISOString(),checkout_at:new Date().toISOString(),
         status:"completed",
-        notes:lostTicket?"Lost Parking Ticket +₱50":null
+        notes:lostTicket?"LOST_TICKET":null
       };
       const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
       if(txnErr){toast("Checkout failed: "+txnErr.message,"err");return;}
@@ -1504,7 +1513,7 @@ function TDMHParking(){
             checkout_time:checkoutISO,
             checkout_at:checkoutISO,
             status:"completed",
-            notes:"Manual Receipt"+(lostTicket?" · Lost Ticket +₱50":"")
+            notes:"MANUAL_RECEIPT"+(lostTicket?"_LOST_TICKET":"")
           };
           const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
           if(txnErr){
