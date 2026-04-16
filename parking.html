@@ -653,6 +653,8 @@ function ReportsPanel(){
   const filtered=useMemo(()=>allFiltered.filter(e=>e.status!=="voided"),[allFiltered]);
   const voided=useMemo(()=>allFiltered.filter(e=>e.status==="voided"),[allFiltered]);
   const lossTotal=voided.reduce((s,e)=>s+Number(e.fee||0),0);
+  const lostTxns=filtered.filter(e=>e.notes&&e.notes.includes("Lost Ticket"));
+  const lostTotal=lostTxns.length*50;
 
   const total=filtered.reduce((s,e)=>s+Number(e.fee||0),0);
   const cnt=filtered.length;
