@@ -584,6 +584,16 @@ function deptOptions(selected='') {
 const ini = n => (n||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()
 const badge = s => { const m = STATUS_MAP[s]||{cls:'b-pending',lbl:s}; return `<span class="badge ${m.cls}">${m.lbl}</span>` }
 const typeBadge = t => t==='ambulance' ? `<span class="badge b-amb">🚑 Ambulance</span>` : t==='motorcycle' ? `<span class="badge b-moto">🏍 Motorcycle</span>` : `<span class="badge b-reg">🚙 Regular</span>`
+const priorityBadge = p => {
+  const map = {
+    emergency: { bg:'#fef2f2', color:'#dc2626', border:'#fecdd3', icon:'🚨', lbl:'Emergency' },
+    urgent:    { bg:'#fef3c7', color:'#d97706', border:'#fde68a', icon:'⚡', lbl:'Urgent'    },
+    normal:    { bg:'#eff6ff', color:'#2563eb', border:'#bfdbfe', icon:'📋', lbl:'Normal'    },
+    low:       { bg:'#f0fdf4', color:'#16a34a', border:'#bbf7d0', icon:'🕐', lbl:'Low'       },
+  }
+  const m = map[p] || map.normal
+  return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:${m.bg};color:${m.color};border:1px solid ${m.border}">${m.icon} ${m.lbl}</span>`
+}
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : '—'
 const fmtDT = d => d ? new Date(d).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'
 
@@ -1001,7 +1011,7 @@ async function renderDashboard() {
 
   // Owner gets their own executive dashboard
   if (role === 'owner') { await renderOwnerDashboard(); return }
-  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,is_advance_booking').order('created_at',{ascending:false})
+  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,is_advance_booking').order('created_at',{ascending:false})
   if (role === 'requester')     tripsQ = tripsQ.eq('requester_id', currentProfile.id)
   if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.id)
   if (role === 'approver_admin') tripsQ = tripsQ.neq('vehicle_type_needed', 'ambulance')
@@ -1389,6 +1399,7 @@ function renderTicketsTable() {
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Ticket</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Department</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Purpose</th>
+        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Urgency</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Date</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Type</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Status</th>
@@ -1453,6 +1464,7 @@ function renderTicketsTable() {
             return `<div style="font-size:10.5px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>`
           })()}
         </td>
+        <td style="padding:13px 16px;white-space:nowrap">${priorityBadge(t.priority)}</td>
         <td style="padding:13px 16px;white-space:nowrap">
           <div style="font-size:11.5px;color:var(--text1)">${fmtDate(t.departure_at||t.created_at)}</div>
         </td>
@@ -1618,7 +1630,7 @@ function buildMobCards(filtered, role) {
     return `<div class="mob-card" onclick="openViewModal('${t.id}')">
       <div class="mob-card-hd">
         <div>
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">${chip(t.ticket_no)} ${typeBadge(t.vehicle_type_needed)}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">${chip(t.ticket_no)} ${typeBadge(t.vehicle_type_needed)} ${t.priority && t.priority !== 'normal' ? priorityBadge(t.priority) : ''}</div>
           <div class="mob-card-title">${t.department||'—'}</div>
           <div class="mob-card-sub">${t.purpose||'—'}</div>
         </div>
@@ -1676,7 +1688,7 @@ async function openViewModal(id) {
     : ''
 
   openMO(`Ticket — ${t.ticket_no}`,
-    `<div style="display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap">${badge(t.status)}${typeBadge(t.vehicle_type_needed)}${t.is_advance_booking?'<span style="background:var(--amber-s);color:var(--amber);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">📅 ADVANCE</span>':''}</div>
+    `<div style="display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap">${badge(t.status)}${typeBadge(t.vehicle_type_needed)}${priorityBadge(t.priority)}${t.is_advance_booking?'<span style="background:var(--amber-s);color:var(--amber);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">📅 ADVANCE</span>':''}</div>
      ${wfHtml(t.status)}
      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
        ${fields.map(([l,v,s])=>`<div style="background:var(--bg);padding:10px;border-radius:8px;${s==='span2'?'grid-column:span 2':''}">
@@ -2122,7 +2134,7 @@ async function doAssign(id, ticketNo) {
     driverEmail = du?.email || null
   }
   // SMS → driver only (time-critical: needs to know ASAP to prepare)
-  if (driverRow?.phone) await sendSMS([driverRow.phone], `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
+  if (driverRow?.phone) await sendSMS([driverRow.phone], `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nUrgency: ${(tripData?.priority||'normal').toUpperCase()}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
   // Email only → driver, requester, guard
   if (driverEmail) await sendEmail([driverEmail], 'driver_assigned', { ticket_no: ticketNo, department: tripData?.department||'', purpose: tripData?.purpose||'', destination: tripData?.destination||'', departure_at: fmtDT(tripData?.departure_at), vehicle_plate: vehiclePlate })
   const reqContacts = await getRequesterContacts(id)
@@ -3518,7 +3530,7 @@ async function submitNewTicket() {
     Promise.all([
       addAudit(trip.id, trip.ticket_no, isAdvance ? 'Advance Booking Created' : 'Ticket Created', purpose),
       getPhonesForRole(approverRole).then(phones =>
-        sendSMS(phones, `[TDMH VTS] ${isAdvance?'📅 ADVANCE ':''}New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nDate: ${date} ${time}${groupId?'\n⚠ Part of bulk booking':''}\nPlease log in to approve.`)
+        sendSMS(phones, `[TDMH VTS] ${isAdvance?'📅 ADVANCE ':''}${priority==='emergency'?'🚨 EMERGENCY':priority==='urgent'?'⚡ URGENT':priority==='low'?'🕐 LOW':'📋 NORMAL'} — New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nUrgency: ${priority?.toUpperCase()||'NORMAL'}\nDate: ${date} ${time}${groupId?'\n⚠ Part of bulk booking':''}\nPlease log in to approve.`)
       ),
       getEmailsForRole(approverRole).then(emails =>
         sendEmail(emails, 'ticket_created', {
