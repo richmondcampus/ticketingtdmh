@@ -760,7 +760,7 @@ function ReportsPanel({currentUser}){
             <div className="cbg">{byCash.map((c,i)=>(<div className="cbr" key={i}><div className="cbl">{(c.name||"").split(" ")[0]}</div><div className="cbt"><div className="cbf" style={{width:`${(c.total/maxC)*100}%`,background:"#0ea5e9"}}>{c.count} transactions</div></div><div className="cbv">{P(c.total)}</div></div>))}</div>
           )}
         </div>
-        {!isCashier&&<div className="rcc">
+        {!isCashier&&<><div className="rcc">
           <h4>🔥 Peak Hours Heatmap</h4>
           <div style={{overflowX:"auto"}}><div style={{minWidth:340}}>
             <div className="hml"><div/>{DAYS.map(d=><div key={d} className="hmd">{d}</div>)}</div>
@@ -776,7 +776,7 @@ function ReportsPanel({currentUser}){
               <tbody>{topP.map((p,i)=>(<tr key={i}><td style={{color:"var(--mu)",fontWeight:700}}>{i+1}</td><td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{p.plate}</span></td><td>{VT[p.vtype]?.icon} {VT[p.vtype]?.label}</td><td><span style={{background:"#e0f2fe",color:"#0369a1",padding:"2px 7px",borderRadius:100,fontSize:10,fontWeight:700}}>{p.count}×</span></td><td><span className="eam">{P(p.total)}</span></td><td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"var(--mu)"}}>{P(Math.round(p.total/p.count))}</td></tr>))}</tbody>
             </table></div>
           )}
-        </div>}
+        </div></>}
         <div className="rcc">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11,flexWrap:"wrap",gap:7}}>
             <h4 style={{margin:0}}>📄 Transaction Log</h4>
