@@ -491,7 +491,7 @@ function printBrowser(payload,preWin){
     ln("RATE     : "+(overnight?"OVERNIGHT":"REGULAR"));
     ln(EQ);
     ct("TOTAL AMOUNT DUE");
-    R.push("<div style='text-align:center;font-size:16pt;font-weight:900;line-height:1.2'>"+P(fee)+"</div>");
+    R.push("<div class='big'>"+P(fee)+"</div>");
     if(overnight) ct("Overnight Rate 10PM-7AM");
     ln(DQ);
     if(payload.lostTicket) ln("Lost Ticket: +PHP 50.00");
@@ -505,10 +505,11 @@ function printBrowser(payload,preWin){
   const style=""
     +"@page{margin:0;size:58mm auto}"
     +"*{margin:0;padding:0;box-sizing:border-box}"
-    +"html,body{margin:0;padding:2px;width:58mm;background:#fff;color:#000;font-family:'Courier New',Courier,monospace;font-size:7.2pt;font-weight:bold;line-height:1.15}"
-    +"div{margin:0;padding:0;white-space:nowrap;overflow:hidden;line-height:1.15}"
+    +"html,body{margin:0;padding:0 3px;width:58mm;background:#fff;color:#000;font-family:'Courier New',Courier,monospace;font-size:9pt;font-weight:bold;line-height:1.25}"
+    +"div{margin:0;padding:0;white-space:pre-wrap;word-break:break-all;line-height:1.25}"
+    +".big{font-size:16pt;font-weight:900;text-align:center;line-height:1.2}"
     +".np{margin-top:12px;text-align:center;font-family:Arial,sans-serif;white-space:normal;overflow:visible;font-size:12pt}"
-    +"@media print{.np{display:none!important}@page{size:58mm auto;margin:0}html,body{width:58mm;margin:0;padding:2px}}";
+    +"@media print{.np{display:none!important}@page{size:58mm auto;margin:0}html,body{width:58mm;margin:0;padding:0 3px;font-size:9pt}}";
 
   const html="<!DOCTYPE html><html><head>"
     +"<meta charset='UTF-8'/><title>Receipt</title>"
@@ -579,7 +580,7 @@ function DonutChart({data,size=110}){
 // ─── REPORTS PANEL ───────────────────────────────────────────────────────────
 // Fetches its own data directly from Supabase — always shows latest records
 function ReportsPanel({currentUser}){
-  const [from,setFrom]=useState(dAgo(6));
+  const [from,setFrom]=useState(todayStr());
   const [to,setTo]=useState(todayStr());
 
   function exportCSV(){
@@ -606,7 +607,7 @@ function ReportsPanel({currentUser}){
     a.href=url;a.download=`TDMH_Parking_${from}_to_${to}.csv`;
     a.click();URL.revokeObjectURL(url);
   }
-  const [preset,setPreset]=useState("week");
+  const [preset,setPreset]=useState("today");
   const [locF,setLocF]=useState({compound:true,quality:true,motopark:true});
   const [vtF,setVtF]=useState({car:true,motorcycle:true,tricycle:true});
   const [txns,setTxns]=useState([]);
