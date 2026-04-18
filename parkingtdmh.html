@@ -1411,7 +1411,7 @@ function TDMHParking(){
       <div className="tabs">
         <button className={`tab ${tab==="overview"?"active":""}`} onClick={()=>setTab("overview")}>🗺️ Overview</button>
         {perms.search&&<button className={`tab ${tab==="search"?"active":""}`} onClick={()=>setTab("search")}>🔍 Search</button>}
-        {perms.co&&<button className={`tab ${tab==="manual"?"active":""}`} onClick={()=>setTab("manual")} style={{background:tab==="manual"?"#d97706":undefined,borderColor:tab==="manual"?"#d97706":undefined}}>🧾 Manual Receipt</button>}
+        {perms.co&&<button className={`tab ${tab==="manual"?"active":""}`} onClick={()=>setTab("manual")}>🧾 Manual Receipt</button>}
         {perms.earn&&<button className={`tab ${tab==="earnings"?"active":""}`} onClick={()=>setTab("earnings")}>💰 Earnings</button>}
         {perms.rep&&<button className={`tab ${tab==="reports"?"active":""}`} onClick={()=>setTab("reports")}>📊 Reports</button>}
         {perms.act&&<button className={`tab ${tab==="activity"?"active":""}`} onClick={()=>setTab("activity")}>📋 Activity{actLog.length>0&&<span className="tbdg">{actLog.length}</span>}</button>}
