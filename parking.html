@@ -1144,7 +1144,7 @@ function TDMHParking(){
         });
         // only show toast/log if it came from another device (different cashier or same but different session is fine)
         const locName=LOCS.find(l=>l.id===t.loc_id)?.name||t.loc_id;
-        addLog(`📡 RT CHECK-OUT: ${t.plate} · ${locName} · ${t.dur||"—"} · ${P(t.fee||0)} · by ${t.cashier||"—"}`,"#6366f1");
+        // RT log removed — doCheckout already logs this
         toast(`📡 ${t.plate} checked out — ${P(t.fee||0)}`,"info");
       })
       .subscribe(status=>{
