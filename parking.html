@@ -68,7 +68,7 @@ const VT = {
 };
 const PERMS = {
   admin:    {earn:true, allLocs:true, act:true, ci:true,co:true,rates:true,users:true, rep:true, search:true},
-  cashier:  {earn:true, allLocs:true, act:true, ci:false,co:true,rates:true,users:false,rep:false,search:true},
+  cashier:  {earn:true, allLocs:true, act:true, ci:false,co:true,rates:true,users:false,rep:true,search:true},
   attendant:{earn:false,allLocs:false,act:false,ci:true,co:false,rates:true,users:false,rep:false,search:true},
 };
 
@@ -578,7 +578,7 @@ function DonutChart({data,size=110}){
 
 // ─── REPORTS PANEL ───────────────────────────────────────────────────────────
 // Fetches its own data directly from Supabase — always shows latest records
-function ReportsPanel(){
+function ReportsPanel({currentUser}){
   const [from,setFrom]=useState(dAgo(6));
   const [to,setTo]=useState(todayStr());
 
@@ -659,11 +659,14 @@ function ReportsPanel(){
   const lostTxns=useMemo(()=>filtered.filter(e=>e.notes&&(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking Ticket")||e.notes.toLowerCase().includes("lost"))),[filtered]);
   const lostTotal=lostTxns.length*50;
 
-  const total=filtered.reduce((s,e)=>s+Number(e.fee||0),0);
-  const cnt=filtered.length;
+  const isCashier=currentUser?.role==="cashier";
+  // Cashier sees own transactions only
+  const myFiltered=isCashier?filtered.filter(e=>e.cashier===currentUser?.name):filtered;
+  const total=myFiltered.reduce((s,e)=>s+Number(e.fee||0),0);
+  const cnt=myFiltered.length;
   const avg=cnt>0?Math.round(total/cnt):0;
-  const ovrCnt=filtered.filter(e=>e.overnight).length;
-  const days=new Set(filtered.map(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at))).size;
+  const ovrCnt=myFiltered.filter(e=>e.overnight).length;
+  const days=new Set(myFiltered.map(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at))).size;
   const avgD=days>0?Math.round(total/days):0;
 
   const dayRange=[];let cur=new Date(from);const end=new Date(to);
@@ -720,6 +723,13 @@ function ReportsPanel(){
       </div>
 
       <div className="rmain">
+        {isCashier&&<div style={{background:"linear-gradient(135deg,#1e3a5f,#0e6ebd)",borderRadius:10,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:20}}>👤</span>
+          <div>
+            <div style={{color:"#fff",fontWeight:700,fontSize:13}}>Cashier View — {currentUser?.name}</div>
+            <div style={{color:"#90caf9",fontSize:11,marginTop:2}}>Showing your transactions only · Full reports available to Admin</div>
+          </div>
+        </div>}
         <div className="rkpis">
           <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Revenue</div><div className="kv">{P(total)}</div><div className="ks">{cnt} transactions</div></div>
           <div className="rkpi" style={{"--kc":"#0ea5e9"}}><div className="kl">Daily Average</div><div className="kv">{P(avgD)}</div><div className="ks">{days} day{days!==1?"s":""}</div></div>
@@ -734,7 +744,7 @@ function ReportsPanel(){
             <div className="dc2">{dayData.map((d,i)=>(<div className="dr" key={i}><div className="dlbl">{d.label}</div><div className="dtr"><div className="dfi" style={{width:`${(d.val/maxDay)*100}%`}}/></div><div className="dv">{d.val>0?P(d.val):"—"}</div></div>))}</div>
           )}
         </div>
-        <div className="rspl">
+        {!isCashier&&<div className="rspl">
           <div className="rcc">
             <h4>📍 Revenue by Location</h4>
             <div className="cbg">{byLoc.map(l=>(<div className="cbr" key={l.id}><div className="cbl">{l.icon} {l.short}</div><div className="cbt"><div className="cbf" style={{width:`${(l.total/maxL)*100}%`,background:l.color}}>{l.count>0?`${l.count}`:""}</div></div><div className="cbv">{P(l.total)}</div></div>))}</div>
@@ -743,14 +753,14 @@ function ReportsPanel(){
             <h4>🚗 By Vehicle Type</h4>
             <DonutChart data={byV.filter(v=>v.count>0).map(v=>({label:v.label,value:v.count,color:v.color}))} size={110}/>
           </div>
-        </div>
+        </div>}
         <div className="rcc">
           <h4>👤 Cashier Performance</h4>
           {byCash.length===0?<div className="nod"><div className="ni">👤</div>No data</div>:(
             <div className="cbg">{byCash.map((c,i)=>(<div className="cbr" key={i}><div className="cbl">{(c.name||"").split(" ")[0]}</div><div className="cbt"><div className="cbf" style={{width:`${(c.total/maxC)*100}%`,background:"#0ea5e9"}}>{c.count} transactions</div></div><div className="cbv">{P(c.total)}</div></div>))}</div>
           )}
         </div>
-        <div className="rcc">
+        {!isCashier&&<div className="rcc">
           <h4>🔥 Peak Hours Heatmap</h4>
           <div style={{overflowX:"auto"}}><div style={{minWidth:340}}>
             <div className="hml"><div/>{DAYS.map(d=><div key={d} className="hmd">{d}</div>)}</div>
@@ -766,12 +776,12 @@ function ReportsPanel(){
               <tbody>{topP.map((p,i)=>(<tr key={i}><td style={{color:"var(--mu)",fontWeight:700}}>{i+1}</td><td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{p.plate}</span></td><td>{VT[p.vtype]?.icon} {VT[p.vtype]?.label}</td><td><span style={{background:"#e0f2fe",color:"#0369a1",padding:"2px 7px",borderRadius:100,fontSize:10,fontWeight:700}}>{p.count}×</span></td><td><span className="eam">{P(p.total)}</span></td><td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"var(--mu)"}}>{P(Math.round(p.total/p.count))}</td></tr>))}</tbody>
             </table></div>
           )}
-        </div>
+        </div>}
         <div className="rcc">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11,flexWrap:"wrap",gap:7}}>
             <h4 style={{margin:0}}>📄 Transaction Log</h4>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}</span>
+              <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}{isCashier?" (your transactions)":""}</span>
               <button className="btn" style={{padding:"4px 10px",fontSize:11,background:"#f0fdf4",color:"#166534",border:"1px solid #86efac"}} onClick={exportCSV}>⬇️ Export CSV</button>
             </div>
           </div>
@@ -1401,9 +1411,10 @@ function TDMHParking(){
       <div className="tabs">
         <button className={`tab ${tab==="overview"?"active":""}`} onClick={()=>setTab("overview")}>🗺️ Overview</button>
         {perms.search&&<button className={`tab ${tab==="search"?"active":""}`} onClick={()=>setTab("search")}>🔍 Search</button>}
-        {perms.co&&<button className={`tab ${tab==="manual"?"active":""}`} onClick={()=>setTab("manual")} style={{background:tab==="manual"?"#d97706":undefined,borderColor:tab==="manual"?"#d97706":undefined}}>🧾 Manual Receipt</button>}
+        {perms.co&&<button className={`tab ${tab==="manual"?"active":""}`} onClick={()=>setTab("manual")}>🧾 Manual Receipt</button>}
         {perms.earn&&<button className={`tab ${tab==="earnings"?"active":""}`} onClick={()=>setTab("earnings")}>💰 Earnings</button>}
         {perms.rep&&<button className={`tab ${tab==="reports"?"active":""}`} onClick={()=>setTab("reports")}>📊 Reports</button>}
+        {user?.role==="cashier"&&<button className={`tab ${tab==="cashreport"?"active":""}`} onClick={()=>setTab("cashreport")}>📊 My Report</button>}
         {perms.act&&<button className={`tab ${tab==="activity"?"active":""}`} onClick={()=>setTab("activity")}>📋 Activity{actLog.length>0&&<span className="tbdg">{actLog.length}</span>}</button>}
         {perms.users&&<button className={`tab ${tab==="users"?"active":""}`} onClick={()=>setTab("users")}>👥 Users</button>}
       </div>
@@ -1505,7 +1516,7 @@ function TDMHParking(){
             driver_name:manualForm.name||"—",
             vtype:manualForm.vtype,
             loc_id:manualForm.locId,
-            slot_number:manualForm.slotNum?parseInt(manualForm.slotNum):null,
+            slot_number:manualForm.slotNum?parseInt(manualForm.slotNum):0,
             fee:fee2,
             dur,
             duration:dur,
@@ -1631,7 +1642,99 @@ function TDMHParking(){
       )}
 
       {/* REPORTS — no props needed, fetches own data */}
-      {tab==="reports"&&perms.rep&&<ReportsPanel/>}
+      {tab==="reports"&&perms.rep&&<ReportsPanel currentUser={user}/>}
+      {tab==="cashreport"&&user?.role==="cashier"&&(()=>{
+        const myTxns=txns.filter(e=>e.cashier===user.name&&e.status!=="voided");
+        const myVoided=txns.filter(e=>e.cashier===user.name&&e.status==="voided");
+        const myLost=myTxns.filter(e=>e.notes&&e.notes.includes("LOST_TICKET"));
+        const myTotal=myTxns.reduce((s,e)=>s+Number(e.fee||0),0);
+        const myToday=myTxns.filter(e=>dOnly(e.checkout_at||e.checkout_time)===todayStr());
+        const myTodayTotal=myToday.reduce((s,e)=>s+Number(e.fee||0),0);
+        return(
+          <div className="pnl">
+            <div style={{background:"linear-gradient(135deg,#1e3a5f,#0e6ebd)",borderRadius:12,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:12}}>
+              <span style={{fontSize:32}}>👤</span>
+              <div>
+                <div style={{color:"#fff",fontWeight:900,fontSize:16}}>{user.name}</div>
+                <div style={{color:"#90caf9",fontSize:12,marginTop:2}}>Cashier Performance Report</div>
+              </div>
+              <div style={{marginLeft:"auto",textAlign:"right"}}>
+                <div style={{color:"#90caf9",fontSize:11}}>Today</div>
+                <div style={{color:"#fff",fontWeight:900,fontSize:20}}>{P(myTodayTotal)}</div>
+                <div style={{color:"#90caf9",fontSize:11}}>{myToday.length} transactions</div>
+              </div>
+            </div>
+            <div className="rkpis" style={{marginBottom:14}}>
+              <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Collected</div><div className="kv">{P(myTotal)}</div><div className="ks">{myTxns.length} transactions</div></div>
+              <div className="rkpi" style={{"--kc":"#10b981"}}><div className="kl">Today</div><div className="kv">{P(myTodayTotal)}</div><div className="ks">{myToday.length} transactions</div></div>
+              <div className="rkpi" style={{"--kc":"#f59e0b"}}><div className="kl">🎫 Lost Tickets</div><div className="kv">{myLost.length}</div><div className="ks">{P(myLost.length*50)} collected</div></div>
+              <div className="rkpi" style={{"--kc":"#ef4444"}}><div className="kl">⚠️ Voided</div><div className="kv">{myVoided.length}</div><div className="ks">{P(myVoided.reduce((s,e)=>s+Number(e.fee||0),0))} lost</div></div>
+            </div>
+            <div className="rcc" style={{marginBottom:14}}>
+              <h4 style={{margin:"0 0 12px"}}>🏆 Cashier Performance — Today</h4>
+              {(()=>{
+                const allCashiers={};
+                txns.filter(e=>e.status!=="voided"&&dOnly(e.checkout_at||e.checkout_time)===todayStr()).forEach(e=>{
+                  const n=e.cashier||"Unknown";
+                  if(!allCashiers[n]) allCashiers[n]={name:n,total:0,count:0};
+                  allCashiers[n].total+=Number(e.fee||0);
+                  allCashiers[n].count+=1;
+                });
+                const ranked=Object.values(allCashiers).sort((a,b)=>b.total-a.total);
+                const maxT=Math.max(...ranked.map(c=>c.total),1);
+                return ranked.length===0?<div className="nod"><div className="ni">📭</div><p>No transactions today</p></div>:(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {ranked.map((c,i)=>{
+                      const isMe=c.name===user.name;
+                      const pct=Math.round((c.total/maxT)*100);
+                      const medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":"";
+                      return(
+                        <div key={c.name} style={{background:isMe?"#e0f2fe":"#f8fafc",border:"2px solid "+(isMe?"#0ea5e9":"#e2e8f0"),borderRadius:10,padding:"10px 14px"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <span style={{fontSize:18}}>{medal||"👤"}</span>
+                              <div>
+                                <div style={{fontWeight:900,fontSize:13,color:isMe?"#0369a1":"#1a1a2e"}}>{c.name}{isMe?" (You)":""}</div>
+                                <div style={{fontSize:11,color:"var(--mu)"}}>{c.count} transactions</div>
+                              </div>
+                            </div>
+                            <div style={{fontFamily:"'Space Mono',monospace",fontWeight:900,fontSize:15,color:isMe?"#0369a1":"#1a1a2e"}}>{P(c.total)}</div>
+                          </div>
+                          <div style={{background:"#e2e8f0",borderRadius:100,height:6,overflow:"hidden"}}>
+                            <div style={{width:pct+"%",height:"100%",background:isMe?"#0ea5e9":"#94a3b8",borderRadius:100,transition:"width .3s"}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="rcc">
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <h4 style={{margin:0}}>📋 My Transactions — Today</h4>
+                <span style={{fontSize:11,color:"var(--mu)"}}>{myToday.length} records</span>
+              </div>
+              {myToday.length===0?<div className="nod"><div className="ni">📭</div><p>No transactions today</p></div>:(
+                <div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table className="rtbl">
+                  <thead><tr><th>Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Duration</th><th>Notes</th><th>Amount</th></tr></thead>
+                  <tbody>{myToday.sort((a,b)=>new Date(b.checkout_at||b.checkout_time)-new Date(a.checkout_at||a.checkout_time)).map((e,i)=>(
+                    <tr key={i}>
+                      <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_at||e.checkout_time)}</td>
+                      <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#7c3aed"}}>{e.ticket_no||"—"}</td>
+                      <td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{e.plate}</span></td>
+                      <td>{VT[e.vtype]?.icon} {VT[e.vtype]?.label||e.vtype}</td>
+                      <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur||e.duration||"—"}</td>
+                      <td>{e.notes?<span style={{fontSize:9,background:e.notes.includes("LOST")?"#fff8e1":"#f0f9ff",color:e.notes.includes("LOST")?"#d97706":"#0369a1",padding:"2px 6px",borderRadius:100,fontWeight:700}}>{e.notes.includes("LOST")?"🎫 Lost":"🧾 Manual"}</span>:"—"}</td>
+                      <td><span className="eam">{P(e.fee||0)}</span></td>
+                    </tr>
+                  ))}</tbody>
+                </table></div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ACTIVITY */}
       {tab==="activity"&&(
