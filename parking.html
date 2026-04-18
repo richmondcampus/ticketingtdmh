@@ -146,7 +146,7 @@ const PHT_OFF=8*60*60000;
 const toPHT=d=>new Date(new Date(d).getTime()+PHT_OFF);
 const dOnly  =iso=>{try{return toPHT(iso).toISOString().split("T")[0];}catch{return"";}};
 const todayStr=()=>toPHT(new Date()).toISOString().split("T")[0];
-const dAgo   =n=>{const d=toPHT(new Date());d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};ate(d.getDate()-n);return d.toISOString().split("T")[0];};
+const dAgo   =n=>{const d=toPHT(new Date());d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};
 let _tix=1000;
 const nextTix=()=>`TKT-${++_tix}`;
 async function seedTicketCounter(){
