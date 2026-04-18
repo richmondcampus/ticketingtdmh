@@ -1414,7 +1414,6 @@ function TDMHParking(){
         {perms.co&&<button className={`tab ${tab==="manual"?"active":""}`} onClick={()=>setTab("manual")}>🧾 Manual Receipt</button>}
         {perms.earn&&<button className={`tab ${tab==="earnings"?"active":""}`} onClick={()=>setTab("earnings")}>💰 Earnings</button>}
         {perms.rep&&<button className={`tab ${tab==="reports"?"active":""}`} onClick={()=>setTab("reports")}>📊 Reports</button>}
-        {user?.role==="cashier"&&<button className={`tab ${tab==="cashreport"?"active":""}`} onClick={()=>setTab("cashreport")}>📊 My Report</button>}
         {perms.act&&<button className={`tab ${tab==="activity"?"active":""}`} onClick={()=>setTab("activity")}>📋 Activity{actLog.length>0&&<span className="tbdg">{actLog.length}</span>}</button>}
         {perms.users&&<button className={`tab ${tab==="users"?"active":""}`} onClick={()=>setTab("users")}>👥 Users</button>}
       </div>
@@ -1643,72 +1642,6 @@ function TDMHParking(){
 
       {/* REPORTS — no props needed, fetches own data */}
       {tab==="reports"&&perms.rep&&<ReportsPanel currentUser={user}/>}
-      {tab==="cashreport"&&user?.role==="cashier"&&(()=>{
-        const myTxns=txns.filter(e=>e.cashier===user.name&&e.status!=="voided");
-        const myVoided=txns.filter(e=>e.cashier===user.name&&e.status==="voided");
-        const myLost=myTxns.filter(e=>e.notes&&e.notes.includes("LOST_TICKET"));
-        const myTotal=myTxns.reduce((s,e)=>s+Number(e.fee||0),0);
-        const myToday=myTxns.filter(e=>dOnly(e.checkout_at||e.checkout_time)===todayStr());
-        const myTodayTotal=myToday.reduce((s,e)=>s+Number(e.fee||0),0);
-        return(
-          <div className="pnl">
-            <div style={{background:"linear-gradient(135deg,#1e3a5f,#0e6ebd)",borderRadius:12,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:12}}>
-              <span style={{fontSize:32}}>👤</span>
-              <div>
-                <div style={{color:"#fff",fontWeight:900,fontSize:16}}>{user.name}</div>
-                <div style={{color:"#90caf9",fontSize:12,marginTop:2}}>Cashier Performance Report</div>
-              </div>
-              <div style={{marginLeft:"auto",textAlign:"right"}}>
-                <div style={{color:"#90caf9",fontSize:11}}>Today</div>
-                <div style={{color:"#fff",fontWeight:900,fontSize:20}}>{P(myTodayTotal)}</div>
-                <div style={{color:"#90caf9",fontSize:11}}>{myToday.length} transactions</div>
-              </div>
-            </div>
-            <div className="rkpis" style={{marginBottom:14}}>
-              <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Collected</div><div className="kv">{P(myTotal)}</div><div className="ks">{myTxns.length} transactions</div></div>
-              <div className="rkpi" style={{"--kc":"#10b981"}}><div className="kl">Today</div><div className="kv">{P(myTodayTotal)}</div><div className="ks">{myToday.length} transactions</div></div>
-              <div className="rkpi" style={{"--kc":"#f59e0b"}}><div className="kl">🎫 Lost Tickets</div><div className="kv">{myLost.length}</div><div className="ks">{P(myLost.length*50)} collected</div></div>
-              <div className="rkpi" style={{"--kc":"#ef4444"}}><div className="kl">⚠️ Voided</div><div className="kv">{myVoided.length}</div><div className="ks">{P(myVoided.reduce((s,e)=>s+Number(e.fee||0),0))} lost</div></div>
-            </div>
-            <div className="rcc" style={{marginBottom:14}}>
-              <h4 style={{margin:"0 0 12px"}}>🏆 Cashier Performance — Today</h4>
-              {(()=>{
-                const allCashiers={};
-                txns.filter(e=>e.status!=="voided"&&dOnly(e.checkout_at||e.checkout_time)===todayStr()).forEach(e=>{
-                  const n=e.cashier||"Unknown";
-                  if(!allCashiers[n]) allCashiers[n]={name:n,total:0,count:0};
-                  allCashiers[n].total+=Number(e.fee||0);
-                  allCashiers[n].count+=1;
-                });
-                const ranked=Object.values(allCashiers).sort((a,b)=>b.total-a.total);
-                const maxT=Math.max(...ranked.map(c=>c.total),1);
-                return ranked.length===0?<div className="nod"><div className="ni">📭</div><p>No transactions today</p></div>:(
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {ranked.map((c,i)=>{
-                      const isMe=c.name===user.name;
-                      const pct=Math.round((c.total/maxT)*100);
-                      const medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":"";
-                      return(
-                        <div key={c.name} style={{background:isMe?"#e0f2fe":"#f8fafc",border:"2px solid "+(isMe?"#0ea5e9":"#e2e8f0"),borderRadius:10,padding:"10px 14px"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <span style={{fontSize:18}}>{medal||"👤"}</span>
-                              <div>
-                                <div style={{fontWeight:900,fontSize:13,color:isMe?"#0369a1":"#1a1a2e"}}>{c.name}{isMe?" (You)":""}</div>
-                                <div style={{fontSize:11,color:"var(--mu)"}}>{c.count} transactions</div>
-                              </div>
-                            </div>
-                            <div style={{fontFamily:"'Space Mono',monospace",fontWeight:900,fontSize:15,color:isMe?"#0369a1":"#1a1a2e"}}>{P(c.total)}</div>
-                          </div>
-                          <div style={{background:"#e2e8f0",borderRadius:100,height:6,overflow:"hidden"}}>
-                            <div style={{width:pct+"%",height:"100%",background:isMe?"#0ea5e9":"#94a3b8",borderRadius:100,transition:"width .3s"}}/>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
             </div>
             <div className="rcc">
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
