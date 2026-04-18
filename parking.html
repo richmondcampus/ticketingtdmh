@@ -659,14 +659,11 @@ function ReportsPanel({currentUser}){
   const lostTxns=useMemo(()=>filtered.filter(e=>e.notes&&(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking Ticket")||e.notes.toLowerCase().includes("lost"))),[filtered]);
   const lostTotal=lostTxns.length*50;
 
-  const isCashier=currentUser?.role==="cashier";
-  // Cashier sees own transactions only
-  const myFiltered=isCashier?filtered.filter(e=>e.cashier===currentUser?.name):filtered;
-  const total=myFiltered.reduce((s,e)=>s+Number(e.fee||0),0);
-  const cnt=myFiltered.length;
+  const total=filtered.reduce((s,e)=>s+Number(e.fee||0),0);
+  const cnt=filtered.length;
   const avg=cnt>0?Math.round(total/cnt):0;
-  const ovrCnt=myFiltered.filter(e=>e.overnight).length;
-  const days=new Set(myFiltered.map(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at))).size;
+  const ovrCnt=filtered.filter(e=>e.overnight).length;
+  const days=new Set(filtered.map(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at))).size;
   const avgD=days>0?Math.round(total/days):0;
 
   const dayRange=[];let cur=new Date(from);const end=new Date(to);
@@ -723,13 +720,7 @@ function ReportsPanel({currentUser}){
       </div>
 
       <div className="rmain">
-        {isCashier&&<div style={{background:"linear-gradient(135deg,#1e3a5f,#0e6ebd)",borderRadius:10,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:20}}>👤</span>
-          <div>
-            <div style={{color:"#fff",fontWeight:700,fontSize:13}}>Cashier View — {currentUser?.name}</div>
-            <div style={{color:"#90caf9",fontSize:11,marginTop:2}}>Showing your transactions only · Full reports available to Admin</div>
-          </div>
-        </div>}
+
         <div className="rkpis">
           <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Revenue</div><div className="kv">{P(total)}</div><div className="ks">{cnt} transactions</div></div>
           <div className="rkpi" style={{"--kc":"#0ea5e9"}}><div className="kl">Daily Average</div><div className="kv">{P(avgD)}</div><div className="ks">{days} day{days!==1?"s":""}</div></div>
@@ -744,7 +735,7 @@ function ReportsPanel({currentUser}){
             <div className="dc2">{dayData.map((d,i)=>(<div className="dr" key={i}><div className="dlbl">{d.label}</div><div className="dtr"><div className="dfi" style={{width:`${(d.val/maxDay)*100}%`}}/></div><div className="dv">{d.val>0?P(d.val):"—"}</div></div>))}</div>
           )}
         </div>
-        {!isCashier&&<div className="rspl">
+        <div className="rspl">
           <div className="rcc">
             <h4>📍 Revenue by Location</h4>
             <div className="cbg">{byLoc.map(l=>(<div className="cbr" key={l.id}><div className="cbl">{l.icon} {l.short}</div><div className="cbt"><div className="cbf" style={{width:`${(l.total/maxL)*100}%`,background:l.color}}>{l.count>0?`${l.count}`:""}</div></div><div className="cbv">{P(l.total)}</div></div>))}</div>
@@ -753,14 +744,14 @@ function ReportsPanel({currentUser}){
             <h4>🚗 By Vehicle Type</h4>
             <DonutChart data={byV.filter(v=>v.count>0).map(v=>({label:v.label,value:v.count,color:v.color}))} size={110}/>
           </div>
-        </div>}
+        </div>
         <div className="rcc">
           <h4>👤 Cashier Performance</h4>
           {byCash.length===0?<div className="nod"><div className="ni">👤</div>No data</div>:(
             <div className="cbg">{byCash.map((c,i)=>(<div className="cbr" key={i}><div className="cbl">{(c.name||"").split(" ")[0]}</div><div className="cbt"><div className="cbf" style={{width:`${(c.total/maxC)*100}%`,background:"#0ea5e9"}}>{c.count} transactions</div></div><div className="cbv">{P(c.total)}</div></div>))}</div>
           )}
         </div>
-        {!isCashier&&<><div className="rcc">
+        <div className="rcc">
           <h4>🔥 Peak Hours Heatmap</h4>
           <div style={{overflowX:"auto"}}><div style={{minWidth:340}}>
             <div className="hml"><div/>{DAYS.map(d=><div key={d} className="hmd">{d}</div>)}</div>
@@ -776,12 +767,12 @@ function ReportsPanel({currentUser}){
               <tbody>{topP.map((p,i)=>(<tr key={i}><td style={{color:"var(--mu)",fontWeight:700}}>{i+1}</td><td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{p.plate}</span></td><td>{VT[p.vtype]?.icon} {VT[p.vtype]?.label}</td><td><span style={{background:"#e0f2fe",color:"#0369a1",padding:"2px 7px",borderRadius:100,fontSize:10,fontWeight:700}}>{p.count}×</span></td><td><span className="eam">{P(p.total)}</span></td><td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"var(--mu)"}}>{P(Math.round(p.total/p.count))}</td></tr>))}</tbody>
             </table></div>
           )}
-        </div></>}
+        </div>
         <div className="rcc">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11,flexWrap:"wrap",gap:7}}>
             <h4 style={{margin:0}}>📄 Transaction Log</h4>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}{isCashier?" (your transactions)":""}</span>
+              <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}</span>
               <button className="btn" style={{padding:"4px 10px",fontSize:11,background:"#f0fdf4",color:"#166534",border:"1px solid #86efac"}} onClick={exportCSV}>⬇️ Export CSV</button>
             </div>
           </div>
