@@ -1640,17 +1640,49 @@ function TDMHParking(){
       {tab==="reports"&&perms.rep&&<ReportsPanel currentUser={user}/>}
 
       {/* ACTIVITY */}
-      {tab==="activity"&&(
-        <div className="pnl">
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:14,fontWeight:700}}>📋 Activity Log</span>
-            {actLog.length>0&&<span style={{fontSize:11,color:"var(--mu)"}}>{actLog.length} entries (last 500)</span>}
+      {tab==="activity"&&(()=>{
+        const PAGE_SIZE=50;
+        const [actPage,setActPage]=React.useState(0);
+        const [actFilter,setActFilter]=React.useState("");
+        const filtered=actFilter
+          ?actLog.filter(a=>a.msg.toLowerCase().includes(actFilter.toLowerCase()))
+          :actLog;
+        const totalPages=Math.ceil(filtered.length/PAGE_SIZE);
+        const pageItems=filtered.slice(actPage*PAGE_SIZE,(actPage+1)*PAGE_SIZE);
+        return(
+          <div className="pnl">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+              <span style={{fontSize:14,fontWeight:700}}>📋 Activity Log</span>
+              <span style={{fontSize:11,color:"var(--mu)"}}>{filtered.length} entries{actFilter?" (filtered)":""}</span>
+            </div>
+            <div className="srow" style={{marginBottom:10}}>
+              <input className="fi" placeholder="🔍 Filter logs — plate, ticket, action…" value={actFilter} onChange={e=>{setActFilter(e.target.value);setActPage(0);}}/>
+              {actFilter&&<button className="btn bg" style={{flex:"none",padding:"8px 12px"}} onClick={()=>{setActFilter("");setActPage(0);}}>✕</button>}
+            </div>
+            {actLog.length===0
+              ?<div className="emp"><div className="ei">📋</div><p>No activity yet</p></div>
+              :filtered.length===0
+                ?<div className="emp"><div className="ei">🔍</div><p>No results for "{actFilter}"</p></div>
+                :(
+                  <>
+                    <div className="al">
+                      {pageItems.map(a=>(<div className="ai" key={a.id}><div className="adot" style={{background:a.color}}/><div><div className="atxt">{a.msg}</div><div className="atm">{fmtT(a.time)} · {ago(a.time)}</div></div></div>))}
+                    </div>
+                    {totalPages>1&&(
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:12,flexWrap:"wrap"}}>
+                        <button className="btn bg" style={{padding:"6px 10px",fontSize:12}} onClick={()=>setActPage(0)} disabled={actPage===0}>«</button>
+                        <button className="btn bg" style={{padding:"6px 10px",fontSize:12}} onClick={()=>setActPage(p=>Math.max(0,p-1))} disabled={actPage===0}>‹ Prev</button>
+                        <span style={{fontSize:12,fontWeight:700,color:"var(--mu)",padding:"0 8px"}}>Page {actPage+1} of {totalPages}</span>
+                        <button className="btn bg" style={{padding:"6px 10px",fontSize:12}} onClick={()=>setActPage(p=>Math.min(totalPages-1,p+1))} disabled={actPage===totalPages-1}>Next ›</button>
+                        <button className="btn bg" style={{padding:"6px 10px",fontSize:12}} onClick={()=>setActPage(totalPages-1)} disabled={actPage===totalPages-1}>»</button>
+                      </div>
+                    )}
+                  </>
+                )
+            }
           </div>
-          {actLog.length===0?<div className="emp"><div className="ei">📋</div><p>No activity this session</p></div>:(
-            <div className="al">{actLog.map(a=>(<div className="ai" key={a.id}><div className="adot" style={{background:a.color}}/><div><div className="atxt">{a.msg}</div><div className="atm">{fmtT(a.time)} · {ago(a.time)}</div></div></div>))}</div>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* USERS */}
       {tab==="users"&&perms.users&&<UserManagement currentUser={user} toast={toast}/>}
