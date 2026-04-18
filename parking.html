@@ -141,9 +141,12 @@ const fmtDT  =iso=>new Date(iso).toLocaleString("en-PH",{month:"short",day:"nume
 const fmtFull=iso=>new Date(iso).toLocaleString("en-PH",{weekday:"short",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 const ago    =iso=>{const m=Math.floor((Date.now()-new Date(iso))/60000);if(m<1)return"just now";if(m<60)return`${m}m ago`;return`${Math.floor(m/60)}h ${m%60}m ago`;};
 const P      =n=>`₱${Number(n).toLocaleString("en-PH")}`;
-const dOnly  =iso=>{try{return new Date(iso).toISOString().split("T")[0];}catch{return"";}};
-const todayStr=()=>new Date().toISOString().split("T")[0];
-const dAgo   =n=>{const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};
+// Philippine Time (UTC+8)
+const PHT_OFF=8*60*60000;
+const toPHT=d=>new Date(new Date(d).getTime()+PHT_OFF);
+const dOnly  =iso=>{try{return toPHT(iso).toISOString().split("T")[0];}catch{return"";}};
+const todayStr=()=>toPHT(new Date()).toISOString().split("T")[0];
+const dAgo   =n=>{const d=toPHT(new Date());d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};ate(d.getDate()-n);return d.toISOString().split("T")[0];};
 let _tix=1000;
 const nextTix=()=>`TKT-${++_tix}`;
 async function seedTicketCounter(){
