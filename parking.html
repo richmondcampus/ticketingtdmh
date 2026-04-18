@@ -1633,32 +1633,6 @@ function TDMHParking(){
 
       {/* REPORTS — no props needed, fetches own data */}
       {tab==="reports"&&perms.rep&&<ReportsPanel currentUser={user}/>}
-            </div>
-            <div className="rcc">
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                <h4 style={{margin:0}}>📋 My Transactions — Today</h4>
-                <span style={{fontSize:11,color:"var(--mu)"}}>{myToday.length} records</span>
-              </div>
-              {myToday.length===0?<div className="nod"><div className="ni">📭</div><p>No transactions today</p></div>:(
-                <div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table className="rtbl">
-                  <thead><tr><th>Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Duration</th><th>Notes</th><th>Amount</th></tr></thead>
-                  <tbody>{myToday.sort((a,b)=>new Date(b.checkout_at||b.checkout_time)-new Date(a.checkout_at||a.checkout_time)).map((e,i)=>(
-                    <tr key={i}>
-                      <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_at||e.checkout_time)}</td>
-                      <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#7c3aed"}}>{e.ticket_no||"—"}</td>
-                      <td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{e.plate}</span></td>
-                      <td>{VT[e.vtype]?.icon} {VT[e.vtype]?.label||e.vtype}</td>
-                      <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur||e.duration||"—"}</td>
-                      <td>{e.notes?<span style={{fontSize:9,background:e.notes.includes("LOST")?"#fff8e1":"#f0f9ff",color:e.notes.includes("LOST")?"#d97706":"#0369a1",padding:"2px 6px",borderRadius:100,fontWeight:700}}>{e.notes.includes("LOST")?"🎫 Lost":"🧾 Manual"}</span>:"—"}</td>
-                      <td><span className="eam">{P(e.fee||0)}</span></td>
-                    </tr>
-                  ))}</tbody>
-                </table></div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* ACTIVITY */}
       {tab==="activity"&&(
