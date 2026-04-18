@@ -405,29 +405,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 function printThermal(payload,preWin){
   // Save for reprint
   if(window._lastPrintPayload!==undefined) window._lastPrintPayload=payload;
-  // Try local print server first (python script running on cashier PC)
-  // Falls back to browser popup if server not running
-  const LOCAL_PRINT = 'http://localhost:9191/print';
-
-  fetch(LOCAL_PRINT, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(payload),
-    signal:AbortSignal.timeout(2000)
-  })
-  .then(r=>r.json())
-  .then(r=>{
-    if(r.ok){
-      console.log('Printed via local server:', r.msg);
-    } else {
-      console.warn('Print server error:', r.msg);
-      printBrowser(payload, preWin);
-    }
-  })
-  .catch(()=>{
-    // Server not running — fall back to browser popup
-    printBrowser(payload, preWin);
-  });
+  // Android: Kotlin bridge overrides this function entirely
+  // Web: use browser print optimized for 58mm thermal
+  printBrowser(payload, preWin);
 }
 
 function printBrowser(payload,preWin){
@@ -1059,6 +1039,19 @@ function TDMHParking(){
     // Expose to window so Android can trigger refresh on screen wake
     window.loadData = loadData;
     loadData();
+    // Load activity logs from DB (last 500)
+    async function loadActivityLogs(){
+      try{
+        const{data}=await sb.from("activity_logs")
+          .select("*")
+          .order("created_at",{ascending:false})
+          .limit(500);
+        if(data&&data.length>0){
+          setActLog(data.map(r=>({id:r.id,msg:r.msg,color:r.color||"#64748b",time:r.created_at})));
+        }
+      }catch(e){console.warn("Activity log load failed:",e);}
+    }
+    loadActivityLogs();
 
     // Auto-refresh every 10 seconds — fast polling for cross-device sync
     const autoRefresh = setInterval(()=>{ loadData(); }, 10 * 1000);
@@ -1107,7 +1100,7 @@ function TDMHParking(){
         });
         // only show toast/log if it came from another device (different cashier or same but different session is fine)
         const locName=LOCS.find(l=>l.id===t.loc_id)?.name||t.loc_id;
-        addLog(`[RT] ${t.plate} checked out from ${locName} · ${P(t.fee||0)} · by ${t.cashier||"—"}`,"#6366f1");
+        addLog(`📡 RT CHECK-OUT: ${t.plate} · ${locName} · ${t.dur||"—"} · ${P(t.fee||0)} · by ${t.cashier||"—"}`,"#6366f1");
         toast(`📡 ${t.plate} checked out — ${P(t.fee||0)}`,"info");
       })
       .subscribe(status=>{
@@ -1135,7 +1128,17 @@ function TDMHParking(){
     ? searchSlots.filter(s=>s.occupied&&(s.vehicle?.plate?.toLowerCase().includes(search.toLowerCase())||s.vehicle?.name?.toLowerCase().includes(search.toLowerCase()))).map(s=>({...s,locName:LOCS.find(l=>l.id===s.locId)?.name}))
     : [];
 
-  function addLog(msg,color){setActLog(p=>[{id:Date.now(),msg,color,time:new Date().toISOString()},...p.slice(0,199)]);}
+  function addLog(msg,color){
+    const entry={id:Date.now(),msg,color,time:new Date().toISOString()};
+    setActLog(p=>[entry,...p]);
+    // Save to DB for persistent audit trail
+    sb.from("activity_logs").insert({
+      msg,color,
+      created_at:entry.time,
+      user_name:user?.name||"—",
+      role:user?.role||"—"
+    }).then(({error})=>{if(error)console.warn("Log save failed:",error.message);});
+  }
 
   async function doLogin(){
     setLf(p=>({...p,loading:true,err:""}));
@@ -1191,7 +1194,7 @@ function TDMHParking(){
     // optimistic local update (realtime will also fire)
     setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:true,vehicle}:s);return c;});
     const locName=LOCS.find(x=>x.id===l)?.name;
-    addLog(`${vehicle.plate} checked in @ ${locName} · Slot #${sel.number} · ${tix}`,"#10b981");
+    addLog(`✅ CHECK-IN: ${vehicle.plate} · ${form.vtype.toUpperCase()} · ${locName} Slot #${sel.number} · ${tix} · by ${user.name}`,"#10b981");
     toast(`✅ ${vehicle.plate} checked in — ${tix}`,"ok");
     const ciPayload={isCheckIn:true,ticketNo:tix,plate:vehicle.plate,name:vehicle.name,vtype:form.vtype,locName,slotNum:sel.number,checkin:now,cashierName:user.name};
     setLastPrintPayload(ciPayload);
@@ -1214,7 +1217,8 @@ function TDMHParking(){
           // Already checked out — slot is stuck, auto-clear it
           await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null,v_checkin_by:null}).eq("id",sel.id);
           setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:false,vehicle:null}:s);return c;});
-          toast("⚠️ "+origTix+" already checked out — slot cleared.","info");
+          addLog(`🔧 AUTO-CLEAR: ${v.plate} · ${locName} Slot #${sel.number} · ${origTix} already checked out · cleared by ${user.name}`,"#8b5cf6");
+          toast("⚠️ "+origTix+" already checked out — slot auto-cleared.","info");
           setModal(null);setProcessing(false);return;
         }
       }
@@ -1235,7 +1239,7 @@ function TDMHParking(){
       setTxns(p=>{if(p.find(x=>x.id===txnRow.id))return p;return[txnRow,...p];});
       setReceipt({v,fee,dur,overnight,slot:sel,loc:LOCS.find(x=>x.id===l),ticketNo:txnRow.ticket_no});
       const tix=txnRow.ticket_no; // Use DB-generated ticket number
-      addLog(`${v.plate} checked out from ${locName} · ${P(fee)} · ${tix}`,"#f59e0b");
+      addLog(`💰 CHECK-OUT: ${v.plate} · ${locName} Slot #${sel.number} · ${dur} · ${P(fee)} · ${tix} · in by ${v.checkinBy||'—'} · out by ${user.name}`,"#f59e0b");
       toast(`💰 ${v.plate} checked out — ${P(fee)}`,"ok");
       const coPayload={isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name,lostTicket};
       setLastPrintPayload(coPayload);
@@ -1273,7 +1277,7 @@ function TDMHParking(){
     const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
     if(txnErr){console.error("Void txn error:",txnErr.message);toast("Warning: slot cleared but record not saved: "+txnErr.message,"err");}
     else if(txnRow) setTxns(p=>{if(p.find(x=>x.id===txnRow.id))return p;return[txnRow,...p];});
-    addLog(`⚠️ VOID: ${v.plate} from ${locName} · lost ${P(fee)} · by ${user.name}`,"#ef4444");
+    addLog(`⚠️ VOID: ${v.plate} · ${locName} Slot #${sel.number} · ${dur} · exp ${P(fee)} · by ${user.name}`,"#ef4444");
     printThermal({isVoid:true,isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name});
   }
 
@@ -1530,7 +1534,7 @@ function TDMHParking(){
           const tix=txnRow?.ticket_no||("MAN-"+Date.now().toString().slice(-6));
           printThermal({isCheckIn:false,ticketNo:tix,plate,name:manualForm.name||"—",vtype:manualForm.vtype,locName,slotNum:manualForm.slotNum||"?",checkin:checkinISO,fee:fee2,dur,overnight,cashierName:user.name,lostTicket});
           toast("🧾 Manual receipt printed — "+tix+(lostTicket?" (+₱50 Lost Ticket)":""),"ok");
-          addLog("MANUAL RECEIPT: "+plate+" · "+P(fee2)+" · "+tix+" · by "+user.name,"#d97706");
+          addLog("🧾 MANUAL RECEIPT: "+plate+" · "+manualForm.vtype.toUpperCase()+" · "+(locName||"?")+" Slot #"+(manualForm.slotNum||"?")+" · "+P(fee2)+" · "+tix+" · by "+user.name,"#d97706");
           // Reset form after successful print
           setManualForm({plate:"",name:"",vtype:"car",locId:"compound",slotNum:"",checkin:""});
           setLostTicket(false);
@@ -1640,7 +1644,7 @@ function TDMHParking(){
         <div className="pnl">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontSize:14,fontWeight:700}}>📋 Activity Log</span>
-            {actLog.length>0&&<span style={{fontSize:11,color:"var(--mu)"}}>{actLog.length} entries this session</span>}
+            {actLog.length>0&&<span style={{fontSize:11,color:"var(--mu)"}}>{actLog.length} entries (last 500)</span>}
           </div>
           {actLog.length===0?<div className="emp"><div className="ei">📋</div><p>No activity this session</p></div>:(
             <div className="al">{actLog.map(a=>(<div className="ai" key={a.id}><div className="adot" style={{background:a.color}}/><div><div className="atxt">{a.msg}</div><div className="atm">{fmtT(a.time)} · {ago(a.time)}</div></div></div>))}</div>
