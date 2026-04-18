@@ -1256,7 +1256,14 @@ function TDMHParking(){
       const origTix=v.ticketNo||"";
       // Duplicate guard — check if this slot's check-in ticket already has a completed checkout
       if(origTix){
-        const{data:existing}=await sb.from("transactions").select("id").eq("ticket_no",origTix).eq("status","completed").maybeSingle();
+        // Check duplicate using ticket_no + checkin_time — more specific than ticket alone
+        // Prevents false positives when same plate returns same day with different ticket
+        const cinTime=v.checkin;
+        const{data:existing}=await sb.from("transactions").select("id")
+          .eq("ticket_no",origTix)
+          .eq("status","completed")
+          .eq("checkin_at",cinTime)
+          .maybeSingle();
         if(existing){
           // Already checked out — slot is stuck, auto-clear it
           await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null,v_checkin_by:null}).eq("id",sel.id);
