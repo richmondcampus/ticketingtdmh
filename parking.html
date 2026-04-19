@@ -602,17 +602,20 @@ function ReportsPanel({currentUser}){
     async function fetchData(){
       setFetching(true);
       try{
-        // Fetch by checkout_at, also catch records where checkout_at is null but checkout_time is set
+        // PHT offset: subtract 8hrs to get UTC equivalent for DB query
+        // e.g. Apr 19 00:00 PHT = Apr 18 16:00 UTC
+        const fromUTC=new Date(from+"T00:00:00+08:00").toISOString();
+        const toUTC=new Date(to+"T23:59:59+08:00").toISOString();
         const{data:d1,error:e1}=await sb.from("transactions")
           .select("*")
-          .gte("checkout_at",from+"T00:00:00")
-          .lte("checkout_at",to+"T23:59:59")
+          .gte("checkout_at",fromUTC)
+          .lte("checkout_at",toUTC)
           .order("checkout_at",{ascending:false});
         const{data:d2}=await sb.from("transactions")
           .select("*")
           .is("checkout_at",null)
-          .gte("checkout_time",from+"T00:00:00")
-          .lte("checkout_time",to+"T23:59:59");
+          .gte("checkout_time",fromUTC)
+          .lte("checkout_time",toUTC);
         const seen=new Set();
         const data=[...(d1||[]),...(d2||[])].filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
         const error=e1;
