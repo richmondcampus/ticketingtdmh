@@ -1407,7 +1407,6 @@ function TDMHParking(){
           <div className="hck">{clock.toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div>
           <span className={`rbdg rb-${user.role}`}>{user.role==="admin"?"👑":user.role==="cashier"?"💳":"🅿️"} {user.role}</span>
           {user.role==="attendant"&&<button className="hbtn" onClick={()=>setAttLoc(null)} style={{background:"rgba(139,92,246,.2)",borderColor:"rgba(139,92,246,.4)",color:"#c4b5fd"}}>Change Location</button>}
-          {lastPrintPayload&&<button className="hbtn" style={{background:"rgba(14,165,233,.2)",borderColor:"rgba(14,165,233,.4)",color:"#7dd3fc"}} onClick={()=>printThermal(lastPrintPayload)} title="Reprint last receipt/ticket">🖨️ Reprint</button>}
           <button className="hbtn" onClick={doLogout}>Sign Out</button>
         </div>
       </div>
