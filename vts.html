@@ -584,6 +584,16 @@ function deptOptions(selected='') {
 const ini = n => (n||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()
 const badge = s => { const m = STATUS_MAP[s]||{cls:'b-pending',lbl:s}; return `<span class="badge ${m.cls}">${m.lbl}</span>` }
 const typeBadge = t => t==='ambulance' ? `<span class="badge b-amb">🚑 Ambulance</span>` : t==='motorcycle' ? `<span class="badge b-moto">🏍 Motorcycle</span>` : `<span class="badge b-reg">🚙 Regular</span>`
+const priorityBadge = p => {
+  const map = {
+    emergency: { bg:'#fef2f2', color:'#dc2626', border:'#fecdd3', icon:'🚨', lbl:'Emergency' },
+    urgent:    { bg:'#fef3c7', color:'#d97706', border:'#fde68a', icon:'⚡', lbl:'Urgent'    },
+    normal:    { bg:'#eff6ff', color:'#2563eb', border:'#bfdbfe', icon:'📋', lbl:'Normal'    },
+    low:       { bg:'#f0fdf4', color:'#16a34a', border:'#bbf7d0', icon:'🕐', lbl:'Low'       },
+  }
+  const m = map[p] || map.normal
+  return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:${m.bg};color:${m.color};border:1px solid ${m.border}">${m.icon} ${m.lbl}</span>`
+}
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : '—'
 const fmtDT = d => d ? new Date(d).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'
 
@@ -1001,7 +1011,7 @@ async function renderDashboard() {
 
   // Owner gets their own executive dashboard
   if (role === 'owner') { await renderOwnerDashboard(); return }
-  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,is_advance_booking').order('created_at',{ascending:false})
+  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,is_advance_booking').order('created_at',{ascending:false})
   if (role === 'requester')     tripsQ = tripsQ.eq('requester_id', currentProfile.id)
   if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.id)
   if (role === 'approver_admin') tripsQ = tripsQ.neq('vehicle_type_needed', 'ambulance')
@@ -1389,6 +1399,7 @@ function renderTicketsTable() {
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Ticket</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Department</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Purpose</th>
+        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Urgency</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Date</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Type</th>
         <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Status</th>
@@ -1415,6 +1426,9 @@ function renderTicketsTable() {
         (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
       ))
         acts.push(`<button class="tbl-act tbl-act-blue" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign</button>`)
+      // Reassign — admin/super_approver only, on assigned tickets before gate-out
+      if ((role==='admin' || role==='super_approver') && t.status==='assigned')
+        acts.push(`<button class="tbl-act" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.2)" onclick="event.stopPropagation();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`)
       if (role==='guard' && t.status==='assigned') {
         const depDate = t.departure_at ? new Date(t.departure_at) : null
         const now = new Date()
@@ -1453,6 +1467,7 @@ function renderTicketsTable() {
             return `<div style="font-size:10.5px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>`
           })()}
         </td>
+        <td style="padding:13px 16px;white-space:nowrap">${priorityBadge(t.priority)}</td>
         <td style="padding:13px 16px;white-space:nowrap">
           <div style="font-size:11.5px;color:var(--text1)">${fmtDate(t.departure_at||t.created_at)}</div>
         </td>
@@ -1611,6 +1626,8 @@ function buildMobCards(filtered, role) {
       (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
     ))
       acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign Driver</button>`)
+    if ((role==='admin' || role==='super_approver') && t.status==='assigned')
+      acts.push(`<button class="btn btn-sm" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.2)" onclick="event.stopPropagation();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`)
     if ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
       acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
     if ((role==='admin' || role==='super_approver') && !['completed','cancelled'].includes(t.status))
@@ -1618,7 +1635,7 @@ function buildMobCards(filtered, role) {
     return `<div class="mob-card" onclick="openViewModal('${t.id}')">
       <div class="mob-card-hd">
         <div>
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">${chip(t.ticket_no)} ${typeBadge(t.vehicle_type_needed)}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">${chip(t.ticket_no)} ${typeBadge(t.vehicle_type_needed)} ${t.priority && t.priority !== 'normal' ? priorityBadge(t.priority) : ''}</div>
           <div class="mob-card-title">${t.department||'—'}</div>
           <div class="mob-card-sub">${t.purpose||'—'}</div>
         </div>
@@ -1676,7 +1693,7 @@ async function openViewModal(id) {
     : ''
 
   openMO(`Ticket — ${t.ticket_no}`,
-    `<div style="display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap">${badge(t.status)}${typeBadge(t.vehicle_type_needed)}${t.is_advance_booking?'<span style="background:var(--amber-s);color:var(--amber);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">📅 ADVANCE</span>':''}</div>
+    `<div style="display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap">${badge(t.status)}${typeBadge(t.vehicle_type_needed)}${priorityBadge(t.priority)}${t.is_advance_booking?'<span style="background:var(--amber-s);color:var(--amber);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">📅 ADVANCE</span>':''}</div>
      ${wfHtml(t.status)}
      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
        ${fields.map(([l,v,s])=>`<div style="background:var(--bg);padding:10px;border-radius:8px;${s==='span2'?'grid-column:span 2':''}">
@@ -1686,7 +1703,10 @@ async function openViewModal(id) {
      </div>
      ${ratingHTML}
      <div style="font-size:10.5px;color:var(--text3);margin-top:13px">Created: ${fmtDT(t.created_at)} · Approver: ${t.vehicle_type_needed==='ambulance'?'Ambulance Approver':'Admin Approver'}</div>`,
-    ''
+    // Footer buttons
+    `${(currentProfile?.role === 'admin' || currentProfile?.role === 'super_approver') && t.status === 'assigned'
+      ? `<button class="btn" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.25)" onclick="closeMO();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`
+      : ''}`
   )
 }
 
@@ -1767,7 +1787,9 @@ async function doApproveAndAssign(id, ticketNo) {
         return nDep < tEnd && nEnd > tDep
       })
       btn.disabled=false; btn.textContent='✓ Approve & Assign'
-      if (!confirm(`⚠️ VEHICLE CONFLICT DETECTED!\n\nThis vehicle is already assigned to ${conflict?.ticket_no} around the same time.\n\nDo you want to proceed anyway?`)) return
+      if (!confirm(`⚠️ VEHICLE CONFLICT DETECTED!\n\nThis vehicle is already assigned to ${conflict?.ticket_no} around the same time.\n\nDo you want to proceed anyway? This override will be logged.`)) return
+      // Log override
+      await addAudit(id, ticketNo, '⚠ Vehicle Conflict Override', `Vehicle conflict with ${conflict?.ticket_no} — override by ${currentProfile?.full_name}`)
       btn.disabled=true; btn.textContent='Processing...'
     }
 
@@ -1795,7 +1817,8 @@ async function doApproveAndAssign(id, ticketNo) {
         return nDep < tEnd && nEnd > tDep
       })
       btn.disabled=false; btn.textContent='✓ Approve & Assign'
-      if (!confirm(`⚠️ DRIVER CONFLICT DETECTED!\n\n${driverName} is already assigned to ${conflict?.ticket_no} around the same time.\n\nDo you want to proceed anyway?`)) return
+      if (!confirm(`⚠️ DRIVER CONFLICT DETECTED!\n\n${driverName} is already assigned to ${conflict?.ticket_no} around the same time.\n\nDo you want to proceed anyway? This override will be logged.`)) return
+      await addAudit(id, ticketNo, '⚠ Driver Conflict Override', `Driver conflict with ${conflict?.ticket_no} — override by ${currentProfile?.full_name}`)
       btn.disabled=true; btn.textContent='Processing...'
     }
 
@@ -1825,22 +1848,59 @@ async function doApproveAndAssign(id, ticketNo) {
 
   btn.textContent = 'Processing...'
 
-  // Step 1: Approve
+  // ── ATOMIC APPROVAL (prevents double-approval race condition) ──
+  // First re-check status to give a fast UI response before DB lock
+  const { data: preCheck } = await SB.from('trips')
+    .select('status,approver_id')
+    .eq('id', id).single()
+
+  if (preCheck && preCheck.status !== 'pending-approval') {
+    btn.disabled=false; btn.textContent='✓ Approve & Assign'
+    closeMO()
+    // Find out who approved it
+    let approverName = 'another approver'
+    if (preCheck.approver_id) {
+      const { data: ap } = await SB.from('users').select('full_name').eq('id', preCheck.approver_id).single()
+      if (ap?.full_name) approverName = ap.full_name
+    }
+    alert(`⚠ This ticket has already been ${preCheck.status} by ${approverName}.\n\nPlease refresh the ticket list.`)
+    renderTickets()
+    return
+  }
+
+  // Use atomic DB function — row-level lock prevents concurrent approvals
+  const { data: lockResult, error: lockErr } = await SB.rpc('approve_trip_atomic', {
+    p_trip_id:       id,
+    p_approver_id:   currentProfile?.id,
+    p_approved_at:   new Date().toISOString(),
+    p_remarks:       rem,
+    p_driver_id:     driverId,
+    p_driver_name:   driverName,
+    p_vehicle_id:    vv,
+    p_vehicle_plate: _vehicles.find(v => v.id === vv)?.plate || '',
+    p_vehicle_name:  _vehicles.find(v => v.id === vv)?.name || '',
+    p_assigned_by:   currentProfile?.id,
+    p_assigned_at:   new Date().toISOString()
+  })
+
+  if (lockErr) {
+    alert('Error during approval: ' + lockErr.message)
+    btn.disabled=false; btn.textContent='✓ Approve & Assign'; return
+  }
+
+  const result = Array.isArray(lockResult) ? lockResult[0] : lockResult
+
+  if (!result?.success) {
+    btn.disabled=false; btn.textContent='✓ Approve & Assign'
+    closeMO()
+    alert(`⚠ Could not approve ticket.\n\n${result?.message || 'The ticket was already processed.'}\n${result?.blocked_by ? 'Processed by: ' + result.blocked_by : ''}\n\nPlease refresh.`)
+    renderTickets()
+    return
+  }
+
+  // ── APPROVED SUCCESSFULLY ──
+  // Fetch latest trip data for notifications
   const { data: trip } = await SB.from('trips').select('*').eq('id',id).single()
-  const { error: approveErr } = await SB.from('trips').update({
-    status: 'assigned',
-    approver_id: currentProfile?.id,
-    approved_at: new Date().toISOString(),
-    approval_remarks: rem,
-    driver_id: driverId,
-    driver_name: driverName,
-    vehicle_id: vv,
-    vehicle_plate: _vehicles.find(v => v.id === vv)?.plate || '',
-    vehicle_name: _vehicles.find(v => v.id === vv)?.name || '',
-    assigned_by: currentProfile?.id,
-    assigned_at: new Date().toISOString()
-  }).eq('id', id)
-  if (approveErr) { alert(approveErr.message); btn.disabled=false; btn.textContent='✓ Approve & Assign'; return }
 
   // Update driver and vehicle status
   await SB.from('drivers').update({ status:'on-trip' }).eq('id', driverId)
@@ -1871,6 +1931,204 @@ async function doApproveAndAssign(id, ticketNo) {
   closeMO(); renderTickets()
 }
 
+// ════════════════════════════════════════════════
+// REASSIGN DRIVER / VEHICLE
+// ════════════════════════════════════════════════
+async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId, curVehicleName, curVehicleId) {
+  const isAmb  = vtype === 'ambulance'
+  const isMoto = vtype === 'motorcycle'
+
+  // Fetch trip departure for time-based filtering
+  const { data: tripData } = await SB.from('trips')
+    .select('departure_at,expected_return_at')
+    .eq('id', id).single()
+
+  const depISO = tripData?.departure_at || new Date().toISOString()
+  const retISO = tripData?.expected_return_at || new Date(new Date(depISO).getTime() + 4*3600000).toISOString()
+
+  // Fetch busy IDs at this time window (exclude current ticket)
+  const [{ data: busyV }, { data: busyD }] = await Promise.all([
+    SB.from('trips').select('vehicle_id')
+      .not('status','in','("completed","cancelled","rejected")')
+      .neq('id', id).lt('departure_at', retISO).gt('expected_return_at', depISO),
+    SB.from('trips').select('driver_id')
+      .not('status','in','("completed","cancelled","rejected")')
+      .neq('id', id).lt('departure_at', retISO).gt('expected_return_at', depISO)
+  ])
+
+  const busyVIds = new Set((busyV||[]).map(t=>t.vehicle_id).filter(Boolean))
+  const busyDIds = new Set((busyD||[]).map(t=>t.driver_id).filter(Boolean))
+
+  // Available drivers (exclude busy, include current so they appear)
+  const avD = (_drivers||[]).filter(d => !busyDIds.has(d.id) || d.id === curDriverId)
+  // Available vehicles filtered by type (exclude busy, include current)
+  const avV = (_vehicles||[]).filter(v => {
+    const t = (v.type||'').toLowerCase()
+    const typeMatch = isAmb  ? t.includes('ambulance')||t.includes('bls')
+                    : isMoto ? t.includes('motorcycle')
+                    :          !t.includes('ambulance')&&!t.includes('motorcycle')
+    return typeMatch && (!busyVIds.has(v.id) || v.id === curVehicleId)
+  })
+
+  const depStr = tripData?.departure_at
+    ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true})
+    : '—'
+
+  openMO(`↻ Reassign — ${ticketNo}`,
+    `<div class="info info-amber" style="margin-bottom:14px">
+       <strong>⚠ Reassigning an already-assigned ticket.</strong><br>
+       <span style="font-size:11px">The current driver and vehicle will be released back to available status. Old driver will be notified via SMS.</span>
+     </div>
+
+     <div style="background:var(--bg);border-radius:9px;padding:10px 13px;margin-bottom:14px">
+       <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Currently Assigned</div>
+       <div style="display:flex;gap:16px;flex-wrap:wrap">
+         <div><div style="font-size:10px;color:var(--text3)">Driver</div><div style="font-size:13px;font-weight:700">${curDriverName||'—'}</div></div>
+         <div><div style="font-size:10px;color:var(--text3)">Vehicle</div><div style="font-size:13px;font-weight:700">${curVehicleName||'—'}</div></div>
+         <div><div style="font-size:10px;color:var(--text3)">Departure</div><div style="font-size:13px;font-weight:700">${depStr}</div></div>
+       </div>
+     </div>
+
+     <div class="fg"><label class="fl">New Driver *
+       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} available</span>
+     </label>
+       <select class="fs" id="rsaDrv">
+         <option value="">-- Select New Driver --</option>
+         ${avD.map(d=>`<option value="${d.id}|${d.full_name}"${d.id===curDriverId?' style="font-weight:700;color:var(--pri)"':''}>
+           ${d.id===curDriverId?'★ (Current) ':''} ${d.full_name} · ${d.license_no||'—'}
+         </option>`).join('')}
+       </select>
+     </div>
+
+     <div class="fg"><label class="fl">New Vehicle *
+       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avV.length} available</span>
+     </label>
+       <select class="fs" id="rsaVeh">
+         <option value="">-- Select New Vehicle --</option>
+         ${avV.map(v=>`<option value="${v.id}"${v.id===curVehicleId?' style="font-weight:700;color:var(--pri)"':''}>
+           ${v.id===curVehicleId?'★ (Current) ':''} ${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)
+         </option>`).join('')}
+       </select>
+     </div>
+
+     <div class="fg"><label class="fl">Reason for Reassignment *</label>
+       <textarea class="ft" id="rsaReason" placeholder="e.g. Driver is sick, Vehicle breakdown, Emergency priority change..." style="min-height:55px"></textarea>
+     </div>`,
+
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn" style="background:var(--purple);color:#fff" id="rsaBtn" onclick="doReassign('${id}','${ticketNo}','${curDriverId}','${curVehicleId}')">↻ Confirm Reassign</button>`
+  )
+  // Store for reference
+  window._rsaCurDriverId  = curDriverId
+  window._rsaCurVehicleId = curVehicleId
+}
+
+async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
+  const dv     = document.getElementById('rsaDrv')?.value
+  const vv     = document.getElementById('rsaVeh')?.value
+  const reason = document.getElementById('rsaReason')?.value?.trim()
+
+  if (!dv || !vv)    { alert('Please select both a new driver and vehicle.'); return }
+  if (!reason)       { alert('Please provide a reason for the reassignment.'); return }
+
+  const [newDriverId, newDriverName] = dv.split('|')
+  const newVehicle = _vehicles.find(v => v.id === vv)
+  const btn = document.getElementById('rsaBtn')
+  btn.disabled=true; btn.textContent='Reassigning...'
+
+  // Time-based conflict check for NEW driver (exclude current trip)
+  const { data: tripData } = await SB.from('trips').select('departure_at,expected_return_at').eq('id',id).single()
+  const depISO = tripData?.departure_at || new Date().toISOString()
+  const retISO = tripData?.expected_return_at || new Date(new Date(depISO).getTime()+4*3600000).toISOString()
+
+  // Check if new driver has conflict (skip if same driver)
+  if (newDriverId !== curDriverId) {
+    const { data: dConf } = await SB.from('trips')
+      .select('ticket_no').eq('driver_id', newDriverId)
+      .not('status','in','("completed","cancelled","rejected")')
+      .neq('id', id).lt('departure_at', retISO).gt('expected_return_at', depISO)
+    if ((dConf||[]).length > 0) {
+      if (!confirm(`⚠ ${newDriverName} has an overlapping trip (${dConf[0].ticket_no}).\n\nProceed with reassignment anyway? This will be logged.`)) {
+        btn.disabled=false; btn.textContent='↻ Confirm Reassign'; return
+      }
+    }
+  }
+
+  // Check if new vehicle has conflict (skip if same vehicle)
+  if (vv !== curVehicleId) {
+    const { data: vConf } = await SB.from('trips')
+      .select('ticket_no').eq('vehicle_id', vv)
+      .not('status','in','("completed","cancelled","rejected")')
+      .neq('id', id).lt('departure_at', retISO).gt('expected_return_at', depISO)
+    if ((vConf||[]).length > 0) {
+      if (!confirm(`⚠ Vehicle ${newVehicle?.plate} has an overlapping trip (${vConf[0].ticket_no}).\n\nProceed anyway? This will be logged.`)) {
+        btn.disabled=false; btn.textContent='↻ Confirm Reassign'; return
+      }
+    }
+  }
+
+  // Atomic reassign via DB function
+  const { data: result, error: rErr } = await SB.rpc('reassign_trip_atomic', {
+    p_trip_id:          id,
+    p_admin_id:         currentProfile?.id,
+    p_new_driver_id:    newDriverId,
+    p_new_driver_name:  newDriverName,
+    p_new_vehicle_id:   vv,
+    p_new_vehicle_plate: newVehicle?.plate || '',
+    p_new_vehicle_name:  newVehicle?.name  || '',
+    p_reason:           reason
+  })
+
+  if (rErr) { alert('Error: ' + rErr.message); btn.disabled=false; btn.textContent='↻ Confirm Reassign'; return }
+
+  const res = Array.isArray(result) ? result[0] : result
+  if (!res?.success) {
+    btn.disabled=false; btn.textContent='↻ Confirm Reassign'
+    closeMO()
+    alert(`⚠ Reassignment failed.\n\n${res?.message || 'Unknown error.'}\n\nPlease refresh.`)
+    renderTickets(); return
+  }
+
+  // Release OLD driver + vehicle → available (only if actually changing)
+  const oldDriverId  = res.old_driver_id
+  const oldVehicleId = res.old_vehicle_id
+
+  if (oldDriverId && oldDriverId !== newDriverId)
+    await SB.from('drivers').update({ status:'available' }).eq('id', oldDriverId)
+  if (oldVehicleId && oldVehicleId !== vv)
+    await SB.from('vehicles').update({ status:'available' }).eq('id', oldVehicleId)
+
+  // Set NEW driver + vehicle → on-trip (only if actually changing)
+  if (newDriverId !== curDriverId)
+    await SB.from('drivers').update({ status:'on-trip' }).eq('id', newDriverId)
+  if (vv !== curVehicleId)
+    await SB.from('vehicles').update({ status:'on-trip' }).eq('id', vv)
+
+  // Audit log
+  const oldDriverName = _drivers.find(d=>d.id===curDriverId)?.full_name || curDriverId
+  const oldVehicleName = _vehicles.find(v=>v.id===curVehicleId)?.plate || curVehicleId
+  const changes = []
+  if (newDriverId !== curDriverId)  changes.push(`Driver: ${oldDriverName} → ${newDriverName}`)
+  if (vv !== curVehicleId)          changes.push(`Vehicle: ${oldVehicleName} → ${newVehicle?.plate||vv}`)
+  await addAudit(id, ticketNo, '↻ Reassigned', `${changes.join(' | ')} | Reason: ${reason} | By: ${currentProfile?.full_name}`)
+
+  // Notify old driver via SMS (if changed and has phone)
+  if (oldDriverId && oldDriverId !== newDriverId) {
+    const { data: oldDrv } = await SB.from('drivers').select('phone').eq('id', oldDriverId).single()
+    if (oldDrv?.phone) await sendSMS([oldDrv.phone], `[TDMH VTS] You have been UNASSIGNED from trip ${ticketNo}.\nReason: ${reason}\nYou are now available for new trips.`)
+  }
+
+  // Notify new driver via SMS (if changed)
+  if (newDriverId !== curDriverId) {
+    const { data: newDrv } = await SB.from('drivers').select('phone').eq('id', newDriverId).single()
+    const dep = tripData?.departure_at ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
+    if (newDrv?.phone) await sendSMS([newDrv.phone], `[TDMH VTS] You have been ASSIGNED to trip ${ticketNo}.\nVehicle: ${newVehicle?.plate||'—'}\nDeparture: ${dep}\nPlease report to the motor pool.`)
+  }
+
+  closeMO()
+  renderTickets()
+}
+
 // REJECT
 function openRejectModal(id, ticketNo) {
   openMO(`Reject — ${ticketNo}`,
@@ -1884,14 +2142,42 @@ async function doReject(id, ticketNo) {
   const reason = document.getElementById('rejR')?.value?.trim()
   if (!reason) { alert('Reason required.'); return }
   const btn = document.getElementById('rejBtn'); btn.disabled=true; btn.textContent='Rejecting...'
+
+  // Pre-check status for fast UI response
+  const { data: preCheck } = await SB.from('trips').select('status,approver_id').eq('id',id).single()
+  if (preCheck && preCheck.status !== 'pending-approval') {
+    btn.disabled=false; btn.textContent='Reject Ticket'
+    closeMO()
+    let approverName = 'another approver'
+    if (preCheck.approver_id) {
+      const { data: ap } = await SB.from('users').select('full_name').eq('id', preCheck.approver_id).single()
+      if (ap?.full_name) approverName = ap.full_name
+    }
+    alert(`⚠ This ticket has already been ${preCheck.status} by ${approverName}.\n\nPlease refresh.`)
+    renderTickets(); return
+  }
+
+  // Atomic rejection with row lock
+  const { data: lockResult, error: lockErr } = await SB.rpc('reject_trip_atomic', {
+    p_trip_id:     id,
+    p_approver_id: currentProfile?.id,
+    p_reason:      reason
+  })
+
+  if (lockErr) { alert('Error: ' + lockErr.message); btn.disabled=false; btn.textContent='Reject Ticket'; return }
+
+  const result = Array.isArray(lockResult) ? lockResult[0] : lockResult
+  if (!result?.success) {
+    btn.disabled=false; btn.textContent='Reject Ticket'
+    closeMO()
+    alert(`⚠ ${result?.message || 'Could not reject ticket.'}\n${result?.blocked_by ? 'Processed by: ' + result.blocked_by : ''}\n\nPlease refresh.`)
+    renderTickets(); return
+  }
+
   const { data: trip } = await SB.from('trips').select('purpose,department,destination,stops,driver_id,vehicle_id').eq('id',id).single()
-  const { error } = await SB.from('trips').update({ status:'rejected', rejected_by:currentProfile?.id, rejected_at:new Date().toISOString(), rejection_reason:reason }).eq('id',id)
-  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Reject Ticket'; return }
   await addAudit(id, ticketNo, 'Ticket Rejected', reason)
-  // Email only → notify requester (not time-critical for SMS)
   const requester = await getRequesterContacts(id)
   await sendEmail(requester.emails, 'ticket_rejected', { ticket_no: ticketNo, purpose: trip?.purpose||'', reason })
-  // SMS + Email → notify driver if already assigned (time-critical — driver needs to know ASAP)
   if (trip?.driver_id) {
     const { data: drvRow } = await SB.from('drivers').select('phone').eq('id', trip.driver_id).single()
     if (drvRow?.phone) await sendSMS([drvRow.phone], `[TDMH VTS] Trip ${ticketNo} has been CANCELLED.\nYou are no longer assigned to this trip.`)
@@ -1936,51 +2222,178 @@ async function doCancelTicket(id, ticketNo, driverId, vehicleId) {
 }
 
 // ASSIGN DRIVER
-function openAssignModal(id, ticketNo, vtype) {
+async function openAssignModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
   const role   = currentProfile?.role
-  const avD = _drivers.filter(d => d.status === 'available')
-  const avV = _vehicles.filter(v => {
+  const canLastResort = ['admin','super_approver'].includes(role)
+
+  // Fetch trip's departure/return for time-based filtering
+  const { data: tripData } = await SB.from('trips')
+    .select('departure_at,expected_return_at')
+    .eq('id', id).single()
+
+  const dep = tripData?.departure_at
+  const ret = tripData?.expected_return_at || null
+  const depISO = dep || new Date().toISOString()
+  const retISO = ret || new Date(new Date(depISO).getTime() + 4*3600000).toISOString()
+
+  // Fetch ALL drivers and vehicles
+  const [{ data: allDrivers }, { data: allVehicles }] = await Promise.all([
+    SB.from('drivers').select('*').order('full_name'),
+    SB.from('vehicles').select('*').order('plate')
+  ])
+
+  // Fetch conflicting driver/vehicle IDs for this time window
+  const [{ data: busyVehicles }, { data: busyDrivers }] = await Promise.all([
+    SB.from('trips')
+      .select('vehicle_id')
+      .not('status','in','("completed","cancelled","rejected")')
+      .neq('id', id)
+      .lt('departure_at', retISO)
+      .gt('expected_return_at', depISO),
+    SB.from('trips')
+      .select('driver_id')
+      .not('status','in','("completed","cancelled","rejected")')
+      .neq('id', id)
+      .lt('departure_at', retISO)
+      .gt('expected_return_at', depISO)
+  ])
+
+  const busyVehicleIds = new Set((busyVehicles||[]).map(t => t.vehicle_id).filter(Boolean))
+  const busyDriverIds  = new Set((busyDrivers||[]).map(t => t.driver_id).filter(Boolean))
+
+  // Filter by time availability AND type
+  const filterVehicles = (all, typeOnly) => all ? all.filter(v => {
     const t = (v.type||'').toLowerCase()
-    if (isAmb)  return t.includes('ambulance') || t.includes('bls')
-    if (isMoto) return t.includes('motorcycle')
-    return !t.includes('ambulance') && !t.includes('motorcycle')
-  })
+    const typeMatch = typeOnly
+      ? (isAmb  ? t.includes('ambulance')||t.includes('bls')
+       : isMoto ? t.includes('motorcycle')
+       :          !t.includes('ambulance')&&!t.includes('motorcycle'))
+      : true
+    return typeMatch && !busyVehicleIds.has(v.id)
+  }) : []
+
+  const filterDrivers = (all, typeOnly) => all ? all.filter(d => {
+    const busy = busyDriverIds.has(d.id)
+    return !busy  // drivers don't have a strict type — all available drivers shown
+  }) : []
+
+  const avV = filterVehicles(allVehicles, true)   // type-matched + available
+  const avD = filterDrivers(allDrivers, true)      // available only
+
+  // All available (last resort — type ignored)
+  const avV_all = filterVehicles(allVehicles, false)
+  const avD_all = filterDrivers(allDrivers, false)
+
+  const depStr = dep ? new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
   const scopeLabel = isAmb ? '🚑 Ambulance' : isMoto ? '🏍 Motorcycle' : '🚙 Regular'
+
+  const driverOpts = (drivers) => drivers.map(d =>
+    `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}</option>`
+  ).join('')
+  const vehicleOpts = (vehicles) => vehicles.map(v =>
+    `<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)</option>`
+  ).join('')
+
   openMO(`Assign Driver & Vehicle — ${ticketNo}`,
-    `<div class="info info-blue" style="margin-bottom:12px">
-       Assigning for: <strong>${scopeLabel}</strong> ticket
+    `<div style="background:var(--bg);border-radius:9px;padding:10px 13px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
+       <div><div style="font-size:11px;color:var(--text3);font-weight:700">Ticket type</div><div style="font-size:13px;font-weight:700">${scopeLabel}</div></div>
+       <div style="text-align:right"><div style="font-size:11px;color:var(--text3);font-weight:700">Departure</div><div style="font-size:13px;font-weight:700">${depStr}</div></div>
      </div>
-     <div class="fg"><label class="fl">Select Driver *</label>
-       <select class="fs" id="asDrv">
+
+     <div class="fg"><label class="fl">Select Driver *
+       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} available at this time</span>
+     </label>
+       <select class="fs" id="asDrv" onchange="checkAssignConflict()">
          <option value="">-- Select Driver --</option>
-         ${avD.map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}</option>`).join('')}
+         ${driverOpts(avD)}
+         ${avD.length === 0 ? '<option disabled>No available drivers at this time</option>' : ''}
        </select>
-       ${avD.length===0?'<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available drivers.</div>':''}
      </div>
-     <div class="fg"><label class="fl">Select Vehicle *</label>
-       <select class="fs" id="asVeh">
+
+     <div class="fg"><label class="fl">Select Vehicle *
+       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avV.length} available</span>
+     </label>
+       <select class="fs" id="asVeh" onchange="checkAssignConflict()">
          <option value="">-- Select Vehicle --</option>
-         ${avV.map(v=>`<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)</option>`).join('')}
+         ${vehicleOpts(avV)}
+         ${avV.length === 0 ? '<option disabled>No available vehicles at this time</option>' : ''}
        </select>
-       ${avV.length===0?`<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available ${isAmb?'ambulance':isMoto?'motorcycle':'regular'} vehicles.</div>`:''}
-     </div>`,
+     </div>
+
+     <div id="assignConflictMsg" style="display:none" class="info info-red" style="margin-top:8px"></div>
+
+     ${canLastResort ? `
+     <div style="border-top:1px solid var(--border);margin:14px 0 12px"></div>
+     <div style="display:flex;align-items:center;gap:8px;background:var(--amber-s);border:1px solid rgba(217,119,6,.2);border-radius:9px;padding:10px 13px">
+       <input type="checkbox" id="lastResortToggle" style="width:15px;height:15px;accent-color:var(--amber)"
+         onchange="toggleLastResort('${id}','${ticketNo}','${vtype}',${JSON.stringify(avV_all)},${JSON.stringify(avD_all)})">
+       <label for="lastResortToggle" style="font-size:12px;cursor:pointer">
+         <span style="font-weight:700;color:var(--amber)">⚠ Last Resort</span>
+         <span style="color:var(--text2)"> — Show all available drivers and vehicles regardless of type</span>
+       </label>
+     </div>` : ''}`,
+
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="asBtn" onclick="doAssign('${id}','${ticketNo}')">Assign & Notify Driver</button>`
   )
+  // Store full lists on window for last resort toggle
+  window._asAllVehicles = avV_all
+  window._asAllDrivers  = avD_all
+  window._asTypedVehicles = avV
+  window._asTypedDrivers  = avD
+}
+
+function toggleLastResort(id, ticketNo, vtype, allV, allD) {
+  const checked = document.getElementById('lastResortToggle')?.checked
+  if (checked) {
+    if (!confirm('⚠ LAST RESORT MODE\n\nThis will show ALL available drivers and vehicles regardless of type assignment.\n\nThis is for emergency use only. The override will be recorded in the audit log.\n\nProceed?')) {
+      document.getElementById('lastResortToggle').checked = false
+      return
+    }
+  }
+  const isAmb  = vtype === 'ambulance'
+  const isMoto = vtype === 'motorcycle'
+  const dSel = document.getElementById('asDrv')
+  const vSel = document.getElementById('asVeh')
+  if (!dSel || !vSel) return
+
+  const dList = checked ? (window._asAllDrivers||[])  : (window._asTypedDrivers||[])
+  const vList = checked ? (window._asAllVehicles||[]) : (window._asTypedVehicles||[])
+
+  const driverOpts = dList.map(d => `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}</option>`).join('')
+  const vehicleOpts = vList.map(v => `<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)</option>`).join('')
+
+  dSel.innerHTML = `<option value="">-- Select Driver --</option>${driverOpts}`
+  vSel.innerHTML = `<option value="">-- Select Vehicle --</option>${vehicleOpts}`
+
+  const label = dSel.closest('.fg')?.querySelector('label span')
+  const vlabel = vSel.closest('.fg')?.querySelector('label span')
+  if (label) label.textContent = ` — ${dList.length} available`
+  if (vlabel) vlabel.textContent = ` — ${vList.length} available`
+}
+
+function checkAssignConflict() {
+  // Real-time conflict feedback when selection changes
+  const dv = document.getElementById('asDrv')?.value
+  const vv = document.getElementById('asVeh')?.value
+  const msg = document.getElementById('assignConflictMsg')
+  if (msg) msg.style.display = 'none'
+  // Could add client-side validation here if needed
 }
 async function doAssign(id, ticketNo) {
   const dv = document.getElementById('asDrv')?.value
   const vv = document.getElementById('asVeh')?.value
   if (!dv||!vv) { alert('Select both driver and vehicle.'); return }
   const [driverId, driverName] = dv.split('|')
+  const isLastResort = document.getElementById('lastResortToggle')?.checked || false
   const btn = document.getElementById('asBtn'); btn.disabled=true; btn.textContent='Assigning...'
   const { error } = await SB.from('trips').update({ status:'assigned', driver_id:driverId, driver_name:driverName, vehicle_id:vv, assigned_by:currentProfile?.id, assigned_at:new Date().toISOString() }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Assign'; return }
   await SB.from('drivers').update({ status:'on-trip' }).eq('id',driverId)
   await SB.from('vehicles').update({ status:'on-trip' }).eq('id',vv)
-  await addAudit(id, ticketNo, 'Driver Assigned', `Driver: ${driverName}`)
+  await addAudit(id, ticketNo, isLastResort ? '⚠ Driver Assigned (LAST RESORT)' : 'Driver Assigned', `Driver: ${driverName}${isLastResort ? ' — Last Resort override by ' + currentProfile?.full_name : ''}`)
   // Get trip + driver details for notifications
   const { data: tripData }  = await SB.from('trips').select('purpose,destination,stops,departure_at,department,vehicle_plate,requester_id').eq('id',id).single()
   const { data: driverRow } = await SB.from('drivers').select('phone,user_id').eq('id',driverId).single()
@@ -1992,7 +2405,7 @@ async function doAssign(id, ticketNo) {
     driverEmail = du?.email || null
   }
   // SMS → driver only (time-critical: needs to know ASAP to prepare)
-  if (driverRow?.phone) await sendSMS([driverRow.phone], `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
+  if (driverRow?.phone) await sendSMS([driverRow.phone], `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nUrgency: ${(tripData?.priority||'normal').toUpperCase()}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
   // Email only → driver, requester, guard
   if (driverEmail) await sendEmail([driverEmail], 'driver_assigned', { ticket_no: ticketNo, department: tripData?.department||'', purpose: tripData?.purpose||'', destination: tripData?.destination||'', departure_at: fmtDT(tripData?.departure_at), vehicle_plate: vehiclePlate })
   const reqContacts = await getRequesterContacts(id)
@@ -2831,11 +3244,35 @@ function onDateChange() {
   const dateVal = document.getElementById('ntDate')?.value
   const timeVal = document.getElementById('ntTime')?.value
   if (!dateVal) return
-  const today = new Date().toISOString().slice(0,10)
+  const role = currentProfile?.role
+  const vtype = document.getElementById('ntType')?.value || 'regular'
+  const priority = document.getElementById('ntPri')?.value || 'normal'
   const todayPlus1 = new Date(Date.now() + 86400000).toISOString().slice(0,10)
   const isAdvance = dateVal > todayPlus1
   const banner = document.getElementById('ntAdvanceBanner')
   if (banner) banner.style.display = isAdvance ? 'block' : 'none'
+
+  // Show 48-hour warning for regular requesters
+  const errEl = document.getElementById('ntFormErr')
+  if (!errEl) return
+  const isExemptRole = ['admin','super_approver','approver_admin','approver_amb'].includes(role)
+  const isExemptPriority = ['urgent','emergency'].includes(priority)
+  const isExemptType = vtype === 'ambulance'
+  if (!isExemptRole && !isExemptPriority && !isExemptType && dateVal && timeVal) {
+    const dep = new Date(`${dateVal}T${timeVal}`)
+    const hoursAway = (dep - new Date()) / (1000 * 60 * 60)
+    if (hoursAway > 0 && hoursAway < 48) {
+      errEl.style.display = 'block'
+      errEl.style.background = 'var(--amber-s)'
+      errEl.style.color = 'var(--amber)'
+      errEl.style.border = '1px solid rgba(217,119,6,.3)'
+      errEl.innerHTML = `⏰ <strong>Heads up:</strong> Departure is ${Math.round(hoursAway)} hours away. Regular requests need 48 hours advance notice. Set Urgency to <strong>Urgent</strong> or <strong>Emergency</strong> to proceed.`
+    } else {
+      errEl.style.display = 'none'
+    }
+  } else {
+    if (errEl.textContent.includes('Heads up')) errEl.style.display = 'none'
+  }
 }
 
 function addStop() {
@@ -3190,6 +3627,33 @@ async function submitNewTicket() {
     if(errEl) { errEl.style.display='block'; errEl.textContent='Departure date and time cannot be in the past. Please select a valid date and time.' }
     return
   }
+
+  // ── 47-HOUR ADVANCE RULE ────────────────────────────────
+  // Regular requesters must file at least 48 hours in advance
+  // Exception: urgent/emergency priority, or ambulance requests, or admin/super roles
+  const priority = document.getElementById('ntPri')?.value || 'normal'
+  const role = currentProfile?.role
+  const ADVANCE_HOURS = 48
+  const isExemptRole = ['admin','super_approver','approver_admin','approver_amb'].includes(role)
+  const isExemptPriority = ['urgent','emergency'].includes(priority)
+  const isExemptType = vtype === 'ambulance'
+  const hoursUntilDep = (new Date(departureISO) - new Date()) / (1000 * 60 * 60)
+
+  if (!isExemptRole && !isExemptPriority && !isExemptType && hoursUntilDep < ADVANCE_HOURS) {
+    const dateEl = document.getElementById('ntDate')
+    if(dateEl) dateEl.style.borderColor='var(--red)'
+    if(errEl) {
+      errEl.style.display='block'
+      errEl.style.background='var(--amber-s)'
+      errEl.style.color='var(--amber)'
+      errEl.style.border='1px solid rgba(217,119,6,.3)'
+      errEl.innerHTML = `⏰ <strong>Regular vehicle requests must be filed at least ${ADVANCE_HOURS} hours in advance.</strong><br>
+        <span style="font-size:11px">Your departure is in ${Math.round(hoursUntilDep)} hours.
+        To request same-day or next-day transport, change the <strong>Urgency</strong> to <strong>Urgent</strong> or <strong>Emergency</strong>.</span>`
+    }
+    return
+  }
+  // ── END 47-HOUR RULE ────────────────────────────────────
   const retDate = document.getElementById('ntReturn')?.value
   if (retDate && new Date(retDate) < new Date(date)) {
     if(errEl) { errEl.style.display='block'; errEl.textContent='Expected return date must be after the departure date.' }
@@ -3337,7 +3801,7 @@ async function submitNewTicket() {
     Promise.all([
       addAudit(trip.id, trip.ticket_no, isAdvance ? 'Advance Booking Created' : 'Ticket Created', purpose),
       getPhonesForRole(approverRole).then(phones =>
-        sendSMS(phones, `[TDMH VTS] ${isAdvance?'📅 ADVANCE ':''}New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nDate: ${date} ${time}${groupId?'\n⚠ Part of bulk booking':''}\nPlease log in to approve.`)
+        sendSMS(phones, `[TDMH VTS] ${isAdvance?'📅 ADVANCE ':''}${priority==='emergency'?'🚨 EMERGENCY':priority==='urgent'?'⚡ URGENT':priority==='low'?'🕐 LOW':'📋 NORMAL'} — New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nUrgency: ${priority?.toUpperCase()||'NORMAL'}\nDate: ${date} ${time}${groupId?'\n⚠ Part of bulk booking':''}\nPlease log in to approve.`)
       ),
       getEmailsForRole(approverRole).then(emails =>
         sendEmail(emails, 'ticket_created', {
@@ -3930,355 +4394,365 @@ async function renderReports() {
 }
 
 async function renderReportContent() {
-  // Fetch all trips in date range
-  let q = SB.from('trips').select('*,vehicle:vehicles(plate,type)').order('created_at',{ascending:false})
+  const now = new Date()
+
+  // ── Fetch everything in date range ─────────────────────
+  let q = SB.from('trips').select(`
+    *,
+    vehicle:vehicles(plate,type,name,fuel,capacity),
+    approver:users!trips_approver_id_fkey(full_name,role),
+    assigned_by_user:users!trips_assigned_by_fkey(full_name),
+    guard_out_user:users!trips_guard_out_id_fkey(full_name),
+    guard_in_user:users!trips_guard_in_id_fkey(full_name),
+    rejected_by_user:users!trips_rejected_by_fkey(full_name),
+    driver:drivers!trips_driver_id_fkey(full_name,license_no,license_type,phone,shift),
+    passengers_list:trip_passengers(full_name,department,id_type,id_number,contact_no)
+  `).order('created_at',{ascending:false})
   if (_rptFrom) q = q.gte('created_at', _rptFrom + 'T00:00:00')
   if (_rptTo)   q = q.lte('created_at', _rptTo   + 'T23:59:59')
-  const { data } = await q
+  const { data, error } = await q
+  if (error) { document.getElementById('CONTENT').innerHTML = `<div class="info info-red">Error loading report: ${error.message}</div>`; return }
   const T = data || []
-  const total = T.length || 1
+  window._rawData = T
+  window._rptDataFull = T
 
-  // ── Core metrics ──────────────────────────────
-  const completed   = T.filter(t => t.status === 'completed')
-  const rejected    = T.filter(t => t.status === 'rejected')
-  const cancelled   = T.filter(t => t.status === 'cancelled')
-  const pending     = T.filter(t => t.status === 'pending-approval')
-  const active      = T.filter(t => ['approved','assigned','on-trip'].includes(t.status))
-  const ambulance   = T.filter(t => t.vehicle_type_needed === 'ambulance')
-  const regular     = T.filter(t => t.vehicle_type_needed !== 'ambulance')
+  // ── Metrics ────────────────────────────────────────────
+  const total     = T.length
+  const completed = T.filter(t => t.status === 'completed')
+  const rejected  = T.filter(t => t.status === 'rejected')
+  const cancelled = T.filter(t => t.status === 'cancelled')
+  const pending   = T.filter(t => t.status === 'pending-approval')
+  const active    = T.filter(t => ['approved','assigned','on-trip'].includes(t.status))
+  const ambulance = T.filter(t => t.vehicle_type_needed === 'ambulance')
+  const regular   = T.filter(t => t.vehicle_type_needed !== 'ambulance')
+  const emergency = T.filter(t => t.priority === 'emergency')
+  const urgent    = T.filter(t => t.priority === 'urgent')
 
-  // SLA metrics (regular only, exclude advance bookings that haven't departed yet)
-  const now = new Date()
-  const advancePending = regular.filter(t =>
-    t.is_advance_booking && t.departure_at && new Date(t.departure_at) > now &&
-    t.status === 'pending-approval'
-  )
-  // For SLA: only count tickets where SLA deadline has passed (don't penalize advance bookings prematurely)
   const withSLA     = regular.filter(t => t.sla_deadline && new Date(t.sla_deadline) <= now)
   const slaBreached = withSLA.filter(t => t.sla_breached && !['approved','assigned','on-trip','completed'].includes(t.status))
   const slaKept     = withSLA.filter(t => !t.sla_breached || ['approved','assigned','on-trip','completed'].includes(t.status))
   const slaRate     = withSLA.length ? pct(slaKept.length, withSLA.length) : null
 
-  // Advance booking stats
-  const advanceTotal    = T.filter(t => t.is_advance_booking)
-  const advanceFuture   = advanceTotal.filter(t => t.departure_at && new Date(t.departure_at) > now)
+  const withResp = T.filter(t => t.response_minutes != null)
+  const avgResp  = withResp.length ? withResp.reduce((s,t) => s+parseFloat(t.response_minutes),0)/withResp.length : null
+  const withDur  = completed.filter(t => t.trip_duration_minutes != null)
+  const avgDur   = withDur.length ? withDur.reduce((s,t) => s+parseFloat(t.trip_duration_minutes),0)/withDur.length : null
+  const totalKm  = completed.reduce((s,t) => s+(t.distance_km||0), 0)
+  const totalFuel= T.reduce((s,t) => s+parseFloat(t.fuel_cost||0), 0)
+  const withRating= completed.filter(t => t.rating != null)
+  const avgRating = withRating.length ? (withRating.reduce((s,t) => s+t.rating,0)/withRating.length).toFixed(1) : null
 
-  // Response time (approved tickets)
-  const withResp    = T.filter(t => t.response_minutes != null)
-  const avgResp     = withResp.length ? withResp.reduce((s,t) => s + parseFloat(t.response_minutes), 0) / withResp.length : null
+  const byDept = {}; T.forEach(t => { byDept[t.department]=(byDept[t.department]||0)+1 })
+  const topDepts = Object.entries(byDept).sort((a,b)=>b[1]-a[1]).slice(0,10)
+  const byDriver = {}; completed.forEach(t => { if(t.driver_name) byDriver[t.driver_name]=(byDriver[t.driver_name]||0)+1 })
+  const topDrivers = Object.entries(byDriver).sort((a,b)=>b[1]-a[1]).slice(0,8)
+  const byVehicle = {}; completed.forEach(t => { const p=t.vehicle?.plate||t.vehicle_plate; if(p) byVehicle[p]=(byVehicle[p]||0)+1 })
+  const topVehicles = Object.entries(byVehicle).sort((a,b)=>b[1]-a[1]).slice(0,6)
+  const byPri = {low:0,normal:0,urgent:0,emergency:0}
+  T.forEach(t => { if(byPri[t.priority]!==undefined) byPri[t.priority]++ })
 
-  // Trip duration (completed)
-  const withDur     = completed.filter(t => t.trip_duration_minutes != null)
-  const avgDur      = withDur.length ? withDur.reduce((s,t) => s + parseFloat(t.trip_duration_minutes), 0) / withDur.length : null
-
-  // Total distance
-  const totalKm     = completed.reduce((s,t) => s + (t.distance_km||0), 0)
-
-  // By department
-  const byDept = {}
-  T.forEach(t => { byDept[t.department] = (byDept[t.department]||0) + 1 })
-  const topDepts = Object.entries(byDept).sort((a,b) => b[1]-a[1]).slice(0,10)
-
-  // By priority (regular only)
-  const byPri = { low:0, normal:0, urgent:0, emergency:0 }
-  regular.forEach(t => { if (byPri[t.priority] !== undefined) byPri[t.priority]++ })
-
-  // By driver (completed trips)
-  const byDriver = {}
-  completed.forEach(t => { if (t.driver_name) byDriver[t.driver_name] = (byDriver[t.driver_name]||0)+1 })
-  const topDrivers = Object.entries(byDriver).sort((a,b) => b[1]-a[1]).slice(0,8)
-
-  // By vehicle
-  const byVehicle = {}
-  completed.forEach(t => { const p = t.vehicle?.plate||t.vehicle_plate; if (p) byVehicle[p] = (byVehicle[p]||0)+1 })
-  const topVehicles = Object.entries(byVehicle).sort((a,b) => b[1]-a[1]).slice(0,6)
-
-  // Monthly trend (last 6 months)
-  const monthMap = {}
-  T.forEach(t => {
-    const m = t.created_at?.slice(0,7)
-    if (m) { if (!monthMap[m]) monthMap[m] = {total:0,done:0,breached:0}; monthMap[m].total++; if (t.status==='completed') monthMap[m].done++; if (t.sla_breached) monthMap[m].breached++ }
-  })
-  const months = Object.entries(monthMap).sort((a,b) => a[0].localeCompare(b[0])).slice(-6)
-  const maxMonth = Math.max(...months.map(([,v]) => v.total), 1)
-
-  // SLA breakdown by priority
-  const slaPri = {}
-  ;['low','normal','urgent','emergency'].forEach(p => {
-    const pts = regular.filter(t => t.priority===p && t.sla_deadline)
-    const kept = pts.filter(t => !t.sla_breached && t.approved_at)
-    slaPri[p] = { total: pts.length, kept: kept.length, rate: pts.length ? pct(kept.length, pts.length) : null }
-  })
-
-  const exportCSV = () => {
-    const rows = [['Ticket No','Department','Type','Priority','Status','Requested','Approved','Gate Out','Gate In','Distance (km)','Driver','Vehicle','Response (min)','Trip Duration (min)','SLA Target (min)','SLA Deadline','SLA Breached']]
-    T.forEach(t => rows.push([t.ticket_no,t.department,t.vehicle_type_needed,t.priority||'',t.status,t.created_at||'',t.approved_at||'',t.gate_out_at||'',t.gate_in_at||'',t.distance_km||'',t.driver_name||'',t.vehicle?.plate||'',t.response_minutes||'',t.trip_duration_minutes||'',t.sla_target_minutes||'',t.sla_deadline||'',t.sla_breached?'YES':'NO']))
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n')
-    const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv)
-    a.download = `VTS_Report_${_rptFrom}_${_rptTo}.csv`; a.click()
+  // Monthly trend
+  const monthlyData = {}
+  for (let i=5;i>=0;i--) {
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1)
+    const k=d.toLocaleString('en-PH',{month:'short',year:'2-digit'})
+    monthlyData[k]={total:0,completed:0,rejected:0,emergency:0}
   }
-  window._exportCSV = exportCSV
+  T.forEach(t => {
+    const k=new Date(t.created_at).toLocaleString('en-PH',{month:'short',year:'2-digit'})
+    if(monthlyData[k]) {
+      monthlyData[k].total++
+      if(t.status==='completed') monthlyData[k].completed++
+      if(t.status==='rejected')  monthlyData[k].rejected++
+      if(t.priority==='emergency') monthlyData[k].emergency++
+    }
+  })
+  const mKeys=Object.keys(monthlyData)
+  const maxM=Math.max(...Object.values(monthlyData).map(m=>m.total),1)
 
-  document.getElementById('CONTENT').innerHTML = `
-  <!-- Header with date filter -->
-  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px">
-    <div style="font-size:13px;font-weight:700;flex:1">Reports & Analytics</div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <input class="fi" type="date" id="rptFrom" value="${_rptFrom}" style="width:140px;font-size:12px;padding:6px 10px">
-      <span style="font-size:12px;color:var(--text3)">to</span>
-      <input class="fi" type="date" id="rptTo" value="${_rptTo}" style="width:140px;font-size:12px;padding:6px 10px">
-      <button class="btn btn-pri btn-sm" onclick="_rptFrom=document.getElementById('rptFrom').value;_rptTo=document.getElementById('rptTo').value;renderReportContent()">Apply</button>
-      <button class="btn btn-ghost btn-sm" onclick="_rptFrom='';_rptTo='';renderReports()">Reset</button>
-      <button class="btn btn-ghost btn-sm" onclick="window._exportCSV()">⬇ Export CSV</button>
-    </div>
-  </div>
+  // ── Tab content builders ────────────────────────────────
+  const tabStyle = (id) => `cursor:pointer;padding:9px 16px;font-size:12px;font-weight:700;border-radius:8px 8px 0 0;border:none;background:${_rptTab===id?'var(--card)':'transparent'};color:${_rptTab===id?'var(--pri)':'var(--text3)'};border-bottom:${_rptTab===id?'2px solid var(--pri)':'2px solid transparent'};white-space:nowrap`
 
-  <!-- Tab navigation -->
-  <div style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap">
-    ${['overview','sla','fleet','trends','raw'].map(tab => `
-      <button class="btn ${_rptTab===tab?'btn-pri':'btn-ghost'} btn-sm" onclick="_rptTab='${tab}';renderReportContent()">
-        ${{overview:'📊 Overview',sla:'⏱ SLA',fleet:'🚗 Fleet',trends:'📈 Trends',raw:'📋 Raw Data'}[tab]}
-      </button>`).join('')}
-  </div>
-
-  <!-- ── OVERVIEW TAB ── -->
-  ${_rptTab==='overview' ? `
-  <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px">
-    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Total Requests</div><div class="stat-val">${T.length}</div><div class="stat-sub">${_rptFrom} → ${_rptTo}</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Completion Rate</div><div class="stat-val">${pct(completed.length,total)}%</div><div class="stat-sub">${completed.length} completed</div></div>
-    <div class="stat"><div class="stat-bar" style="background:${slaRate>=80?'var(--green)':slaRate>=60?'var(--amber)':'var(--red)'}"></div><div class="stat-lbl">SLA Compliance</div><div class="stat-val" style="color:${slaRate>=80?'var(--green)':slaRate>=60?'var(--amber)':'var(--red)'}">${slaRate!=null?slaRate+'%':'—'}</div><div class="stat-sub">${slaKept.length}/${withSLA.length} on time</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Response Time</div><div class="stat-val" style="font-size:16px">${avgResp!=null?fmtMins(avgResp):'—'}</div><div class="stat-sub">Submission → Approval</div></div>
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px">
-    <div class="stat"><div class="stat-bar" style="background:var(--red)"></div><div class="stat-lbl">Ambulance Trips</div><div class="stat-val">${ambulance.length}</div><div class="stat-sub">${pct(ambulance.length,total)}% of total</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--purple)"></div><div class="stat-lbl">Rejected</div><div class="stat-val">${rejected.length}</div><div class="stat-sub">${pct(rejected.length,total)}% rejection rate</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Total Distance</div><div class="stat-val" style="font-size:16px">${totalKm.toLocaleString()} km</div><div class="stat-sub">All completed trips</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Trip Duration</div><div class="stat-val" style="font-size:16px">${avgDur!=null?fmtMins(avgDur):'—'}</div><div class="stat-sub">Gate Out → Gate In</div></div>
-  </div>
-  ${advanceTotal.length > 0 ? `
-  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px">
-    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">📅 Advance Bookings</div><div class="stat-val">${advanceTotal.length}</div><div class="stat-sub">${pct(advanceTotal.length,total)}% of total requests</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">📅 Future Scheduled</div><div class="stat-val" style="color:var(--pri)">${advanceFuture.length}</div><div class="stat-sub">Upcoming trips</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">📅 Advance SLA Pending</div><div class="stat-val" style="color:var(--amber)">${advancePending.length}</div><div class="stat-sub">Need approval before departure</div></div>
-  </div>` : ''}
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
-    <div class="card">
-      <div class="card-title" style="margin-bottom:13px">Tickets by Status</div>
-      ${[['pending-approval',pending.length,'var(--amber)'],['approved',active.filter(t=>t.status==='approved').length,'var(--green)'],['assigned',active.filter(t=>t.status==='assigned').length,'var(--purple)'],['on-trip',active.filter(t=>t.status==='on-trip').length,'var(--pri)'],['completed',completed.length,'var(--teal)'],['rejected',rejected.length,'var(--red)'],['cancelled',cancelled.length,'#94a3b8']].map(([s,c,col])=>rbar2(badge(s),c,total,col)).join('')}
-    </div>
-    <div class="card">
-      <div class="card-title" style="margin-bottom:13px">By Priority Level</div>
-      ${[['Emergency 🔴',byPri.emergency,'#dc2626'],['Urgent 🟠',byPri.urgent,'#d97706'],['Normal 🟡',byPri.normal,'#0c6fdb'],['Low 🟢',byPri.low,'#16a34a']].map(([l,c,col])=>rbar2(l,c,regular.length,col)).join('')}
-      <div style="font-size:10.5px;color:var(--text3);margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">Regular vehicles only. Ambulance trips excluded.</div>
-    </div>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-    <div class="card">
-      <div class="card-title" style="margin-bottom:13px">Top Requesting Departments</div>
-      ${topDepts.map(([d,c])=>rbar2(d,c,topDepts[0][1],'var(--teal)')).join('')}
-    </div>
-    <div class="card">
-      <div class="card-title" style="margin-bottom:13px">Top Drivers by Trips Completed</div>
-      ${topDrivers.length ? topDrivers.map(([d,c])=>rbar2(d,c,topDrivers[0][1],'var(--purple)')).join('') : '<div style="font-size:12px;color:var(--text3)">No completed trips yet</div>'}
-    </div>
-  </div>` : ''}
-
-  <!-- ── SLA TAB ── -->
-  ${_rptTab==='sla' ? `
-  <div class="info ${slaRate>=80?'info-green':slaRate>=60?'info-amber':'info-red'}" style="margin-bottom:16px">
-    <strong>SLA Compliance Rate: ${slaRate!=null?slaRate+'%':'No data yet'}</strong>
-    ${slaRate!=null ? ` — ${slaRate>=80?'✅ Good. Meeting hospital transport SLA targets.':slaRate>=60?'⚠️ Fair. Needs improvement — review pending ticket response times.':'❌ Poor. Critical SLA breaches detected. Escalate to management.'}` : ' — Create tickets with priority levels to start tracking SLA.'}
+  // ── OVERVIEW TAB ────────────────────────────────────────
+  const overviewHTML = `
+  <div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Total Requests</div><div class="stat-val">${total}</div><div class="stat-sub">${_rptFrom} – ${_rptTo}</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Completed</div><div class="stat-val">${completed.length}</div><div class="stat-sub">${pct(completed.length,total||1)}% completion rate</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--red)"></div><div class="stat-lbl">Rejected</div><div class="stat-val">${rejected.length}</div><div class="stat-sub">${cancelled.length} cancelled</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Pending</div><div class="stat-val">${pending.length}</div><div class="stat-sub">${active.length} active now</div></div>
   </div>
   <div class="stats-grid" style="margin-bottom:16px">
-    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">SLA Met</div><div class="stat-val" style="color:var(--green)">${slaKept.length}</div><div class="stat-sub">Approved within target</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--red)"></div><div class="stat-lbl">SLA Breached</div><div class="stat-val" style="color:var(--red)">${slaBreached.length}</div><div class="stat-sub">Past approval deadline</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Avg Response Time</div><div class="stat-val" style="font-size:16px">${avgResp!=null?fmtMins(avgResp):'—'}</div><div class="stat-sub">All approved tickets</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Currently at Risk</div><div class="stat-val" style="color:${pending.filter(t=>t.sla_deadline&&new Date(t.sla_deadline)<new Date()).length>0?'var(--red)':'var(--green)'}">${pending.filter(t=>t.sla_deadline&&new Date(t.sla_deadline)<new Date()).length}</div><div class="stat-sub">Pending past deadline</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Response Time</div><div class="stat-val" style="font-size:20px;padding-top:4px">${avgResp!=null?fmtMins(avgResp):'—'}</div><div class="stat-sub">Ticket filing to approval</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--purple)"></div><div class="stat-lbl">Avg Trip Duration</div><div class="stat-val" style="font-size:20px;padding-top:4px">${avgDur!=null?fmtMins(avgDur):'—'}</div><div class="stat-sub">Gate out to gate in</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--navy,#0c2340)"></div><div class="stat-lbl">Total Distance</div><div class="stat-val" style="font-size:20px;padding-top:4px">${totalKm.toLocaleString()} km</div><div class="stat-sub">All completed trips</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Total Fuel Cost</div><div class="stat-val" style="font-size:18px;padding-top:4px">₱${totalFuel.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="stat-sub">${avgRating?'⭐ '+avgRating+' avg rating':'No ratings yet'}</div></div>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
     <div class="card">
-      <div class="card-title" style="margin-bottom:4px">SLA Compliance by Priority</div>
-      <div style="font-size:10.5px;color:var(--text3);margin-bottom:13px">Target: 80%+ compliance per priority level</div>
-      ${[['Emergency','15 min',slaPri.emergency],['Urgent','1 hour',slaPri.urgent],['Normal','4 hours',slaPri.normal],['Low','24 hours',slaPri.low]].map(([label,target,d]) =>
-        `<div style="margin-bottom:12px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span style="font-size:11.5px;font-weight:700">${label} <span style="font-weight:400;color:var(--text3)">(${target} SLA)</span></span>
-            <span style="font-size:11.5px;font-weight:700;color:${d.rate==null?'var(--text3)':d.rate>=80?'var(--green)':d.rate>=60?'var(--amber)':'var(--red)'}">${d.rate!=null?d.rate+'%':'—'}</span>
-          </div>
-          <div style="height:8px;background:var(--bg);border-radius:4px;overflow:hidden">
-            <div style="height:100%;width:${d.rate||0}%;background:${d.rate==null?'#cbd5e1':d.rate>=80?'var(--green)':d.rate>=60?'var(--amber)':'var(--red)'};border-radius:4px;transition:width .4s"></div>
-          </div>
-          <div style="font-size:10px;color:var(--text3);margin-top:3px">${d.kept}/${d.total} tickets on time</div>
-        </div>`).join('')}
+      <div class="card-hd"><div class="card-title">🏥 Top Departments</div></div>
+      <div style="padding:14px 16px">
+        ${topDepts.length?topDepts.map(([d,c])=>rbar2(d,c,topDepts[0][1],'var(--pri)')).join(''):'<div style="color:var(--text3);font-size:12px">No data</div>'}
+      </div>
     </div>
     <div class="card">
-      <div class="card-title" style="margin-bottom:13px">SLA Breach Details</div>
-      ${slaBreached.length === 0 ? '<div style="font-size:12px;color:var(--text3);padding:8px 0">No SLA breaches in this period. 🎉</div>' :
-        slaBreached.slice(0,8).map(t => `
-        <div style="padding:9px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-          <div>
-            <div style="font-size:11.5px;font-weight:700">${t.ticket_no} — ${t.department}</div>
-            <div style="font-size:10.5px;color:var(--text3)">${t.priority?.toUpperCase()} · SLA: ${fmtMins(t.sla_target_minutes)}</div>
-            <div style="font-size:10.5px;color:var(--text3)">Deadline: ${fmtDT(t.sla_deadline)}</div>
-            ${t.response_minutes ? `<div style="font-size:10.5px;color:var(--red)">Actual response: ${fmtMins(t.response_minutes)}</div>` : ''}
-          </div>
-          <span style="background:var(--red-s);color:var(--red);font-size:9px;font-weight:700;padding:3px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0">Breached</span>
-        </div>`).join('')}
-      ${slaBreached.length > 8 ? `<div style="font-size:10.5px;color:var(--text3);padding-top:8px">+${slaBreached.length-8} more — export CSV for full list</div>` : ''}
+      <div class="card-hd"><div class="card-title">📊 By Priority & Type</div></div>
+      <div style="padding:14px 16px">
+        ${[['🚨 Emergency',byPri.emergency,'var(--red)'],['⚡ Urgent',byPri.urgent,'var(--amber)'],['📋 Normal',byPri.normal,'var(--pri)'],['🕐 Low',byPri.low,'var(--green)'],['🚑 Ambulance',ambulance.length,'#dc2626'],['🚙 Regular',regular.length,'var(--teal)']].map(([l,v,c])=>rbar2(l,v,Math.max(total,1),c)).join('')}
+      </div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-title" style="margin-bottom:4px">Response Time Distribution</div>
-    <div style="font-size:10.5px;color:var(--text3);margin-bottom:13px">How long it takes from submission to approval</div>
-    ${(() => {
-      const buckets = [['Under 15 min',0,15],['15–60 min',15,60],['1–4 hours',60,240],['4–24 hours',240,1440],['Over 24 hours',1440,999999]]
-      const counts = buckets.map(([l,lo,hi]) => [l, withResp.filter(t => t.response_minutes>=lo && t.response_minutes<hi).length])
-      const maxC = Math.max(...counts.map(([,c])=>c),1)
-      return counts.map(([l,c],i) => rbar2(l,c,maxC,['var(--green)','var(--teal)','var(--pri)','var(--amber)','var(--red)'][i])).join('')
-    })()}
-  </div>` : ''}
-
-  <!-- ── FLEET TAB ── -->
-  ${_rptTab==='fleet' ? `
-  <div class="stats-grid" style="margin-bottom:16px">
-    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Total Distance</div><div class="stat-val" style="font-size:16px">${totalKm.toLocaleString()} km</div><div class="stat-sub">All completed trips</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--pri)"></div><div class="stat-lbl">Avg Trip Distance</div><div class="stat-val" style="font-size:16px">${completed.filter(t=>t.distance_km).length ? Math.round(totalKm/completed.filter(t=>t.distance_km).length)+' km' : '—'}</div><div class="stat-sub">Per completed trip</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--purple)"></div><div class="stat-lbl">Avg Trip Duration</div><div class="stat-val" style="font-size:16px">${avgDur!=null?fmtMins(avgDur):'—'}</div><div class="stat-sub">Gate Out → Gate In</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Vehicles Used</div><div class="stat-val">${Object.keys(byVehicle).length}</div><div class="stat-sub">Distinct plates</div></div>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
-    <div class="card">
-      <div class="card-title" style="margin-bottom:13px">Most Used Vehicles</div>
-      ${topVehicles.length ? topVehicles.map(([p,c])=>rbar2(p,c,topVehicles[0][1],'var(--pri)',' trips')).join('') : '<div style="font-size:12px;color:var(--text3)">No completed trips yet</div>'}
-    </div>
-    <div class="card">
-      <div class="card-title" style="margin-bottom:13px">Driver Performance</div>
-      <div style="font-size:10.5px;color:var(--text3);margin-bottom:10px">Trips completed per driver</div>
-      ${topDrivers.length ? topDrivers.map(([d,c])=>`
-        <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
-          <div style="width:28px;height:28px;border-radius:50%;background:var(--purple-s);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--purple);flex-shrink:0">${ini(d)}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d}</div>
-            <div style="height:4px;background:var(--bg);border-radius:2px;margin-top:4px;overflow:hidden"><div style="height:100%;width:${pct(c,topDrivers[0][1])}%;background:var(--purple);border-radius:2px"></div></div>
-          </div>
-          <span style="font-size:12px;font-weight:700;color:var(--purple);flex-shrink:0">${c}</span>
-        </div>`).join('') : '<div style="font-size:12px;color:var(--text3)">No completed trips yet</div>'}
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-title" style="margin-bottom:13px">Distance by Department</div>
-    ${(() => {
-      const deptKm = {}
-      completed.filter(t=>t.distance_km).forEach(t=>{ deptKm[t.department]=(deptKm[t.department]||0)+t.distance_km })
-      const sorted = Object.entries(deptKm).sort((a,b)=>b[1]-a[1]).slice(0,8)
-      const maxKm = sorted[0]?.[1]||1
-      return sorted.map(([d,k])=>rbar2(d,k,maxKm,'var(--teal)',' km')).join('') || '<div style="font-size:12px;color:var(--text3)">No distance data yet</div>'
-    })()}
-  </div>` : ''}
-
-  <!-- ── TRENDS TAB ── -->
-  ${_rptTab==='trends' ? `
   <div class="card" style="margin-bottom:14px">
-    <div class="card-title" style="margin-bottom:4px">Monthly Request Volume</div>
-    <div style="font-size:10.5px;color:var(--text3);margin-bottom:16px">Total tickets submitted per month</div>
-    ${months.length === 0 ? '<div style="font-size:12px;color:var(--text3)">No data in selected range</div>' : `
-    <div style="display:flex;align-items:flex-end;gap:8px;height:120px">
-      ${months.map(([m,v]) => `
-        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-          <div style="font-size:10px;font-weight:700;color:var(--text2)">${v.total}</div>
-          <div style="width:100%;background:var(--pri);border-radius:4px 4px 0 0;height:${Math.round(v.total/maxMonth*100)}px;min-height:4px"></div>
-          <div style="font-size:9px;color:var(--text3);white-space:nowrap">${m.slice(5)}</div>
-        </div>`).join('')}
-    </div>`}
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
-    <div class="card">
-      <div class="card-title" style="margin-bottom:13px">Monthly Completion Rate</div>
-      ${months.map(([m,v]) => `<div class="rbar">
-        <span style="font-size:11px;font-weight:600;min-width:55px">${m}</span>
-        <div class="rbar-track"><div class="rbar-fill" style="width:${v.total?pct(v.done,v.total):0}%;background:var(--green)"></div></div>
-        <span style="font-size:11px;font-weight:700;min-width:35px;text-align:right">${v.total?pct(v.done,v.total):0}%</span>
-      </div>`).join('')}
-    </div>
-    <div class="card">
-      <div class="card-title" style="margin-bottom:13px">Monthly SLA Breaches</div>
-      ${months.map(([m,v]) => `<div class="rbar">
-        <span style="font-size:11px;font-weight:600;min-width:55px">${m}</span>
-        <div class="rbar-track"><div class="rbar-fill" style="width:${v.total?pct(v.breached,v.total):0}%;background:var(--red)"></div></div>
-        <span style="font-size:11px;font-weight:700;min-width:35px;text-align:right;color:${v.breached>0?'var(--red)':'var(--green)'}">${v.breached}</span>
-      </div>`).join('')}
+    <div class="card-hd"><div class="card-title">📈 Monthly Trend (Last 6 Months)</div></div>
+    <div style="padding:14px 16px">
+      <div style="display:flex;align-items:flex-end;gap:8px;height:120px;padding-bottom:22px;position:relative">
+        ${mKeys.map(k=>{
+          const d=monthlyData[k]
+          const h=Math.max(pct(d.total,maxM),d.total>0?6:2)
+          const hc=Math.max(pct(d.completed,maxM),d.completed>0?4:0)
+          const he=Math.max(pct(d.emergency,maxM),d.emergency>0?3:0)
+          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;position:relative">
+            <div style="font-size:9px;font-weight:700;color:var(--text2);margin-bottom:2px">${d.total}</div>
+            <div style="width:100%;display:flex;gap:2px;align-items:flex-end;height:80px">
+              <div style="flex:2;height:${h}%;background:var(--pri-s);border-radius:3px 3px 0 0;min-height:${d.total>0?'4px':'1px'}"></div>
+              <div style="flex:2;height:${hc}%;background:var(--green);border-radius:3px 3px 0 0;min-height:${d.completed>0?'3px':'0'}"></div>
+              <div style="flex:1;height:${he}%;background:var(--red);border-radius:3px 3px 0 0;min-height:${d.emergency>0?'2px':'0'}"></div>
+            </div>
+            <div style="font-size:9px;color:var(--text3);position:absolute;bottom:-16px;white-space:nowrap">${k}</div>
+          </div>`
+        }).join('')}
+      </div>
+      <div style="display:flex;gap:12px;margin-top:14px;justify-content:center">
+        ${[['var(--pri-s)','Total'],['var(--green)','Completed'],['var(--red)','Emergency']].map(([c,l])=>`<div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;background:${c};border-radius:2px"></div><span style="font-size:10.5px;color:var(--text2)">${l}</span></div>`).join('')}
+      </div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-title" style="margin-bottom:4px">Peak Request Days</div>
-    <div style="font-size:10.5px;color:var(--text3);margin-bottom:13px">Which day of the week has most requests</div>
-    ${(() => {
-      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
-      const dayCounts = Array(7).fill(0)
-      T.forEach(t => { if (t.created_at) dayCounts[new Date(t.created_at).getDay()]++ })
-      const maxDay = Math.max(...dayCounts, 1)
-      return days.map((d,i) => rbar2(d, dayCounts[i], maxDay, 'var(--teal)')).join('')
-    })()}
-  </div>` : ''}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+    <div class="card">
+      <div class="card-hd"><div class="card-title">👤 Driver Performance</div></div>
+      <div style="padding:14px 16px">
+        ${topDrivers.length?topDrivers.map(([d,c])=>rbar2(d,c,topDrivers[0][1],'var(--teal)',' trips')).join(''):'<div style="color:var(--text3);font-size:12px">No data</div>'}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><div class="card-title">🚗 Vehicle Usage</div></div>
+      <div style="padding:14px 16px">
+        ${topVehicles.length?topVehicles.map(([v,c])=>rbar2(v,c,topVehicles[0][1],'var(--purple)',' trips')).join(''):'<div style="color:var(--text3);font-size:12px">No data</div>'}
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-hd">
+      <div class="card-title">⏱ SLA Performance</div>
+      ${slaRate!=null?`<span style="font-size:13px;font-weight:800;color:${slaRate>=80?'var(--green)':slaRate>=60?'var(--amber)':'var(--red)'}">${slaRate}% On-Time</span>`:''}
+    </div>
+    <div style="padding:14px 16px">
+      ${slaRate!=null?`
+      <div style="background:var(--bg);border-radius:20px;height:10px;overflow:hidden;margin-bottom:10px">
+        <div style="height:100%;width:${slaRate}%;background:${slaRate>=80?'var(--green)':slaRate>=60?'var(--amber)':'var(--red)'};border-radius:20px;transition:width .8s"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px">
+        ${[['Tickets Evaluated',withSLA.length,'var(--text1)'],['Approved On-Time',slaKept.length,'var(--green)'],['SLA Breached',slaBreached.length,'var(--red)']].map(([l,v,c])=>`<div style="background:var(--bg);border-radius:9px;padding:10px;text-align:center"><div style="font-size:20px;font-weight:800;color:${c}">${v}</div><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">${l}</div></div>`).join('')}
+      </div>`:'<div style="color:var(--text3);font-size:12px">No SLA data in this period</div>'}
+    </div>
+  </div>`
 
-  <!-- ── RAW DATA TAB ── -->
-  ${_rptTab==='raw' ? `
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-    <input class="fi" id="rawSearch" placeholder="Search tickets..." style="flex:1;max-width:260px;font-size:12px;padding:7px 11px" oninput="filterRawReport(this.value)">
-    <span style="font-size:11px;color:var(--text3)">${T.length} records</span>
-    <button class="btn btn-ghost btn-sm" onclick="window._exportCSV()">⬇ CSV</button>
+  // ── FULL AUDIT TABLE TAB ────────────────────────────────
+  const auditTableHTML = `
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+    <input class="fi" id="auditSearchQ" placeholder="🔍 Search ticket, dept, driver, purpose, destination..." style="flex:1;min-width:240px;font-size:12px;padding:8px 12px" oninput="filterFullAuditTable(this.value)">
+    <select class="fs" id="auditStatusF" style="font-size:12px;padding:7px 11px" onchange="filterFullAuditTable(document.getElementById('auditSearchQ').value)">
+      <option value="">All Status</option>
+      ${['pending-approval','approved','assigned','on-trip','completed','rejected','cancelled'].map(s=>`<option value="${s}">${s}</option>`).join('')}
+    </select>
+    <select class="fs" id="auditTypeF" style="font-size:12px;padding:7px 11px" onchange="filterFullAuditTable(document.getElementById('auditSearchQ').value)">
+      <option value="">All Types</option>
+      <option value="regular">🚙 Regular</option>
+      <option value="ambulance">🚑 Ambulance</option>
+      <option value="motorcycle">🏍 Motorcycle</option>
+    </select>
+    <select class="fs" id="auditPriF" style="font-size:12px;padding:7px 11px" onchange="filterFullAuditTable(document.getElementById('auditSearchQ').value)">
+      <option value="">All Priority</option>
+      <option value="emergency">🚨 Emergency</option>
+      <option value="urgent">⚡ Urgent</option>
+      <option value="normal">📋 Normal</option>
+      <option value="low">🕐 Low</option>
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="exportAuditCSV()" style="white-space:nowrap">⬇ Export CSV</button>
   </div>
-  <div class="card card-np" style="overflow:hidden">
-  <div class="tbl-wrap" id="rawTbl"><table class="tbl">
-    <thead><tr>
-      <th>Ticket</th><th>Dept</th><th>Type</th><th>Priority</th><th>Status</th>
-      <th>Requested</th><th>Response</th><th>SLA</th><th>Duration</th><th>Distance</th><th>Driver</th>
-    </tr></thead>
-    <tbody id="rawBody">
-    ${T.map(t => `<tr>
-      <td>${chip(t.ticket_no)}</td>
-      <td style="font-size:11px;font-weight:700;max-width:110px">${t.department||'—'}</td>
-      <td>${typeBadge(t.vehicle_type_needed)}</td>
-      <td><span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;background:${{low:'var(--green-s)',normal:'var(--pri-s)',urgent:'var(--amber-s)',emergency:'var(--red-s)'}[t.priority]||'var(--bg)'};color:${{low:'var(--green)',normal:'var(--pri)',urgent:'var(--amber)',emergency:'var(--red)'}[t.priority]||'var(--text3)'}">${(t.priority||'—').toUpperCase()}</span></td>
-      <td>${badge(t.status)}</td>
-      <td style="font-size:10.5px;white-space:nowrap;color:var(--text3)">${fmtDate(t.created_at)}</td>
-      <td style="font-size:11px;text-align:center">${t.response_minutes!=null?fmtMins(t.response_minutes):'—'}</td>
-      <td style="text-align:center">
-        ${t.sla_target_minutes ? `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;background:${t.sla_breached?'var(--red-s)':'var(--green-s)'};color:${t.sla_breached?'var(--red)':'var(--green)'}">${t.sla_breached?'Breached':'Met'}</span>` : '<span style="color:var(--text3);font-size:10px">N/A</span>'}
-      </td>
-      <td style="font-size:11px;text-align:center">${t.trip_duration_minutes!=null?fmtMins(t.trip_duration_minutes):'—'}</td>
-      <td style="font-size:11px;text-align:center">${t.distance_km!=null?t.distance_km+' km':'—'}</td>
-      <td style="font-size:11px">${t.driver_name||'—'}</td>
-    </tr>`).join('')}
+  <div style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:11px" id="auditFullTable">
+    <thead>
+      <tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+        ${['Ticket No','Date Filed','Department','Purpose','Destination / Stops','Priority','Type','Status',
+           'Requester','Urgency Reason','Approver','Approval Remarks','Approved At',
+           'Driver','License','Driver Phone','Shift',
+           'Vehicle','Plate','Fuel Type','Capacity',
+           'Gate Out','Odometer Out','Fuel Out','Condition Out','Guard Out','Gate Out Remarks',
+           'Gate In','Odometer In','Fuel In','Condition In','Guard In','Gate In Remarks',
+           'Distance (km)','Fuel Used (L)','Fuel Cost','Trip Duration',
+           'Response Time','SLA Target','SLA Status',
+           'Rating','Rating Comment',
+           'Rejection Reason','Rejected By','Passengers'].map(h=>`<th style="padding:9px 10px;text-align:left;white-space:nowrap;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3)">${h}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody id="auditFullBody">
+      ${buildAuditRows(T)}
     </tbody>
-  </table></div></div>` : ''}
+  </table>
+  </div>`
+
+  // ── MAIN LAYOUT ────────────────────────────────────────
+  document.getElementById('CONTENT').innerHTML = `
+  <!-- Header + Date Range -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div>
+      <div style="font-size:18px;font-weight:800">Trip Reports & Audit</div>
+      <div style="font-size:11.5px;color:var(--text3)">${total} trips · ${_rptFrom} to ${_rptTo} · Generated ${new Date().toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <input type="date" class="fi" id="rptFrom" value="${_rptFrom}" style="font-size:12px;padding:6px 10px;width:140px">
+      <span style="color:var(--text3);font-size:12px">to</span>
+      <input type="date" class="fi" id="rptTo" value="${_rptTo}" style="font-size:12px;padding:6px 10px;width:140px">
+      <button class="btn btn-pri btn-sm" onclick="_rptFrom=document.getElementById('rptFrom').value;_rptTo=document.getElementById('rptTo').value;renderReportContent()">Apply</button>
+      <button class="btn btn-ghost btn-sm" onclick="_rptFrom='';renderReports()">Reset</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div style="display:flex;border-bottom:2px solid var(--border);margin-bottom:16px;gap:4px;overflow-x:auto">
+    ${[['overview','📊 Overview'],['audit','📋 Full Audit Table']].map(([id,lbl])=>
+      `<button style="${tabStyle(id)}" onclick="_rptTab='${id}';renderReportContent()">${lbl}</button>`
+    ).join('')}
+  </div>
+
+  ${_rptTab==='overview' ? overviewHTML : ''}
+  ${_rptTab==='audit'    ? auditTableHTML : ''}
   `
-  window._rawData = T
 }
 
-function filterRawReport(q) {
-  const qq = q.toLowerCase()
-  const rows = (window._rawData||[]).filter(t =>
-    (t.ticket_no||'').toLowerCase().includes(qq) ||
-    (t.department||'').toLowerCase().includes(qq) ||
-    (t.driver_name||'').toLowerCase().includes(qq)
-  )
-  const tbody = document.getElementById('rawBody')
-  if (!tbody) return
-  tbody.innerHTML = rows.map(t => `<tr>
-    <td>${chip(t.ticket_no)}</td>
-    <td style="font-size:11px;font-weight:700">${t.department||'—'}</td>
-    <td>${typeBadge(t.vehicle_type_needed)}</td>
-    <td style="font-size:10px;font-weight:700">${(t.priority||'—').toUpperCase()}</td>
-    <td>${badge(t.status)}</td>
-    <td style="font-size:10.5px;white-space:nowrap;color:var(--text3)">${fmtDate(t.created_at)}</td>
-    <td style="font-size:11px;text-align:center">${t.response_minutes!=null?fmtMins(t.response_minutes):'—'}</td>
-    <td style="text-align:center">${t.sla_target_minutes?`<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;background:${t.sla_breached?'var(--red-s)':'var(--green-s)'};color:${t.sla_breached?'var(--red)':'var(--green)'}">${t.sla_breached?'Breached':'Met'}</span>`:'—'}</td>
-    <td style="font-size:11px;text-align:center">${t.trip_duration_minutes!=null?fmtMins(t.trip_duration_minutes):'—'}</td>
-    <td style="font-size:11px;text-align:center">${t.distance_km!=null?t.distance_km+' km':'—'}</td>
-    <td style="font-size:11px">${t.driver_name||'—'}</td>
-  </tr>`).join('')
+function buildAuditRows(T) {
+  return T.map(t => {
+    const stops = Array.isArray(t.stops) && t.stops.length > 0 ? t.stops : (t.destination ? [t.destination] : [])
+    const stopsStr = stops.join(' → ')
+    const paxList = (t.passengers_list||[]).map(p => p.full_name + (p.department ? ' ('+p.department+')' : '')).join('; ')
+    const slaStatus = !t.sla_target_minutes ? '—' : t.sla_breached ? '❌ Breached' : '✅ Met'
+    const rowBg = t.priority==='emergency' ? 'background:#fff5f5' : t.priority==='urgent' ? 'background:#fffbeb' : ''
+    return `<tr style="border-bottom:1px solid var(--border);${rowBg}" onclick="openViewModal('${t.id}');event.stopPropagation();" class="audit-row" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${t.priority==='emergency'?'#fff5f5':t.priority==='urgent'?'#fffbeb':''}'">
+      <td style="padding:9px 10px;white-space:nowrap">${chip(t.ticket_no)}</td>
+      <td style="padding:9px 10px;white-space:nowrap;color:var(--text2)">${fmtDate(t.created_at)}</td>
+      <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${t.department||'—'}</td>
+      <td style="padding:9px 10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.purpose||''}">${t.purpose||'—'}</td>
+      <td style="padding:9px 10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${stopsStr}">${stopsStr||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${priorityBadge(t.priority)}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${typeBadge(t.vehicle_type_needed)}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${badge(t.status)}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.requester_name||'—'}</td>
+      <td style="padding:9px 10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)" title="${t.remarks||''}">${t.remarks||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.approver?.full_name||'—'}</td>
+      <td style="padding:9px 10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)" title="${t.approval_remarks||''}">${t.approval_remarks||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap;color:var(--text2)">${fmtDT(t.approved_at)}</td>
+      <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${t.driver?.full_name||t.driver_name||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap;font-family:monospace">${t.driver?.license_no||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.driver?.phone||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.driver?.shift||'—'}</td>
+      <td style="padding:9px 10px;font-weight:600;white-space:nowrap">${t.vehicle?.name||t.vehicle_name||'—'}</td>
+      <td style="padding:9px 10px;font-family:monospace;font-weight:700;white-space:nowrap;color:var(--pri)">${t.vehicle?.plate||t.vehicle_plate||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.vehicle?.fuel||'—'}</td>
+      <td style="padding:9px 10px;text-align:center">${t.vehicle?.capacity||'—'} pax</td>
+      <td style="padding:9px 10px;white-space:nowrap;color:var(--text2)">${fmtDT(t.gate_out_at)}</td>
+      <td style="padding:9px 10px;text-align:center">${t.odometer_out!=null?t.odometer_out.toLocaleString()+' km':'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.fuel_out||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.condition_out||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.guard_out_user?.full_name||'—'}</td>
+      <td style="padding:9px 10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)" title="${t.guard_out_remarks||''}">${t.guard_out_remarks||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap;color:var(--text2)">${fmtDT(t.gate_in_at)}</td>
+      <td style="padding:9px 10px;text-align:center">${t.odometer_in!=null?t.odometer_in.toLocaleString()+' km':'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.fuel_in||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.condition_in||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.guard_in_user?.full_name||'—'}</td>
+      <td style="padding:9px 10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)" title="${t.guard_in_remarks||''}">${t.guard_in_remarks||'—'}</td>
+      <td style="padding:9px 10px;text-align:center;font-weight:700">${t.distance_km!=null?t.distance_km+' km':'—'}</td>
+      <td style="padding:9px 10px;text-align:center">${t.fuel_consumed_liters!=null?parseFloat(t.fuel_consumed_liters).toFixed(1)+'L':'—'}</td>
+      <td style="padding:9px 10px;text-align:right;font-weight:700">${t.fuel_cost?'₱'+parseFloat(t.fuel_cost).toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>
+      <td style="padding:9px 10px;text-align:center">${t.trip_duration_minutes!=null?fmtMins(t.trip_duration_minutes):'—'}</td>
+      <td style="padding:9px 10px;text-align:center">${t.response_minutes!=null?fmtMins(t.response_minutes):'—'}</td>
+      <td style="padding:9px 10px;text-align:center">${t.sla_target_minutes?fmtMins(t.sla_target_minutes):'—'}</td>
+      <td style="padding:9px 10px;text-align:center;white-space:nowrap">${slaStatus}</td>
+      <td style="padding:9px 10px;text-align:center">${t.rating!=null?'⭐'.repeat(t.rating)+' ('+t.rating+'/5)':'—'}</td>
+      <td style="padding:9px 10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)" title="${t.rating_comment||''}">${t.rating_comment||'—'}</td>
+      <td style="padding:9px 10px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--red)" title="${t.rejection_reason||''}">${t.rejection_reason||'—'}</td>
+      <td style="padding:9px 10px;white-space:nowrap">${t.rejected_by_user?.full_name||'—'}</td>
+      <td style="padding:9px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)" title="${paxList}">${paxList||'—'}</td>
+    </tr>`
+  }).join('')
 }
+
+function filterFullAuditTable(q) {
+  const qq = (q||'').toLowerCase()
+  const statusF = document.getElementById('auditStatusF')?.value || ''
+  const typeF   = document.getElementById('auditTypeF')?.value || ''
+  const priF    = document.getElementById('auditPriF')?.value || ''
+  const rows = (window._rptDataFull||[]).filter(t => {
+    const matchQ = !qq || [t.ticket_no,t.department,t.driver_name,t.driver?.full_name,t.purpose,t.destination,t.requester_name,t.vehicle_plate,t.vehicle?.plate,...(t.stops||[])].some(v => (v||'').toLowerCase().includes(qq))
+    const matchS = !statusF || t.status === statusF
+    const matchT = !typeF   || t.vehicle_type_needed === typeF
+    const matchP = !priF    || t.priority === priF
+    return matchQ && matchS && matchT && matchP
+  })
+  const tbody = document.getElementById('auditFullBody')
+  if (tbody) tbody.innerHTML = buildAuditRows(rows)
+}
+
+function exportAuditCSV() {
+  const statusF = document.getElementById('auditStatusF')?.value || ''
+  const typeF   = document.getElementById('auditTypeF')?.value || ''
+  const priF    = document.getElementById('auditPriF')?.value || ''
+  const q       = document.getElementById('auditSearchQ')?.value || ''
+  const qq = q.toLowerCase()
+  const rows = (window._rptDataFull||[]).filter(t => {
+    const matchQ = !qq || [t.ticket_no,t.department,t.driver_name,t.purpose,t.destination,t.requester_name].some(v=>(v||'').toLowerCase().includes(qq))
+    const matchS = !statusF || t.status === statusF
+    const matchT = !typeF   || t.vehicle_type_needed === typeF
+    const matchP = !priF    || t.priority === priF
+    return matchQ && matchS && matchT && matchP
+  })
+  const esc = v => '"' + String(v||'').replace(/"/g,'""') + '"'
+  const headers = ['Ticket No','Date Filed','Dept','Purpose','Destination/Stops','Priority','Type','Status',
+    'Requester','Remarks','Approver','Approval Remarks','Approved At',
+    'Driver','License No','Driver Phone','Shift',
+    'Vehicle Name','Plate','Fuel Type','Capacity',
+    'Gate Out','Odometer Out','Fuel Out','Condition Out','Guard Out','Gate Out Remarks',
+    'Gate In','Odometer In','Fuel In','Condition In','Guard In','Gate In Remarks',
+    'Distance (km)','Fuel Used (L)','Fuel Cost (PHP)','Trip Duration (min)','Response Time (min)',
+    'SLA Target (min)','SLA Status','Rating','Rating Comment',
+    'Rejection Reason','Rejected By','Passengers']
+  const csvRows = [headers.join(','), ...rows.map(t => {
+    const stops = Array.isArray(t.stops) && t.stops.length > 0 ? t.stops.join(' > ') : (t.destination||'')
+    const pax = (t.passengers_list||[]).map(p=>p.full_name+(p.department?' ('+p.department+')':'')).join('; ')
+    return [
+      t.ticket_no, t.created_at?.slice(0,10), t.department, t.purpose, stops,
+      t.priority, t.vehicle_type_needed, t.status,
+      t.requester_name, t.remarks, t.approver?.full_name, t.approval_remarks, t.approved_at?.slice(0,16),
+      t.driver?.full_name||t.driver_name, t.driver?.license_no, t.driver?.phone, t.driver?.shift,
+      t.vehicle?.name||t.vehicle_name, t.vehicle?.plate||t.vehicle_plate, t.vehicle?.fuel, t.vehicle?.capacity,
+      t.gate_out_at?.slice(0,16), t.odometer_out, t.fuel_out, t.condition_out,
+      t.guard_out_user?.full_name, t.guard_out_remarks,
+      t.gate_in_at?.slice(0,16), t.odometer_in, t.fuel_in, t.condition_in,
+      t.guard_in_user?.full_name, t.guard_in_remarks,
+      t.distance_km, t.fuel_consumed_liters, t.fuel_cost, t.trip_duration_minutes, t.response_minutes,
+      t.sla_target_minutes, t.sla_breached?'Breached':t.sla_target_minutes?'Met':'',
+      t.rating, t.rating_comment,
+      t.rejection_reason, t.rejected_by_user?.full_name, pax
+    ].map(esc).join(',')
+  })]
+  const blob = new Blob([csvRows.join('\n')], {type:'text/csv;charset=utf-8;'})
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob)
+  a.download = `TDMH_VTS_Report_${_rptFrom}_to_${_rptTo}.csv`
+  document.body.appendChild(a); a.click(); document.body.removeChild(a)
+}
+
+function filterRawReport(q) { filterFullAuditTable(q) }
+
 
 // ════════════════════════════════════════════════
 // AUDIT
