@@ -610,7 +610,8 @@ function ReportsPanel({currentUser}){
           .select("*")
           .gte("checkout_at",fromUTC)
           .lte("checkout_at",toUTC)
-          .order("checkout_at",{ascending:false});
+          .order("checkout_at",{ascending:false})
+          .limit(5000);
         const{data:d2}=await sb.from("transactions")
           .select("*")
           .is("checkout_at",null)
