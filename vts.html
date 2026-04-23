@@ -1741,21 +1741,39 @@ async function openApproveModal(id, ticketNo, vtype) {
   const retISO = tripData?.expected_return_at || new Date(new Date(depISO).getTime() + 4*3600000).toISOString()
 
   // Find drivers/vehicles already busy at this specific time window
-  const [{ data: busyDrv }, { data: busyVeh }] = await Promise.all([
-    SB.from('trips').select('driver_id')
+  // Fetch ALL active trips that start before our return time, then filter in JS
+  // using COALESCE(expected_return_at, departure_at + 4hrs) for null return times
+  const FOUR_HRS = 4 * 3600000
+  const [{ data: activeDrv }, { data: activeVeh }] = await Promise.all([
+    SB.from('trips').select('driver_id,departure_at,expected_return_at')
       .not('status','in','("completed","cancelled","rejected")')
       .neq('id', id)
       .lt('departure_at', retISO)
-      .or(`expected_return_at.gt.${depISO},expected_return_at.is.null`),
-    SB.from('trips').select('vehicle_id')
+      .not('driver_id','is',null),
+    SB.from('trips').select('vehicle_id,departure_at,expected_return_at')
       .not('status','in','("completed","cancelled","rejected")')
       .neq('id', id)
       .lt('departure_at', retISO)
-      .or(`expected_return_at.gt.${depISO},expected_return_at.is.null`)
+      .not('vehicle_id','is',null)
   ])
 
-  const busyDrvIds = new Set((busyDrv||[]).map(t => t.driver_id).filter(Boolean))
-  const busyVehIds = new Set((busyVeh||[]).map(t => t.vehicle_id).filter(Boolean))
+  // JS-side overlap: trip end = expected_return_at OR departure + 4hrs if null
+  const busyDrvIds = new Set(
+    (activeDrv||[]).filter(t => {
+      const tEnd = t.expected_return_at
+        ? new Date(t.expected_return_at).getTime()
+        : new Date(t.departure_at).getTime() + FOUR_HRS
+      return tEnd > new Date(depISO).getTime()  // ends after our start = conflict
+    }).map(t => t.driver_id).filter(Boolean)
+  )
+  const busyVehIds = new Set(
+    (activeVeh||[]).filter(t => {
+      const tEnd = t.expected_return_at
+        ? new Date(t.expected_return_at).getTime()
+        : new Date(t.departure_at).getTime() + FOUR_HRS
+      return tEnd > new Date(depISO).getTime()
+    }).map(t => t.vehicle_id).filter(Boolean)
+  )
 
   // Filter drivers: exclude off-duty AND time-conflicted, allow on-trip if no time conflict
   const avD = _drivers.filter(d => {
