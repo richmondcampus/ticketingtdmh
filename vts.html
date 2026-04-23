@@ -1728,17 +1728,48 @@ async function openViewModal(id) {
 }
 
 // APPROVE
-function openApproveModal(id, ticketNo, vtype) {
+async function openApproveModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
+
+  // Fetch ticket departure/return for time-based conflict check
+  const { data: tripData } = await SB.from('trips')
+    .select('departure_at,expected_return_at')
+    .eq('id', id).single()
+
+  const depISO = tripData?.departure_at || new Date().toISOString()
+  const retISO = tripData?.expected_return_at || new Date(new Date(depISO).getTime() + 4*3600000).toISOString()
+
+  // Find drivers/vehicles already busy at this specific time window
+  const [{ data: busyDrv }, { data: busyVeh }] = await Promise.all([
+    SB.from('trips').select('driver_id')
+      .not('status','in','("completed","cancelled","rejected")')
+      .neq('id', id)
+      .lt('departure_at', retISO)
+      .or(`expected_return_at.gt.${depISO},expected_return_at.is.null`),
+    SB.from('trips').select('vehicle_id')
+      .not('status','in','("completed","cancelled","rejected")')
+      .neq('id', id)
+      .lt('departure_at', retISO)
+      .or(`expected_return_at.gt.${depISO},expected_return_at.is.null`)
+  ])
+
+  const busyDrvIds = new Set((busyDrv||[]).map(t => t.driver_id).filter(Boolean))
+  const busyVehIds = new Set((busyVeh||[]).map(t => t.vehicle_id).filter(Boolean))
+
+  // Filter drivers: exclude off-duty AND time-conflicted, allow on-trip if no time conflict
   const avD = _drivers.filter(d => {
-    if (d.status !== 'available') return false
+    if (d.status === 'off-duty') return false       // genuinely unavailable
+    if (busyDrvIds.has(d.id)) return false          // has overlapping trip at this time
     const dt = d.driver_type || 'regular'
     if (dt === 'both') return true
     if (isAmb) return dt === 'ambulance'
     return dt === 'regular'
   })
+
   const avV = _vehicles.filter(v => {
+    if (busyVehIds.has(v.id)) return false          // has overlapping trip at this time
+    if (v.status === 'maintenance') return false    // in maintenance
     const t = (v.type||'').toLowerCase()
     if (isAmb)  return t.includes('ambulance') || t.includes('bls')
     if (isMoto) return t.includes('motorcycle')
@@ -1971,12 +2002,8 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
 
   // Fetch busy IDs at this time window (exclude current ticket)
   const [{ data: busyV }, { data: busyD }] = await Promise.all([
-    SB.from('trips').select('vehicle_id')
-      .not('status','in','("completed","cancelled","rejected")')
-      .neq('id', id).lt('departure_at', retISO).gt('expected_return_at', depISO),
-    SB.from('trips').select('driver_id')
-      .not('status','in','("completed","cancelled","rejected")')
-      .neq('id', id).lt('departure_at', retISO).gt('expected_return_at', depISO)
+    SB.rpc('get_busy_vehicle_ids', { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id }),
+    SB.rpc('get_busy_driver_ids',  { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id }),
   ])
 
   const busyVIds = new Set((busyV||[]).map(t=>t.vehicle_id).filter(Boolean))
@@ -1984,8 +2011,10 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
 
   // Available drivers (exclude busy, include current so they appear)
   // Filter by driver_type matching ticket type
+  // off-duty = unavailable; on-trip but no time conflict = available
   const avD = (_drivers||[]).filter(d => {
     const dt = d.driver_type || 'regular'
+    if (d.status === 'off-duty') return false
     const notBusy = !busyDIds.has(d.id) || d.id === curDriverId
     if (!notBusy) return false
     if (dt === 'both') return true
@@ -2074,10 +2103,16 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
 
   // Check if new driver has conflict (skip if same driver)
   if (newDriverId !== curDriverId) {
-    const { data: dConf } = await SB.from('trips')
-      .select('ticket_no').eq('driver_id', newDriverId)
-      .not('status','in','("completed","cancelled","rejected")')
-      .neq('id', id).lt('departure_at', retISO).gt('expected_return_at', depISO)
+    const { data: dConf } = await SB.rpc('get_busy_driver_ids',
+      { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id })
+      .then(async r => {
+        if (!(r.data||[]).some(x => x.driver_id === newDriverId)) return { data: [] }
+        const { data } = await SB.from('trips').select('ticket_no')
+          .eq('driver_id', newDriverId)
+          .not('status','in','("completed","cancelled","rejected")')
+          .neq('id', id)
+        return { data }
+      })
     if ((dConf||[]).length > 0) {
       if (!confirm(`⚠ ${newDriverName} has an overlapping trip (${dConf[0].ticket_no}).\n\nProceed with reassignment anyway? This will be logged.`)) {
         btn.disabled=false; btn.textContent='↻ Confirm Reassign'; return
@@ -2087,10 +2122,16 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
 
   // Check if new vehicle has conflict (skip if same vehicle)
   if (vv !== curVehicleId) {
-    const { data: vConf } = await SB.from('trips')
-      .select('ticket_no').eq('vehicle_id', vv)
-      .not('status','in','("completed","cancelled","rejected")')
-      .neq('id', id).lt('departure_at', retISO).gt('expected_return_at', depISO)
+    const { data: vConf } = await SB.rpc('get_busy_vehicle_ids',
+      { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id })
+      .then(async r => {
+        if (!(r.data||[]).some(x => x.vehicle_id === vv)) return { data: [] }
+        const { data } = await SB.from('trips').select('ticket_no')
+          .eq('vehicle_id', vv)
+          .not('status','in','("completed","cancelled","rejected")')
+          .neq('id', id)
+        return { data }
+      })
     if ((vConf||[]).length > 0) {
       if (!confirm(`⚠ Vehicle ${newVehicle?.plate} has an overlapping trip (${vConf[0].ticket_no}).\n\nProceed anyway? This will be logged.`)) {
         btn.disabled=false; btn.textContent='↻ Confirm Reassign'; return
@@ -2276,19 +2317,10 @@ async function openAssignModal(id, ticketNo, vtype) {
   ])
 
   // Fetch conflicting driver/vehicle IDs for this time window
+  // Use RPC functions that handle NULL expected_return_at via COALESCE
   const [{ data: busyVehicles }, { data: busyDrivers }] = await Promise.all([
-    SB.from('trips')
-      .select('vehicle_id')
-      .not('status','in','("completed","cancelled","rejected")')
-      .neq('id', id)
-      .lt('departure_at', retISO)
-      .gt('expected_return_at', depISO),
-    SB.from('trips')
-      .select('driver_id')
-      .not('status','in','("completed","cancelled","rejected")')
-      .neq('id', id)
-      .lt('departure_at', retISO)
-      .gt('expected_return_at', depISO)
+    SB.rpc('get_busy_vehicle_ids', { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id }),
+    SB.rpc('get_busy_driver_ids',  { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id }),
   ])
 
   const busyVehicleIds = new Set((busyVehicles||[]).map(t => t.vehicle_id).filter(Boolean))
@@ -2306,13 +2338,15 @@ async function openAssignModal(id, ticketNo, vtype) {
   }) : []
 
   // Filter drivers by driver_type matching the ticket's vehicle type
+  // off-duty = genuinely unavailable; on-trip but no time conflict = available
   const filterDrivers = (all, typeOnly) => all ? all.filter(d => {
-    if (busyDriverIds.has(d.id)) return false
-    if (!typeOnly) return true  // Last Resort — show all available
+    if (d.status === 'off-duty') return false       // genuinely unavailable
+    if (busyDriverIds.has(d.id)) return false       // has overlapping trip at this time
+    if (!typeOnly) return true                       // Last Resort — show all
     const dt = d.driver_type || 'regular'
-    if (dt === 'both') return true  // 'both' can take any ticket
+    if (dt === 'both') return true
     if (isAmb)  return dt === 'ambulance'
-    return dt === 'regular'  // regular ticket → regular drivers only
+    return dt === 'regular'
   }) : []
 
   const avV = filterVehicles(allVehicles, true)   // type-matched + available
