@@ -426,9 +426,9 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 </div>
 
 <!-- Modal -->
-<div class="mo-overlay" id="MO" onclick="if(event.target===this)closeMO()">
+<div class="mo-overlay" id="MO" onclick="if(event.target===this && !this._noBackdropClose)closeMO()">
   <div class="mo">
-    <div class="mo-hd"><div class="mo-title" id="moTitle">—</div><button class="ib" onclick="closeMO()" style="border:none;font-size:15px">✕</button></div>
+    <div class="mo-hd"><div class="mo-title" id="moTitle">—</div><button class="ib mo-close" onclick="closeMO()" style="border:none;font-size:15px">✕</button></div>
     <div class="mo-body" id="moBody"></div>
     <div class="mo-foot" id="moFoot"></div>
   </div>
@@ -638,13 +638,25 @@ async function addAudit(ticketId, ticketNo, action, details) {
   }])
 }
 
-function openMO(title, body, foot) {
+function openMO(title, body, foot, opts={}) {
+  const mo = document.getElementById('MO')
   document.getElementById('moTitle').textContent = title
   document.getElementById('moBody').innerHTML = body
   document.getElementById('moFoot').innerHTML = foot || '<button class="btn btn-ghost" onclick="closeMO()">Close</button>'
-  document.getElementById('MO').classList.add('open')
+  // Hide header bar when no title (e.g. success modal)
+  const hd = mo.querySelector('.mo-hd')
+  if (hd) hd.style.display = title ? '' : 'none'
+  mo.classList.add('open')
+  mo._noBackdropClose = opts.noBackdropClose || false
 }
-function closeMO() { document.getElementById('MO').classList.remove('open') }
+function closeMO() {
+  const mo = document.getElementById('MO')
+  mo.classList.remove('open')
+  mo._noBackdropClose = false
+  // Restore header visibility
+  const hd = mo.querySelector('.mo-hd')
+  if (hd) hd.style.display = ''
+}
 
 // ════════════════════════════════════════════════
 // AUTH
@@ -3772,13 +3784,13 @@ async function submitNewTicket() {
       }).catch(() => {})
     }
 
-    // Success screen
+    // Success modal — use openMO so it can't be accidentally dismissed by nav clicks
     const approverLabel = vtype==='ambulance' ? 'Ambulance Approver' : 'Admin Approver'
     const priorityLabel = { low:'Low (24h SLA)', normal:'Normal (4h SLA)', urgent:'Urgent (1h SLA)', emergency:'Emergency (15min SLA)' }[document.getElementById('ntPri')?.value||'normal'] || ''
-    document.getElementById('CONTENT').innerHTML = `
-    <div style="max-width:480px;margin:48px auto;text-align:center">
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px 32px;position:relative;overflow:hidden">
-        <div style="position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--green),#34d399)"></div>
+
+    // Override modal backdrop click — don't close on outside click for success screen
+    openMO('',
+      `<div style="text-align:center;padding:8px 0">
         <div style="width:72px;height:72px;margin:0 auto 20px;position:relative">
           <svg viewBox="0 0 72 72" style="width:72px;height:72px">
             <circle cx="36" cy="36" r="34" fill="none" stroke="var(--green-s)" stroke-width="3"/>
@@ -3791,12 +3803,11 @@ async function submitNewTicket() {
               style="animation:checkIn .3s ease .4s forwards"/>
           </svg>
         </div>
-        <style>@keyframes circleIn{to{stroke-dashoffset:0}}@keyframes checkIn{to{stroke-dashoffset:0}}</style>
-        <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">${isAdvance ? '📅 Advance Booking Submitted' : 'Request Submitted'}</div>
-        <div style="font-size:28px;font-weight:800;letter-spacing:-0.5px;margin-bottom:6px">${trip.ticket_no}</div>
-        ${groupId ? `<div style="font-size:12px;color:var(--text3);margin-bottom:6px">Part of a bulk booking group</div>` : ''}
-        <div style="font-size:14px;color:var(--text2);margin-bottom:24px">Your vehicle request has been submitted successfully.</div>
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:left;margin-bottom:24px">
+        <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">${isAdvance ? '📅 Advance Booking Submitted' : '✅ Request Submitted'}</div>
+        <div style="font-size:30px;font-weight:900;letter-spacing:-0.5px;margin-bottom:8px;color:var(--text1)">${trip.ticket_no}</div>
+        ${groupId ? `<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Part of a bulk booking group</div>` : ''}
+        <div style="font-size:14px;color:var(--text2);margin-bottom:20px">Your vehicle request has been submitted.<br>An approver will be notified via SMS.</div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;text-align:left;margin-bottom:8px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             <span style="font-size:18px">📋</span>
             <div>
@@ -3812,12 +3823,16 @@ async function submitNewTicket() {
             </div>
           </div>
         </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="renderNewTicket()">+ New Request</button>
-          <button class="btn btn-pri" style="flex:1;justify-content:center" onclick="goTo('tickets')">View All Tickets</button>
-        </div>
-      </div>
-    </div>`
+      </div>`,
+      `<button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="closeMO();renderNewTicket()">+ New Request</button>
+       <button class="btn btn-pri" style="flex:1;justify-content:center" onclick="closeMO();goTo('tickets')">View My Tickets</button>`,
+      { noBackdropClose: true }
+    )
+    // Remove the × close button from this modal — user must pick an action
+    setTimeout(() => {
+      const closeBtn = document.querySelector('#MO .mo-close')
+      if (closeBtn) closeBtn.style.display = 'none'
+    }, 50)
 
     // Fire-and-forget notifications
     const approverRole = vtype === 'ambulance' ? 'approver_amb' : 'approver_admin'
