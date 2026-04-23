@@ -1357,7 +1357,7 @@ async function renderTickets() {
   // super_approver sees all tickets (no filter)
   const [{ data: trips }, { data: drvs }, { data: vehs }] = await Promise.all([
     tripsQuery,
-    SB.from('drivers').select('*,user:users(username,department)').eq('status','available'),
+    SB.from('drivers').select('*,user:users(username,department)').neq('status','off-duty'),
     SB.from('vehicles').select('*').eq('status','available')
   ])
   _tickets = trips || []; _drivers = drvs || []; _vehicles = vehs || []
