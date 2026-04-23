@@ -1735,7 +1735,7 @@ function openApproveModal(id, ticketNo, vtype) {
     if (d.status !== 'available') return false
     const dt = d.driver_type || 'regular'
     if (dt === 'both') return true
-    if (isAmbulance) return dt === 'ambulance'
+    if (isAmb) return dt === 'ambulance'
     return dt === 'regular'
   })
   const avV = _vehicles.filter(v => {
