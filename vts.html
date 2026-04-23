@@ -584,6 +584,11 @@ function deptOptions(selected='') {
 const ini = n => (n||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()
 const badge = s => { const m = STATUS_MAP[s]||{cls:'b-pending',lbl:s}; return `<span class="badge ${m.cls}">${m.lbl}</span>` }
 const typeBadge = t => t==='ambulance' ? `<span class="badge b-amb">🚑 Ambulance</span>` : t==='motorcycle' ? `<span class="badge b-moto">🏍 Motorcycle</span>` : `<span class="badge b-reg">🚙 Regular</span>`
+const driverTypeBadge = dt => {
+  if (dt==='ambulance') return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#fef2f2;color:#dc2626;border:1px solid #fecdd3">🚑 Ambulance</span>'
+  if (dt==='both')      return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe">⚡ All Types</span>'
+  return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe">🚙 Regular</span>'
+}
 const priorityBadge = p => {
   const map = {
     emergency: { bg:'#fef2f2', color:'#dc2626', border:'#fecdd3', icon:'🚨', lbl:'Emergency' },
@@ -1340,7 +1345,7 @@ async function renderTickets() {
   // super_approver sees all tickets (no filter)
   const [{ data: trips }, { data: drvs }, { data: vehs }] = await Promise.all([
     tripsQuery,
-    SB.from('drivers').select('*').eq('status','available'),
+    SB.from('drivers').select('*,user:users(username,department)').eq('status','available'),
     SB.from('vehicles').select('*').eq('status','available')
   ])
   _tickets = trips || []; _drivers = drvs || []; _vehicles = vehs || []
@@ -1714,7 +1719,13 @@ async function openViewModal(id) {
 function openApproveModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
-  const avD = _drivers.filter(d => d.status === 'available')
+  const avD = _drivers.filter(d => {
+    if (d.status !== 'available') return false
+    const dt = d.driver_type || 'regular'
+    if (dt === 'both') return true
+    if (isAmbulance) return dt === 'ambulance'
+    return dt === 'regular'
+  })
   const avV = _vehicles.filter(v => {
     const t = (v.type||'').toLowerCase()
     if (isAmb)  return t.includes('ambulance') || t.includes('bls')
@@ -1960,7 +1971,15 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const busyDIds = new Set((busyD||[]).map(t=>t.driver_id).filter(Boolean))
 
   // Available drivers (exclude busy, include current so they appear)
-  const avD = (_drivers||[]).filter(d => !busyDIds.has(d.id) || d.id === curDriverId)
+  // Filter by driver_type matching ticket type
+  const avD = (_drivers||[]).filter(d => {
+    const dt = d.driver_type || 'regular'
+    const notBusy = !busyDIds.has(d.id) || d.id === curDriverId
+    if (!notBusy) return false
+    if (dt === 'both') return true
+    if (isAmb) return dt === 'ambulance'
+    return dt === 'regular'
+  })
   // Available vehicles filtered by type (exclude busy, include current)
   const avV = (_vehicles||[]).filter(v => {
     const t = (v.type||'').toLowerCase()
@@ -2274,9 +2293,14 @@ async function openAssignModal(id, ticketNo, vtype) {
     return typeMatch && !busyVehicleIds.has(v.id)
   }) : []
 
+  // Filter drivers by driver_type matching the ticket's vehicle type
   const filterDrivers = (all, typeOnly) => all ? all.filter(d => {
-    const busy = busyDriverIds.has(d.id)
-    return !busy  // drivers don't have a strict type — all available drivers shown
+    if (busyDriverIds.has(d.id)) return false
+    if (!typeOnly) return true  // Last Resort — show all available
+    const dt = d.driver_type || 'regular'
+    if (dt === 'both') return true  // 'both' can take any ticket
+    if (isAmb)  return dt === 'ambulance'
+    return dt === 'regular'  // regular ticket → regular drivers only
   }) : []
 
   const avV = filterVehicles(allVehicles, true)   // type-matched + available
@@ -2303,7 +2327,7 @@ async function openAssignModal(id, ticketNo, vtype) {
      </div>
 
      <div class="fg"><label class="fl">Select Driver *
-       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} available at this time</span>
+       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} ${isAmb?'ambulance-qualified':isMoto?'available':'regular'} drivers available</span>
      </label>
        <select class="fs" id="asDrv" onchange="checkAssignConflict()">
          <option value="">-- Select Driver --</option>
@@ -4140,52 +4164,196 @@ async function doEditVehicle(id) {
 // DRIVERS
 // ════════════════════════════════════════════════
 async function renderDrivers() {
-  const { data } = await SB.from('drivers').select('*').order('full_name')
+  const { data } = await SB.from('drivers').select('*,user:users(username,department)').order('full_name')
   const D = data||[]
   document.getElementById('CONTENT').innerHTML = `
   <div class="card card-np" style="overflow:hidden">
-    <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">Driver Registry</div><button class="btn btn-pri btn-sm" onclick="openAddDriver()">+ Add Driver</button></div>
-    <table class="tbl"><thead><tr><th>Driver</th><th>License No.</th><th>Type</th><th>Expiry</th><th>Shift</th><th>Status</th></tr></thead><tbody>
+    <div class="card-hd" style="padding:14px 16px 12px">
+      <div>
+        <div class="card-title">Driver Registry <span style="font-size:11px;color:var(--text3);font-weight:400">${D.length} drivers</span></div>
+        <div style="font-size:10.5px;color:var(--text3);margin-top:2px">Each driver is linked to a login account. Manage login credentials in Accounts.</div>
+      </div>
+      <button class="btn btn-pri btn-sm" onclick="openAddDriver()">+ Add Driver</button>
+    </div>
+    <table class="tbl"><thead><tr><th>Driver</th><th>Login Account</th><th>License No.</th><th>License Type</th><th>Driver Type</th><th>Expiry</th><th>Shift</th><th>Phone</th><th>Status</th><th></th></tr></thead><tbody>
     ${D.map(d=>`<tr>
       <td><div style="display:flex;align-items:center;gap:7px">
-        <div style="width:28px;height:28px;border-radius:50%;background:${d.status==='available'?'var(--green-s)':'var(--amber-s)'};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${d.status==='available'?'var(--green)':'var(--amber)'}">${ini(d.full_name)}</div>
-        <span style="font-weight:600">${d.full_name}</span>
+        <div style="width:30px;height:30px;border-radius:50%;background:${d.driver_type==='ambulance'?'var(--red-s)':d.driver_type==='both'?'var(--purple-s)':'var(--green-s)'};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${d.driver_type==='ambulance'?'var(--red)':d.driver_type==='both'?'var(--purple)':'var(--green)'}">${ini(d.full_name)}</div>
+        <div>
+          <div style="font-weight:700;font-size:12.5px">${d.full_name}</div>
+          ${d.user&&d.user.department?`<div style="font-size:10px;color:var(--text3)">${d.user.department}</div>`:''}
+        </div>
       </div></td>
-      <td>${chip(d.license_no||'—')}</td>
+      <td>${d.user&&d.user.username?`<span style="font-family:monospace;font-size:11px;background:var(--bg);padding:2px 7px;border-radius:6px;color:var(--pri)">${d.user.username}</span>`:'<span style="color:var(--red);font-size:10px;font-weight:600">⚠ No account</span>'}</td>
+      <td>${d.license_no?chip(d.license_no):'<span style="color:var(--text3);font-size:11px">—</span>'}</td>
       <td style="font-size:11px">${d.license_type||'—'}</td>
-      <td style="font-size:11px;color:var(--text3)">${d.license_expiry||'—'}</td>
+      <td>${driverTypeBadge(d.driver_type||'regular')}</td>
+      <td style="font-size:11px;color:${d.license_expiry && new Date(d.license_expiry)<new Date()?'var(--red)':'var(--text3)'}">${d.license_expiry||'—'}${d.license_expiry && new Date(d.license_expiry)<new Date()?' ⚠':''}</td>
       <td style="font-size:11px">${d.shift||'—'}</td>
+      <td style="font-size:11px">${d.phone||'—'}</td>
       <td>${badge(d.status||'available')}</td>
+      <td><button class="tbl-act" onclick="openEditDriver('${d.id}')">Edit</button></td>
     </tr>`).join('')}
     </tbody></table>
   </div>`
 }
 
-function openAddDriver() {
-  openMO('Add Driver',
-    `<div class="fr">
-       <div class="fg"><label class="fl">Full Name *</label><input class="fi" id="dName" placeholder="Full name"></div>
-       <div class="fg"><label class="fl">License No. *</label><input class="fi" id="dLic" placeholder="N01-XX-XXXXXX"></div>
-       <div class="fg"><label class="fl">License Type</label><select class="fs" id="dLicType"><option>PRO</option><option>NON-PRO</option><option>A</option><option>B</option><option>BE</option><option>C</option><option>CE</option></select></div>
+async function openAddDriver() {
+  // Load users with driver role that don't have a driver record yet
+  const { data: allUsers } = await SB.from('users').select('id,full_name,username,department').eq('role','driver').eq('status','active').order('full_name')
+  const { data: linked }   = await SB.from('drivers').select('user_id').not('user_id','is',null)
+  const linkedIds = new Set((linked||[]).map(d=>d.user_id))
+  const unlinked  = (allUsers||[]).filter(u => !linkedIds.has(u.id))
+
+  openMO('Add Driver Profile',
+    `<div class="info info-blue" style="margin-bottom:12px">
+       Driver profiles are linked to their login accounts.<br>
+       ${unlinked.length===0
+         ? '<strong>All driver accounts already have a profile.</strong> Add a new driver in Accounts first.'
+         : `<strong>${unlinked.length} driver account${unlinked.length>1?'s':''} without a profile yet.</strong>`}
+     </div>
+     ${unlinked.length===0 ? '' : `
+     <div class="fg"><label class="fl">Select Driver Account *</label>
+       <select class="fs" id="dUserId">
+         <option value="">-- Select driver --</option>
+         ${unlinked.map(u=>`<option value="${u.id}">${u.full_name} (@${u.username}) · ${u.department||'—'}</option>`).join('')}
+       </select>
+     </div>
+     <div class="fg"><label class="fl">Driver Type *</label>
+       <select class="fs" id="dDriverType">
+         <option value="regular">🚙 Regular — Van, Sedan, Motorcycle</option>
+         <option value="ambulance">🚑 Ambulance — EMT/BLS Trained</option>
+         <option value="both">⚡ All Types — Can drive any vehicle</option>
+       </select>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">License No.</label><input class="fi" id="dLic" placeholder="N01-XX-XXXXXX"></div>
+       <div class="fg"><label class="fl">License Type</label>
+         <select class="fs" id="dLicType"><option>PRO</option><option>NON-PRO</option><option>A</option><option>B</option><option>BE</option><option>C</option><option>CE</option></select>
+       </div>
+     </div>
+     <div class="fr">
        <div class="fg"><label class="fl">License Expiry</label><input class="fi" type="date" id="dExpiry"></div>
-       <div class="fg"><label class="fl">Shift</label><select class="fs" id="dShift"><option>AM</option><option>PM</option><option>Night</option><option>24hrs</option></select></div>
-     </div>`,
-    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-pri" id="addDBtn" onclick="doAddDriver()">Add Driver</button>`
+       <div class="fg"><label class="fl">Shift</label>
+         <select class="fs" id="dShift"><option>AM</option><option>PM</option><option>Night</option><option>24hrs</option></select>
+       </div>
+     </div>
+     <div class="fg"><label class="fl">Phone</label><input class="fi" id="dPhone" placeholder="+63 9XX XXX XXXX"></div>
+     `}`,
+    unlinked.length===0
+      ? `<button class="btn btn-ghost" onclick="closeMO()">Close</button>
+         <button class="btn btn-pri" onclick="closeMO();goTo('accounts')">Go to Accounts</button>`
+      : `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+         <button class="btn btn-pri" id="addDBtn" onclick="doAddDriver()">Create Profile</button>`
   )
 }
 async function doAddDriver() {
-  const name = document.getElementById('dName')?.value?.trim()
-  const lic  = document.getElementById('dLic')?.value?.trim()
-  if (!name||!lic) { alert('Name and license required.'); return }
-  const btn = document.getElementById('addDBtn'); btn.disabled=true
-  await SB.from('drivers').insert([{ full_name:name, license_no:lic, license_type:document.getElementById('dLicType').value, license_expiry:document.getElementById('dExpiry').value||null, shift:document.getElementById('dShift').value, status:'available' }])
+  const userId = document.getElementById('dUserId')?.value
+  if (!userId) { alert('Select a driver account.'); return }
+  const { data: u } = await SB.from('users').select('full_name').eq('id',userId).single()
+  const btn = document.getElementById('addDBtn'); btn.disabled=true; btn.textContent='Creating...'
+  const { error } = await SB.from('drivers').insert([{
+    user_id:      userId,
+    full_name:    u?.full_name||'',
+    driver_type:  document.getElementById('dDriverType').value||'regular',
+    license_no:   document.getElementById('dLic')?.value?.trim()||null,
+    license_type: document.getElementById('dLicType')?.value||null,
+    license_expiry: document.getElementById('dExpiry')?.value||null,
+    shift:        document.getElementById('dShift')?.value||'AM',
+    phone:        document.getElementById('dPhone')?.value?.trim()||null,
+    status:       'available'
+  }])
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Create Profile'; return }
   closeMO(); renderDrivers()
 }
 
 // ════════════════════════════════════════════════
-// DEPARTMENTS
+// EDIT DRIVER
 // ════════════════════════════════════════════════
+// ════════════════════════════════════════════════
+async function openEditDriver(driverId) {
+  // Fetch fresh — avoids JSON stringify issues with nested user join
+  const { data: d } = await SB.from('drivers').select('*,user:users(username,full_name,department)').eq('id', driverId).single()
+  if (!d) { alert('Driver not found.'); return }
+
+  openMO(`Edit Driver — ${d.full_name}`,
+    `${d.user ? `<div style="background:var(--bg);border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:12px">
+       <span style="color:var(--text3)">Login account:</span>
+       <span style="font-family:monospace;font-weight:700;color:var(--pri);margin-left:6px">@${d.user.username}</span>
+       <span style="color:var(--text3);margin-left:6px">· ${d.user.department||'—'}</span>
+     </div>` : '<div class="info info-amber" style="margin-bottom:12px">⚠ No linked login account.</div>'}
+     <div class="fr">
+       <div class="fg"><label class="fl">Full Name</label>
+         <input class="fi" id="edName" value="${d.full_name||''}" ${d.user?'readonly style="background:var(--bg);color:var(--text3)"':''}>
+         ${d.user?'<div style="font-size:10px;color:var(--text3);margin-top:3px">Name synced from login account. Edit in Accounts page.</div>':''}
+       </div>
+       <div class="fg"><label class="fl">License No.</label><input class="fi" id="edLic" value="${d.license_no||''}" placeholder="N01-XX-XXXXXX"></div>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">License Type</label>
+         <select class="fs" id="edLicType">
+           ${['PRO','NON-PRO','A','B','BE','C','CE'].map(t=>`<option${d.license_type===t?' selected':''}>${t}</option>`).join('')}
+         </select>
+       </div>
+       <div class="fg"><label class="fl">License Expiry</label>
+         <input class="fi" type="date" id="edExpiry" value="${d.license_expiry||''}">
+       </div>
+     </div>
+     <div class="fg"><label class="fl">Driver Type *</label>
+       <select class="fs" id="edDriverType">
+         <option value="regular"${(d.driver_type||'regular')==='regular'?' selected':''}>🚙 Regular — Van, Sedan, Motorcycle</option>
+         <option value="ambulance"${d.driver_type==='ambulance'?' selected':''}>🚑 Ambulance — EMT/BLS Trained</option>
+         <option value="both"${d.driver_type==='both'?' selected':''}>⚡ All Types — Can drive any vehicle</option>
+       </select>
+       <div style="font-size:10.5px;color:var(--text3);margin-top:3px">Determines which ticket types this driver can be assigned to.</div>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Shift</label>
+         <select class="fs" id="edShift">
+           ${['AM','PM','Night','24hrs'].map(s=>`<option${d.shift===s?' selected':''}>${s}</option>`).join('')}
+         </select>
+       </div>
+       <div class="fg"><label class="fl">Status</label>
+         <select class="fs" id="edStatus">
+           ${['available','on-trip','off-duty'].map(s=>`<option${d.status===s?' selected':''}>${s}</option>`).join('')}
+         </select>
+       </div>
+     </div>
+     <div class="fg"><label class="fl">Phone</label>
+       <input class="fi" id="edPhone" value="${d.phone||''}" placeholder="+63 9XX XXX XXXX">
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-red btn-sm" onclick="doDeleteDriver('${d.id}','${(d.full_name||'').replace(/'/g,"\\'")}')">Delete</button>
+     <button class="btn btn-pri" id="edDBtn" onclick="doEditDriver('${d.id}')">Save Changes</button>`
+  )
+}
+
+async function doEditDriver(id) {
+  const name = document.getElementById('edName')?.value?.trim()
+  const lic  = document.getElementById('edLic')?.value?.trim()
+  if (!name||!lic) { alert('Name and license required.'); return }
+  const btn = document.getElementById('edDBtn'); btn.disabled=true; btn.textContent='Saving...'
+  const { error } = await SB.from('drivers').update({
+    full_name:    name,
+    license_no:   lic,
+    license_type: document.getElementById('edLicType').value,
+    driver_type:  document.getElementById('edDriverType').value,
+    license_expiry: document.getElementById('edExpiry').value||null,
+    shift:        document.getElementById('edShift').value,
+    phone:        document.getElementById('edPhone')?.value?.trim()||null,
+    status:       document.getElementById('edStatus').value,
+  }).eq('id', id)
+  if (error) { alert(error.message); btn.disabled=false; btn.textContent='Save Changes'; return }
+  closeMO(); renderDrivers()
+}
+
+async function doDeleteDriver(id, name) {
+  if (!confirm(`Delete driver "${name}"? This cannot be undone.`)) return
+  const { error } = await SB.from('drivers').delete().eq('id', id)
+  if (error) { alert(error.message); return }
+  closeMO(); renderDrivers()
+}
+
 // ════════════════════════════════════════════════
 // DEPARTMENTS — Full CRUD
 // ════════════════════════════════════════════════
@@ -4791,34 +4959,98 @@ function filterAudit(q) {
 // ════════════════════════════════════════════════
 async function renderAccounts() {
   if (currentProfile?.role === 'super_approver') { goTo('dashboard'); return }
-  const { data } = await SB.from('users').select('*').order('full_name')
-  const U = data||[]
+  const { data } = await SB.from('users').select('*').order('role,full_name')
+  window._allAccounts = data || []
+  renderAccountsTable()
+}
+
+function renderAccountsTable() {
+  const U = window._allAccounts || []
+  const activeRole = window._acctRoleFilter || 'all'
+  const searchQ    = (window._acctSearch || '').toLowerCase()
+
+  const roleCounts = {}
+  U.forEach(u => { roleCounts[u.role] = (roleCounts[u.role]||0)+1 })
+
+  const filtered = U.filter(u => {
+    const matchRole = activeRole === 'all' || u.role === activeRole
+    const matchSearch = !searchQ || [u.full_name,u.username,u.department,u.email,u.phone]
+      .some(v => (v||'').toLowerCase().includes(searchQ))
+    return matchRole && matchSearch
+  })
+
+  const pillStyle = (role) => {
+    const isActive = activeRole === role
+    const c = role === 'all' ? '#475569' : (ROLE_COLORS[role]||'#475569')
+    return `cursor:pointer;padding:5px 14px;border-radius:20px;font-size:11.5px;font-weight:700;border:1.5px solid ${isActive?c:c+'44'};background:${isActive?c+'18':'transparent'};color:${isActive?c:c+'99'};transition:all .15s;white-space:nowrap`
+  }
+
   document.getElementById('CONTENT').innerHTML = `
   <div class="card card-np" style="overflow:hidden;margin-bottom:14px">
-    <div class="card-hd" style="padding:14px 16px 12px"><div class="card-title">User Accounts</div><button class="btn btn-pri btn-sm" onclick="openCreateAccount()">+ Create Account</button></div>
-    <table class="tbl"><thead><tr><th>Full Name</th><th>Username</th><th>Role</th><th>Department</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-    ${U.map(u=>{const c=ROLE_COLORS[u.role]||'#64748b';return`<tr>
-      <td><div style="display:flex;align-items:center;gap:8px"><div style="width:28px;height:28px;border-radius:50%;background:${c}22;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${c}">${ini(u.full_name)}</div><span style="font-weight:600">${u.full_name}</span></div></td>
-      <td>${chip(u.username||'—')}</td>
-      <td><span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:20px;background:${c}20;color:${c}">${ROLE_LABELS[u.role]||u.role}</span></td>
-      <td style="font-size:11.5px">${u.department||'—'}</td>
-      <td style="font-size:11px;color:var(--text2)">${u.phone||'—'}</td>
-      <td style="font-size:11px;color:var(--text2)">${u.email||'—'}</td>
-      <td><span class="badge ${u.status==='active'?'b-avail':'b-rejected'}">${u.status==='active'?'Active':'Inactive'}</span></td>
-      <td><div style="display:flex;gap:4px">
-        <button class="btn btn-ghost btn-sm" onclick="openEditAccount('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}','${u.role}','${u.department||''}','${u.phone||''}','${u.email||''}')">Edit</button>
-        <button class="btn btn-ghost btn-sm" onclick="openResetPw('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}')">Reset PW</button>
-        <button class="btn btn-ghost btn-sm" onclick="toggleUser('${u.id}','${u.status}')">${u.status==='active'?'Deactivate':'Activate'}</button>
-      </div></td>
-    </tr>`}).join('')}
+    <div class="card-hd" style="padding:14px 16px 12px;flex-wrap:wrap;gap:10px">
+      <div class="card-title">User Accounts <span style="font-size:11px;color:var(--text3);font-weight:400">${U.length} total · ${filtered.length} shown</span></div>
+      <button class="btn btn-pri btn-sm" onclick="openCreateAccount()">+ Create Account</button>
+    </div>
+
+    <!-- Search + Role filter pills -->
+    <div style="padding:0 16px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+      <input class="fi" id="acctSearch" placeholder="🔍 Search name, username, dept..."
+        style="font-size:12px;padding:7px 12px;width:240px;flex-shrink:0"
+        value="${window._acctSearch||''}"
+        oninput="window._acctSearch=this.value;renderAccountsTable()">
+
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:var(--text3);font-weight:600;white-space:nowrap">Filter by role:</span>
+        <button style="${pillStyle('all')}" onclick="window._acctRoleFilter='all';renderAccountsTable()">
+          All <span style="opacity:.6">${U.length}</span>
+        </button>
+        ${Object.entries(ROLE_LABELS).map(([role,label]) => roleCounts[role]
+          ? `<button style="${pillStyle(role)}" onclick="window._acctRoleFilter='${role}';renderAccountsTable()">
+               ${label} <span style="opacity:.6">${roleCounts[role]||0}</span>
+             </button>`
+          : ''
+        ).join('')}
+      </div>
+    </div>
+
+    <!-- Table -->
+    <table class="tbl"><thead><tr>
+      <th>Full Name</th><th>Username</th><th>Role</th><th>Department</th>
+      <th>Phone</th><th>Email</th><th>Status</th><th>Actions</th>
+    </tr></thead><tbody>
+    ${filtered.length === 0
+      ? `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3)">No accounts match the current filter.</td></tr>`
+      : filtered.map(u => {
+          const c = ROLE_COLORS[u.role]||'#64748b'
+          return `<tr>
+            <td><div style="display:flex;align-items:center;gap:8px">
+              <div style="width:28px;height:28px;border-radius:50%;background:${c}22;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${c}">${ini(u.full_name)}</div>
+              <span style="font-weight:600">${u.full_name}</span>
+            </div></td>
+            <td>${chip(u.username||'—')}</td>
+            <td><span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:20px;background:${c}20;color:${c}">${ROLE_LABELS[u.role]||u.role}</span></td>
+            <td style="font-size:11.5px">${u.department||'—'}</td>
+            <td style="font-size:11px;color:var(--text2)">${u.phone||'—'}</td>
+            <td style="font-size:11px;color:var(--text2)">${u.email||'—'}</td>
+            <td><span class="badge ${u.status==='active'?'b-avail':'b-rejected'}">${u.status==='active'?'Active':'Inactive'}</span></td>
+            <td><div style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openEditAccount('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}','${u.role}','${u.department||''}','${u.phone||''}','${u.email||''}')">Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="openResetPw('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}')">Reset PW</button>
+              <button class="btn btn-ghost btn-sm" onclick="toggleUser('${u.id}','${u.status}')">${u.status==='active'?'Deactivate':'Activate'}</button>
+            </div></td>
+          </tr>`
+        }).join('')}
     </tbody></table>
   </div>
+
   <div class="card">
     <div class="card-title" style="margin-bottom:11px">Role Definitions</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">
-      ${Object.entries(ROLE_LABELS).map(([k,v])=>`<div style="padding:11px;border:1px solid var(--border);border-radius:9px;border-left:3px solid ${ROLE_COLORS[k]}">
+      ${Object.entries(ROLE_LABELS).map(([k,v])=>`
+      <div style="padding:11px;border:1px solid var(--border);border-radius:9px;border-left:3px solid ${ROLE_COLORS[k]};cursor:pointer"
+           onclick="window._acctRoleFilter='${k}';renderAccountsTable();window.scrollTo(0,0)">
         <div style="font-size:11px;font-weight:700;color:${ROLE_COLORS[k]};margin-bottom:3px">${v}</div>
-        <div style="font-size:10px;color:var(--text3)">${{admin:'Full system access',approver:'Approves vehicle requests',guard:'Records gate in/out',requester:'Submit requests only',driver:'View assigned trips'}[k]}</div>
+        <div style="font-size:10px;color:var(--text3)">${roleCounts[k]||0} account${(roleCounts[k]||0)!==1?'s':''}</div>
       </div>`).join('')}
     </div>
   </div>`
