@@ -543,6 +543,7 @@ let currentProfile = null
 let currentPage = 'dashboard'
 let realtimeChannel = null
 let _departments = [] // cached from DB
+let _convoys     = [] // active convoys cache
 
 const ROLE_LABELS = { admin:'Administrator', approver_admin:'Admin Approver', approver_amb:'Ambulance Approver', guard:'Guard', requester:'Department User', driver:'Driver', owner:'Hospital Owner', super_approver:'Super Approver' }
 const ROLE_COLORS = { admin:'#0c6fdb', approver_admin:'#7c3aed', approver_amb:'#dc2626', guard:'#0d9488', requester:'#d97706', driver:'#16a34a', owner:'#0f766e', super_approver:'#0891b2' }
@@ -1036,7 +1037,7 @@ async function renderDashboard() {
 
   // Driver gets their own focused dashboard
   if (role === 'driver') { await renderDriverDashboard(); return }
-  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,is_advance_booking').order('created_at',{ascending:false})
+  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,vehicle_id,is_advance_booking,convoy_id').order('created_at',{ascending:false})
   if (role === 'requester')     tripsQ = tripsQ.eq('requester_id', currentProfile.id)
   if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.driver_record_id || currentProfile.id)
   if (role === 'approver_admin') tripsQ = tripsQ.neq('vehicle_type_needed', 'ambulance')
@@ -1464,7 +1465,11 @@ function renderTicketsTable() {
       ))
         acts.push(`<button class="tbl-act tbl-act-blue" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign</button>`)
       // Reassign — admin/super_approver only, on assigned tickets before gate-out
-      if ((role==='admin' || role==='super_approver') && t.status==='assigned')
+      if (t.status==='assigned' && (
+        role==='admin' || role==='super_approver' ||
+        (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      ))
         acts.push(`<button class="tbl-act" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.2)" onclick="event.stopPropagation();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`)
       if (role==='guard' && t.status==='assigned') {
         const depDate = t.departure_at ? new Date(t.departure_at) : null
@@ -1490,6 +1495,12 @@ function renderTicketsTable() {
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
       if ((role==='admin' || role==='super_approver') && !['completed','cancelled'].includes(t.status))
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
+      // Convoy — show for approvers on approved/assigned tickets not yet in convoy
+      if (['admin','super_approver','approver_admin','approver_amb'].includes(role) && ['approved','assigned'].includes(t.status) && !t.convoy_id)
+        acts.push(`<button class="tbl-act" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;white-space:nowrap" onclick="event.stopPropagation();openConvoyModal()">🚌 Convoy</button>`)
+      // Convoy badge on tickets already in a convoy
+      if (t.convoy_id)
+        acts.push(`<button class="tbl-act" style="background:#fdf4ff;color:#6b21a8;border:1px solid #e9d5ff;white-space:nowrap" onclick="event.stopPropagation();showConvoyDetails('${t.convoy_id}')">🚌 In Convoy</button>`)
       const isPending = t.status==='pending-approval'
       const rowBg = isPending ? 'background:color-mix(in srgb,var(--amber-s) 40%,transparent)' : ''
       return `<tr onclick="openViewModal('${t.id}')" style="border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;${rowBg}" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${isPending?'color-mix(in srgb,var(--amber-s) 40%,transparent)':''}'">
@@ -1545,15 +1556,69 @@ function buildGuardKanban(tickets) {
   const now = new Date()
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
 
+  // Group convoy tickets — show as single card per convoy
+  const convoyMap = {}
+  const soloTickets = []
+  tickets.forEach(t => {
+    if (t.convoy_id) {
+      if (!convoyMap[t.convoy_id]) convoyMap[t.convoy_id] = []
+      convoyMap[t.convoy_id].push(t)
+    } else {
+      soloTickets.push(t)
+    }
+  })
+
+  // Build convoy summary cards (use first ticket's data for timing)
+  const convoyCards = Object.entries(convoyMap).map(([convoyId, cTickets]) => {
+    const lead = cTickets[0]
+    return { ...lead, _isConvoy:true, _convoyId:convoyId, _convoyTickets:cTickets, _convoyCount:cTickets.length }
+  })
+
+  const allTickets = [...soloTickets, ...convoyCards]
+
   // Group into columns
-  const gateOutNow    = tickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) <= now)
-  const gateOutSoon   = tickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) > now && new Date(t.departure_at) <= new Date(now.getTime()+2*3600000))
-  const gateOutToday  = tickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) > new Date(now.getTime()+2*3600000) && new Date(t.departure_at) <= todayEnd)
-  const onTrip        = tickets.filter(t => t.status==='on-trip')
-  const scheduled     = tickets.filter(t => t.status==='assigned' && (!t.departure_at || new Date(t.departure_at) > todayEnd))
-  const others        = tickets.filter(t => !['assigned','on-trip'].includes(t.status))
+  const gateOutNow    = allTickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) <= now)
+  const gateOutSoon   = allTickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) > now && new Date(t.departure_at) <= new Date(now.getTime()+2*3600000))
+  const gateOutToday  = allTickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) > new Date(now.getTime()+2*3600000) && new Date(t.departure_at) <= todayEnd)
+  const onTrip        = allTickets.filter(t => t.status==='on-trip')
+  const scheduled     = allTickets.filter(t => t.status==='assigned' && (!t.departure_at || new Date(t.departure_at) > todayEnd))
+  const others        = allTickets.filter(t => !['assigned','on-trip'].includes(t.status))
 
   function gateCard(t) {
+    // ── Convoy card ──────────────────────────────
+    if (t._isConvoy) {
+      const dep = t.departure_at ? new Date(t.departure_at) : null
+      const depStr = dep ? dep.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
+      const late = dep && dep < now
+      const isToday = dep && dep <= todayEnd
+      const depts = t._convoyTickets.map(x=>x.department).join(' · ')
+      return `<div style="background:linear-gradient(135deg,#fdf4ff,#f5f3ff);border:2px solid #c4b5fd;border-radius:14px;padding:14px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <span style="font-size:15px">🚌</span>
+          <span style="font-size:13px;font-weight:900;color:#6b21a8">CONVOY</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#7c3aed;color:#fff">${t._convoyCount} tickets</span>
+          <span style="margin-left:auto;font-size:20px;font-weight:900;font-family:monospace;color:${late?'#dc2626':'#6b21a8'}">${depStr}</span>
+        </div>
+        <div style="font-size:11px;color:#6b21a8;font-weight:600;margin-bottom:8px;line-height:1.4">${depts}</div>
+        <div style="background:rgba(124,58,237,.08);border-radius:8px;padding:8px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+            <span style="font-size:11px;color:var(--text3)">👤 Driver</span>
+            <span style="font-size:11.5px;font-weight:700">${t.driver_name||'—'}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-size:11px;color:var(--text3)">🚗 Vehicle</span>
+            <span style="font-size:11.5px;font-weight:700;font-family:monospace">${t.vehicle_plate||'—'}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          ${isToday
+            ? `<button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onclick="event.stopPropagation();openConvoyGateOut('${t._convoyId}')">🚀 Gate Out All</button>`
+            : `<div style="flex:1;background:rgba(124,58,237,.08);border-radius:9px;padding:10px;text-align:center;font-size:11.5px;color:#6b21a8;font-weight:600">📅 Not today</div>`}
+          <button style="flex-shrink:0;background:rgba(124,58,237,.1);border:1px solid #c4b5fd;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer" onclick="event.stopPropagation();showConvoyDetails('${t._convoyId}')">Details</button>
+        </div>
+      </div>`
+    }
+    // ── Regular ticket card ──────────────────────
     const dep = t.departure_at ? new Date(t.departure_at) : null
     const depStr = dep ? dep.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
     const isToday = dep && dep <= todayEnd
@@ -1593,6 +1658,33 @@ function buildGuardKanban(tickets) {
   }
 
   function gateInCard(t) {
+    // ── Convoy on-trip card ──────────────────────
+    if (t._isConvoy) {
+      const depts = t._convoyTickets.map(x=>x.department).join(' · ')
+      return `<div style="background:linear-gradient(135deg,#fdf4ff,#f5f3ff);border:2px solid #a78bfa;border-radius:14px;padding:14px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <span style="width:8px;height:8px;border-radius:50%;background:#7c3aed;display:inline-block;animation:pulse-overdue 1.5s infinite"></span>
+          <span style="font-size:13px;font-weight:900;color:#6b21a8">🚌 CONVOY ON TRIP</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#7c3aed;color:#fff">${t._convoyCount} tickets</span>
+        </div>
+        <div style="font-size:11px;color:#6b21a8;font-weight:600;margin-bottom:8px">${depts}</div>
+        <div style="background:rgba(124,58,237,.08);border-radius:8px;padding:8px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+            <span style="font-size:11px;color:var(--text3)">👤 Driver</span>
+            <span style="font-size:11.5px;font-weight:700">${t.driver_name||'—'}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-size:11px;color:var(--text3)">🚗 Vehicle</span>
+            <span style="font-size:11.5px;font-weight:700;font-family:monospace">${t.vehicle_plate||'—'}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onclick="event.stopPropagation();openConvoyGateIn('${t._convoyId}')">✅ Gate In All</button>
+          <button style="flex-shrink:0;background:rgba(124,58,237,.1);border:1px solid #a78bfa;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer" onclick="event.stopPropagation();showConvoyDetails('${t._convoyId}')">Details</button>
+        </div>
+      </div>`
+    }
+    // ── Regular on-trip card ─────────────────────
     const exp = t.expected_return_at ? new Date(t.expected_return_at) : null
     const late = exp && exp < now
     const expStr = exp ? exp.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : 'Unknown'
@@ -1669,7 +1761,11 @@ function buildMobCards(filtered, role) {
       (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
     ))
       acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign Driver</button>`)
-    if ((role==='admin' || role==='super_approver') && t.status==='assigned')
+    if (t.status==='assigned' && (
+      role==='admin' || role==='super_approver' ||
+      (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+      (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+    ))
       acts.push(`<button class="btn btn-sm" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.2)" onclick="event.stopPropagation();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`)
     if ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
       acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
@@ -1747,7 +1843,7 @@ async function openViewModal(id) {
      ${ratingHTML}
      <div style="font-size:10.5px;color:var(--text3);margin-top:13px">Created: ${fmtDT(t.created_at)} · Approver: ${t.vehicle_type_needed==='ambulance'?'Ambulance Approver':'Admin Approver'}</div>`,
     // Footer buttons
-    `${(currentProfile?.role === 'admin' || currentProfile?.role === 'super_approver') && t.status === 'assigned'
+    `${(['admin','super_approver','approver_admin','approver_amb'].includes(currentProfile?.role) && t.status === 'assigned' && (currentProfile?.role==='admin'||currentProfile?.role==='super_approver'||(currentProfile?.role==='approver_admin'&&t.vehicle_type_needed!=='ambulance')||(currentProfile?.role==='approver_amb'&&t.vehicle_type_needed==='ambulance')))
       ? `<button class="btn" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.25)" onclick="closeMO();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`
       : ''}`
   )
@@ -2243,6 +2339,375 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
 
   closeMO()
   renderTickets()
+}
+
+// ════════════════════════════════════════════════
+// CONVOY — TRIP POOLING
+// Approver groups multiple assigned/approved tickets
+// into a single driver+vehicle+gate operation
+// ════════════════════════════════════════════════
+
+async function openConvoyModal() {
+  const role = currentProfile?.role
+  // Fetch all approved/assigned tickets (scoped by approver type)
+  let q = SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,departure_at,expected_return_at,vehicle_type_needed,driver_id,driver_name,vehicle_id,vehicle_plate,vehicle_name,status,convoy_id,priority')
+    .in('status',['approved','assigned'])
+    .is('convoy_id',null)
+    .order('departure_at',{ascending:true})
+  if (role==='approver_admin') q=q.neq('vehicle_type_needed','ambulance')
+  if (role==='approver_amb')   q=q.eq('vehicle_type_needed','ambulance')
+  const { data: tickets } = await q
+
+  const T = tickets||[]
+  if (T.length < 2) {
+    openMO('Form Convoy','<div class="info info-amber">Need at least 2 approved/assigned tickets to form a convoy.<br>Approve more tickets first.</div>',
+      '<button class="btn btn-ghost" onclick="closeMO()">Close</button>')
+    return
+  }
+
+  // Fetch available drivers and vehicles for assignment
+  const depISO = new Date().toISOString()
+  const retISO = new Date(Date.now()+8*3600000).toISOString()
+  const [{ data: drvData }, { data: vehData }] = await Promise.all([
+    SB.from('drivers').select('*').neq('status','off-duty').order('full_name'),
+    SB.from('vehicles').select('*').neq('status','maintenance').order('plate')
+  ])
+
+  const isAmb = role==='approver_amb'
+  const avD = (drvData||[]).filter(d => {
+    const dt = d.driver_type||'regular'
+    if (dt==='both') return true
+    if (isAmb) return dt==='ambulance'
+    return dt==='regular'
+  })
+  const avV = (vehData||[]).filter(v => {
+    const t=(v.type||'').toLowerCase()
+    if (isAmb) return t.includes('ambulance')||t.includes('bls')
+    return !t.includes('ambulance')
+  })
+
+  openMO('🚌 Form Convoy',
+    `<div class="info info-blue" style="margin-bottom:14px">
+       Select tickets to group into a single convoy trip. The assigned driver and vehicle will be shared across all selected tickets. Gate-out and gate-in will be done once for all.
+     </div>
+
+     <!-- Ticket selection -->
+     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px">Select Tickets for Convoy</div>
+     <div id="convoyTicketList" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:14px">
+       ${T.map(t => {
+         const dep = new Date(t.departure_at)
+         const stops = Array.isArray(t.stops)&&t.stops.length ? t.stops : (t.destination?[t.destination]:[])
+         return `<label style="display:flex;align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+           <input type="checkbox" class="convoy-ticket-cb" value="${t.id}" style="width:16px;height:16px;accent-color:var(--pri);flex-shrink:0"
+             onchange="updateConvoySelection()">
+           <div style="flex:1;min-width:0">
+             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+               <span style="font-family:monospace;font-weight:700;font-size:12px;color:var(--pri)">${t.ticket_no}</span>
+               ${priorityBadge(t.priority)}
+               ${badge(t.status)}
+             </div>
+             <div style="font-size:12.5px;font-weight:600;margin-top:2px">${t.department}</div>
+             <div style="font-size:11px;color:var(--text3)">→ ${stops[0]||'—'} · ${dep.toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}</div>
+           </div>
+           ${t.driver_name?`<div style="font-size:10px;color:var(--green);font-weight:600;white-space:nowrap">${t.driver_name}</div>`:''}
+         </label>`
+       }).join('')}
+     </div>
+     <div id="convoySelCount" style="font-size:11px;color:var(--text3);margin-bottom:14px;text-align:center">Select at least 2 tickets</div>
+
+     <!-- Convoy departure time -->
+     <div class="fr">
+       <div class="fg"><label class="fl">Convoy Departure *</label>
+         <input class="fi" type="datetime-local" id="convoyDep" value="${new Date(Date.now()+86400000).toISOString().slice(0,16)}">
+       </div>
+       <div class="fg"><label class="fl">Expected Return</label>
+         <input class="fi" type="datetime-local" id="convoyRet">
+       </div>
+     </div>
+
+     <!-- Driver + Vehicle -->
+     <div class="fr">
+       <div class="fg"><label class="fl">Driver *
+         <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} available</span>
+       </label>
+         <select class="fs" id="convoyDrv">
+           <option value="">-- Select Driver --</option>
+           ${avD.map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name}${d.license_no?' · '+d.license_no:''}</option>`).join('')}
+         </select>
+       </div>
+       <div class="fg"><label class="fl">Vehicle *
+         <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avV.length} available</span>
+       </label>
+         <select class="fs" id="convoyVeh">
+           <option value="">-- Select Vehicle --</option>
+           ${avV.map(v=>`<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)</option>`).join('')}
+         </select>
+       </div>
+     </div>`,
+
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="convoyBtn" onclick="doFormConvoy()" disabled>🚌 Form Convoy</button>`
+  )
+}
+
+function updateConvoySelection() {
+  const checked = document.querySelectorAll('.convoy-ticket-cb:checked').length
+  const btn = document.getElementById('convoyBtn')
+  const lbl = document.getElementById('convoySelCount')
+  if (lbl) lbl.textContent = checked < 2 ? `Select at least 2 tickets (${checked} selected)` : `${checked} tickets selected ✅`
+  if (btn) btn.disabled = checked < 2
+}
+
+async function doFormConvoy() {
+  const checked = [...document.querySelectorAll('.convoy-ticket-cb:checked')].map(cb=>cb.value)
+  if (checked.length < 2) { alert('Select at least 2 tickets.'); return }
+  const dep = document.getElementById('convoyDep')?.value
+  const ret = document.getElementById('convoyRet')?.value||null
+  const dv  = document.getElementById('convoyDrv')?.value
+  const vv  = document.getElementById('convoyVeh')?.value
+  if (!dep||!dv||!vv) { alert('Departure time, driver, and vehicle are required.'); return }
+
+  const [driverId, driverName] = dv.split('|')
+  const vehicle = _vehicles?.find(v=>v.id===vv) || {}
+  const btn = document.getElementById('convoyBtn'); btn.disabled=true; btn.textContent='Forming...'
+
+  // Generate convoy_no
+  const { data: noData } = await SB.rpc('generate_convoy_no')
+  const convoy_no = noData || 'CVY-0001'
+
+  // Create convoy record
+  const { data: convoy, error: cErr } = await SB.from('convoys').insert([{
+    convoy_no,
+    driver_id:    driverId,
+    driver_name:  driverName,
+    vehicle_id:   vv,
+    vehicle_plate: vehicle.plate||'',
+    vehicle_name:  vehicle.name||vehicle.type||'',
+    departure_at:  new Date(dep).toISOString(),
+    expected_return_at: ret ? new Date(ret).toISOString() : null,
+    created_by:    currentProfile?.id
+  }]).select().single()
+  if (cErr) { alert('Error creating convoy: '+cErr.message); btn.disabled=false; btn.textContent='🚌 Form Convoy'; return }
+
+  // Update all selected tickets: set convoy_id, driver, vehicle, status→assigned
+  const { error: tErr } = await SB.from('trips').update({
+    convoy_id:    convoy.id,
+    driver_id:    driverId,
+    driver_name:  driverName,
+    vehicle_id:   vv,
+    vehicle_plate: vehicle.plate||'',
+    vehicle_name:  vehicle.name||vehicle.type||'',
+    assigned_by:   currentProfile?.id,
+    assigned_at:   new Date().toISOString(),
+    status:        'assigned'
+  }).in('id', checked)
+  if (tErr) { alert('Error updating tickets: '+tErr.message); btn.disabled=false; btn.textContent='🚌 Form Convoy'; return }
+
+  // Update driver + vehicle status
+  await SB.from('drivers').update({status:'on-trip'}).eq('id',driverId)
+  await SB.from('vehicles').update({status:'on-trip'}).eq('id',vv)
+
+  // Audit log for each ticket
+  for (const tid of checked) {
+    const t = await SB.from('trips').select('ticket_no').eq('id',tid).single()
+    await addAudit(tid, t.data?.ticket_no||'', '🚌 Added to Convoy', `Convoy: ${convoy_no} · Driver: ${driverName} · Vehicle: ${vehicle.plate||''} · By: ${currentProfile?.full_name}`)
+  }
+
+  // SMS to driver
+  const { data: drvRow } = await SB.from('drivers').select('phone').eq('id',driverId).single()
+  if (drvRow?.phone) {
+    const deptList = checked.length + ' departments'
+    await sendSMS([drvRow.phone], `[TDMH VTS] CONVOY ASSIGNMENT\nConvoy: ${convoy_no}\nTickets: ${checked.length} (${deptList})\nDeparture: ${new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}\nVehicle: ${vehicle.plate||'—'}\n\nReport to motor pool for briefing.`)
+  }
+
+  closeMO()
+  renderTickets()
+}
+
+// ── Convoy Gate Out ────────────────────────────
+async function openConvoyGateOut(convoyId) {
+  const { data: c } = await SB.from('convoys').select('*').eq('id',convoyId).single()
+  const { data: trips } = await SB.from('trips').select('ticket_no,department,destination').eq('convoy_id',convoyId)
+  if (!c) return
+
+  openMO(`🚌 Convoy Gate Out — ${c.convoy_no}`,
+    `<div style="background:var(--bg);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+       <div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:8px">CONVOY TICKETS (${(trips||[]).length})</div>
+       ${(trips||[]).map(t=>`<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">${t.ticket_no} — <strong>${t.department}</strong> → ${t.destination||'—'}</div>`).join('')}
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Odometer Out (km) *</label><input class="fi" type="number" id="cvyOdoOut" placeholder="e.g. 12500"></div>
+       <div class="fg"><label class="fl">Condition</label>
+         <select class="fs" id="cvyCondOut">
+           <option>Good</option><option>Fair</option><option>Needs Attention</option>
+         </select>
+       </div>
+     </div>
+     <div class="fg"><label class="fl">Remarks</label><input class="fi" id="cvyRemarksOut" placeholder="Optional gate-out notes"></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-green" id="cvyGoBtn" onclick="doConvoyGateOut('${convoyId}')">🚀 Gate Out All</button>`
+  )
+}
+
+async function doConvoyGateOut(convoyId) {
+  const odo = parseInt(document.getElementById('cvyOdoOut')?.value||'0')
+  if (!odo) { alert('Odometer reading required.'); return }
+  const cond    = document.getElementById('cvyCondOut')?.value||'Good'
+  const remarks = document.getElementById('cvyRemarksOut')?.value||''
+  const now     = new Date().toISOString()
+  const btn     = document.getElementById('cvyGoBtn'); btn.disabled=true; btn.textContent='Processing...'
+
+  // Update convoy
+  await SB.from('convoys').update({
+    gate_out_at:   now,
+    odometer_out:  odo,
+    condition_out: cond,
+    guard_out_id:  currentProfile?.id,
+    guard_out_remarks: remarks
+  }).eq('id',convoyId)
+
+  // Update all tickets in convoy
+  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('convoy_id',convoyId)
+  for (const t of (trips||[])) {
+    await SB.from('trips').update({ status:'on-trip', gate_out_at:now, odometer_out:odo, guard_out_id:currentProfile?.id, guard_out_remarks:remarks }).eq('id',t.id)
+    await addAudit(t.id, t.ticket_no, '🚌 Convoy Gate Out', `Convoy Gate Out · Odo: ${odo}km · Guard: ${currentProfile?.full_name}`)
+  }
+  closeMO(); renderDashboard()
+}
+
+// ── Convoy Gate In ─────────────────────────────
+async function openConvoyGateIn(convoyId) {
+  const { data: c } = await SB.from('convoys').select('*').eq('id',convoyId).single()
+  const { data: trips } = await SB.from('trips').select('ticket_no,department,destination').eq('convoy_id',convoyId)
+  if (!c) return
+
+  openMO(`🚌 Convoy Gate In — ${c.convoy_no}`,
+    `<div style="background:var(--bg);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+       <div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:8px">RETURNING — ${(trips||[]).length} TICKETS</div>
+       ${(trips||[]).map(t=>`<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">${t.ticket_no} — <strong>${t.department}</strong> → ${t.destination||'—'}</div>`).join('')}
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Odometer In (km) *</label><input class="fi" type="number" id="cvyOdoIn" placeholder="e.g. 12600"></div>
+       <div class="fg"><label class="fl">Condition</label>
+         <select class="fs" id="cvyCondIn">
+           <option>Good</option><option>Fair</option><option>Needs Attention</option>
+         </select>
+       </div>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Fuel Used (L)</label><input class="fi" type="number" step="0.1" id="cvyFuelL" placeholder="e.g. 8.5" oninput="calcConvoyFuel()"></div>
+       <div class="fg"><label class="fl">Price/Liter (₱)</label><input class="fi" type="number" step="0.01" id="cvyFuelP" value="70" oninput="calcConvoyFuel()"></div>
+       <div class="fg"><label class="fl">Total Cost</label><input class="fi" id="cvyFuelCost" readonly style="background:var(--bg);font-weight:700;color:var(--green)" placeholder="₱0.00"></div>
+     </div>
+     <div style="font-size:10.5px;color:var(--text3);margin:-8px 0 10px">Fuel cost will be split equally among ${(trips||[]).length} tickets.</div>
+     <div class="fg"><label class="fl">Remarks</label><input class="fi" id="cvyRemarksIn" placeholder="Optional gate-in notes"></div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="cvyGiBtn" onclick="doConvoyGateIn('${convoyId}',${(trips||[]).length})">✅ Gate In All</button>`
+  )
+}
+
+function calcConvoyFuel() {
+  const l = parseFloat(document.getElementById('cvyFuelL')?.value||0)
+  const p = parseFloat(document.getElementById('cvyFuelP')?.value||70)
+  const el = document.getElementById('cvyFuelCost')
+  if (el) el.value = l&&p ? '₱'+( l*p).toLocaleString('en-PH',{minimumFractionDigits:2}) : ''
+}
+
+async function doConvoyGateIn(convoyId, ticketCount) {
+  const odoIn   = parseInt(document.getElementById('cvyOdoIn')?.value||'0')
+  if (!odoIn) { alert('Odometer in reading required.'); return }
+  const condIn  = document.getElementById('cvyCondIn')?.value||'Good'
+  const fuelL   = parseFloat(document.getElementById('cvyFuelL')?.value||0)||null
+  const fuelP   = parseFloat(document.getElementById('cvyFuelP')?.value||70)
+  const fuelCost= fuelL ? fuelL*fuelP : null
+  const fuelPerTicket = fuelCost ? fuelCost/ticketCount : null
+  const remarks = document.getElementById('cvyRemarksIn')?.value||''
+  const now     = new Date().toISOString()
+  const btn     = document.getElementById('cvyGiBtn'); btn.disabled=true; btn.textContent='Processing...'
+
+  // Get convoy for odo_out
+  const { data: c } = await SB.from('convoys').select('odometer_out,driver_id,vehicle_id').eq('id',convoyId).single()
+  const distKm = c?.odometer_out ? odoIn - c.odometer_out : null
+  const distPerTicket = distKm && distKm>0 ? Math.round(distKm/ticketCount) : null
+
+  // Update convoy record
+  await SB.from('convoys').update({
+    gate_in_at:           now,
+    odometer_in:          odoIn,
+    condition_in:         condIn,
+    guard_in_id:          currentProfile?.id,
+    guard_in_remarks:     remarks,
+    fuel_consumed_liters: fuelL,
+    fuel_cost:            fuelCost,
+    fuel_price_per_liter: fuelP
+  }).eq('id',convoyId)
+
+  // Update all tickets
+  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('convoy_id',convoyId)
+  for (const t of (trips||[])) {
+    await SB.from('trips').update({
+      status:                'completed',
+      gate_in_at:            now,
+      odometer_in:           odoIn,
+      condition_in:          condIn,
+      guard_in_id:           currentProfile?.id,
+      guard_in_remarks:      remarks,
+      fuel_consumed_liters:  fuelL ? parseFloat((fuelL/ticketCount).toFixed(2)) : null,
+      fuel_cost:             fuelPerTicket,
+      fuel_price_per_liter:  fuelP||null,
+      distance_km:           distPerTicket,
+      trip_duration_minutes: c?.gate_out_at ? Math.round((new Date(now)-new Date(c.gate_out_at))/60000) : null
+    }).eq('id',t.id)
+    await addAudit(t.id, t.ticket_no, '🚌 Convoy Gate In', `Convoy: Gate In · Odo: ${odoIn}km · Fuel split: ₱${fuelPerTicket?.toFixed(2)||'—'} · Guard: ${currentProfile?.full_name}`)
+  }
+
+  // Release driver + vehicle
+  if (c?.driver_id)  await SB.from('drivers').update({status:'available'}).eq('id',c.driver_id)
+  if (c?.vehicle_id) await SB.from('vehicles').update({status:'available'}).eq('id',c.vehicle_id)
+
+  closeMO(); renderDashboard()
+}
+
+// ── Dissolve Convoy (undo before gate-out) ────
+async function dissolveConvoy(convoyId, convoyNo) {
+  if (!confirm(`Dissolve Convoy ${convoyNo}?\n\nAll tickets will be returned to individual assigned status. This cannot be undone.`)) return
+  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('convoy_id',convoyId)
+  // Remove convoy_id from all tickets — keep driver/vehicle assignment
+  await SB.from('trips').update({ convoy_id: null }).eq('convoy_id', convoyId)
+  for (const t of (trips||[])) {
+    await addAudit(t.id, t.ticket_no, '🚌 Convoy Dissolved', `Convoy ${convoyNo} dissolved by ${currentProfile?.full_name}`)
+  }
+  // Delete convoy record
+  await SB.from('convoys').delete().eq('id',convoyId)
+  renderTickets()
+}
+
+async function showConvoyDetails(convoyId) {
+  const { data: c } = await SB.from('convoys').select('*').eq('id',convoyId).single()
+  const { data: trips } = await SB.from('trips').select('ticket_no,department,destination,status,priority').eq('convoy_id',convoyId)
+  if (!c) return
+  const canDissolve = ['admin','super_approver','approver_admin','approver_amb'].includes(currentProfile?.role) && !c.gate_out_at
+  openMO(`🚌 Convoy — ${c.convoy_no}`,
+    `<div style="background:var(--bg);border-radius:10px;padding:13px 15px;margin-bottom:13px">
+       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+         <div><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">Driver</div><div style="font-size:13px;font-weight:700">${c.driver_name||'—'}</div></div>
+         <div><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">Vehicle</div><div style="font-size:13px;font-weight:700;font-family:monospace">${c.vehicle_plate||'—'}</div><div style="font-size:10px;color:var(--text3)">${c.vehicle_name||''}</div></div>
+         <div><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">Departure</div><div style="font-size:12px;font-weight:700">${fmtDT(c.departure_at)}</div></div>
+         <div><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">Status</div><div style="font-size:12px;font-weight:700">${c.gate_out_at?c.gate_in_at?'Completed':'On Trip':'Assigned'}</div></div>
+       </div>
+     </div>
+     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px">Tickets in this Convoy (${(trips||[]).length})</div>
+     <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+       ${(trips||[]).map((t,i) => `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;${i<trips.length-1?'border-bottom:1px solid var(--border)':''}">
+         <span style="font-family:monospace;font-weight:700;color:var(--pri);font-size:11.5px">${t.ticket_no}</span>
+         <div style="flex:1"><div style="font-size:12px;font-weight:600">${t.department}</div><div style="font-size:10.5px;color:var(--text3)">→ ${t.destination||'—'}</div></div>
+         ${badge(t.status)}
+       </div>`).join('')}
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Close</button>
+     ${canDissolve?`<button class="btn btn-ghost" style="color:var(--red)" onclick="closeMO();dissolveConvoy('${c.id}','${c.convoy_no}')">Dissolve</button>`:''}
+    `
+  )
 }
 
 // REJECT
@@ -3200,7 +3665,7 @@ async function renderFleet() {
     SB.from('vehicles').select('*').order('plate'),
     SB.from('drivers').select('*').order('full_name'),
     SB.from('trips').select('*').eq('requester_id', currentProfile?.id).not('status','in','("cancelled","rejected")').order('departure_at',{ascending:false}).limit(20),
-    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed,convoy_id').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
     SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking').eq('is_advance_booking',true).in('status',['assigned','approved']).gt('departure_at', new Date().toISOString()).order('departure_at',{ascending:true}).limit(20)
   ])
 
@@ -3692,7 +4157,7 @@ async function applyTemplate(id) {
     if (deptEl?.tagName === 'SELECT') deptEl.value = t.department
   }
   // Show auto-approve indicator if set
-  if (t.auto_approve && currentProfile?.role === 'admin') {
+  if (t.auto_approve && ['admin','super_approver','approver_admin'].includes(currentProfile?.role)) {
     const errEl = document.getElementById('ntFormErr')
     if (errEl) {
       errEl.style.display = 'block'
@@ -3989,7 +4454,7 @@ async function submitNewTicket() {
       passengers: pax,
       remarks: document.getElementById('ntNotes')?.value||'',
       priority: document.getElementById('ntPri')?.value||'normal',
-      status: (_appliedTemplateAutoApprove && currentProfile?.role === 'admin') ? 'approved' : 'pending-approval',
+      status: (_appliedTemplateAutoApprove && ['admin','super_approver','approver_admin'].includes(currentProfile?.role)) ? 'approved' : 'pending-approval',
       is_advance_booking: isAdvance,
       booking_group_id: groupId
     }
@@ -5044,32 +5509,301 @@ async function renderReportContent() {
   </table>
   </div>`
 
+  // ── DEPARTMENT SUMMARY TAB ──────────────────────────────
+  const deptSummary = {}
+  T.forEach(t => {
+    if (!deptSummary[t.department]) deptSummary[t.department] = { total:0, completed:0, rejected:0, cancelled:0, ambulance:0, emergency:0, fuel:0, km:0, pax:0 }
+    const d = deptSummary[t.department]
+    d.total++
+    if (t.status==='completed') { d.completed++; d.km+=(t.distance_km||0); d.fuel+=parseFloat(t.fuel_cost||0) }
+    if (t.status==='rejected')  d.rejected++
+    if (t.status==='cancelled') d.cancelled++
+    if (t.vehicle_type_needed==='ambulance') d.ambulance++
+    if (t.priority==='emergency') d.emergency++
+    d.pax += (t.passengers_list||[]).length
+  })
+  const deptRows = Object.entries(deptSummary).sort((a,b)=>b[1].total-a[1].total)
+  const deptHTML = `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:13px;font-weight:700">${deptRows.length} Departments · ${total} Total Requests</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="exportTableCSV('deptSumTable','TDMH_Dept_Summary')">⬇ CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="printReport('dept-summary')">🖨 Print</button>
+    </div>
+  </div>
+  <div style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:12px" id="deptSumTable">
+    <thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+      ${['Department','Total','Completed','Rejected','Cancelled','Completion %','Ambulance','Emergency','Fuel Cost (₱)','Distance (km)','Passengers'].map(h=>`<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap">${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${deptRows.map(([dept,d],i)=>`<tr style="border-bottom:1px solid var(--border);background:${i%2?'var(--bg)':''}">
+        <td style="padding:10px 12px;font-weight:700">${dept||'—'}</td>
+        <td style="padding:10px 12px;font-weight:800;color:var(--pri)">${d.total}</td>
+        <td style="padding:10px 12px;color:var(--green);font-weight:700">${d.completed}</td>
+        <td style="padding:10px 12px;color:var(--red)">${d.rejected}</td>
+        <td style="padding:10px 12px;color:var(--text3)">${d.cancelled}</td>
+        <td style="padding:10px 12px;font-weight:700">${d.total?Math.round(d.completed/d.total*100):0}%</td>
+        <td style="padding:10px 12px">${d.ambulance||'—'}</td>
+        <td style="padding:10px 12px;color:${d.emergency?'var(--red)':'var(--text3)'};font-weight:${d.emergency?700:400}">${d.emergency||'—'}</td>
+        <td style="padding:10px 12px;font-weight:700;text-align:right">${d.fuel?'₱'+d.fuel.toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>
+        <td style="padding:10px 12px;text-align:right">${d.km?d.km.toLocaleString()+' km':'—'}</td>
+        <td style="padding:10px 12px;text-align:center">${d.pax||'—'}</td>
+      </tr>`).join('')}
+    </tbody>
+    <tfoot><tr style="background:var(--bg);font-weight:800;border-top:2px solid var(--border)">
+      <td style="padding:10px 12px">TOTAL</td>
+      <td style="padding:10px 12px;color:var(--pri)">${total}</td>
+      <td style="padding:10px 12px;color:var(--green)">${completed.length}</td>
+      <td style="padding:10px 12px;color:var(--red)">${rejected.length}</td>
+      <td style="padding:10px 12px">${cancelled.length}</td>
+      <td style="padding:10px 12px">${total?Math.round(completed.length/total*100):0}%</td>
+      <td style="padding:10px 12px">${ambulance.length}</td>
+      <td style="padding:10px 12px;color:var(--red)">${emergency.length}</td>
+      <td style="padding:10px 12px;text-align:right">₱${totalFuel.toLocaleString('en-PH',{minimumFractionDigits:2})}</td>
+      <td style="padding:10px 12px;text-align:right">${totalKm.toLocaleString()} km</td>
+      <td style="padding:10px 12px;text-align:center">${T.reduce((s,t)=>s+(t.passengers_list||[]).length,0)}</td>
+    </tr></tfoot>
+  </table></div>`
+
+  // ── FUEL & COST TAB ──────────────────────────────────────
+  const withFuel = completed.filter(t => t.fuel_cost)
+  const avgFuel  = withFuel.length ? withFuel.reduce((s,t)=>s+parseFloat(t.fuel_cost),0)/withFuel.length : null
+  const maxFuel  = withFuel.length ? Math.max(...withFuel.map(t=>parseFloat(t.fuel_cost))) : 0
+  const byVehFuel = {}
+  completed.forEach(t => {
+    const p = t.vehicle?.plate||t.vehicle_plate||'Unknown'
+    if (!byVehFuel[p]) byVehFuel[p] = { trips:0, km:0, fuel:0, liters:0, name:t.vehicle?.name||t.vehicle_name||'' }
+    byVehFuel[p].trips++; byVehFuel[p].km+=(t.distance_km||0)
+    byVehFuel[p].fuel+=parseFloat(t.fuel_cost||0); byVehFuel[p].liters+=parseFloat(t.fuel_consumed_liters||0)
+  })
+  const fuelHTML = `
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
+    <button class="btn btn-ghost btn-sm" onclick="exportTableCSV('fuelTable','TDMH_Fuel_Report')">⬇ CSV</button>
+    <button class="btn btn-ghost btn-sm" onclick="printReport('fuel-report')">🖨 Print</button>
+  </div>
+  <div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Total Fuel Cost</div><div class="stat-val" style="font-size:20px">₱${totalFuel.toLocaleString('en-PH',{minimumFractionDigits:2})}</div><div class="stat-sub">${_rptFrom} – ${_rptTo}</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Cost / Trip</div><div class="stat-val" style="font-size:20px">${avgFuel?'₱'+avgFuel.toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</div><div class="stat-sub">${withFuel.length} trips with fuel data</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Total Distance</div><div class="stat-val" style="font-size:20px">${totalKm.toLocaleString()} km</div><div class="stat-sub">All completed trips</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--purple)"></div><div class="stat-lbl">Cost / km</div><div class="stat-val" style="font-size:20px">${totalKm&&totalFuel?'₱'+(totalFuel/totalKm).toFixed(2):'—'}</div><div class="stat-sub">Fleet average</div></div>
+  </div>
+  <div style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:12px" id="fuelTable">
+    <thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+      ${['Vehicle','Plate','Trips','Total Distance','Fuel Used (L)','Fuel Cost (₱)','Cost/Trip','Cost/km','Efficiency (km/L)'].map(h=>`<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap">${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${Object.entries(byVehFuel).sort((a,b)=>b[1].fuel-a[1].fuel).map(([plate,d],i)=>`<tr style="border-bottom:1px solid var(--border);background:${i%2?'var(--bg)':''}">
+        <td style="padding:10px 12px;font-weight:600">${d.name||'—'}</td>
+        <td style="padding:10px 12px;font-family:monospace;font-weight:700;color:var(--pri)">${plate}</td>
+        <td style="padding:10px 12px;text-align:center">${d.trips}</td>
+        <td style="padding:10px 12px;text-align:right">${d.km?d.km.toLocaleString()+' km':'—'}</td>
+        <td style="padding:10px 12px;text-align:right">${d.liters?d.liters.toFixed(1)+'L':'—'}</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--amber)">${d.fuel?'₱'+d.fuel.toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>
+        <td style="padding:10px 12px;text-align:right">${d.trips?'₱'+(d.fuel/d.trips).toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>
+        <td style="padding:10px 12px;text-align:right">${d.km&&d.fuel?'₱'+(d.fuel/d.km).toFixed(2):'—'}</td>
+        <td style="padding:10px 12px;text-align:right">${d.km&&d.liters?(d.km/d.liters).toFixed(1)+' km/L':'—'}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>`
+
+  // ── DRIVER PERFORMANCE TAB ───────────────────────────────
+  const driverPerf = {}
+  T.forEach(t => {
+    const name = t.driver?.full_name||t.driver_name
+    if (!name) return
+    if (!driverPerf[name]) driverPerf[name] = { trips:0, completed:0, cancelled:0, km:0, fuel:0, totalRating:0, ratingCount:0, ambulance:0, emergency:0, avgDur:[], convoys:new Set() }
+    const d = driverPerf[name]
+    d.trips++
+    if (t.status==='completed') { d.completed++; d.km+=(t.distance_km||0); d.fuel+=parseFloat(t.fuel_cost||0); if(t.trip_duration_minutes) d.avgDur.push(t.trip_duration_minutes) }
+    if (t.status==='cancelled') d.cancelled++
+    if (t.rating) { d.totalRating+=t.rating; d.ratingCount++ }
+    if (t.vehicle_type_needed==='ambulance') d.ambulance++
+    if (t.priority==='emergency') d.emergency++
+    if (t.convoy_id) d.convoys.add(t.convoy_id)
+  })
+  const drvPerfHTML = `
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
+    <button class="btn btn-ghost btn-sm" onclick="exportTableCSV('drvPerfTable','TDMH_Driver_Performance')">⬇ CSV</button>
+    <button class="btn btn-ghost btn-sm" onclick="printReport('driver-perf')">🖨 Print</button>
+  </div>
+  <div style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:12px" id="drvPerfTable">
+    <thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+      ${['Driver','Total Trips','Completed','Completion %','Ambulance','Emergency','Convoys','Total km','Fuel Cost (₱)','Avg Duration','Avg Rating'].map(h=>`<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap">${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${Object.entries(driverPerf).sort((a,b)=>b[1].completed-a[1].completed).map(([name,d],i)=>{
+        const rate = d.trips ? Math.round(d.completed/d.trips*100) : 0
+        const avgD = d.avgDur.length ? d.avgDur.reduce((s,v)=>s+v,0)/d.avgDur.length : null
+        const avgR = d.ratingCount ? (d.totalRating/d.ratingCount).toFixed(1) : null
+        const rColor = rate>=90?'var(--green)':rate>=70?'var(--amber)':'var(--red)'
+        return `<tr style="border-bottom:1px solid var(--border);background:${i%2?'var(--bg)':''}">
+          <td style="padding:10px 12px;font-weight:700">${name}</td>
+          <td style="padding:10px 12px;text-align:center;font-weight:800;color:var(--pri)">${d.trips}</td>
+          <td style="padding:10px 12px;text-align:center;color:var(--green);font-weight:700">${d.completed}</td>
+          <td style="padding:10px 12px;text-align:center;font-weight:800;color:${rColor}">${rate}%</td>
+          <td style="padding:10px 12px;text-align:center">${d.ambulance||'—'}</td>
+          <td style="padding:10px 12px;text-align:center;color:${d.emergency?'var(--red)':'var(--text3)'}">${d.emergency||'—'}</td>
+          <td style="padding:10px 12px;text-align:center">${d.convoys.size||'—'}</td>
+          <td style="padding:10px 12px;text-align:right">${d.km?d.km.toLocaleString()+' km':'—'}</td>
+          <td style="padding:10px 12px;text-align:right">${d.fuel?'₱'+d.fuel.toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>
+          <td style="padding:10px 12px;text-align:center">${avgD?fmtMins(avgD):'—'}</td>
+          <td style="padding:10px 12px;text-align:center">${avgR?'⭐ '+avgR:'—'}</td>
+        </tr>`
+      }).join('')}
+    </tbody>
+  </table></div>`
+
+  // ── SLA REPORT TAB ───────────────────────────────────────
+  const slaRows = T.filter(t => t.sla_target_minutes || t.response_minutes)
+  const slaByPri = {}
+  ;['emergency','urgent','normal','low'].forEach(p => {
+    const rows = slaRows.filter(t=>t.priority===p)
+    const met  = rows.filter(t=>!t.sla_breached||['approved','assigned','on-trip','completed'].includes(t.status))
+    slaByPri[p] = { total:rows.length, met:met.length, rate:rows.length?Math.round(met.length/rows.length*100):null }
+  })
+  const slaHTML = `
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
+    <button class="btn btn-ghost btn-sm" onclick="exportTableCSV('slaTable','TDMH_SLA_Report')">⬇ CSV</button>
+    <button class="btn btn-ghost btn-sm" onclick="printReport('sla-report')">🖨 Print</button>
+  </div>
+  <div class="stats-grid" style="margin-bottom:16px">
+    ${Object.entries(slaByPri).map(([p,d])=>{
+      const label = {emergency:'🚨 Emergency',urgent:'⚡ Urgent',normal:'📋 Normal',low:'🕐 Low'}[p]
+      const color = d.rate==null?'var(--text3)':d.rate>=90?'var(--green)':d.rate>=70?'var(--amber)':'var(--red)'
+      return `<div class="stat"><div class="stat-bar" style="background:${color}"></div>
+        <div class="stat-lbl">${label} SLA</div>
+        <div class="stat-val" style="font-size:20px;color:${color}">${d.rate!=null?d.rate+'%':'—'}</div>
+        <div class="stat-sub">${d.met}/${d.total} on time</div></div>`
+    }).join('')}
+  </div>
+  <div style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:12px" id="slaTable">
+    <thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+      ${['Ticket','Date','Dept','Priority','SLA Target','Response Time','SLA Status','Approver','Notes'].map(h=>`<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap">${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${slaRows.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>{
+        const breached = t.sla_breached && !['approved','assigned','on-trip','completed'].includes(t.status)
+        return `<tr style="border-bottom:1px solid var(--border);background:${breached?'#fff5f5':i%2?'var(--bg)':''}">
+          <td style="padding:9px 12px">${chip(t.ticket_no)}</td>
+          <td style="padding:9px 12px;color:var(--text2);white-space:nowrap">${fmtDate(t.created_at)}</td>
+          <td style="padding:9px 12px;font-weight:600">${t.department||'—'}</td>
+          <td style="padding:9px 12px">${priorityBadge(t.priority)}</td>
+          <td style="padding:9px 12px;text-align:center">${t.sla_target_minutes?fmtMins(t.sla_target_minutes):'—'}</td>
+          <td style="padding:9px 12px;text-align:center;font-weight:700;color:${breached?'var(--red)':'var(--green)'}">${t.response_minutes?fmtMins(t.response_minutes):'—'}</td>
+          <td style="padding:9px 12px;text-align:center">${breached?'<span style="color:var(--red);font-weight:700">❌ Breached</span>':'<span style="color:var(--green);font-weight:700">✅ Met</span>'}</td>
+          <td style="padding:9px 12px;white-space:nowrap">${t.approver?.full_name||'—'}</td>
+          <td style="padding:9px 12px;color:var(--text2)">${t.rejection_reason||t.remarks||'—'}</td>
+        </tr>`
+      }).join('')}
+    </tbody>
+  </table></div>`
+
+  // ── CONVOY REPORT TAB ────────────────────────────────────
+  const { data: convoys } = await SB.from('convoys').select('*').order('created_at',{ascending:false})
+  const convoyTrips = T.filter(t => t.convoy_id)
+  const convoyHTML = `
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
+    <button class="btn btn-ghost btn-sm" onclick="exportTableCSV('convoyTable','TDMH_Convoy_Report')">⬇ CSV</button>
+    <button class="btn btn-ghost btn-sm" onclick="printReport('convoy-report')">🖨 Print</button>
+  </div>
+  <div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat"><div class="stat-bar" style="background:#7c3aed"></div><div class="stat-lbl">Total Convoys</div><div class="stat-val">${(convoys||[]).length}</div><div class="stat-sub">${_rptFrom} – ${_rptTo}</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Tickets Pooled</div><div class="stat-val">${convoyTrips.length}</div><div class="stat-sub">Across all convoys</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Fuel Saved (est.)</div><div class="stat-val" style="font-size:18px">${convoys&&convoys.length?'~'+(convoys.reduce((s,c)=>{const trips=convoyTrips.filter(t=>t.convoy_id===c.id).length;return s+(trips>1?(trips-1)*parseFloat(c.fuel_cost||0)/trips:0)},0)).toLocaleString('en-PH',{minimumFractionDigits:0,maximumFractionDigits:0}):'—'}</div><div class="stat-sub">vs. individual trips</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Tickets/Convoy</div><div class="stat-val">${convoys&&convoys.length?(convoyTrips.length/(convoys||[1]).length).toFixed(1):'—'}</div><div class="stat-sub">Pooling efficiency</div></div>
+  </div>
+  <div style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:12px" id="convoyTable">
+    <thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+      ${['Convoy No','Date','Driver','Vehicle','Tickets','Departments','Departure','Gate Out','Gate In','Distance','Fuel (L)','Fuel Cost','Status'].map(h=>`<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap">${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${(convoys||[]).map((c,i)=>{
+        const cTrips = convoyTrips.filter(t=>t.convoy_id===c.id)
+        const depts = [...new Set(cTrips.map(t=>t.department))].join(', ')
+        const statusLabel = c.gate_in_at?'Completed':c.gate_out_at?'On Trip':'Assigned'
+        const statusColor = c.gate_in_at?'var(--green)':c.gate_out_at?'var(--purple)':'var(--amber)'
+        return `<tr style="border-bottom:1px solid var(--border);background:${i%2?'var(--bg)':''}">
+          <td style="padding:10px 12px;font-family:monospace;font-weight:700;color:#6b21a8">🚌 ${c.convoy_no}</td>
+          <td style="padding:10px 12px;color:var(--text2);white-space:nowrap">${fmtDate(c.created_at)}</td>
+          <td style="padding:10px 12px;font-weight:600">${c.driver_name||'—'}</td>
+          <td style="padding:10px 12px;font-family:monospace">${c.vehicle_plate||'—'}</td>
+          <td style="padding:10px 12px;text-align:center;font-weight:800;color:#6b21a8">${cTrips.length}</td>
+          <td style="padding:10px 12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${depts}">${depts||'—'}</td>
+          <td style="padding:10px 12px;white-space:nowrap;color:var(--text2)">${fmtDT(c.departure_at)}</td>
+          <td style="padding:10px 12px;white-space:nowrap;color:var(--text2)">${c.gate_out_at?fmtDT(c.gate_out_at):'—'}</td>
+          <td style="padding:10px 12px;white-space:nowrap;color:var(--text2)">${c.gate_in_at?fmtDT(c.gate_in_at):'—'}</td>
+          <td style="padding:10px 12px;text-align:right">${c.odometer_out&&c.odometer_in?((c.odometer_in-c.odometer_out).toLocaleString()+' km'):'—'}</td>
+          <td style="padding:10px 12px;text-align:right">${c.fuel_consumed_liters?parseFloat(c.fuel_consumed_liters).toFixed(1)+'L':'—'}</td>
+          <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--amber)">${c.fuel_cost?'₱'+parseFloat(c.fuel_cost).toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>
+          <td style="padding:10px 12px;white-space:nowrap"><span style="font-size:10.5px;font-weight:700;color:${statusColor}">${statusLabel}</span></td>
+        </tr>`
+      }).join('')}
+    </tbody>
+  </table></div>`
+
   // ── MAIN LAYOUT ────────────────────────────────────────
   document.getElementById('CONTENT').innerHTML = `
-  <!-- Header + Date Range -->
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+  <!-- Branded Header -->
+  <div style="background:linear-gradient(135deg,#0c2340,#1a3a6e);border-radius:14px;padding:18px 22px;color:#fff;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
     <div>
-      <div style="font-size:18px;font-weight:800">Trip Reports & Audit</div>
-      <div style="font-size:11.5px;color:var(--text3)">${total} trips · ${_rptFrom} to ${_rptTo} · Generated ${new Date().toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})}</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#c9a84c;text-transform:uppercase;margin-bottom:4px">Taytay Doctors Multispecialty Hospital</div>
+      <div style="font-size:20px;font-weight:900;letter-spacing:-.3px">Vehicle Ticketing System — Reports</div>
+      <div style="font-size:11.5px;opacity:.7;margin-top:3px">${total} trips · Period: ${_rptFrom} to ${_rptTo} · Generated ${new Date().toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Manila'})} · By: ${currentProfile?.full_name}</div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.2)" onclick="exportAllReports()">⬇ Export All (CSV)</button>
+      <button class="btn btn-ghost btn-sm" style="background:rgba(201,168,76,.15);color:#c9a84c;border-color:#c9a84c" onclick="printReport('full')">🖨 Print Report</button>
+    </div>
+  </div>
+
+  <!-- Date Range + Quick Filters -->
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:12px;color:var(--text3);font-weight:600">Period:</span>
       <input type="date" class="fi" id="rptFrom" value="${_rptFrom}" style="font-size:12px;padding:6px 10px;width:140px">
-      <span style="color:var(--text3);font-size:12px">to</span>
+      <span style="color:var(--text3)">–</span>
       <input type="date" class="fi" id="rptTo" value="${_rptTo}" style="font-size:12px;padding:6px 10px;width:140px">
       <button class="btn btn-pri btn-sm" onclick="_rptFrom=document.getElementById('rptFrom').value;_rptTo=document.getElementById('rptTo').value;renderReportContent()">Apply</button>
-      <button class="btn btn-ghost btn-sm" onclick="_rptFrom='';renderReports()">Reset</button>
+    </div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap">
+      ${[['This Week',7],['30 Days',30],['90 Days',90],['This Year',365]].map(([lbl,days])=>`<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="setRptRange(${days})">${lbl}</button>`).join('')}
+      <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_rptFrom='';renderReports()">All Time</button>
     </div>
   </div>
 
   <!-- Tabs -->
-  <div style="display:flex;border-bottom:2px solid var(--border);margin-bottom:16px;gap:4px;overflow-x:auto">
-    ${[['overview','📊 Overview'],['audit','📋 Full Audit Table']].map(([id,lbl])=>
-      `<button style="${tabStyle(id)}" onclick="_rptTab='${id}';renderReportContent()">${lbl}</button>`
-    ).join('')}
+  <div style="display:flex;border-bottom:2px solid var(--border);margin-bottom:16px;gap:2px;overflow-x:auto;flex-wrap:nowrap">
+    ${[
+      ['overview','📊 Overview'],
+      ['dept','🏥 Departments'],
+      ['fuel','⛽ Fuel & Cost'],
+      ['drivers','👤 Drivers'],
+      ['sla','⏱ SLA'],
+      ['convoy','🚌 Convoy'],
+      ['audit','📋 Full Audit'],
+    ].map(([id,lbl])=>`<button style="${tabStyle(id)}" onclick="_rptTab='${id}';renderReportContent()">${lbl}</button>`).join('')}
   </div>
 
-  ${_rptTab==='overview' ? overviewHTML : ''}
-  ${_rptTab==='audit'    ? auditTableHTML : ''}
+  ${_rptTab==='overview' ? overviewHTML     : ''}
+  ${_rptTab==='dept'     ? deptHTML         : ''}
+  ${_rptTab==='fuel'     ? fuelHTML         : ''}
+  ${_rptTab==='drivers'  ? drvPerfHTML      : ''}
+  ${_rptTab==='sla'      ? slaHTML          : ''}
+  ${_rptTab==='convoy'   ? convoyHTML       : ''}
+  ${_rptTab==='audit'    ? auditTableHTML   : ''}
+
+  <style>
+    @media print {
+      #sidebar,#top-nav,#MOBN,.btn,input,select,[onclick] { display:none!important }
+      .card { box-shadow:none!important; border:1px solid #e5e7eb!important }
+      body { background:#fff!important }
+    }
+  </style>
   `
 }
 
@@ -5192,6 +5926,38 @@ function exportAuditCSV() {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob)
   a.download = `TDMH_VTS_Report_${_rptFrom}_to_${_rptTo}.csv`
   document.body.appendChild(a); a.click(); document.body.removeChild(a)
+}
+
+function setRptRange(days) {
+  const to = new Date()
+  const from = new Date(); from.setDate(from.getDate()-days)
+  _rptFrom = from.toISOString().slice(0,10)
+  _rptTo   = to.toISOString().slice(0,10)
+  renderReportContent()
+}
+
+function exportTableCSV(tableId, filename) {
+  const table = document.getElementById(tableId)
+  if (!table) return
+  const rows = [...table.querySelectorAll('tr')].map(tr =>
+    [...tr.querySelectorAll('th,td')].map(td => '"' + td.innerText.replace(/"/g,'""').replace(/\n/g,' ') + '"').join(',')
+  )
+  const blob = new Blob([rows.join('\n')], {type:'text/csv;charset=utf-8;'})
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob)
+  a.download=`${filename}_${_rptFrom}_${_rptTo}.csv`
+  document.body.appendChild(a); a.click(); document.body.removeChild(a)
+}
+
+function exportAllReports() {
+  // Export the full audit CSV (most comprehensive)
+  exportAuditCSV()
+}
+
+function printReport(section) {
+  // Switch to the right tab then print
+  const tabMap = { 'dept-summary':'dept','fuel-report':'fuel','driver-perf':'drivers','sla-report':'sla','convoy-report':'convoy','full':'audit' }
+  if (tabMap[section]) { _rptTab=tabMap[section]; renderReportContent().then(()=>setTimeout(()=>window.print(),400)) }
+  else window.print()
 }
 
 function filterRawReport(q) { filterFullAuditTable(q) }
