@@ -1895,20 +1895,47 @@ async function openApproveModal(id, ticketNo, vtype) {
   ])
 
   // JS-side overlap: trip end = expected_return_at OR departure + 4hrs if null
+  // Two drivers/vehicles are considered in CONFLICT only if their trips OVERLAP in time
+  // Same departure time = NOT a conflict (they can be pooled)
+  const OVERLAP_BUFFER_MINS = 30  // trips within 30 mins of each other = poolable, not conflicted
+  const depTime = new Date(depISO).getTime()
+
   const busyDrvIds = new Set(
     (activeDrv||[]).filter(t => {
+      const tStart = new Date(t.departure_at).getTime()
       const tEnd = t.expected_return_at
         ? new Date(t.expected_return_at).getTime()
-        : new Date(t.departure_at).getTime() + FOUR_HRS
-      return tEnd > new Date(depISO).getTime()  // ends after our start = conflict
+        : tStart + FOUR_HRS
+      // Conflict = their trip ends after our start AND their trip starts before our end
+      // BUT: if same departure window (within 30 mins), treat as poolable — not a conflict
+      const sameDeparture = Math.abs(tStart - depTime) <= OVERLAP_BUFFER_MINS * 60000
+      if (sameDeparture) return false  // poolable — not a conflict
+      return tEnd > depTime
     }).map(t => t.driver_id).filter(Boolean)
   )
   const busyVehIds = new Set(
     (activeVeh||[]).filter(t => {
+      const tStart = new Date(t.departure_at).getTime()
       const tEnd = t.expected_return_at
         ? new Date(t.expected_return_at).getTime()
-        : new Date(t.departure_at).getTime() + FOUR_HRS
-      return tEnd > new Date(depISO).getTime()
+        : tStart + FOUR_HRS
+      const sameDeparture = Math.abs(tStart - depTime) <= OVERLAP_BUFFER_MINS * 60000
+      if (sameDeparture) return false
+      return tEnd > depTime
+    }).map(t => t.vehicle_id).filter(Boolean)
+  )
+
+  // Find drivers/vehicles already assigned to same-date trips (for pool label)
+  const poolableDrvIds = new Set(
+    (activeDrv||[]).filter(t => {
+      const tStart = new Date(t.departure_at).getTime()
+      return Math.abs(tStart - depTime) <= OVERLAP_BUFFER_MINS * 60000
+    }).map(t => t.driver_id).filter(Boolean)
+  )
+  const poolableVehIds = new Set(
+    (activeVeh||[]).filter(t => {
+      const tStart = new Date(t.departure_at).getTime()
+      return Math.abs(tStart - depTime) <= OVERLAP_BUFFER_MINS * 60000
     }).map(t => t.vehicle_id).filter(Boolean)
   )
 
@@ -1941,14 +1968,22 @@ async function openApproveModal(id, ticketNo, vtype) {
      <div class="fg"><label class="fl">Select Driver *</label>
        <select class="fs" id="dSel">
          <option value="">-- Select Driver --</option>
-         ${avD.map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}</option>`).join('')}
+         ${avD.map(d=>{
+           const isPoolable = poolableDrvIds.has(d.id)
+           return `<option value="${d.id}|${d.full_name}" ${isPoolable?'style="font-weight:700;color:var(--teal)"':''}>
+             ${d.full_name} · ${d.license_no||'—'}${isPoolable?' 🚌 Already assigned same time — will pool':''}</option>`
+         }).join('')}
        </select>
        ${avD.length === 0 ? '<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available drivers. Add drivers first.</div>' : ''}
      </div>
      <div class="fg"><label class="fl">Select Vehicle *</label>
        <select class="fs" id="vSel">
          <option value="">-- Select Vehicle --</option>
-         ${avV.map(v=>`<option value="${v.id}">${v.plate} — ${v.type} (${v.capacity} pax)</option>`).join('')}
+         ${avV.map(v=>{
+           const isPoolable = poolableVehIds.has(v.id)
+           return `<option value="${v.id}" ${isPoolable?'style="font-weight:700;color:var(--teal)"':''}>
+             ${v.plate} — ${v.type} (${v.capacity} pax)${isPoolable?' 🚌 Already assigned same time — will pool':''}</option>`
+         }).join('')}
        </select>
        ${avV.length === 0 ? `<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available ${isAmb?'ambulance':isMoto?'motorcycle':'regular'} vehicles.</div>` : ''}
      </div>`,
@@ -4130,7 +4165,7 @@ function onDateChange() {
   const isExemptPriority = priority === 'emergency'
   const isExemptType = vtype === 'ambulance'
   if (!isExemptRole && !isExemptPriority && !isExemptType && dateVal && timeVal) {
-    const dep = new Date(`${dateVal}T${timeVal}`)
+    const dep = new Date(`${dateVal}T${timeVal}:00+08:00`)
     const hoursAway = (dep - new Date()) / (1000 * 60 * 60)
     if (hoursAway > 0 && hoursAway < 48) {
       errEl.style.display = 'block'
@@ -4564,9 +4599,16 @@ async function submitNewTicket() {
   const errEl = document.getElementById('ntFormErr')
   if (errEl) errEl.style.display='none'
 
-  const departureISO = new Date(`${date}T${time}`).toISOString()
-  // Only restrict past dates for non-advance bookings
-  if (!isAdvance && new Date(departureISO) < new Date()) {
+  // Build departure ISO — require both date AND time
+  if (!date || !time) {
+    if(errEl) { errEl.style.display='block'; errEl.style.background='var(--red-s)'; errEl.style.color='var(--red)'; errEl.style.border='1px solid rgba(220,38,38,.3)'; errEl.textContent='Please set both a departure date and time.' }
+    return
+  }
+  // Parse as PHT (UTC+8) by appending offset explicitly
+  const departureISO = new Date(`${date}T${time}:00+08:00`).toISOString()
+
+  // Past date check
+  if (new Date(departureISO) < new Date()) {
     const el = document.getElementById('ntDate')
     if(el) el.style.borderColor='var(--red)'
     if(errEl) { errEl.style.display='block'; errEl.textContent='Departure date and time cannot be in the past. Please select a valid date and time.' }
@@ -4592,19 +4634,24 @@ async function submitNewTicket() {
   const isExemptType = vtype === 'ambulance'
   const hoursUntilDep = (new Date(departureISO) - new Date()) / (1000 * 60 * 60)
 
-  if (!isExemptRole && !isExemptPriority && !isExemptType && hoursUntilDep < ADVANCE_HOURS) {
-    const dateEl = document.getElementById('ntDate')
-    if(dateEl) dateEl.style.borderColor='var(--red)'
-    if(errEl) {
-      errEl.style.display='block'
-      errEl.style.background='var(--amber-s)'
-      errEl.style.color='var(--amber)'
-      errEl.style.border='1px solid rgba(217,119,6,.3)'
-      errEl.innerHTML = `⏰ <strong>Regular vehicle requests must be filed at least ${ADVANCE_HOURS} hours in advance.</strong><br>
-        <span style="font-size:11px">Your departure is in ${Math.round(hoursUntilDep)} hours.
-        To request same-day or next-day transport, change the <strong>Urgency</strong> to <strong>Urgent</strong> or <strong>Emergency</strong>.</span>`
+  // Guard: if hoursUntilDep is NaN or negative (already past), block
+  if (!isExemptRole && !isExemptPriority && !isExemptType) {
+    if (isNaN(hoursUntilDep) || hoursUntilDep < ADVANCE_HOURS) {
+      const dateEl = document.getElementById('ntDate')
+      if(dateEl) dateEl.style.borderColor='var(--red)'
+      if(errEl) {
+        errEl.style.display='block'
+        errEl.style.background='var(--amber-s)'
+        errEl.style.color='var(--amber)'
+        errEl.style.border='1px solid rgba(217,119,6,.3)'
+        errEl.innerHTML = isNaN(hoursUntilDep)
+          ? `⏰ <strong>Please set a valid departure time.</strong>`
+          : `⏰ <strong>Regular vehicle requests must be filed at least ${ADVANCE_HOURS} hours in advance.</strong><br>
+             <span style="font-size:11px">Your departure is in ${Math.round(hoursUntilDep)} hours.
+             Check the <strong>Emergency</strong> box above to bypass this rule.</span>`
+      }
+      return
     }
-    return
   }
   // ── END 47-HOUR RULE ────────────────────────────────────
   const retDate = document.getElementById('ntReturn')?.value
