@@ -2654,11 +2654,11 @@ async function doFormPool() {
 
   // Generate convoy_no
   const { data: noData } = await SB.rpc('generate_convoy_no')
-  const convoy_no = noData || 'TRP-0001'
+  const pool_no = noData || 'TRP-0001'
 
   // Create trip pool record
   const { data: convoy, error: cErr } = await SB.from('trip_pools').insert([{
-    convoy_no,
+    pool_no,
     driver_id:    driverId,
     driver_name:  driverName,
     vehicle_id:   vv,
@@ -2691,14 +2691,14 @@ async function doFormPool() {
   // Audit log for each ticket
   for (const tid of checked) {
     const t = await SB.from('trips').select('ticket_no').eq('id',tid).single()
-    await addAudit(tid, t.data?.ticket_no||'', '🚌 Added to Trip Pool', `Pool: ${convoy_no} · Driver: ${driverName} · Vehicle: ${vehicle.plate||''} · By: ${currentProfile?.full_name}`)
+    await addAudit(tid, t.data?.ticket_no||'', '🚌 Added to Trip Pool', `Pool: ${pool_no} · Driver: ${driverName} · Vehicle: ${vehicle.plate||''} · By: ${currentProfile?.full_name}`)
   }
 
   // SMS to driver
   const { data: drvRow } = await SB.from('drivers').select('phone').eq('id',driverId).single()
   if (drvRow?.phone) {
     const deptList = checked.length + ' departments'
-    await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL ASSIGNMENT\nPool: ${convoy_no}\nTickets: ${checked.length} (${deptList})\nDeparture: ${new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}\nVehicle: ${vehicle.plate||'—'}\n\nReport to motor pool for briefing.`)
+    await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL ASSIGNMENT\nPool: ${pool_no}\nTickets: ${checked.length} (${deptList})\nDeparture: ${new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}\nVehicle: ${vehicle.plate||'—'}\n\nReport to motor pool for briefing.`)
   }
 
   closeMO()
