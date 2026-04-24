@@ -953,7 +953,7 @@ function renderAssetsTab(){
     ${CATEGORIES.map(c=>`<button class="cat-pill ${filterCat===c.id?'active':''}" onclick="onFilterCat('${c.id}')">${c.icon} ${c.id}</button>`).join('')}
   </div>
 
-  <div class="table-wrap">
+  <div class="table-wrap" id="assets-table-wrap">
     <div class="table-scroll">
       <table>
         <thead>
@@ -1364,7 +1364,23 @@ function switchTab(tab){ currentTab=tab; render(); }
 function onSearch(v){
   clearTimeout(searchTimer);
   searchQuery=v;
-  searchTimer=setTimeout(async ()=>{ currentPage=0; await loadAssets(); if(!document.getElementById("modal-wrap")) render(); }, 600);
+  searchTimer=setTimeout(async ()=>{
+    if(document.getElementById('modal-wrap')) return;
+    currentPage=0;
+    await loadAssets();
+    // Only update the table — do NOT re-render the whole page
+    // This preserves the search input text and cursor position
+    const tableWrap = document.getElementById('assets-table-wrap');
+    if(tableWrap && currentTab==='assets'){
+      const tmp = document.createElement('div');
+      tmp.innerHTML = renderAssetsTab();
+      const newTable = tmp.querySelector('#assets-table-wrap');
+      if(newTable) tableWrap.outerHTML = newTable.outerHTML;
+      attachEvents();
+    } else {
+      render();
+    }
+  }, 800);
 }
 async function onFilterStatus(v){ filterStatus=v; currentPage=0; await loadAssets(); render(); }
 async function onFilterCat(v){ filterCat=v; currentPage=0; await loadAssets(); render(); }
