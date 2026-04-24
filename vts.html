@@ -1894,10 +1894,9 @@ async function openApproveModal(id, ticketNo, vtype) {
       .not('vehicle_id','is',null)
   ])
 
-  // JS-side overlap: trip end = expected_return_at OR departure + 4hrs if null
-  // Two drivers/vehicles are considered in CONFLICT only if their trips OVERLAP in time
-  // Same departure time = NOT a conflict (they can be pooled)
-  const OVERLAP_BUFFER_MINS = 30  // trips within 30 mins of each other = poolable, not conflicted
+  // JS-side overlap check — for REAL conflicts only (different trips, different times)
+  // Drivers/vehicles assigned to other trips are still shown — approver decides if poolable
+  // We mark them with a label so approver can make an informed decision
   const depTime = new Date(depISO).getTime()
 
   const busyDrvIds = new Set(
@@ -1906,11 +1905,7 @@ async function openApproveModal(id, ticketNo, vtype) {
       const tEnd = t.expected_return_at
         ? new Date(t.expected_return_at).getTime()
         : tStart + FOUR_HRS
-      // Conflict = their trip ends after our start AND their trip starts before our end
-      // BUT: if same departure window (within 30 mins), treat as poolable — not a conflict
-      const sameDeparture = Math.abs(tStart - depTime) <= OVERLAP_BUFFER_MINS * 60000
-      if (sameDeparture) return false  // poolable — not a conflict
-      return tEnd > depTime
+      return tEnd > depTime  // their trip ends after our start = potential overlap
     }).map(t => t.driver_id).filter(Boolean)
   )
   const busyVehIds = new Set(
@@ -1919,30 +1914,30 @@ async function openApproveModal(id, ticketNo, vtype) {
       const tEnd = t.expected_return_at
         ? new Date(t.expected_return_at).getTime()
         : tStart + FOUR_HRS
-      const sameDeparture = Math.abs(tStart - depTime) <= OVERLAP_BUFFER_MINS * 60000
-      if (sameDeparture) return false
       return tEnd > depTime
     }).map(t => t.vehicle_id).filter(Boolean)
   )
 
-  // Find drivers/vehicles already assigned to same-date trips (for pool label)
-  const poolableDrvIds = new Set(
-    (activeDrv||[]).filter(t => {
-      const tStart = new Date(t.departure_at).getTime()
-      return Math.abs(tStart - depTime) <= OVERLAP_BUFFER_MINS * 60000
-    }).map(t => t.driver_id).filter(Boolean)
-  )
-  const poolableVehIds = new Set(
-    (activeVeh||[]).filter(t => {
-      const tStart = new Date(t.departure_at).getTime()
-      return Math.abs(tStart - depTime) <= OVERLAP_BUFFER_MINS * 60000
-    }).map(t => t.vehicle_id).filter(Boolean)
-  )
+  // Build label map: driver_id → existing ticket info for display
+  const drvTripLabel = {}
+  ;(activeDrv||[]).forEach(t => {
+    if (t.driver_id && !drvTripLabel[t.driver_id]) {
+      const depStr = new Date(t.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
+      drvTripLabel[t.driver_id] = depStr
+    }
+  })
+  const vehTripLabel = {}
+  ;(activeVeh||[]).forEach(t => {
+    if (t.vehicle_id && !vehTripLabel[t.vehicle_id]) {
+      const depStr = new Date(t.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
+      vehTripLabel[t.vehicle_id] = depStr
+    }
+  })
 
-  // Filter drivers: exclude off-duty AND time-conflicted, allow on-trip if no time conflict
+  // Show ALL non-off-duty drivers and vehicles — approver decides
+  // Busy ones (assigned to other trips) are shown with a warning label
   const avD = _drivers.filter(d => {
-    if (d.status === 'off-duty') return false       // genuinely unavailable
-    if (busyDrvIds.has(d.id)) return false          // has overlapping trip at this time
+    if (d.status === 'off-duty') return false
     const dt = d.driver_type || 'regular'
     if (dt === 'both') return true
     if (isAmb) return dt === 'ambulance'
@@ -1950,8 +1945,7 @@ async function openApproveModal(id, ticketNo, vtype) {
   })
 
   const avV = _vehicles.filter(v => {
-    if (busyVehIds.has(v.id)) return false          // has overlapping trip at this time
-    if (v.status === 'maintenance') return false    // in maintenance
+    if (v.status === 'maintenance') return false
     const t = (v.type||'').toLowerCase()
     if (isAmb)  return t.includes('ambulance') || t.includes('bls')
     if (isMoto) return t.includes('motorcycle')
@@ -1969,9 +1963,10 @@ async function openApproveModal(id, ticketNo, vtype) {
        <select class="fs" id="dSel">
          <option value="">-- Select Driver --</option>
          ${avD.map(d=>{
-           const isPoolable = poolableDrvIds.has(d.id)
-           return `<option value="${d.id}|${d.full_name}" ${isPoolable?'style="font-weight:700;color:var(--teal)"':''}>
-             ${d.full_name} · ${d.license_no||'—'}${isPoolable?' 🚌 Already assigned same time — will pool':''}</option>`
+           const busy = busyDrvIds.has(d.id)
+           const tripTime = drvTripLabel[d.id]
+           return `<option value="${d.id}|${d.full_name}" ${busy?'style="color:var(--amber)"':''}>
+             ${d.full_name} · ${d.license_no||'—'}${busy&&tripTime?' ⚠ Has trip at '+tripTime:''}</option>`
          }).join('')}
        </select>
        ${avD.length === 0 ? '<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available drivers. Add drivers first.</div>' : ''}
@@ -1980,9 +1975,10 @@ async function openApproveModal(id, ticketNo, vtype) {
        <select class="fs" id="vSel">
          <option value="">-- Select Vehicle --</option>
          ${avV.map(v=>{
-           const isPoolable = poolableVehIds.has(v.id)
-           return `<option value="${v.id}" ${isPoolable?'style="font-weight:700;color:var(--teal)"':''}>
-             ${v.plate} — ${v.type} (${v.capacity} pax)${isPoolable?' 🚌 Already assigned same time — will pool':''}</option>`
+           const busy = busyVehIds.has(v.id)
+           const tripTime = vehTripLabel[v.id]
+           return `<option value="${v.id}" ${busy?'style="color:var(--amber)"':''}>
+             ${v.plate} — ${v.type} (${v.capacity} pax)${busy&&tripTime?' ⚠ Has trip at '+tripTime:''}</option>`
          }).join('')}
        </select>
        ${avV.length === 0 ? `<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ No available ${isAmb?'ambulance':isMoto?'motorcycle':'regular'} vehicles.</div>` : ''}
