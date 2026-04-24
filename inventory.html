@@ -856,6 +856,8 @@ async function exportCSV(){
 
 // ─── RENDER ───────────────────────────────────────────────────────────────────
 function render(){
+  // Skip re-render if a modal is open — prevents typed text from disappearing
+  if(document.getElementById('modal-wrap')) return;
   const app = document.getElementById('app');
   if(!currentUser){ renderLogin(app); return; }
   app.innerHTML = `
@@ -1362,7 +1364,7 @@ function switchTab(tab){ currentTab=tab; render(); }
 function onSearch(v){
   clearTimeout(searchTimer);
   searchQuery=v;
-  searchTimer=setTimeout(async ()=>{ currentPage=0; await loadAssets(); render(); }, 350);
+  searchTimer=setTimeout(async ()=>{ currentPage=0; await loadAssets(); if(!document.getElementById("modal-wrap")) render(); }, 600);
 }
 async function onFilterStatus(v){ filterStatus=v; currentPage=0; await loadAssets(); render(); }
 async function onFilterCat(v){ filterCat=v; currentPage=0; await loadAssets(); render(); }
@@ -1666,7 +1668,7 @@ function setupRealtime(){
   sb.channel('assets-rt')
     .on('postgres_changes',{event:'*',schema:'public',table:'assets'},async ()=>{
       await loadAssets(); // respects current page/filters
-      render();
+      if(!document.getElementById('modal-wrap')) render();
     })
     .subscribe();
 
@@ -1676,7 +1678,7 @@ function setupRealtime(){
       const assetId = payload.new?.asset_id || payload.old?.asset_id;
       if(assetId) await loadPmHistory(assetId);
       else await loadPmHistory();
-      render();
+      if(!document.getElementById('modal-wrap')) render();
     })
     .subscribe();
 }
