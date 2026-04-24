@@ -2033,7 +2033,7 @@ async function doApproveAndAssign(id, ticketNo) {
   const btn = document.getElementById('apBtn'); btn.disabled=true; btn.textContent='Processing...'
 
   // Driver + vehicle are optional — approver can approve without assigning
-  const [driverId, driverName] = dv ? dv.split('|') : ['', '']
+  const [driverId, driverName] = dv ? dv.split('|') : [null, null]
   const vehicle = vv ? (_vehicles||[]).find(v=>v.id===vv) : null
 
   // ── Conflict Detection ──────────────────────────
@@ -2154,13 +2154,13 @@ async function doApproveAndAssign(id, ticketNo) {
     p_approver_id:   currentProfile?.id,
     p_approved_at:   new Date().toISOString(),
     p_remarks:       rem,
-    p_driver_id:     driverId,
-    p_driver_name:   driverName,
-    p_vehicle_id:    vv,
-    p_vehicle_plate: _vehicles.find(v => v.id === vv)?.plate || '',
-    p_vehicle_name:  _vehicles.find(v => v.id === vv)?.name || '',
-    p_assigned_by:   currentProfile?.id,
-    p_assigned_at:   new Date().toISOString()
+    p_driver_id:     driverId || null,
+    p_driver_name:   driverName || null,
+    p_vehicle_id:    vv || null,
+    p_vehicle_plate: vv ? (_vehicles.find(v => v.id === vv)?.plate || '') : null,
+    p_vehicle_name:  vv ? (_vehicles.find(v => v.id === vv)?.name || '') : null,
+    p_assigned_by:   driverId ? currentProfile?.id : null,
+    p_assigned_at:   driverId ? new Date().toISOString() : null
   })
 
   if (lockErr) {
