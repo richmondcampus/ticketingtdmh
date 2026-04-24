@@ -2349,7 +2349,6 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
 
 async function openPoolModal() {
   const role = currentProfile?.role
-  // Fetch all approved/assigned tickets (scoped by approver type)
   let q = SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,departure_at,expected_return_at,vehicle_type_needed,driver_id,driver_name,vehicle_id,vehicle_plate,vehicle_name,status,pool_id,priority')
     .in('status',['approved','assigned'])
     .is('pool_id',null)
@@ -2359,26 +2358,42 @@ async function openPoolModal() {
   const { data: tickets } = await q
 
   const T = tickets||[]
-  if (T.length < 2) {
-    openMO('Pool Trip','<div class="info info-amber">Need at least 2 approved/assigned tickets to form a trip pool.<br>Approve more tickets first.</div>',
+
+  // ── Group by PHT calendar date ────────────────────────────
+  const getDateKey  = iso => new Date(iso).toLocaleDateString('en-PH',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'Asia/Manila'})
+  const getShortKey = iso => new Date(iso).toLocaleDateString('en-PH',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Manila'})
+
+  const byDate = {}
+  T.forEach(t => {
+    const k = getShortKey(t.departure_at)
+    if (!byDate[k]) byDate[k] = { label: getDateKey(t.departure_at), tickets: [] }
+    byDate[k].tickets.push(t)
+  })
+
+  // Only keep dates with 2+ tickets — can actually be pooled
+  const validDates = Object.entries(byDate).filter(([,v]) => v.tickets.length >= 2)
+
+  if (validDates.length === 0) {
+    const msg = T.length < 2
+      ? 'Need at least 2 approved/assigned tickets to form a trip pool. Approve more tickets first.'
+      : `No single date has 2 or more tickets available for pooling.<br><br>
+         <strong>Available tickets by date:</strong><br>
+         ${Object.entries(byDate).map(([,v])=>`<div style="font-size:11px;margin-top:4px">📅 ${v.label} — ${v.tickets.length} ticket${v.tickets.length>1?'s':''}</div>`).join('')}`
+    openMO('🚌 Pool Trip',`<div class="info info-amber">${msg}</div>`,
       '<button class="btn btn-ghost" onclick="closeMO()">Close</button>')
     return
   }
 
-  // Fetch available drivers and vehicles for assignment
-  const depISO = new Date().toISOString()
-  const retISO = new Date(Date.now()+8*3600000).toISOString()
+  // Fetch drivers and vehicles
   const [{ data: drvData }, { data: vehData }] = await Promise.all([
     SB.from('drivers').select('*').neq('status','off-duty').order('full_name'),
     SB.from('vehicles').select('*').neq('status','maintenance').order('plate')
   ])
-
   const isAmb = role==='approver_amb'
   const avD = (drvData||[]).filter(d => {
     const dt = d.driver_type||'regular'
     if (dt==='both') return true
-    if (isAmb) return dt==='ambulance'
-    return dt==='regular'
+    return isAmb ? dt==='ambulance' : dt==='regular'
   })
   const avV = (vehData||[]).filter(v => {
     const t=(v.type||'').toLowerCase()
@@ -2386,39 +2401,64 @@ async function openPoolModal() {
     return !t.includes('ambulance')
   })
 
+  // ── Ticket list renderer — only shows selected date ───────
+  const buildTicketList = (dateKey) => {
+    const group = byDate[dateKey]
+    if (!group) return ''
+    return group.tickets.map(t => {
+      const dep  = new Date(t.departure_at)
+      const stops = Array.isArray(t.stops)&&t.stops.length ? t.stops : (t.destination?[t.destination]:[])
+      return `<label style="display:flex;align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+        <input type="checkbox" class="pool-ticket-cb" value="${t.id}" data-dep="${t.departure_at||''}" style="width:16px;height:16px;accent-color:var(--pri);flex-shrink:0" onchange="updatePoolSelection()">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-family:monospace;font-weight:700;font-size:12px;color:var(--pri)">${t.ticket_no}</span>
+            ${priorityBadge(t.priority)} ${badge(t.status)}
+          </div>
+          <div style="font-size:12.5px;font-weight:600;margin-top:2px">${t.department}</div>
+          <div style="font-size:11px;color:var(--text3)">→ ${stops[0]||'—'} · ${dep.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}</div>
+        </div>
+        ${t.driver_name?`<div style="font-size:10px;color:var(--green);font-weight:600;white-space:nowrap">${t.driver_name}</div>`:''}
+      </label>`
+    }).join('')
+  }
+
+  // Default to date with most tickets
+  const defaultDate = validDates.sort((a,b)=>b[1].tickets.length-a[1].tickets.length)[0][0]
+  window._poolByDate = byDate
+  window._poolBuildList = buildTicketList
+
   openMO('🚌 Pool Trip',
-    `<div class="info info-blue" style="margin-bottom:14px">
-       Select tickets to group into a single convoy trip. The assigned driver and vehicle will be shared across all selected tickets. Gate-out and gate-in will be done once for all.
+    `<div class="info info-blue" style="margin-bottom:12px">
+       Pool multiple departments into one vehicle. Only tickets on the <strong>same date</strong> can be pooled together.
      </div>
 
-     <!-- Ticket selection -->
-     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px">Select Tickets for Convoy</div>
-     <div id="convoyTicketList" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:14px">
-       ${T.map(t => {
-         const dep = new Date(t.departure_at)
-         const stops = Array.isArray(t.stops)&&t.stops.length ? t.stops : (t.destination?[t.destination]:[])
-         return `<label style="display:flex;align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
-           <input type="checkbox" class="pool-ticket-cb" value="${t.id}" data-dep="${t.departure_at||''}" style="width:16px;height:16px;accent-color:var(--pri);flex-shrink:0"
-             onchange="updatePoolSelection()">
-           <div style="flex:1;min-width:0">
-             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-               <span style="font-family:monospace;font-weight:700;font-size:12px;color:var(--pri)">${t.ticket_no}</span>
-               ${priorityBadge(t.priority)}
-               ${badge(t.status)}
-             </div>
-             <div style="font-size:12.5px;font-weight:600;margin-top:2px">${t.department}</div>
-             <div style="font-size:11px;color:var(--text3)">→ ${stops[0]||'—'} · ${dep.toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}</div>
-           </div>
-           ${t.driver_name?`<div style="font-size:10px;color:var(--green);font-weight:600;white-space:nowrap">${t.driver_name}</div>`:''}
-         </label>`
-       }).join('')}
+     <!-- Date selector — only shows dates with 2+ tickets -->
+     <div class="fg" style="margin-bottom:12px">
+       <label class="fl">Departure Date <span style="font-size:10px;font-weight:400;color:var(--text3)">${validDates.length} date${validDates.length>1?'s have':'has'} poolable tickets</span></label>
+       <div style="display:flex;gap:8px;flex-wrap:wrap">
+         ${validDates.map(([dateKey, v], i) => `
+           <button type="button" id="poolDateBtn_${i}" onclick="selectPoolDate('${dateKey}',${i},${validDates.length})"
+             style="padding:8px 14px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid ${i===0?'var(--pri)':'var(--border)'};background:${i===0?'var(--pri-s)':'transparent'};color:${i===0?'var(--pri)':'var(--text2)'}">
+             📅 ${v.label}<br>
+             <span style="font-size:10px;font-weight:400">${v.tickets.length} tickets available</span>
+           </button>`).join('')}
+       </div>
+     </div>
+
+     <!-- Tickets for selected date -->
+     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px" id="poolTicketHeader">
+       Select tickets to pool — ${byDate[defaultDate].label}
+     </div>
+     <div id="poolTicketList" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:12px">
+       ${buildTicketList(defaultDate)}
      </div>
      <div id="convoySelCount" style="font-size:11px;color:var(--text3);margin-bottom:14px;text-align:center">Select at least 2 tickets</div>
 
-     <!-- Convoy departure time -->
+     <!-- Departure + Return -->
      <div class="fr">
-       <div class="fg"><label class="fl">Convoy Departure *</label>
-         <input class="fi" type="datetime-local" id="convoyDep" value="${new Date(Date.now()+86400000).toISOString().slice(0,16)}">
+       <div class="fg"><label class="fl">Pool Departure *</label>
+         <input class="fi" type="datetime-local" id="convoyDep" value="${new Date(byDate[defaultDate].tickets[0].departure_at).toISOString().slice(0,16)}">
        </div>
        <div class="fg"><label class="fl">Expected Return</label>
          <input class="fi" type="datetime-local" id="convoyRet">
@@ -2427,17 +2467,13 @@ async function openPoolModal() {
 
      <!-- Driver + Vehicle -->
      <div class="fr">
-       <div class="fg"><label class="fl">Driver *
-         <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} available</span>
-       </label>
+       <div class="fg"><label class="fl">Driver * <span style="font-size:10px;font-weight:400;color:var(--green)">${avD.length} available</span></label>
          <select class="fs" id="convoyDrv">
            <option value="">-- Select Driver --</option>
            ${avD.map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name}${d.license_no?' · '+d.license_no:''}</option>`).join('')}
          </select>
        </div>
-       <div class="fg"><label class="fl">Vehicle *
-         <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avV.length} available</span>
-       </label>
+       <div class="fg"><label class="fl">Vehicle * <span style="font-size:10px;font-weight:400;color:var(--green)">${avV.length} available</span></label>
          <select class="fs" id="convoyVeh">
            <option value="">-- Select Vehicle --</option>
            ${avV.map(v=>`<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)</option>`).join('')}
@@ -2448,6 +2484,34 @@ async function openPoolModal() {
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="convoyBtn" onclick="doFormPool()" disabled>🚌 Pool Trip</button>`
   )
+}
+
+function selectPoolDate(dateKey, idx, total) {
+  // Update button styles
+  for (let i=0; i<total; i++) {
+    const b = document.getElementById('poolDateBtn_'+i)
+    if (!b) continue
+    const active = i===idx
+    b.style.border  = active ? '2px solid var(--pri)' : '2px solid var(--border)'
+    b.style.background = active ? 'var(--pri-s)' : 'transparent'
+    b.style.color   = active ? 'var(--pri)' : 'var(--text2)'
+  }
+  // Rebuild ticket list for selected date
+  const list   = document.getElementById('poolTicketList')
+  const header = document.getElementById('poolTicketHeader')
+  const group  = window._poolByDate?.[dateKey]
+  if (list && group) {
+    list.innerHTML = window._poolBuildList(dateKey)
+    if (header) header.textContent = `Select tickets to pool — ${group.label}`
+    // Reset departure time to first ticket of selected date
+    const depInput = document.getElementById('convoyDep')
+    if (depInput && group.tickets[0]) depInput.value = new Date(group.tickets[0].departure_at).toISOString().slice(0,16)
+  }
+  // Reset selection count
+  const lbl = document.getElementById('convoySelCount')
+  if (lbl) { lbl.textContent = 'Select at least 2 tickets'; lbl.style.color = 'var(--text3)' }
+  const btn = document.getElementById('convoyBtn')
+  if (btn) btn.disabled = true
 }
 
 function updatePoolSelection() {
