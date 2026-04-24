@@ -1037,7 +1037,7 @@ async function renderDashboard() {
 
   // Driver gets their own focused dashboard
   if (role === 'driver') { await renderDriverDashboard(); return }
-  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,vehicle_id,is_advance_booking,pool_id').order('created_at',{ascending:false})
+  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,vehicle_id,pool_id').order('created_at',{ascending:false})
   if (role === 'requester')     tripsQ = tripsQ.eq('requester_id', currentProfile.id)
   if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.driver_record_id || currentProfile.id)
   if (role === 'approver_admin') tripsQ = tripsQ.neq('vehicle_type_needed', 'ambulance')
@@ -1061,13 +1061,13 @@ async function renderDashboard() {
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
   const active = T.filter(t => {
     if (!['approved','assigned','on-trip'].includes(t.status)) return false
-    if (t.is_advance_booking && t.departure_at && new Date(t.departure_at) > todayEnd) return false
+    if (t.departure_at && new Date(t.departure_at) > todayEnd) return false
     return true
   })
   // Scheduled = advance bookings not yet active
   const scheduled = T.filter(t =>
     ['approved','assigned'].includes(t.status) &&
-    t.is_advance_booking && t.departure_at && new Date(t.departure_at) > todayEnd
+    t.departure_at && new Date(t.departure_at) > todayEnd
   )
   const done   = T.filter(t => t.status==='completed')
   if (['admin','approver_admin','approver_amb','super_approver'].includes(role)) updateNavBadge(pending.length)
@@ -1077,7 +1077,7 @@ async function renderDashboard() {
   let upcomingAdvance = []
   if (['admin','guard','approver_admin','approver_amb'].includes(role)) {
     const { data: adv } = await SB.from('trips')
-      .select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,vehicle_type_needed,status,is_advance_booking')
+      .select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,vehicle_type_needed,status')
       .in('status', ['assigned','approved'])
       .gt('departure_at', now.toISOString())
       .lte('departure_at', next7.toISOString())
@@ -1144,7 +1144,7 @@ async function renderDashboard() {
             + '<div style="font-size:10px;color:' + urgency + ';font-weight:700;margin-top:4px">' + dayLabel + '</div>'
             + '</div></div>'
         }).join('')
-      + (upcomingAdvance.length > 5 ? '<div style="text-align:center;font-size:11.5px;color:var(--text3);padding:4px">+' + (upcomingAdvance.length-5) + ' more advance bookings</div>' : '')
+      + (upcomingAdvance.length > 5 ? '<div style="text-align:center;font-size:11.5px;color:var(--text3);padding:4px">+' + (upcomingAdvance.length-5) + ' more scheduled trips</div>' : '')
       + '</div></div>'
     : ''
 
@@ -1521,7 +1521,7 @@ function renderTicketsTable() {
       return `<tr onclick="openViewModal('${t.id}')" style="border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;${rowBg}" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${isPending?'color-mix(in srgb,var(--amber-s) 40%,transparent)':''}'">
         <td style="padding:13px 16px;white-space:nowrap">
           <div style="font-size:11px;font-weight:700;color:var(--pri);font-family:monospace;letter-spacing:.3px">${t.ticket_no||'—'}</div>
-          ${t.is_advance_booking ? `<div style="font-size:9.5px;font-weight:700;color:var(--amber);margin-top:2px">📅 ADVANCE</div>` : ''}
+          
           ${t.booking_group_id ? `<div style="font-size:9.5px;color:var(--purple,#7c3aed);margin-top:2px">🔗 BULK</div>` : ''}
         </td>
         <td style="padding:13px 16px">
@@ -1847,7 +1847,7 @@ async function openViewModal(id) {
     : ''
 
   openMO(`Ticket — ${t.ticket_no}`,
-    `<div style="display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap">${badge(t.status)}${typeBadge(t.vehicle_type_needed)}${priorityBadge(t.priority)}${t.is_advance_booking?'<span style="background:var(--amber-s);color:var(--amber);padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">📅 ADVANCE</span>':''}</div>
+    `<div style="display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap">${badge(t.status)}${typeBadge(t.vehicle_type_needed)}${priorityBadge(t.priority)}</div>
      ${wfHtml(t.status)}
      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
        ${fields.map(([l,v,s])=>`<div style="background:var(--bg);padding:10px;border-radius:8px;${s==='span2'?'grid-column:span 2':''}">
@@ -3486,7 +3486,7 @@ async function renderOwnerDashboard() {
     SB.from('trips').select('*').order('created_at',{ascending:false}),
     SB.from('vehicles').select('*').order('plate'),
     SB.from('drivers').select('*').order('full_name'),
-    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking')
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed')
       .in('status',['assigned','approved'])
       .gt('departure_at', now.toISOString())
       .order('departure_at',{ascending:true}).limit(10),
@@ -3607,7 +3607,7 @@ async function renderOwnerDashboard() {
           </div>
           <div style="font-size:11.5px;color:var(--text2);margin-bottom:12px">${slaKept.length} of ${withSLA.length} tickets approved on time</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-            ${[['Pending Now',pending.length,'var(--amber)'],['Rejected',T.filter(t=>t.status==='rejected').length,'var(--red)'],['Advance Booked',advance.length,'var(--pri)']].map(([l,v,c])=>
+            ${[['Pending Now',pending.length,'var(--amber)'],['Rejected',T.filter(t=>t.status==='rejected').length,'var(--red)'],['Scheduled',advance.length,'var(--pri)']].map(([l,v,c])=>
               '<div style="background:var(--bg);border-radius:9px;padding:10px;text-align:center"><div style="font-size:18px;font-weight:800;color:'+c+'">'+v+'</div><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">'+l+'</div></div>'
             ).join('')}
           </div>
@@ -3688,7 +3688,7 @@ async function renderOwnerDashboard() {
   <!-- UPCOMING ADVANCE BOOKINGS -->
   ${advance.length > 0 ? `
   <div class="card card-np" style="margin-bottom:16px">
-    <div class="card-hd"><div class="card-title">📅 Upcoming Scheduled Trips</div><span class="badge b-assigned" style="font-size:10px">${advance.length} scheduled</span></div>
+    <div class="card-hd"><div class="card-title">📅 Upcoming Trips</div><span class="badge b-assigned" style="font-size:10px">${advance.length} scheduled</span></div>
     <div style="padding:8px 16px">
     ${advance.map(t => {
       const dep = new Date(t.departure_at)
@@ -3776,7 +3776,7 @@ async function renderFleet() {
     SB.from('drivers').select('*').order('full_name'),
     SB.from('trips').select('*').eq('requester_id', currentProfile?.id).not('status','in','("cancelled","rejected")').order('departure_at',{ascending:false}).limit(20),
     SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed,pool_id').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
-    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking').eq('is_advance_booking',true).in('status',['assigned','approved']).gt('departure_at', new Date().toISOString()).order('departure_at',{ascending:true}).limit(20)
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed').in('status',['assigned','approved']).gt('departure_at', new Date().toISOString()).order('departure_at',{ascending:true}).limit(20)
   ])
 
   const V = vehicles || [], D = drivers || []
@@ -4012,17 +4012,13 @@ async function renderNewTicket() {
         <div class="fg"><label class="fl">Requester Name *</label><input class="fi" id="ntReq" value="${currentProfile?.full_name||''}" placeholder="Full name"></div>
       </div>
 
-      <!-- Departure Date auto-detects advance booking -->
-      <div class="fr">
+            <div class="fr">
         <div class="fg"><label class="fl">Departure Date *</label><input class="fi" type="date" id="ntDate" value="${today}" min="${today}" oninput="onDateChange()"></div>
         <div class="fg"><label class="fl">Departure Time *</label><input class="fi" type="time" id="ntTime" oninput="onDateChange()"></div>
         <div class="fg" id="ntReturnWrap"><label class="fl">Expected Return Date</label><input class="fi" type="date" id="ntReturn" min="${today}"></div>
         <div class="fg" id="ntPaxWrap"><label class="fl">No. of Passengers</label><input class="fi" type="number" id="ntPax" value="1" min="1" max="50"></div>
       </div>
-      <!-- Auto-detected advance booking indicator -->
-      <div id="ntAdvanceBanner" style="display:none;margin-bottom:12px" class="info info-blue">
-        📅 <strong>Advance Booking detected</strong> — Your trip will be scheduled for the selected date. You'll receive reminders automatically 1 day and 1 hour before departure.
-      </div>
+
 
       <div class="fg"><label class="fl">Vehicle Type *</label>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
@@ -4127,11 +4123,6 @@ function onDateChange() {
   const role = currentProfile?.role
   const vtype = document.getElementById('ntType')?.value || 'regular'
   const priority = document.getElementById('ntPri')?.value || 'normal'
-  const todayPlus1 = new Date(Date.now() + 86400000).toISOString().slice(0,10)
-  const isAdvance = dateVal > todayPlus1
-  const banner = document.getElementById('ntAdvanceBanner')
-  if (banner) banner.style.display = isAdvance ? 'block' : 'none'
-
   // Show 48-hour warning for regular requesters
   const errEl = document.getElementById('ntFormErr')
   if (!errEl) return
@@ -4739,7 +4730,7 @@ async function submitNewTicket() {
               style="animation:checkIn .3s ease .4s forwards"/>
           </svg>
         </div>
-        <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">${isAdvance ? '📅 Advance Booking Submitted' : '✅ Request Submitted'}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">${isAdvance ? '✅ Request Submitted' : '✅ Request Submitted'}</div>
         <div style="font-size:30px;font-weight:900;letter-spacing:-0.5px;margin-bottom:8px;color:var(--text1)">${trip.ticket_no}</div>
         ${groupId ? `<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Part of a bulk booking group</div>` : ''}
         <div style="font-size:14px;color:var(--text2);margin-bottom:20px">Your vehicle request has been submitted.<br>An approver will be notified via SMS.</div>
@@ -4762,21 +4753,16 @@ async function submitNewTicket() {
       </div>`,
       `<button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="closeMO();renderNewTicket()">+ New Request</button>
        <button class="btn btn-pri" style="flex:1;justify-content:center" onclick="closeMO();goTo('tickets')">View My Tickets</button>`,
-      { noBackdropClose: true }
     )
-    // Remove the × close button from this modal — user must pick an action
-    setTimeout(() => {
-      const closeBtn = document.querySelector('#MO .mo-close')
-      if (closeBtn) closeBtn.style.display = 'none'
-    }, 50)
+
 
     // Fire-and-forget notifications
     const approverRole = vtype === 'ambulance' ? 'approver_amb' : 'approver_admin'
     const priority = document.getElementById('ntPri')?.value || 'normal'
     Promise.all([
-      addAudit(trip.id, trip.ticket_no, isAdvance ? 'Advance Booking Created' : 'Ticket Created', purpose),
+      addAudit(trip.id, trip.ticket_no, 'Ticket Created', purpose),
       getPhonesForRole(approverRole).then(phones =>
-        sendSMS(phones, `[TDMH VTS] ${isAdvance?'📅 ADVANCE ':''}${priority==='emergency'?'🚨 EMERGENCY':priority==='urgent'?'⚡ URGENT':priority==='low'?'🕐 LOW':'📋 NORMAL'} — New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nUrgency: ${priority?.toUpperCase()||'NORMAL'}\nDate: ${date} ${time}${groupId?'\n⚠ Part of bulk booking':''}\nPlease log in to approve.`)
+        sendSMS(phones, `[TDMH VTS] ${priority==='emergency'?'🚨 EMERGENCY':priority==='urgent'?'⚡ URGENT':priority==='low'?'🕐 LOW':'📋 NORMAL'} — New request ${trip.ticket_no}\nDept: ${dept}\nPurpose: ${purpose}\nDest: ${dest}\nUrgency: ${priority?.toUpperCase()||'NORMAL'}\nDate: ${date} ${time}${groupId?'\n⚠ Part of bulk booking':''}\nPlease log in to approve.`)
       ),
       getEmailsForRole(approverRole).then(emails =>
         sendEmail(emails, 'ticket_created', {
