@@ -695,6 +695,11 @@ async function handleLogin() {
       .eq('status', 'active')
       .single()
     if (error || !data) throw new Error('Invalid username or password.')
+    // For driver role, also fetch their drivers.id for trip filtering
+    if (data.role === 'driver') {
+      const { data: dRec } = await SB.from('drivers').select('id').eq('user_id', data.id).single()
+      if (dRec) data.driver_record_id = dRec.id
+    }
     localStorage.setItem('vts_user', JSON.stringify(data))
     currentProfile = data
     showApp()
@@ -1028,9 +1033,12 @@ async function renderDashboard() {
 
   // Owner gets their own executive dashboard
   if (role === 'owner') { await renderOwnerDashboard(); return }
+
+  // Driver gets their own focused dashboard
+  if (role === 'driver') { await renderDriverDashboard(); return }
   let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,is_advance_booking').order('created_at',{ascending:false})
   if (role === 'requester')     tripsQ = tripsQ.eq('requester_id', currentProfile.id)
-  if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.id)
+  if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.driver_record_id || currentProfile.id)
   if (role === 'approver_admin') tripsQ = tripsQ.neq('vehicle_type_needed', 'ambulance')
   if (role === 'approver_amb')   tripsQ = tripsQ.eq('vehicle_type_needed', 'ambulance')
 
@@ -1351,7 +1359,7 @@ async function renderTickets() {
   // Build query filtered by role
   let tripsQuery = SB.from('trips').select('*,vehicle:vehicles(id,plate,type,name)').order('created_at',{ascending:false})
   if (role === 'requester')      tripsQuery = tripsQuery.eq('requester_id', currentProfile.id)
-  if (role === 'driver')         tripsQuery = tripsQuery.eq('driver_id', currentProfile.id)
+  if (role === 'driver')         tripsQuery = tripsQuery.eq('driver_id', currentProfile.driver_record_id || currentProfile.id)
   if (role === 'approver_admin')   tripsQuery = tripsQuery.neq('vehicle_type_needed', 'ambulance')
   if (role === 'approver_amb')     tripsQuery = tripsQuery.eq('vehicle_type_needed', 'ambulance')
   // super_approver sees all tickets (no filter)
@@ -2696,6 +2704,175 @@ async function submitRating(tripId) {
 // ════════════════════════════════════════════════
 // FLEET VISIBILITY (requester view)
 // ════════════════════════════════════════════════
+// ════════════════════════════════════════════════
+// DRIVER DASHBOARD
+// ════════════════════════════════════════════════
+async function renderDriverDashboard() {
+  const now = new Date()
+
+  // Find the driver record linked to this user account
+  const { data: driverRec } = await SB.from('drivers')
+    .select('id,full_name,status,driver_type,shift,phone,license_no')
+    .eq('user_id', currentProfile.id)
+    .single()
+
+  if (!driverRec) {
+    document.getElementById('CONTENT').innerHTML = `
+    <div class="card" style="max-width:480px;margin:48px auto;text-align:center;padding:32px">
+      <div style="font-size:36px;margin-bottom:14px">🚗</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px">No Driver Profile Found</div>
+      <div style="font-size:13px;color:var(--text2)">Your account is not linked to a driver profile yet.<br>Please contact the administrator.</div>
+    </div>`
+    return
+  }
+
+  // Fetch all trips assigned to this driver
+  const { data: trips } = await SB.from('trips')
+    .select('*')
+    .eq('driver_id', driverRec.id)
+    .order('departure_at', { ascending: true })
+
+  const T = trips || []
+  const activeTrip   = T.find(t => t.status === 'on-trip')
+  const assignedTrips = T.filter(t => t.status === 'assigned' && new Date(t.departure_at) >= now)
+  const nextTrip     = assignedTrips[0] || null
+  const upcoming     = assignedTrips.slice(1, 4)
+  const history      = T.filter(t => t.status === 'completed').slice(-5).reverse()
+  const totalTrips   = T.filter(t => t.status === 'completed').length
+  const activeOrNext = activeTrip || nextTrip
+
+  const dtColor = driverRec.driver_type === 'ambulance' ? 'var(--red)' :
+                  driverRec.driver_type === 'both'      ? 'var(--purple)' : 'var(--pri)'
+  const dtLabel = driverRec.driver_type === 'ambulance' ? '🚑 Ambulance Driver' :
+                  driverRec.driver_type === 'both'      ? '⚡ All-Type Driver' : '🚙 Regular Driver'
+
+  const tripCard = (t, isActive) => {
+    const dep = new Date(t.departure_at)
+    const ret = t.expected_return_at ? new Date(t.expected_return_at) : null
+    const hoursAway = (dep - now) / (1000 * 60 * 60)
+    const stops = Array.isArray(t.stops) && t.stops.length ? t.stops : (t.destination ? [t.destination] : [])
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stops[0]||t.destination||'')}`
+
+    return `
+    <div style="background:${isActive ? 'var(--navy,#0c2340)' : 'var(--card)'};border:1.5px solid ${isActive ? 'var(--pri)' : 'var(--border)'};border-radius:14px;padding:18px;margin-bottom:14px;${isActive?'color:#fff':''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          ${isActive ? '<span style="width:8px;height:8px;border-radius:50%;background:#22d3ee;display:inline-block;animation:pulse-overdue 1.5s infinite"></span>' : ''}
+          <span style="font-family:monospace;font-size:13px;font-weight:800;color:${isActive?'#7eb8f7':'var(--pri)'}">${t.ticket_no}</span>
+          ${priorityBadge(t.priority)}
+        </div>
+        <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:${isActive?'rgba(34,211,238,.15)':'var(--pri-s)'};color:${isActive?'#22d3ee':'var(--pri)'}">
+          ${isActive ? '🔵 ON TRIP' : hoursAway < 2 ? '🔴 DEPARTS SOON' : hoursAway < 24 ? '🟡 TODAY' : '📅 UPCOMING'}
+        </span>
+      </div>
+
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px;color:${isActive?'#e2e8f0':'var(--text1)'}">${t.department}</div>
+      <div style="font-size:13px;color:${isActive?'#94a3b8':'var(--text2)'};margin-bottom:12px">${t.purpose||'—'}</div>
+
+      <div style="background:${isActive?'rgba(255,255,255,.06)':'var(--bg)'};border-radius:10px;padding:12px;margin-bottom:14px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${isActive?'#64748b':'var(--text3)'};margin-bottom:8px">Route</div>
+        ${stops.map((s,i) => `
+        <div style="display:flex;align-items:center;gap:8px;${i<stops.length-1?'margin-bottom:6px':''}">
+          <div style="width:20px;height:20px;border-radius:50%;background:${i===0?'var(--green)':'var(--pri)'};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${i+1}</div>
+          <span style="font-size:12px;font-weight:600;color:${isActive?'#e2e8f0':'var(--text1)'}">${s}</span>
+        </div>`).join('<div style="width:1px;height:6px;background:var(--border);margin:0 9px;margin-bottom:4px"></div>')}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <div style="background:${isActive?'rgba(255,255,255,.05)':'var(--bg)'};border-radius:9px;padding:10px">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${isActive?'#64748b':'var(--text3)'};margin-bottom:3px">Departure</div>
+          <div style="font-size:12px;font-weight:700;color:${isActive?'#e2e8f0':'var(--text1)'}">${fmtDT(t.departure_at)}</div>
+        </div>
+        <div style="background:${isActive?'rgba(255,255,255,.05)':'var(--bg)'};border-radius:9px;padding:10px">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${isActive?'#64748b':'var(--text3)'};margin-bottom:3px">Exp. Return</div>
+          <div style="font-size:12px;font-weight:700;color:${isActive?'#e2e8f0':'var(--text1)'}">${ret ? fmtDT(t.expected_return_at) : '—'}</div>
+        </div>
+        <div style="background:${isActive?'rgba(255,255,255,.05)':'var(--bg)'};border-radius:9px;padding:10px">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${isActive?'#64748b':'var(--text3)'};margin-bottom:3px">Vehicle</div>
+          <div style="font-size:12px;font-weight:700;font-family:monospace;color:${isActive?'#7eb8f7':'var(--pri)'}">${t.vehicle_plate||'—'}</div>
+          <div style="font-size:10px;color:${isActive?'#64748b':'var(--text3)'}">${t.vehicle_name||''}</div>
+        </div>
+        <div style="background:${isActive?'rgba(255,255,255,.05)':'var(--bg)'};border-radius:9px;padding:10px">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${isActive?'#64748b':'var(--text3)'};margin-bottom:3px">Passengers</div>
+          <div style="font-size:12px;font-weight:700;color:${isActive?'#e2e8f0':'var(--text1)'}">${t.pax_count||'—'}</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <a href="${mapsUrl}" target="_blank" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:${isActive?'var(--pri)':'var(--pri)'};color:#fff;padding:11px;border-radius:10px;font-size:12px;font-weight:700;text-decoration:none">
+          🗺 Navigate
+        </a>
+        <button onclick="openViewModal('${t.id}')" style="flex:1;background:${isActive?'rgba(255,255,255,.1)':'var(--bg)'};border:1px solid ${isActive?'rgba(255,255,255,.2)':'var(--border)'};color:${isActive?'#e2e8f0':'var(--text1)'};padding:11px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer">
+          📋 View Details
+        </button>
+      </div>
+    </div>`
+  }
+
+  document.getElementById('CONTENT').innerHTML = `
+  <!-- Driver Profile Header -->
+  <div style="background:linear-gradient(135deg,#0c2340,#1a3a6e);border-radius:14px;padding:18px 20px;color:#fff;display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">
+    <div style="display:flex;align-items:center;gap:14px">
+      <div style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.1);border:2px solid ${dtColor};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:${dtColor}">${ini(driverRec.full_name)}</div>
+      <div>
+        <div style="font-size:18px;font-weight:800">${driverRec.full_name}</div>
+        <div style="font-size:12px;opacity:.7;margin-top:2px">${dtLabel} · ${driverRec.shift||'AM'} Shift</div>
+        ${driverRec.license_no ? `<div style="font-size:11px;opacity:.5;margin-top:1px">License: ${driverRec.license_no}</div>` : ''}
+      </div>
+    </div>
+    <div style="display:flex;gap:20px;text-align:center">
+      <div>
+        <div style="font-size:24px;font-weight:900;color:#22d3ee">${totalTrips}</div>
+        <div style="font-size:10px;opacity:.6">Trips Done</div>
+      </div>
+      <div>
+        <div style="font-size:24px;font-weight:900;color:${assignedTrips.length > 0 ? '#fbbf24' : '#34d399'}">${assignedTrips.length}</div>
+        <div style="font-size:10px;opacity:.6">Upcoming</div>
+      </div>
+      <div>
+        <div style="font-size:24px;font-weight:900;color:${activeTrip ? '#a78bfa' : '#34d399'}">${activeTrip ? '🔵' : '✅'}</div>
+        <div style="font-size:10px;opacity:.6">${activeTrip ? 'On Trip' : 'Available'}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active or Next Trip -->
+  ${activeOrNext ? `
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px">
+    ${activeTrip ? '🔵 Currently On Trip' : '📌 Next Assignment'}
+  </div>
+  ${tripCard(activeOrNext, !!activeTrip)}` : `
+  <div class="card" style="text-align:center;padding:32px;margin-bottom:14px">
+    <div style="font-size:36px;margin-bottom:10px">✅</div>
+    <div style="font-size:15px;font-weight:700;margin-bottom:5px">No Active Assignments</div>
+    <div style="font-size:12px;color:var(--text2)">You have no upcoming trips at the moment. Check back later.</div>
+  </div>`}
+
+  <!-- Upcoming Trips -->
+  ${upcoming.length > 0 ? `
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px;margin-top:4px">📅 Other Upcoming Trips</div>
+  ${upcoming.map(t => tripCard(t, false)).join('')}` : ''}
+
+  <!-- Trip History -->
+  ${history.length > 0 ? `
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px;margin-top:4px">📋 Recent History</div>
+  <div class="card card-np" style="overflow:hidden;margin-bottom:14px">
+    <table class="tbl" style="font-size:12px">
+      <thead><tr><th>Ticket</th><th>Department</th><th>Destination</th><th>Date</th><th>Vehicle</th></tr></thead>
+      <tbody>
+        ${history.map(t => `<tr>
+          <td style="font-family:monospace;font-weight:700;color:var(--pri)">${t.ticket_no}</td>
+          <td>${t.department||'—'}</td>
+          <td style="color:var(--text2)">${t.destination||'—'}</td>
+          <td style="color:var(--text3)">${fmtDate(t.departure_at)}</td>
+          <td style="font-family:monospace;font-size:11px">${t.vehicle_plate||'—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : ''}
+  `
+}
+
 // ════════════════════════════════════════════════
 // OWNER EXECUTIVE DASHBOARD
 // ════════════════════════════════════════════════
