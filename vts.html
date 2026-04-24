@@ -1402,6 +1402,18 @@ function renderTicketsTable() {
   })
   const role = currentProfile?.role
 
+  // Precompute: which PHT dates have 2+ poolable tickets (approved/assigned, no pool_id)
+  // Used to decide whether to show the Pool Trip button per ticket
+  const poolableDateCounts = {}
+  if (['admin','super_approver','approver_admin','approver_amb'].includes(role)) {
+    const getDatePHT = iso => new Date(iso).toLocaleDateString('en-PH',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Manila'})
+    _tickets.filter(t => ['approved','assigned'].includes(t.status) && !t.pool_id).forEach(t => {
+      if (!t.departure_at) return
+      const dk = getDatePHT(t.departure_at)
+      poolableDateCounts[dk] = (poolableDateCounts[dk]||0) + 1
+    })
+  }
+
   document.getElementById('CONTENT').innerHTML = `
   <!-- Toolbar -->
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
@@ -1495,9 +1507,12 @@ function renderTicketsTable() {
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
       if ((role==='admin' || role==='super_approver') && !['completed','cancelled'].includes(t.status))
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-      // Trip Pool — show for approvers on approved/assigned tickets not yet in convoy
-      if (['admin','super_approver','approver_admin','approver_amb'].includes(role) && ['approved','assigned'].includes(t.status) && !t.pool_id)
-        acts.push(`<button class="tbl-act" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;white-space:nowrap" onclick="event.stopPropagation();openPoolModal()">🚌 Pool Trip</button>`)
+      // Trip Pool — only show if this ticket's date has 2+ poolable tickets
+      if (['admin','super_approver','approver_admin','approver_amb'].includes(role) && ['approved','assigned'].includes(t.status) && !t.pool_id) {
+        const dk = t.departure_at ? new Date(t.departure_at).toLocaleDateString('en-PH',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Manila'}) : ''
+        if (dk && (poolableDateCounts[dk]||0) >= 2)
+          acts.push(`<button class="tbl-act" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;white-space:nowrap" onclick="event.stopPropagation();openPoolModal()">🚌 Pool Trip</button>`)
+      }
       // Convoy badge on tickets already in a trip pool
       if (t.pool_id)
         acts.push(`<button class="tbl-act" style="background:#fdf4ff;color:#6b21a8;border:1px solid #e9d5ff;white-space:nowrap" onclick="event.stopPropagation();showPoolDetails('${t.pool_id}')">🚌 Pooled Trip</button>`)
