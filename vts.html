@@ -543,7 +543,7 @@ let currentProfile = null
 let currentPage = 'dashboard'
 let realtimeChannel = null
 let _departments = [] // cached from DB
-let _convoys     = [] // active convoys cache
+let _trip_pools     = [] // active trip_pools cache
 
 const ROLE_LABELS = { admin:'Administrator', approver_admin:'Admin Approver', approver_amb:'Ambulance Approver', guard:'Guard', requester:'Department User', driver:'Driver', owner:'Hospital Owner', super_approver:'Super Approver' }
 const ROLE_COLORS = { admin:'#0c6fdb', approver_admin:'#7c3aed', approver_amb:'#dc2626', guard:'#0d9488', requester:'#d97706', driver:'#16a34a', owner:'#0f766e', super_approver:'#0891b2' }
@@ -1037,7 +1037,7 @@ async function renderDashboard() {
 
   // Driver gets their own focused dashboard
   if (role === 'driver') { await renderDriverDashboard(); return }
-  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,vehicle_id,is_advance_booking,convoy_id').order('created_at',{ascending:false})
+  let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,vehicle_id,is_advance_booking,pool_id').order('created_at',{ascending:false})
   if (role === 'requester')     tripsQ = tripsQ.eq('requester_id', currentProfile.id)
   if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.driver_record_id || currentProfile.id)
   if (role === 'approver_admin') tripsQ = tripsQ.neq('vehicle_type_needed', 'ambulance')
@@ -1495,12 +1495,12 @@ function renderTicketsTable() {
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
       if ((role==='admin' || role==='super_approver') && !['completed','cancelled'].includes(t.status))
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-      // Convoy — show for approvers on approved/assigned tickets not yet in convoy
-      if (['admin','super_approver','approver_admin','approver_amb'].includes(role) && ['approved','assigned'].includes(t.status) && !t.convoy_id)
-        acts.push(`<button class="tbl-act" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;white-space:nowrap" onclick="event.stopPropagation();openConvoyModal()">🚌 Convoy</button>`)
-      // Convoy badge on tickets already in a convoy
-      if (t.convoy_id)
-        acts.push(`<button class="tbl-act" style="background:#fdf4ff;color:#6b21a8;border:1px solid #e9d5ff;white-space:nowrap" onclick="event.stopPropagation();showConvoyDetails('${t.convoy_id}')">🚌 In Convoy</button>`)
+      // Trip Pool — show for approvers on approved/assigned tickets not yet in convoy
+      if (['admin','super_approver','approver_admin','approver_amb'].includes(role) && ['approved','assigned'].includes(t.status) && !t.pool_id)
+        acts.push(`<button class="tbl-act" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;white-space:nowrap" onclick="event.stopPropagation();openPoolModal()">🚌 Pool Trip</button>`)
+      // Convoy badge on tickets already in a trip pool
+      if (t.pool_id)
+        acts.push(`<button class="tbl-act" style="background:#fdf4ff;color:#6b21a8;border:1px solid #e9d5ff;white-space:nowrap" onclick="event.stopPropagation();showPoolDetails('${t.pool_id}')">🚌 Pooled Trip</button>`)
       const isPending = t.status==='pending-approval'
       const rowBg = isPending ? 'background:color-mix(in srgb,var(--amber-s) 40%,transparent)' : ''
       return `<tr onclick="openViewModal('${t.id}')" style="border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;${rowBg}" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${isPending?'color-mix(in srgb,var(--amber-s) 40%,transparent)':''}'">
@@ -1556,25 +1556,25 @@ function buildGuardKanban(tickets) {
   const now = new Date()
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
 
-  // Group convoy tickets — show as single card per convoy
-  const convoyMap = {}
+  // Group convoy tickets — show as single card per trip pool
+  const poolMap = {}
   const soloTickets = []
   tickets.forEach(t => {
-    if (t.convoy_id) {
-      if (!convoyMap[t.convoy_id]) convoyMap[t.convoy_id] = []
-      convoyMap[t.convoy_id].push(t)
+    if (t.pool_id) {
+      if (!poolMap[t.pool_id]) poolMap[t.pool_id] = []
+      poolMap[t.pool_id].push(t)
     } else {
       soloTickets.push(t)
     }
   })
 
   // Build convoy summary cards (use first ticket's data for timing)
-  const convoyCards = Object.entries(convoyMap).map(([convoyId, cTickets]) => {
+  const poolCards = Object.entries(poolMap).map(([poolId, cTickets]) => {
     const lead = cTickets[0]
-    return { ...lead, _isConvoy:true, _convoyId:convoyId, _convoyTickets:cTickets, _convoyCount:cTickets.length }
+    return { ...lead, _isPool:true, _poolId:poolId, _poolTickets:cTickets, _poolCount:cTickets.length }
   })
 
-  const allTickets = [...soloTickets, ...convoyCards]
+  const allTickets = [...soloTickets, ...poolCards]
 
   // Group into columns
   const gateOutNow    = allTickets.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) <= now)
@@ -1586,17 +1586,17 @@ function buildGuardKanban(tickets) {
 
   function gateCard(t) {
     // ── Convoy card ──────────────────────────────
-    if (t._isConvoy) {
+    if (t._isPool) {
       const dep = t.departure_at ? new Date(t.departure_at) : null
       const depStr = dep ? dep.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
       const late = dep && dep < now
       const isToday = dep && dep <= todayEnd
-      const depts = t._convoyTickets.map(x=>x.department).join(' · ')
+      const depts = t._poolTickets.map(x=>x.department).join(' · ')
       return `<div style="background:linear-gradient(135deg,#fdf4ff,#f5f3ff);border:2px solid #c4b5fd;border-radius:14px;padding:14px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
           <span style="font-size:15px">🚌</span>
           <span style="font-size:13px;font-weight:900;color:#6b21a8">CONVOY</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#7c3aed;color:#fff">${t._convoyCount} tickets</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#7c3aed;color:#fff">${t._poolCount} tickets</span>
           <span style="margin-left:auto;font-size:20px;font-weight:900;font-family:monospace;color:${late?'#dc2626':'#6b21a8'}">${depStr}</span>
         </div>
         <div style="font-size:11px;color:#6b21a8;font-weight:600;margin-bottom:8px;line-height:1.4">${depts}</div>
@@ -1612,9 +1612,9 @@ function buildGuardKanban(tickets) {
         </div>
         <div style="display:flex;gap:8px">
           ${isToday
-            ? `<button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onclick="event.stopPropagation();openConvoyGateOut('${t._convoyId}')">🚀 Gate Out All</button>`
+            ? `<button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onclick="event.stopPropagation();openPoolGateOut('${t._poolId}')">🚀 Gate Out All</button>`
             : `<div style="flex:1;background:rgba(124,58,237,.08);border-radius:9px;padding:10px;text-align:center;font-size:11.5px;color:#6b21a8;font-weight:600">📅 Not today</div>`}
-          <button style="flex-shrink:0;background:rgba(124,58,237,.1);border:1px solid #c4b5fd;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer" onclick="event.stopPropagation();showConvoyDetails('${t._convoyId}')">Details</button>
+          <button style="flex-shrink:0;background:rgba(124,58,237,.1);border:1px solid #c4b5fd;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer" onclick="event.stopPropagation();showPoolDetails('${t._poolId}')">Details</button>
         </div>
       </div>`
     }
@@ -1659,13 +1659,13 @@ function buildGuardKanban(tickets) {
 
   function gateInCard(t) {
     // ── Convoy on-trip card ──────────────────────
-    if (t._isConvoy) {
-      const depts = t._convoyTickets.map(x=>x.department).join(' · ')
+    if (t._isPool) {
+      const depts = t._poolTickets.map(x=>x.department).join(' · ')
       return `<div style="background:linear-gradient(135deg,#fdf4ff,#f5f3ff);border:2px solid #a78bfa;border-radius:14px;padding:14px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
           <span style="width:8px;height:8px;border-radius:50%;background:#7c3aed;display:inline-block;animation:pulse-overdue 1.5s infinite"></span>
-          <span style="font-size:13px;font-weight:900;color:#6b21a8">🚌 CONVOY ON TRIP</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#7c3aed;color:#fff">${t._convoyCount} tickets</span>
+          <span style="font-size:13px;font-weight:900;color:#6b21a8">🚌 POOLED TRIP — ON TRIP</span>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#7c3aed;color:#fff">${t._poolCount} tickets</span>
         </div>
         <div style="font-size:11px;color:#6b21a8;font-weight:600;margin-bottom:8px">${depts}</div>
         <div style="background:rgba(124,58,237,.08);border-radius:8px;padding:8px;margin-bottom:10px">
@@ -1679,8 +1679,8 @@ function buildGuardKanban(tickets) {
           </div>
         </div>
         <div style="display:flex;gap:8px">
-          <button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onclick="event.stopPropagation();openConvoyGateIn('${t._convoyId}')">✅ Gate In All</button>
-          <button style="flex-shrink:0;background:rgba(124,58,237,.1);border:1px solid #a78bfa;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer" onclick="event.stopPropagation();showConvoyDetails('${t._convoyId}')">Details</button>
+          <button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onclick="event.stopPropagation();openPoolGateIn('${t._poolId}')">✅ Gate In All</button>
+          <button style="flex-shrink:0;background:rgba(124,58,237,.1);border:1px solid #a78bfa;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer" onclick="event.stopPropagation();showPoolDetails('${t._poolId}')">Details</button>
         </div>
       </div>`
     }
@@ -2347,12 +2347,12 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
 // into a single driver+vehicle+gate operation
 // ════════════════════════════════════════════════
 
-async function openConvoyModal() {
+async function openPoolModal() {
   const role = currentProfile?.role
   // Fetch all approved/assigned tickets (scoped by approver type)
-  let q = SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,departure_at,expected_return_at,vehicle_type_needed,driver_id,driver_name,vehicle_id,vehicle_plate,vehicle_name,status,convoy_id,priority')
+  let q = SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,departure_at,expected_return_at,vehicle_type_needed,driver_id,driver_name,vehicle_id,vehicle_plate,vehicle_name,status,pool_id,priority')
     .in('status',['approved','assigned'])
-    .is('convoy_id',null)
+    .is('pool_id',null)
     .order('departure_at',{ascending:true})
   if (role==='approver_admin') q=q.neq('vehicle_type_needed','ambulance')
   if (role==='approver_amb')   q=q.eq('vehicle_type_needed','ambulance')
@@ -2360,7 +2360,7 @@ async function openConvoyModal() {
 
   const T = tickets||[]
   if (T.length < 2) {
-    openMO('Form Convoy','<div class="info info-amber">Need at least 2 approved/assigned tickets to form a convoy.<br>Approve more tickets first.</div>',
+    openMO('Pool Trip','<div class="info info-amber">Need at least 2 approved/assigned tickets to form a trip pool.<br>Approve more tickets first.</div>',
       '<button class="btn btn-ghost" onclick="closeMO()">Close</button>')
     return
   }
@@ -2386,7 +2386,7 @@ async function openConvoyModal() {
     return !t.includes('ambulance')
   })
 
-  openMO('🚌 Form Convoy',
+  openMO('🚌 Pool Trip',
     `<div class="info info-blue" style="margin-bottom:14px">
        Select tickets to group into a single convoy trip. The assigned driver and vehicle will be shared across all selected tickets. Gate-out and gate-in will be done once for all.
      </div>
@@ -2398,8 +2398,8 @@ async function openConvoyModal() {
          const dep = new Date(t.departure_at)
          const stops = Array.isArray(t.stops)&&t.stops.length ? t.stops : (t.destination?[t.destination]:[])
          return `<label style="display:flex;align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
-           <input type="checkbox" class="convoy-ticket-cb" value="${t.id}" style="width:16px;height:16px;accent-color:var(--pri);flex-shrink:0"
-             onchange="updateConvoySelection()">
+           <input type="checkbox" class="pool-ticket-cb" value="${t.id}" data-dep="${t.departure_at||''}" style="width:16px;height:16px;accent-color:var(--pri);flex-shrink:0"
+             onchange="updatePoolSelection()">
            <div style="flex:1;min-width:0">
              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                <span style="font-family:monospace;font-weight:700;font-size:12px;color:var(--pri)">${t.ticket_no}</span>
@@ -2446,20 +2446,51 @@ async function openConvoyModal() {
      </div>`,
 
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-pri" id="convoyBtn" onclick="doFormConvoy()" disabled>🚌 Form Convoy</button>`
+     <button class="btn btn-pri" id="convoyBtn" onclick="doFormPool()" disabled>🚌 Pool Trip</button>`
   )
 }
 
-function updateConvoySelection() {
-  const checked = document.querySelectorAll('.convoy-ticket-cb:checked').length
+function updatePoolSelection() {
+  const checkedBoxes = [...document.querySelectorAll('.pool-ticket-cb:checked')]
+  const checkedCount = checkedBoxes.length
   const btn = document.getElementById('convoyBtn')
   const lbl = document.getElementById('convoySelCount')
-  if (lbl) lbl.textContent = checked < 2 ? `Select at least 2 tickets (${checked} selected)` : `${checked} tickets selected ✅`
-  if (btn) btn.disabled = checked < 2
+
+  if (checkedCount < 2) {
+    if (lbl) lbl.textContent = `Select at least 2 tickets (${checkedCount} selected)`
+    if (lbl) lbl.style.color = 'var(--text3)'
+    if (btn) btn.disabled = true
+    return
+  }
+
+  // Check all selected tickets have same PHT calendar date
+  const getDatePHT = iso => {
+    const d = new Date(iso)
+    return d.toLocaleDateString('en-PH', { year:'numeric', month:'2-digit', day:'2-digit', timeZone:'Asia/Manila' })
+  }
+
+  // Get departure ISOs from selected ticket rows (stored in data-dep attribute)
+  const deps = checkedBoxes.map(cb => cb.getAttribute('data-dep')).filter(Boolean)
+  const dates = [...new Set(deps.map(getDatePHT))]
+
+  if (dates.length > 1) {
+    if (lbl) {
+      lbl.style.color = 'var(--red)'
+      lbl.textContent = `⚠ Convoy requires same departure date. Selected tickets span ${dates.length} different dates: ${dates.join(', ')}`
+    }
+    if (btn) btn.disabled = true
+    return
+  }
+
+  if (lbl) {
+    lbl.style.color = 'var(--green)'
+    lbl.textContent = `${checkedCount} tickets selected ✅ — all on ${dates[0]||'same date'}`
+  }
+  if (btn) btn.disabled = false
 }
 
-async function doFormConvoy() {
-  const checked = [...document.querySelectorAll('.convoy-ticket-cb:checked')].map(cb=>cb.value)
+async function doFormPool() {
+  const checked = [...document.querySelectorAll('.pool-ticket-cb:checked')].map(cb=>cb.value)
   if (checked.length < 2) { alert('Select at least 2 tickets.'); return }
   const dep = document.getElementById('convoyDep')?.value
   const ret = document.getElementById('convoyRet')?.value||null
@@ -2473,10 +2504,10 @@ async function doFormConvoy() {
 
   // Generate convoy_no
   const { data: noData } = await SB.rpc('generate_convoy_no')
-  const convoy_no = noData || 'CVY-0001'
+  const convoy_no = noData || 'TRP-0001'
 
-  // Create convoy record
-  const { data: convoy, error: cErr } = await SB.from('convoys').insert([{
+  // Create trip pool record
+  const { data: convoy, error: cErr } = await SB.from('trip_pools').insert([{
     convoy_no,
     driver_id:    driverId,
     driver_name:  driverName,
@@ -2487,11 +2518,11 @@ async function doFormConvoy() {
     expected_return_at: ret ? new Date(ret).toISOString() : null,
     created_by:    currentProfile?.id
   }]).select().single()
-  if (cErr) { alert('Error creating convoy: '+cErr.message); btn.disabled=false; btn.textContent='🚌 Form Convoy'; return }
+  if (cErr) { alert('Error creating pool: '+cErr.message); btn.disabled=false; btn.textContent='🚌 Pool Trip'; return }
 
-  // Update all selected tickets: set convoy_id, driver, vehicle, status→assigned
+  // Update all selected tickets: set pool_id, driver, vehicle, status→assigned
   const { error: tErr } = await SB.from('trips').update({
-    convoy_id:    convoy.id,
+    pool_id:    convoy.id,
     driver_id:    driverId,
     driver_name:  driverName,
     vehicle_id:   vv,
@@ -2501,7 +2532,7 @@ async function doFormConvoy() {
     assigned_at:   new Date().toISOString(),
     status:        'assigned'
   }).in('id', checked)
-  if (tErr) { alert('Error updating tickets: '+tErr.message); btn.disabled=false; btn.textContent='🚌 Form Convoy'; return }
+  if (tErr) { alert('Error updating tickets: '+tErr.message); btn.disabled=false; btn.textContent='🚌 Pool Trip'; return }
 
   // Update driver + vehicle status
   await SB.from('drivers').update({status:'on-trip'}).eq('id',driverId)
@@ -2510,27 +2541,27 @@ async function doFormConvoy() {
   // Audit log for each ticket
   for (const tid of checked) {
     const t = await SB.from('trips').select('ticket_no').eq('id',tid).single()
-    await addAudit(tid, t.data?.ticket_no||'', '🚌 Added to Convoy', `Convoy: ${convoy_no} · Driver: ${driverName} · Vehicle: ${vehicle.plate||''} · By: ${currentProfile?.full_name}`)
+    await addAudit(tid, t.data?.ticket_no||'', '🚌 Added to Trip Pool', `Pool: ${convoy_no} · Driver: ${driverName} · Vehicle: ${vehicle.plate||''} · By: ${currentProfile?.full_name}`)
   }
 
   // SMS to driver
   const { data: drvRow } = await SB.from('drivers').select('phone').eq('id',driverId).single()
   if (drvRow?.phone) {
     const deptList = checked.length + ' departments'
-    await sendSMS([drvRow.phone], `[TDMH VTS] CONVOY ASSIGNMENT\nConvoy: ${convoy_no}\nTickets: ${checked.length} (${deptList})\nDeparture: ${new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}\nVehicle: ${vehicle.plate||'—'}\n\nReport to motor pool for briefing.`)
+    await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL ASSIGNMENT\nPool: ${convoy_no}\nTickets: ${checked.length} (${deptList})\nDeparture: ${new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}\nVehicle: ${vehicle.plate||'—'}\n\nReport to motor pool for briefing.`)
   }
 
   closeMO()
   renderTickets()
 }
 
-// ── Convoy Gate Out ────────────────────────────
-async function openConvoyGateOut(convoyId) {
-  const { data: c } = await SB.from('convoys').select('*').eq('id',convoyId).single()
-  const { data: trips } = await SB.from('trips').select('ticket_no,department,destination').eq('convoy_id',convoyId)
+// ── Pool Gate Out ────────────────────────────
+async function openPoolGateOut(poolId) {
+  const { data: c } = await SB.from('trip_pools').select('*').eq('id',poolId).single()
+  const { data: trips } = await SB.from('trips').select('ticket_no,department,destination').eq('pool_id',poolId)
   if (!c) return
 
-  openMO(`🚌 Convoy Gate Out — ${c.convoy_no}`,
+  openMO(`🚌 Pool Gate Out — ${c.pool_no}`,
     `<div style="background:var(--bg);border-radius:10px;padding:12px 14px;margin-bottom:14px">
        <div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:8px">CONVOY TICKETS (${(trips||[]).length})</div>
        ${(trips||[]).map(t=>`<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">${t.ticket_no} — <strong>${t.department}</strong> → ${t.destination||'—'}</div>`).join('')}
@@ -2545,11 +2576,11 @@ async function openConvoyGateOut(convoyId) {
      </div>
      <div class="fg"><label class="fl">Remarks</label><input class="fi" id="cvyRemarksOut" placeholder="Optional gate-out notes"></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-green" id="cvyGoBtn" onclick="doConvoyGateOut('${convoyId}')">🚀 Gate Out All</button>`
+     <button class="btn btn-green" id="cvyGoBtn" onclick="doPoolGateOut('${poolId}')">🚀 Gate Out All</button>`
   )
 }
 
-async function doConvoyGateOut(convoyId) {
+async function doPoolGateOut(poolId) {
   const odo = parseInt(document.getElementById('cvyOdoOut')?.value||'0')
   if (!odo) { alert('Odometer reading required.'); return }
   const cond    = document.getElementById('cvyCondOut')?.value||'Good'
@@ -2558,30 +2589,30 @@ async function doConvoyGateOut(convoyId) {
   const btn     = document.getElementById('cvyGoBtn'); btn.disabled=true; btn.textContent='Processing...'
 
   // Update convoy
-  await SB.from('convoys').update({
+  await SB.from('trip_pools').update({
     gate_out_at:   now,
     odometer_out:  odo,
     condition_out: cond,
     guard_out_id:  currentProfile?.id,
     guard_out_remarks: remarks
-  }).eq('id',convoyId)
+  }).eq('id',poolId)
 
   // Update all tickets in convoy
-  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('convoy_id',convoyId)
+  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('pool_id',poolId)
   for (const t of (trips||[])) {
     await SB.from('trips').update({ status:'on-trip', gate_out_at:now, odometer_out:odo, guard_out_id:currentProfile?.id, guard_out_remarks:remarks }).eq('id',t.id)
-    await addAudit(t.id, t.ticket_no, '🚌 Convoy Gate Out', `Convoy Gate Out · Odo: ${odo}km · Guard: ${currentProfile?.full_name}`)
+    await addAudit(t.id, t.ticket_no, '🚌 Pool Gate Out', `Pool Gate Out · Odo: ${odo}km · Guard: ${currentProfile?.full_name}`)
   }
   closeMO(); renderDashboard()
 }
 
-// ── Convoy Gate In ─────────────────────────────
-async function openConvoyGateIn(convoyId) {
-  const { data: c } = await SB.from('convoys').select('*').eq('id',convoyId).single()
-  const { data: trips } = await SB.from('trips').select('ticket_no,department,destination').eq('convoy_id',convoyId)
+// ── Pool Gate In ─────────────────────────────
+async function openPoolGateIn(poolId) {
+  const { data: c } = await SB.from('trip_pools').select('*').eq('id',poolId).single()
+  const { data: trips } = await SB.from('trips').select('ticket_no,department,destination').eq('pool_id',poolId)
   if (!c) return
 
-  openMO(`🚌 Convoy Gate In — ${c.convoy_no}`,
+  openMO(`🚌 Pool Gate In — ${c.pool_no}`,
     `<div style="background:var(--bg);border-radius:10px;padding:12px 14px;margin-bottom:14px">
        <div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:8px">RETURNING — ${(trips||[]).length} TICKETS</div>
        ${(trips||[]).map(t=>`<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">${t.ticket_no} — <strong>${t.department}</strong> → ${t.destination||'—'}</div>`).join('')}
@@ -2595,25 +2626,25 @@ async function openConvoyGateIn(convoyId) {
        </div>
      </div>
      <div class="fr">
-       <div class="fg"><label class="fl">Fuel Used (L)</label><input class="fi" type="number" step="0.1" id="cvyFuelL" placeholder="e.g. 8.5" oninput="calcConvoyFuel()"></div>
-       <div class="fg"><label class="fl">Price/Liter (₱)</label><input class="fi" type="number" step="0.01" id="cvyFuelP" value="70" oninput="calcConvoyFuel()"></div>
+       <div class="fg"><label class="fl">Fuel Used (L)</label><input class="fi" type="number" step="0.1" id="cvyFuelL" placeholder="e.g. 8.5" oninput="calcPoolFuel()"></div>
+       <div class="fg"><label class="fl">Price/Liter (₱)</label><input class="fi" type="number" step="0.01" id="cvyFuelP" value="70" oninput="calcPoolFuel()"></div>
        <div class="fg"><label class="fl">Total Cost</label><input class="fi" id="cvyFuelCost" readonly style="background:var(--bg);font-weight:700;color:var(--green)" placeholder="₱0.00"></div>
      </div>
      <div style="font-size:10.5px;color:var(--text3);margin:-8px 0 10px">Fuel cost will be split equally among ${(trips||[]).length} tickets.</div>
      <div class="fg"><label class="fl">Remarks</label><input class="fi" id="cvyRemarksIn" placeholder="Optional gate-in notes"></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-pri" id="cvyGiBtn" onclick="doConvoyGateIn('${convoyId}',${(trips||[]).length})">✅ Gate In All</button>`
+     <button class="btn btn-pri" id="cvyGiBtn" onclick="doPoolGateIn('${poolId}',${(trips||[]).length})">✅ Gate In All</button>`
   )
 }
 
-function calcConvoyFuel() {
+function calcPoolFuel() {
   const l = parseFloat(document.getElementById('cvyFuelL')?.value||0)
   const p = parseFloat(document.getElementById('cvyFuelP')?.value||70)
   const el = document.getElementById('cvyFuelCost')
   if (el) el.value = l&&p ? '₱'+( l*p).toLocaleString('en-PH',{minimumFractionDigits:2}) : ''
 }
 
-async function doConvoyGateIn(convoyId, ticketCount) {
+async function doPoolGateIn(poolId, ticketCount) {
   const odoIn   = parseInt(document.getElementById('cvyOdoIn')?.value||'0')
   if (!odoIn) { alert('Odometer in reading required.'); return }
   const condIn  = document.getElementById('cvyCondIn')?.value||'Good'
@@ -2626,12 +2657,12 @@ async function doConvoyGateIn(convoyId, ticketCount) {
   const btn     = document.getElementById('cvyGiBtn'); btn.disabled=true; btn.textContent='Processing...'
 
   // Get convoy for odo_out
-  const { data: c } = await SB.from('convoys').select('odometer_out,driver_id,vehicle_id').eq('id',convoyId).single()
+  const { data: c } = await SB.from('trip_pools').select('odometer_out,driver_id,vehicle_id').eq('id',poolId).single()
   const distKm = c?.odometer_out ? odoIn - c.odometer_out : null
   const distPerTicket = distKm && distKm>0 ? Math.round(distKm/ticketCount) : null
 
-  // Update convoy record
-  await SB.from('convoys').update({
+  // Update trip pool record
+  await SB.from('trip_pools').update({
     gate_in_at:           now,
     odometer_in:          odoIn,
     condition_in:         condIn,
@@ -2640,10 +2671,10 @@ async function doConvoyGateIn(convoyId, ticketCount) {
     fuel_consumed_liters: fuelL,
     fuel_cost:            fuelCost,
     fuel_price_per_liter: fuelP
-  }).eq('id',convoyId)
+  }).eq('id',poolId)
 
   // Update all tickets
-  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('convoy_id',convoyId)
+  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('pool_id',poolId)
   for (const t of (trips||[])) {
     await SB.from('trips').update({
       status:                'completed',
@@ -2658,7 +2689,7 @@ async function doConvoyGateIn(convoyId, ticketCount) {
       distance_km:           distPerTicket,
       trip_duration_minutes: c?.gate_out_at ? Math.round((new Date(now)-new Date(c.gate_out_at))/60000) : null
     }).eq('id',t.id)
-    await addAudit(t.id, t.ticket_no, '🚌 Convoy Gate In', `Convoy: Gate In · Odo: ${odoIn}km · Fuel split: ₱${fuelPerTicket?.toFixed(2)||'—'} · Guard: ${currentProfile?.full_name}`)
+    await addAudit(t.id, t.ticket_no, '🚌 Pool Gate In', `Pool: Gate In · Odo: ${odoIn}km · Fuel split: ₱${fuelPerTicket?.toFixed(2)||'—'} · Guard: ${currentProfile?.full_name}`)
   }
 
   // Release driver + vehicle
@@ -2668,26 +2699,26 @@ async function doConvoyGateIn(convoyId, ticketCount) {
   closeMO(); renderDashboard()
 }
 
-// ── Dissolve Convoy (undo before gate-out) ────
-async function dissolveConvoy(convoyId, convoyNo) {
-  if (!confirm(`Dissolve Convoy ${convoyNo}?\n\nAll tickets will be returned to individual assigned status. This cannot be undone.`)) return
-  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('convoy_id',convoyId)
+// ── Dissolve Pool (undo before gate-out) ────
+async function dissolvePool(poolId, poolNo) {
+  if (!confirm(`Dissolve Pool ${poolNo}?\n\nAll tickets will be returned to individual assigned status. This cannot be undone.`)) return
+  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('pool_id',poolId)
   // Remove convoy_id from all tickets — keep driver/vehicle assignment
-  await SB.from('trips').update({ convoy_id: null }).eq('convoy_id', convoyId)
+  await SB.from('trips').update({ pool_id: null }).eq('pool_id', poolId)
   for (const t of (trips||[])) {
-    await addAudit(t.id, t.ticket_no, '🚌 Convoy Dissolved', `Convoy ${convoyNo} dissolved by ${currentProfile?.full_name}`)
+    await addAudit(t.id, t.ticket_no, '🚌 Trip Pool Dissolved', `Convoy ${poolNo} dissolved by ${currentProfile?.full_name}`)
   }
-  // Delete convoy record
-  await SB.from('convoys').delete().eq('id',convoyId)
+  // Delete trip pool record
+  await SB.from('trip_pools').delete().eq('id',poolId)
   renderTickets()
 }
 
-async function showConvoyDetails(convoyId) {
-  const { data: c } = await SB.from('convoys').select('*').eq('id',convoyId).single()
-  const { data: trips } = await SB.from('trips').select('ticket_no,department,destination,status,priority').eq('convoy_id',convoyId)
+async function showPoolDetails(poolId) {
+  const { data: c } = await SB.from('trip_pools').select('*').eq('id',poolId).single()
+  const { data: trips } = await SB.from('trips').select('ticket_no,department,destination,status,priority').eq('pool_id',poolId)
   if (!c) return
   const canDissolve = ['admin','super_approver','approver_admin','approver_amb'].includes(currentProfile?.role) && !c.gate_out_at
-  openMO(`🚌 Convoy — ${c.convoy_no}`,
+  openMO(`🚌 Trip Pool — ${c.pool_no}`,
     `<div style="background:var(--bg);border-radius:10px;padding:13px 15px;margin-bottom:13px">
        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
          <div><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">Driver</div><div style="font-size:13px;font-weight:700">${c.driver_name||'—'}</div></div>
@@ -2705,7 +2736,7 @@ async function showConvoyDetails(convoyId) {
        </div>`).join('')}
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Close</button>
-     ${canDissolve?`<button class="btn btn-ghost" style="color:var(--red)" onclick="closeMO();dissolveConvoy('${c.id}','${c.convoy_no}')">Dissolve</button>`:''}
+     ${canDissolve?`<button class="btn btn-ghost" style="color:var(--red)" onclick="closeMO();dissolvePool('${c.id}','${c.pool_no}')">Dissolve</button>`:''}
     `
   )
 }
@@ -3665,7 +3696,7 @@ async function renderFleet() {
     SB.from('vehicles').select('*').order('plate'),
     SB.from('drivers').select('*').order('full_name'),
     SB.from('trips').select('*').eq('requester_id', currentProfile?.id).not('status','in','("cancelled","rejected")').order('departure_at',{ascending:false}).limit(20),
-    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed,convoy_id').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
+    SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status,vehicle_type_needed,pool_id').in('status',['assigned','on-trip','approved']).order('departure_at',{ascending:true}),
     SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,status,vehicle_type_needed,is_advance_booking').eq('is_advance_booking',true).in('status',['assigned','approved']).gt('departure_at', new Date().toISOString()).order('departure_at',{ascending:true}).limit(20)
   ])
 
@@ -3925,14 +3956,23 @@ async function renderNewTicket() {
       <div id="ntAmbNote" class="info info-red" style="display:none;margin-top:8px">Routes to <strong>Ambulance Approver</strong> only. Priority and return date not applicable.</div>
       <div id="ntMotoNote" class="info info-blue" style="display:none;margin-top:8px">Best for quick errands and deliveries. Maximum of <strong>1 passenger</strong> (driver + 1) as required by traffic law.</div>
 
-      <div id="ntPriWrap" class="fg"><label class="fl">Urgency</label>
-        <select class="fs" id="ntPri">
-          <option value="normal">Normal — regular scheduled trip</option>
-          <option value="low">Low — flexible, can wait</option>
-          <option value="urgent">Urgent — needed within the hour</option>
-          <option value="emergency">Emergency — critical, immediate</option>
-        </select>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px">This affects how quickly an approver needs to act on your request.</div>
+      <div id="ntPriWrap" class="fg">
+        <input type="hidden" id="ntPri" value="normal">
+        <label class="fl">Priority</label>
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;cursor:pointer;background:var(--bg)" id="ntEmergencyCard" onclick="toggleEmergency()">
+          <div style="flex-shrink:0;margin-top:1px">
+            <div id="ntEmergencyChk" style="width:18px;height:18px;border:2px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .15s;background:transparent"></div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:700;color:var(--red)">🚨 Emergency — bypass 48-hour rule</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">Check this if the trip cannot wait for the regular 48-hour filing window. Approver will be alerted immediately.</div>
+          </div>
+          <div id="ntEmergencyBadge" style="display:none;background:var(--red-s);color:var(--red);font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;white-space:nowrap;flex-shrink:0">🚨 EMERGENCY</div>
+        </div>
+        <div id="ntEmergencyReasonWrap" style="display:none;margin-top:8px">
+          <input class="fi" id="ntEmergencyReason" placeholder="Brief reason — e.g. patient transfer, critical supply, OR emergency...">
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">Required when marking as emergency.</div>
+        </div>
       </div>
 
       <div class="fg"><label class="fl">Purpose / Reason *</label><textarea class="ft" id="ntPurpose" placeholder="Describe the purpose of the trip..."></textarea></div>
@@ -4017,7 +4057,7 @@ function onDateChange() {
   const errEl = document.getElementById('ntFormErr')
   if (!errEl) return
   const isExemptRole = ['admin','super_approver','approver_admin','approver_amb'].includes(role)
-  const isExemptPriority = ['urgent','emergency'].includes(priority)
+  const isExemptPriority = priority === 'emergency'
   const isExemptType = vtype === 'ambulance'
   if (!isExemptRole && !isExemptPriority && !isExemptType && dateVal && timeVal) {
     const dep = new Date(`${dateVal}T${timeVal}`)
@@ -4027,7 +4067,7 @@ function onDateChange() {
       errEl.style.background = 'var(--amber-s)'
       errEl.style.color = 'var(--amber)'
       errEl.style.border = '1px solid rgba(217,119,6,.3)'
-      errEl.innerHTML = `⏰ <strong>Heads up:</strong> Departure is ${Math.round(hoursAway)} hours away. Regular requests need 48 hours advance notice. Set Urgency to <strong>Urgent</strong> or <strong>Emergency</strong> to proceed.`
+      errEl.innerHTML = `⏰ <strong>Heads up:</strong> Departure is ${Math.round(hoursAway)} hours away. Regular requests need 48 hours advance notice. Check the <strong>Emergency</strong> box above to bypass and proceed.`
     } else {
       errEl.style.display = 'none'
     }
@@ -4035,6 +4075,8 @@ function onDateChange() {
     if (errEl.textContent.includes('Heads up')) errEl.style.display = 'none'
   }
 }
+
+
 
 function addStop() {
   const container = document.getElementById('ntStopsContainer')
@@ -4150,7 +4192,22 @@ async function applyTemplate(id) {
     if (firstStop) firstStop.value = t.destination
   }
   if (t.passengers) document.getElementById('ntPax').value = t.passengers
-  if (t.priority) document.getElementById('ntPri').value = t.priority
+  if (t.priority) {
+    document.getElementById('ntPri').value = t.priority
+    if (t.priority === 'emergency') {
+      const chk  = document.getElementById('ntEmergencyChk')
+      const card = document.getElementById('ntEmergencyCard')
+      const badg = document.getElementById('ntEmergencyBadge')
+      const reaW = document.getElementById('ntEmergencyReasonWrap')
+      if (chk && card) {
+        chk.style.background='var(--red)'; chk.style.borderColor='var(--red)'
+        chk.innerHTML='<svg width="10" height="10" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2.5" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        card.style.borderColor='var(--red)'; card.style.background='var(--red-s)'
+        if (badg) badg.style.display='flex'
+        if (reaW) reaW.style.display='block'
+      }
+    }
+  }
   if (t.remarks) document.getElementById('ntNotes').value = t.remarks
   if (t.department && currentProfile?.role === 'admin') {
     const deptEl = document.getElementById('ntDept')
@@ -4309,7 +4366,35 @@ function selectVtype(t) {
   const priWrap = document.getElementById('ntPriWrap')
   if (retWrap) { retWrap.style.display = isAmb ? 'none' : ''; if (isAmb) document.getElementById('ntReturn').value = '' }
   if (priWrap) { priWrap.style.display = isAmb ? 'none' : '' }
-  if (isAmb) document.getElementById('ntPri').value = 'emergency'
+  if (isAmb) {
+    document.getElementById('ntPri').value = 'emergency'
+    // Sync emergency toggle visual for ambulance
+    const chk  = document.getElementById('ntEmergencyChk')
+    const card = document.getElementById('ntEmergencyCard')
+    const badg = document.getElementById('ntEmergencyBadge')
+    const reaW = document.getElementById('ntEmergencyReasonWrap')
+    if (chk && card) {
+      chk.style.background='var(--red)'; chk.style.borderColor='var(--red)'
+      chk.innerHTML='<svg width="10" height="10" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2.5" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      card.style.borderColor='var(--red)'; card.style.background='var(--red-s)'
+      if (badg) badg.style.display='flex'
+      if (reaW) reaW.style.display='block'
+    }
+  } else {
+    // Reset toggle if switching away from ambulance
+    const pri = document.getElementById('ntPri')
+    if (pri && pri.value === 'emergency') {
+      pri.value = 'normal'
+      const chk  = document.getElementById('ntEmergencyChk')
+      const card = document.getElementById('ntEmergencyCard')
+      const badg = document.getElementById('ntEmergencyBadge')
+      const reaW = document.getElementById('ntEmergencyReasonWrap')
+      if (chk) { chk.style.background='transparent'; chk.style.borderColor='var(--border)'; chk.innerHTML='' }
+      if (card) { card.style.borderColor='var(--border)'; card.style.background='var(--bg)' }
+      if (badg) badg.style.display='none'
+      if (reaW) reaW.style.display='none'
+    }
+  }
   const paxEl   = document.getElementById('ntPax')
   const paxWrap = document.getElementById('ntPaxWrap')
   if (paxEl) {
@@ -4333,6 +4418,35 @@ function selectVtype(t) {
       }
     }
   }
+  // Re-evaluate 48-hour warning whenever vehicle type changes
+  onDateChange()
+}
+
+function toggleEmergency() {
+  const isNowEmergency = document.getElementById('ntPri').value !== 'emergency'
+  document.getElementById('ntPri').value = isNowEmergency ? 'emergency' : 'normal'
+  const chk     = document.getElementById('ntEmergencyChk')
+  const badge   = document.getElementById('ntEmergencyBadge')
+  const card    = document.getElementById('ntEmergencyCard')
+  const reason  = document.getElementById('ntEmergencyReasonWrap')
+  if (isNowEmergency) {
+    chk.style.background   = 'var(--red)'
+    chk.style.borderColor  = 'var(--red)'
+    chk.innerHTML          = '<svg width="10" height="10" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2.5" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    card.style.borderColor = 'var(--red)'
+    card.style.background  = 'var(--red-s)'
+    badge.style.display    = 'flex'
+    reason.style.display   = 'block'
+  } else {
+    chk.style.background   = 'transparent'
+    chk.style.borderColor  = 'var(--border)'
+    chk.innerHTML          = ''
+    card.style.borderColor = 'var(--border)'
+    card.style.background  = 'var(--bg)'
+    badge.style.display    = 'none'
+    reason.style.display   = 'none'
+  }
+  onDateChange()
 }
 
 async function submitNewTicket() {
@@ -4395,8 +4509,16 @@ async function submitNewTicket() {
   const priority = document.getElementById('ntPri')?.value || 'normal'
   const role = currentProfile?.role
   const ADVANCE_HOURS = 48
+  // Require emergency reason if emergency is checked
+  if (priority === 'emergency' && vtype !== 'ambulance') {
+    const reason = document.getElementById('ntEmergencyReason')?.value?.trim()
+    if (!reason) {
+      if(errEl) { errEl.style.display='block'; errEl.style.background='var(--red-s)'; errEl.style.color='var(--red)'; errEl.style.border='1px solid rgba(220,38,38,.3)'; errEl.textContent='Please provide an emergency reason to bypass the 48-hour rule.' }
+      return
+    }
+  }
   const isExemptRole = ['admin','super_approver','approver_admin','approver_amb'].includes(role)
-  const isExemptPriority = ['urgent','emergency'].includes(priority)
+  const isExemptPriority = priority === 'emergency'
   const isExemptType = vtype === 'ambulance'
   const hoursUntilDep = (new Date(departureISO) - new Date()) / (1000 * 60 * 60)
 
@@ -4421,6 +4543,16 @@ async function submitNewTicket() {
     return
   }
   const pax = parseInt(document.getElementById('ntPax')?.value)||1
+
+  // Emergency reason validation
+  const emergencyReason = document.getElementById('ntEmergencyReason')?.value?.trim()||''
+  if (priority === 'emergency' && !emergencyReason && vtype !== 'ambulance') {
+    const r = document.getElementById('ntEmergencyReason')
+    if (r) { r.style.borderColor='var(--red)'; r.focus() }
+    if (errEl) { errEl.style.display='block'; errEl.textContent='Please provide a brief reason for the emergency request.' }
+    return
+  }
+
   const btn = document.getElementById('ntSubmit'); btn.disabled=true; btn.textContent='Submitting...'
 
   // Collect passenger manifest
@@ -4452,7 +4584,7 @@ async function submitNewTicket() {
       departure_at: departureISO,
       expected_return_at: retDate ? new Date(`${retDate}T23:59`).toISOString() : null,
       passengers: pax,
-      remarks: document.getElementById('ntNotes')?.value||'',
+      remarks: emergencyReason ? '[Emergency] ' + emergencyReason + (document.getElementById('ntNotes')?.value ? ' · ' + document.getElementById('ntNotes').value : '') : document.getElementById('ntNotes')?.value||'',
       priority: document.getElementById('ntPri')?.value||'normal',
       status: (_appliedTemplateAutoApprove && ['admin','super_approver','approver_admin'].includes(currentProfile?.role)) ? 'approved' : 'pending-approval',
       is_advance_booking: isAdvance,
@@ -4511,7 +4643,7 @@ async function submitNewTicket() {
 
     // Success modal — use openMO so it can't be accidentally dismissed by nav clicks
     const approverLabel = vtype==='ambulance' ? 'Ambulance Approver' : 'Admin Approver'
-    const priorityLabel = { low:'Low (24h SLA)', normal:'Normal (4h SLA)', urgent:'Urgent (1h SLA)', emergency:'Emergency (15min SLA)' }[document.getElementById('ntPri')?.value||'normal'] || ''
+    const priorityLabel = document.getElementById('ntPri')?.value === 'emergency' ? 'Emergency — immediate action' : 'Regular — standard processing'
 
     // Override modal backdrop click — don't close on outside click for success screen
     openMO('',
@@ -5613,7 +5745,7 @@ async function renderReportContent() {
   T.forEach(t => {
     const name = t.driver?.full_name||t.driver_name
     if (!name) return
-    if (!driverPerf[name]) driverPerf[name] = { trips:0, completed:0, cancelled:0, km:0, fuel:0, totalRating:0, ratingCount:0, ambulance:0, emergency:0, avgDur:[], convoys:new Set() }
+    if (!driverPerf[name]) driverPerf[name] = { trips:0, completed:0, cancelled:0, km:0, fuel:0, totalRating:0, ratingCount:0, ambulance:0, emergency:0, avgDur:[], trip_pools:new Set() }
     const d = driverPerf[name]
     d.trips++
     if (t.status==='completed') { d.completed++; d.km+=(t.distance_km||0); d.fuel+=parseFloat(t.fuel_cost||0); if(t.trip_duration_minutes) d.avgDur.push(t.trip_duration_minutes) }
@@ -5621,7 +5753,7 @@ async function renderReportContent() {
     if (t.rating) { d.totalRating+=t.rating; d.ratingCount++ }
     if (t.vehicle_type_needed==='ambulance') d.ambulance++
     if (t.priority==='emergency') d.emergency++
-    if (t.convoy_id) d.convoys.add(t.convoy_id)
+    if (t.pool_id) d.trip_pools.add(t.pool_id)
   })
   const drvPerfHTML = `
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
@@ -5631,7 +5763,7 @@ async function renderReportContent() {
   <div style="overflow-x:auto">
   <table style="width:100%;border-collapse:collapse;font-size:12px" id="drvPerfTable">
     <thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">
-      ${['Driver','Total Trips','Completed','Completion %','Ambulance','Emergency','Convoys','Total km','Fuel Cost (₱)','Avg Duration','Avg Rating'].map(h=>`<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap">${h}</th>`).join('')}
+      ${['Driver','Total Trips','Completed','Completion %','Ambulance','Emergency','Trip Pools','Total km','Fuel Cost (₱)','Avg Duration','Avg Rating'].map(h=>`<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap">${h}</th>`).join('')}
     </tr></thead>
     <tbody>
       ${Object.entries(driverPerf).sort((a,b)=>b[1].completed-a[1].completed).map(([name,d],i)=>{
@@ -5646,7 +5778,7 @@ async function renderReportContent() {
           <td style="padding:10px 12px;text-align:center;font-weight:800;color:${rColor}">${rate}%</td>
           <td style="padding:10px 12px;text-align:center">${d.ambulance||'—'}</td>
           <td style="padding:10px 12px;text-align:center;color:${d.emergency?'var(--red)':'var(--text3)'}">${d.emergency||'—'}</td>
-          <td style="padding:10px 12px;text-align:center">${d.convoys.size||'—'}</td>
+          <td style="padding:10px 12px;text-align:center">${d.trip_pools.size||'—'}</td>
           <td style="padding:10px 12px;text-align:right">${d.km?d.km.toLocaleString()+' km':'—'}</td>
           <td style="padding:10px 12px;text-align:right">${d.fuel?'₱'+d.fuel.toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>
           <td style="padding:10px 12px;text-align:center">${avgD?fmtMins(avgD):'—'}</td>
@@ -5703,32 +5835,32 @@ async function renderReportContent() {
   </table></div>`
 
   // ── CONVOY REPORT TAB ────────────────────────────────────
-  const { data: convoys } = await SB.from('convoys').select('*').order('created_at',{ascending:false})
-  const convoyTrips = T.filter(t => t.convoy_id)
-  const convoyHTML = `
+  const { data: trip_pools } = await SB.from('trip_pools').select('*').order('created_at',{ascending:false})
+  const convoyTrips = T.filter(t => t.pool_id)
+  const poolHTML = `
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">
     <button class="btn btn-ghost btn-sm" onclick="exportTableCSV('convoyTable','TDMH_Convoy_Report')">⬇ CSV</button>
-    <button class="btn btn-ghost btn-sm" onclick="printReport('convoy-report')">🖨 Print</button>
+    <button class="btn btn-ghost btn-sm" onclick="printReport('pool-report')">🖨 Print</button>
   </div>
   <div class="stats-grid" style="margin-bottom:16px">
-    <div class="stat"><div class="stat-bar" style="background:#7c3aed"></div><div class="stat-lbl">Total Convoys</div><div class="stat-val">${(convoys||[]).length}</div><div class="stat-sub">${_rptFrom} – ${_rptTo}</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Tickets Pooled</div><div class="stat-val">${convoyTrips.length}</div><div class="stat-sub">Across all convoys</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Fuel Saved (est.)</div><div class="stat-val" style="font-size:18px">${convoys&&convoys.length?'~'+(convoys.reduce((s,c)=>{const trips=convoyTrips.filter(t=>t.convoy_id===c.id).length;return s+(trips>1?(trips-1)*parseFloat(c.fuel_cost||0)/trips:0)},0)).toLocaleString('en-PH',{minimumFractionDigits:0,maximumFractionDigits:0}):'—'}</div><div class="stat-sub">vs. individual trips</div></div>
-    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Tickets/Convoy</div><div class="stat-val">${convoys&&convoys.length?(convoyTrips.length/(convoys||[1]).length).toFixed(1):'—'}</div><div class="stat-sub">Pooling efficiency</div></div>
+    <div class="stat"><div class="stat-bar" style="background:#7c3aed"></div><div class="stat-lbl">Total Trip Pools</div><div class="stat-val">${(trip_pools||[]).length}</div><div class="stat-sub">${_rptFrom} – ${_rptTo}</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--green)"></div><div class="stat-lbl">Tickets Pooled</div><div class="stat-val">${convoyTrips.length}</div><div class="stat-sub">Across all trip_pools</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--amber)"></div><div class="stat-lbl">Fuel Saved (est.)</div><div class="stat-val" style="font-size:18px">${trip_pools&&trip_pools.length?'~'+(trip_pools.reduce((s,c)=>{const trips=convoyTrips.filter(t=>t.pool_id===c.id).length;return s+(trips>1?(trips-1)*parseFloat(c.fuel_cost||0)/trips:0)},0)).toLocaleString('en-PH',{minimumFractionDigits:0,maximumFractionDigits:0}):'—'}</div><div class="stat-sub">vs. individual trips</div></div>
+    <div class="stat"><div class="stat-bar" style="background:var(--teal)"></div><div class="stat-lbl">Avg Tickets/Convoy</div><div class="stat-val">${trip_pools&&trip_pools.length?(convoyTrips.length/(trip_pools||[1]).length).toFixed(1):'—'}</div><div class="stat-sub">Pooling efficiency</div></div>
   </div>
   <div style="overflow-x:auto">
   <table style="width:100%;border-collapse:collapse;font-size:12px" id="convoyTable">
     <thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">
-      ${['Convoy No','Date','Driver','Vehicle','Tickets','Departments','Departure','Gate Out','Gate In','Distance','Fuel (L)','Fuel Cost','Status'].map(h=>`<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap">${h}</th>`).join('')}
+      ${['Pool No','Date','Driver','Vehicle','Tickets','Departments','Departure','Gate Out','Gate In','Distance','Fuel (L)','Fuel Cost','Status'].map(h=>`<th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap">${h}</th>`).join('')}
     </tr></thead>
     <tbody>
-      ${(convoys||[]).map((c,i)=>{
-        const cTrips = convoyTrips.filter(t=>t.convoy_id===c.id)
+      ${(trip_pools||[]).map((c,i)=>{
+        const cTrips = convoyTrips.filter(t=>t.pool_id===c.id)
         const depts = [...new Set(cTrips.map(t=>t.department))].join(', ')
         const statusLabel = c.gate_in_at?'Completed':c.gate_out_at?'On Trip':'Assigned'
         const statusColor = c.gate_in_at?'var(--green)':c.gate_out_at?'var(--purple)':'var(--amber)'
         return `<tr style="border-bottom:1px solid var(--border);background:${i%2?'var(--bg)':''}">
-          <td style="padding:10px 12px;font-family:monospace;font-weight:700;color:#6b21a8">🚌 ${c.convoy_no}</td>
+          <td style="padding:10px 12px;font-family:monospace;font-weight:700;color:#6b21a8">🚌 ${c.pool_no}</td>
           <td style="padding:10px 12px;color:var(--text2);white-space:nowrap">${fmtDate(c.created_at)}</td>
           <td style="padding:10px 12px;font-weight:600">${c.driver_name||'—'}</td>
           <td style="padding:10px 12px;font-family:monospace">${c.vehicle_plate||'—'}</td>
@@ -5784,7 +5916,7 @@ async function renderReportContent() {
       ['fuel','⛽ Fuel & Cost'],
       ['drivers','👤 Drivers'],
       ['sla','⏱ SLA'],
-      ['convoy','🚌 Convoy'],
+      ['pool','🚌 Convoy'],
       ['audit','📋 Full Audit'],
     ].map(([id,lbl])=>`<button style="${tabStyle(id)}" onclick="_rptTab='${id}';renderReportContent()">${lbl}</button>`).join('')}
   </div>
@@ -5794,7 +5926,7 @@ async function renderReportContent() {
   ${_rptTab==='fuel'     ? fuelHTML         : ''}
   ${_rptTab==='drivers'  ? drvPerfHTML      : ''}
   ${_rptTab==='sla'      ? slaHTML          : ''}
-  ${_rptTab==='convoy'   ? convoyHTML       : ''}
+  ${_rptTab==='pool'   ? poolHTML       : ''}
   ${_rptTab==='audit'    ? auditTableHTML   : ''}
 
   <style>
@@ -5955,7 +6087,7 @@ function exportAllReports() {
 
 function printReport(section) {
   // Switch to the right tab then print
-  const tabMap = { 'dept-summary':'dept','fuel-report':'fuel','driver-perf':'drivers','sla-report':'sla','convoy-report':'convoy','full':'audit' }
+  const tabMap = { 'dept-summary':'dept','fuel-report':'fuel','driver-perf':'drivers','sla-report':'sla','pool-report':'pool','full':'audit' }
   if (tabMap[section]) { _rptTab=tabMap[section]; renderReportContent().then(()=>setTimeout(()=>window.print(),400)) }
   else window.print()
 }
