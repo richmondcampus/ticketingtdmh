@@ -650,31 +650,41 @@ function openMO(title, body, foot, opts={}) {
   mo.classList.add('open')
   mo._noBackdropClose = opts.noBackdropClose || false
   mo._confirmClose    = opts.confirmClose    || false
+
+  // Snapshot initial form state so we only warn if user actually changed something
+  if (opts.confirmClose) {
+    setTimeout(() => {
+      mo._initSnapshot = getModalSnapshot()
+    }, 50)  // after DOM renders
+  }
+}
+
+function getModalSnapshot() {
+  const body = document.getElementById('moBody')
+  if (!body) return ''
+  const parts = []
+  body.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),textarea,select')
+    .forEach(el => parts.push(el.tagName + ':' + el.value))
+  return parts.join('|')
 }
 
 function hasModalUnsavedInput() {
-  const body = document.getElementById('moBody')
-  if (!body) return false
-  // Check any input/textarea/select that the user may have changed
-  const inputs    = body.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])')
-  const textareas = body.querySelectorAll('textarea')
-  const selects   = body.querySelectorAll('select')
-  for (const el of inputs)    { if (el.value?.trim()) return true }
-  for (const el of textareas) { if (el.value?.trim()) return true }
-  // Select changed from default (first option)
-  for (const el of selects)   { if (el.selectedIndex > 0) return true }
-  return false
+  const mo = document.getElementById('MO')
+  if (!mo._initSnapshot) return false
+  const current = getModalSnapshot()
+  return current !== mo._initSnapshot
 }
 
 function closeMO(force=false) {
   const mo = document.getElementById('MO')
-  // Confirm before closing if modal has a form with unsaved input
+  // Confirm only if user actually changed something from initial state
   if (!force && mo._confirmClose && hasModalUnsavedInput()) {
     if (!confirm('You have unsaved changes.\n\nClose without saving?')) return
   }
   mo.classList.remove('open')
   mo._noBackdropClose = false
   mo._confirmClose    = false
+  mo._initSnapshot    = null
   // Restore header visibility
   const hd = mo.querySelector('.mo-hd')
   if (hd) hd.style.display = ''
@@ -811,7 +821,7 @@ async function doChangePassword() {
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Update Password'; return }
   currentProfile.password = newPw
   localStorage.setItem('vts_user', JSON.stringify(currentProfile))
-  closeMO()
+  closeMO(true)
   alert('Password updated successfully!')
 }
 
@@ -2510,7 +2520,7 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
     if (newDrv?.phone) await sendSMS([newDrv.phone], `[TDMH VTS] You have been ASSIGNED to trip ${ticketNo}.\nVehicle: ${newVehicle?.plate||'—'}\nDeparture: ${dep}\nPlease report to the motor pool.`)
   }
 
-  closeMO()
+  closeMO(true)
   renderTickets()
 }
 
@@ -2824,7 +2834,7 @@ async function doFormPool() {
     )
   }
 
-  closeMO()
+  closeMO(true)
   renderTickets()
 }
 
@@ -3057,7 +3067,7 @@ async function doApproveAndPool(id, ticketNo, poolId, driverId, driverName, vehi
     await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL UPDATE\n${ticketNo} added to your trip pool.\nDept: ${t?.department||'—'} → ${t?.destination||'—'}\nSame departure and vehicle: ${vehiclePlate}`)
   }
 
-  closeMO()
+  closeMO(true)
   renderTickets()
 }
 function openRejectModal(id, ticketNo) {
@@ -3344,41 +3354,44 @@ async function doAssign(id, ticketNo) {
 }
 
 // GATE OUT
-function openGateOutModal(id, ticketNo, purpose, driverName, plate, dest) {
-  // Fetch stops for this trip to show full route
-  SB.from('trips').select('stops,destination').eq('id',id).single().then(({data}) => {
-    const stops = (data?.stops && Array.isArray(data.stops) && data.stops.length > 0)
-      ? data.stops : [data?.destination || dest].filter(Boolean)
-    const routeHTML = stops.length > 1
-      ? `<div style="margin-top:8px">
-          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Route</div>
-          ${stops.map((s,i) =>
-            `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;${i<stops.length-1?'border-bottom:1px solid var(--border)':''}">
-              <span style="width:18px;height:18px;background:${i===0?'var(--green)':i===stops.length-1?'var(--red)':'var(--pri)'};color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex-shrink:0">${i+1}</span>
-              <span style="font-size:12px;font-weight:600">${s}</span>
-            </div>`
-          ).join('')}
-          <div style="display:flex;align-items:center;gap:8px;padding:4px 0;margin-top:2px">
-            <span style="width:18px;height:18px;background:var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0">🏥</span>
-            <span style="font-size:11.5px;color:var(--text3)">Return to Hospital</span>
-          </div>
-        </div>`
-      : `<div style="font-size:11.5px;color:var(--text2);margin-top:4px">Destination: <strong>${stops[0]||dest}</strong></div>`
-    const modalBody = document.querySelector('#MO .mo-body')
-    if (modalBody) {
-      const routeEl = modalBody.querySelector('#goRouteSection')
-      if (routeEl) routeEl.innerHTML = routeHTML
-    }
-  }).catch(() => {})
+async function openGateOutModal(id, ticketNo, purpose, driverName, plate, dest) {
+  // Fetch trip stops + vehicle current odometer
+  const [{ data: tripData }, { data: vehData }] = await Promise.all([
+    SB.from('trips').select('stops,destination,vehicle_id').eq('id',id).single(),
+    SB.from('trips').select('vehicle:vehicles(odometer,plate)').eq('id',id).single()
+  ])
+  const currentOdo = vehData?.vehicle?.odometer || null
+  const stops = (tripData?.stops && Array.isArray(tripData.stops) && tripData.stops.length > 0)
+    ? tripData.stops : [tripData?.destination || dest].filter(Boolean)
+  const routeHTML = stops.length > 1
+    ? `<div style="margin-top:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Route</div>
+        ${stops.map((s,i) =>
+          `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;${i<stops.length-1?'border-bottom:1px solid var(--border)':''}">
+            <span style="width:18px;height:18px;background:${i===0?'var(--green)':i===stops.length-1?'var(--red)':'var(--pri)'};color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex-shrink:0">${i+1}</span>
+            <span style="font-size:12px;font-weight:600">${s}</span>
+          </div>`
+        ).join('')}
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;margin-top:2px">
+          <span style="width:18px;height:18px;background:var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0">🏥</span>
+          <span style="font-size:11.5px;color:var(--text3)">Return to Hospital</span>
+        </div>
+      </div>`
+    : `<div style="font-size:11.5px;color:var(--text2);margin-top:4px">Destination: <strong>${stops[0]||dest}</strong></div>`
 
   openMO(`Gate Out — ${ticketNo}`,
     `<div style="background:var(--bg);padding:12px;border-radius:9px;margin-bottom:13px">
        <div style="font-size:12px;font-weight:700;margin-bottom:5px">${purpose}</div>
        <div style="font-size:11.5px;color:var(--text2)">Driver: <strong>${driverName}</strong> · Vehicle: <strong>${plate}</strong></div>
-       <div id="goRouteSection"><div style="font-size:11.5px;color:var(--text2);margin-top:4px">Destination: <strong>${dest}</strong></div></div>
+       ${routeHTML}
      </div>
      <div class="fr">
-       <div class="fg"><label class="fl">Odometer Out (km) *</label><input class="fi" type="number" id="odoOut" placeholder="e.g. 42500"></div>
+       <div class="fg"><label class="fl">Odometer Out (km) *
+         ${currentOdo ? `<span style="font-size:10px;font-weight:400;color:var(--text3)"> — current: ${currentOdo.toLocaleString()} km</span>` : ''}
+       </label>
+       <input class="fi" type="number" id="odoOut" value="${currentOdo||''}" placeholder="e.g. ${currentOdo||42500}" ${currentOdo?'style="border-color:var(--green)"':''}>
+       ${currentOdo ? `<div style="font-size:10px;color:var(--green);margin-top:3px">✓ Pre-filled from vehicle record — verify before confirming</div>` : ''}
+       </div>
        <div class="fg"><label class="fl">Fuel Level</label><select class="fs" id="fuelOut"><option>Full</option><option>3/4</option><option>1/2</option><option>1/4</option></select></div>
        <div class="fg"><label class="fl">Condition</label><select class="fs" id="condOut"><option>Good</option><option>Fair</option><option>With defects</option></select></div>
      </div>
@@ -3391,28 +3404,40 @@ async function doGateOut(id, ticketNo) {
   const odo = parseInt(document.getElementById('odoOut')?.value)
   if (!odo) { alert('Odometer reading required.'); return }
   const btn = document.getElementById('goBtn'); btn.disabled=true; btn.textContent='Recording...'
-  const { error } = await SB.from('trips').update({ status:'on-trip', guard_out_id:currentProfile?.id, gate_out_at:new Date().toISOString(), odometer_out:odo, fuel_out:document.getElementById('fuelOut')?.value, condition_out:document.getElementById('condOut')?.value, guard_out_remarks:document.getElementById('goRem')?.value }).eq('id',id)
+  const { error } = await SB.from('trips').update({
+    status:'on-trip', guard_out_id:currentProfile?.id,
+    gate_out_at:new Date().toISOString(), odometer_out:odo,
+    fuel_out:document.getElementById('fuelOut')?.value,
+    condition_out:document.getElementById('condOut')?.value,
+    guard_out_remarks:document.getElementById('goRem')?.value
+  }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Record Gate Out'; return }
+  // Update vehicle odometer to reflect gate-out reading
+  const { data: t } = await SB.from('trips').select('vehicle_id,driver_id,driver_name,destination,stops,purpose').eq('id',id).single()
+  if (t?.vehicle_id) await SB.from('vehicles').update({ odometer: odo }).eq('id', t.vehicle_id)
   await addAudit(id, ticketNo, 'Gate Out', `Odometer: ${odo} km`)
-  // SMS → notify driver that vehicle has been cleared for departure
-  const { data: gateTrip } = await SB.from('trips').select('driver_id,driver_name,destination,stops,purpose').eq('id',id).single()
-  if (gateTrip?.driver_id) {
-    const { data: drv } = await SB.from('drivers').select('phone,user_id').eq('id', gateTrip.driver_id).single()
-    if (drv?.phone) await sendSMS([drv.phone], `[TDMH VTS] Gate Out cleared for ${ticketNo}.\nYou are now cleared to depart.\nDestination: ${gateTrip.destination||''}\nSafe travels!`)
-    if (drv?.user_id) {
-      const { data: du } = await SB.from('users').select('email').eq('id', drv.user_id).single()
-      if (du?.email) await sendEmail([du.email], 'gate_out_driver', { ticket_no: ticketNo, purpose: gateTrip.purpose||'', destination: gateTrip.destination||'', odometer_out: odo })
-    }
+  if (t?.driver_id) {
+    const { data: drv } = await SB.from('drivers').select('phone,user_id').eq('id', t.driver_id).single()
+    if (drv?.phone) await sendSMS([drv.phone], `[TDMH VTS] Gate Out cleared for ${ticketNo}.\nYou are now cleared to depart.\nDestination: ${t.destination||''}\nSafe travels!`)
   }
-  closeMO(); renderTickets()
+  closeMO(true); renderTickets()
 }
 
 // GATE IN
-function openGateInModal(id, ticketNo, dest, vehicleId, driverId) {
+async function openGateInModal(id, ticketNo, dest, vehicleId, driverId) {
+  // Fetch trip's gate-out odometer for validation
+  const { data: tripData } = await SB.from('trips').select('odometer_out,departure_at').eq('id',id).single()
+  const odoOut = tripData?.odometer_out || null
+
   openMO(`Gate In — ${ticketNo}`,
     `<div class="info info-green">Vehicle returning from: <strong>${dest}</strong></div>
      <div class="fr">
-       <div class="fg"><label class="fl">Odometer In (km) *</label><input class="fi" type="number" id="odoIn" placeholder="e.g. 42740" oninput="calcFuelCost()"></div>
+       <div class="fg"><label class="fl">Odometer In (km) *
+         ${odoOut ? `<span style="font-size:10px;font-weight:400;color:var(--text3)"> — gate-out was ${odoOut.toLocaleString()} km</span>` : ''}
+       </label>
+       <input class="fi" type="number" id="odoIn" placeholder="${odoOut ? 'Must be ≥ '+odoOut.toLocaleString() : 'e.g. 42740'}" min="${odoOut||0}" oninput="calcFuelCost();validateOdoIn(${odoOut||0})">
+       <div id="odoInErr" style="font-size:10.5px;color:var(--red);margin-top:3px;display:none">⚠ Odometer in cannot be less than gate-out reading (${odoOut?.toLocaleString()||0} km)</div>
+       </div>
        <div class="fg"><label class="fl">Fuel on Return</label><select class="fs" id="fuelIn"><option>Full</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Empty</option></select></div>
        <div class="fg"><label class="fl">Condition</label><select class="fs" id="condIn"><option>Good</option><option>Fair</option><option>With defects</option></select></div>
      </div>
@@ -3443,6 +3468,15 @@ function calcFuelCost() {
   const disp   = document.getElementById('fuelCostDisp')
   if (disp) disp.textContent = liters > 0 ? '₱ ' + (liters * price).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2}) : '₱ —'
 }
+function validateOdoIn(minOdo) {
+  const val = parseInt(document.getElementById('odoIn')?.value||'0')
+  const errEl = document.getElementById('odoInErr')
+  const btn   = document.getElementById('giBtn')
+  const invalid = minOdo && val < minOdo
+  if (errEl) errEl.style.display = invalid ? 'block' : 'none'
+  if (btn)   btn.disabled = invalid
+}
+
 async function doGateIn(id, ticketNo, vehicleId, driverId) {
   const odo = parseInt(document.getElementById('odoIn')?.value)
   if (!odo || odo <= 0) { alert('Valid odometer reading required.'); return }
@@ -3465,11 +3499,11 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
     fuel_cost: fuelCost
   }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Complete Trip'; return }
-  // Log fuel
+  // Always update vehicle odometer on gate-in
+  if (vehicleId && vehicleId !== 'null') await SB.from('vehicles').update({ odometer: odo }).eq('id', vehicleId).catch(() => {})
+  // Log fuel if recorded
   if (fuelL && vehicleId && vehicleId !== 'null') {
     await SB.from('fuel_logs').insert({ vehicle_id: vehicleId, trip_id: id, liters: fuelL, price_per_liter: fuelP, total_cost: fuelCost, odometer_at: odo, log_type: 'trip', logged_by: currentProfile?.id }).catch(() => {})
-    // Update vehicle odometer
-    await SB.from('vehicles').update({ odometer: odo }).eq('id', vehicleId).catch(() => {})
   }
   if (driverId && driverId!=='null') await SB.from('drivers').update({ status:'available' }).eq('id',driverId)
   if (vehicleId && vehicleId!=='null') await SB.from('vehicles').update({ status:'available' }).eq('id',vehicleId)
@@ -3488,7 +3522,7 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
       if (du?.email) await sendEmail([du.email], 'trip_completed_driver', { ...tripPayload, odometer_in: odo })
     }
   }
-  closeMO()
+  closeMO(true)
   // Show optional rating prompt for requester's trip
   showRatingPrompt(id, ticketNo, trip?.requester_id)
   renderTickets()
@@ -4725,7 +4759,7 @@ async function doSaveTemplate() {
     is_active:           true
   })
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Save Template'; return }
-  closeMO()
+  closeMO(true)
   alert('Template saved! Recurring trips will be auto-generated 3 days before each scheduled date.')
   renderNewTicket()
 }
