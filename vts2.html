@@ -649,11 +649,32 @@ function openMO(title, body, foot, opts={}) {
   if (hd) hd.style.display = title ? '' : 'none'
   mo.classList.add('open')
   mo._noBackdropClose = opts.noBackdropClose || false
+  mo._confirmClose    = opts.confirmClose    || false
 }
-function closeMO() {
+
+function hasModalUnsavedInput() {
+  const body = document.getElementById('moBody')
+  if (!body) return false
+  // Check any input/textarea/select that the user may have changed
+  const inputs    = body.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])')
+  const textareas = body.querySelectorAll('textarea')
+  const selects   = body.querySelectorAll('select')
+  for (const el of inputs)    { if (el.value?.trim()) return true }
+  for (const el of textareas) { if (el.value?.trim()) return true }
+  // Select changed from default (first option)
+  for (const el of selects)   { if (el.selectedIndex > 0) return true }
+  return false
+}
+
+function closeMO(force=false) {
   const mo = document.getElementById('MO')
+  // Confirm before closing if modal has a form with unsaved input
+  if (!force && mo._confirmClose && hasModalUnsavedInput()) {
+    if (!confirm('You have unsaved changes.\n\nClose without saving?')) return
+  }
   mo.classList.remove('open')
   mo._noBackdropClose = false
+  mo._confirmClose    = false
   // Restore header visibility
   const hd = mo.querySelector('.mo-hd')
   if (hd) hd.style.display = ''
@@ -970,6 +991,17 @@ function updateNavBadge(count) {
 }
 
 function goTo(page) {
+  // Guard: if user is on new-ticket page with unsaved input, confirm before leaving
+  if (currentPage === 'new-ticket' && page !== 'new-ticket') {
+    const hasInput = [
+      document.getElementById('ntPurpose')?.value?.trim(),
+      document.getElementById('ntReq')?.value?.trim(),
+      document.getElementById('ntNotes')?.value?.trim(),
+    ].some(v => v && v.length > 0) || (document.getElementById('ntStops')?.children?.length > 0)
+    if (hasInput && !confirm('You have unsaved changes in your request form.\n\nLeave without submitting?')) {
+      return  // stay on page
+    }
+  }
   currentPage = page
   closeMoreMenu()
   const titles = { dashboard:'Dashboard', tickets:'All Tickets', 'new-ticket':'New Vehicle Request', fleet:'Fleet Status', vehicles:'Vehicles', drivers:'Drivers', departments:'Departments', gps:'GPS Tracking', reports:'Reports', audit:'Audit Logs', accounts:'Account Management', 'driver-app':'Driver Mobile App', faq:'FAQ', maintenance:'Maintenance Schedule', templates:'Trip Templates' }
@@ -2051,7 +2083,7 @@ async function openApproveModal(id, ticketNo, vtype) {
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-red btn-sm" onclick="closeMO();openRejectModal('${id}','${ticketNo}')">✕ Reject</button>
      <button class="btn btn-green" id="apBtn" onclick="doApproveAndAssign('${id}','${ticketNo}')">✓ Approve</button>`
-  )
+  , { confirmClose: true })
 }
 
 function toggleApproveLastResort() {
@@ -2521,7 +2553,7 @@ async function openPoolModal() {
          <strong>Available tickets by date:</strong><br>
          ${Object.entries(byDate).map(([,v])=>`<div style="font-size:11px;margin-top:4px">📅 ${v.label} — ${v.tickets.length} ticket${v.tickets.length>1?'s':''}</div>`).join('')}`
     openMO('🚌 Pool Trip',`<div class="info info-amber">${msg}</div>`,
-      '<button class="btn btn-ghost" onclick="closeMO()">Close</button>')
+      '<button class="btn btn-ghost" onclick="closeMO()">Close</button>', { confirmClose: true })
     return
   }
 
@@ -2624,7 +2656,7 @@ async function openPoolModal() {
 
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="convoyBtn" onclick="doFormPool()" disabled>🚌 Pool Trip</button>`
-  )
+  , { confirmClose: true })
 }
 
 function selectPoolDate(dateKey, idx, total) {
@@ -2818,7 +2850,7 @@ async function openPoolGateOut(poolId) {
      <div class="fg"><label class="fl">Remarks</label><input class="fi" id="cvyRemarksOut" placeholder="Optional gate-out notes"></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-green" id="cvyGoBtn" onclick="doPoolGateOut('${poolId}')">🚀 Gate Out All</button>`
-  )
+  , { confirmClose: true })
 }
 
 async function doPoolGateOut(poolId) {
@@ -2875,7 +2907,7 @@ async function openPoolGateIn(poolId) {
      <div class="fg"><label class="fl">Remarks</label><input class="fi" id="cvyRemarksIn" placeholder="Optional gate-in notes"></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="cvyGiBtn" onclick="doPoolGateIn('${poolId}',${(trips||[]).length})">✅ Gate In All</button>`
-  )
+  , { confirmClose: true })
 }
 
 function calcPoolFuel() {
@@ -4181,20 +4213,26 @@ async function renderNewTicket() {
        <div style="font-size:10px;color:var(--text3);margin-top:4px">Your department is automatically set</div>`
 
   const tmplBar = _templates.length > 0 ? `
-    <div style="margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">⚡ Quick Templates</div>
+    <div style="background:var(--pri-s);border:1px solid rgba(var(--pri-rgb,14,165,233),.2);border-radius:12px;padding:13px 15px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:16px">📋</span>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--pri)">Your saved templates — click to auto-fill the form</div>
+          <div style="font-size:10.5px;color:var(--text3);margin-top:1px">Select a template to instantly fill in destination, purpose, and vehicle type</div>
+        </div>
+      </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         ${_templates.slice(0,6).map(t => `
           <button type="button" onclick="applyTemplate('${t.id}')"
-            style="padding:6px 12px;border:1px solid var(--border);border-radius:20px;background:var(--bg);font-size:11.5px;cursor:pointer;color:var(--text2);transition:all .15s"
-            onmouseover="this.style.borderColor='var(--pri)';this.style.color='var(--pri)'"
-            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
-            ${t.name}
+            style="padding:7px 14px;border:1.5px solid var(--pri);border-radius:20px;background:#fff;font-size:12px;cursor:pointer;color:var(--pri);font-weight:600;transition:all .15s"
+            onmouseover="this.style.background='var(--pri)';this.style.color='#fff'"
+            onmouseout="this.style.background='#fff';this.style.color='var(--pri)'">
+            ${typeBadge(t.vehicle_type)} ${t.name}
           </button>`).join('')}
-        <button type="button" onclick="openTemplatesModal()"
-          style="padding:6px 12px;border:1px dashed var(--border);border-radius:20px;background:transparent;font-size:11.5px;cursor:pointer;color:var(--text3)">
-          All templates →
-        </button>
+        ${_templates.length > 6 ? `<button type="button" onclick="openTemplatesModal()"
+          style="padding:7px 14px;border:1px dashed var(--border);border-radius:20px;background:transparent;font-size:11.5px;cursor:pointer;color:var(--text3)">
+          +${_templates.length - 6} more →
+        </button>` : ''}
       </div>
     </div>` : ''
 
@@ -4985,14 +5023,24 @@ async function submitNewTicket() {
     // Save as template?
     const saveTemplate = document.getElementById('ntSaveTemplate')?.checked
     const templateName = document.getElementById('ntTemplateName')?.value?.trim()
+    let templateSaved = false
     if (saveTemplate && templateName) {
-      await SB.from('trip_templates').insert({
+      const { error: tmplErr } = await SB.from('trip_templates').insert({
         name: templateName, department: dept,
         vehicle_type: vtype, purpose, destination: dest, stops: stops,
         passengers: pax, priority: document.getElementById('ntPri')?.value||'normal',
         remarks: document.getElementById('ntNotes')?.value||'',
+        is_active: true,
         created_by: currentProfile?.id
-      }).catch(() => {})
+      })
+      if (tmplErr) {
+        console.warn('Template save failed:', tmplErr.message)
+      } else {
+        templateSaved = true
+        // Reload templates cache
+        const { data: freshTmpl } = await SB.from('trip_templates').select('*').eq('is_active', true).order('name')
+        _templates = freshTmpl || []
+      }
     }
 
     // Success modal — use openMO so it can't be accidentally dismissed by nav clicks
@@ -5017,6 +5065,13 @@ async function submitNewTicket() {
         <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">✅ REQUEST SUBMITTED</div>
         <div style="font-size:30px;font-weight:900;letter-spacing:-0.5px;margin-bottom:8px;color:var(--text1)">${trip.ticket_no}</div>
         ${groupId ? `<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Part of a bulk booking group</div>` : ''}
+        ${templateSaved ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:9px;padding:10px 14px;margin-bottom:12px;text-align:left;display:flex;align-items:flex-start;gap:10px">
+          <span style="font-size:18px;flex-shrink:0">📋</span>
+          <div>
+            <div style="font-size:12px;font-weight:700;color:var(--green)">Template saved — "${templateName}"</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px">Next time you file a request, tap <strong>New Request</strong> → look for the template bar at the top → click your template to auto-fill the form.</div>
+          </div>
+        </div>` : ''}
         <div style="font-size:14px;color:var(--text2);margin-bottom:20px">Your vehicle request has been submitted.${_appliedTemplateAutoApprove?'<br><strong style="color:var(--green)">Auto-approved via template ✓</strong>':'<br>An approver will be notified via SMS.'}</div>
         <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;text-align:left;margin-bottom:8px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -5347,7 +5402,7 @@ function openAddVehicle() {
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="addVBtn" onclick="doAddVehicle()">Add Vehicle</button>`
-  )
+  , { confirmClose: true })
 }
 async function doAddVehicle() {
   const plate = document.getElementById('vPlate')?.value?.trim().toUpperCase()
@@ -5466,7 +5521,7 @@ async function openAddDriver() {
          <button class="btn btn-pri" onclick="closeMO();goTo('accounts')">Go to Accounts</button>`
       : `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
          <button class="btn btn-pri" id="addDBtn" onclick="doAddDriver()">Create Profile</button>`
-  )
+  , { confirmClose: true })
 }
 async function doAddDriver() {
   const userId = document.getElementById('dUserId')?.value
@@ -5546,7 +5601,7 @@ async function openEditDriver(driverId) {
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-red btn-sm" onclick="doDeleteDriver('${d.id}','${(d.full_name||'').replace(/'/g,"\\'")}')">Delete</button>
      <button class="btn btn-pri" id="edDBtn" onclick="doEditDriver('${d.id}')">Save Changes</button>`
-  )
+  , { confirmClose: true })
 }
 
 async function doEditDriver(id) {
@@ -6593,7 +6648,7 @@ function openCreateAccount() {
      <div class="fg"><label class="fl">Initial Password *</label><input class="fi" type="password" id="caPw" placeholder="Set initial password"></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="caBn" onclick="doCreateAccount()">Create Account</button>`
-  )
+  , { confirmClose: true })
 }
 async function doCreateAccount() {
   const name     = document.getElementById('caName')?.value?.trim()
