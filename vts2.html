@@ -1052,7 +1052,7 @@ async function renderDashboard() {
   const now = new Date()
 
   // Filter pending by approver type
-  let pending = T.filter(t => t.status==='pending-approval')
+  let pending = T.filter(t => t.status==='pending-approval').sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))
   if (role === 'approver_admin')   pending = pending.filter(t => t.vehicle_type_needed !== 'ambulance')
   if (role === 'approver_amb')     pending = pending.filter(t => t.vehicle_type_needed === 'ambulance')
   // super_approver sees all pending (no filter)
@@ -1396,11 +1396,21 @@ function renderTicketsTable() {
   const sf = stEl?.value||''
   const tf = tyEl?.value||''
 
+  const statusOrder = {'pending-approval':0,'approved':1,'assigned':2,'on-trip':3,'completed':4,'rejected':5,'cancelled':6}
   const filtered = _tickets.filter(t => {
     const m = (t.ticket_no||'').toLowerCase().includes(q)||(t.department||'').toLowerCase().includes(q)||(t.purpose||'').toLowerCase().includes(q)
     return m && (!sf||t.status===sf) && (!tf||t.vehicle_type_needed===tf)
   })
   const role = currentProfile?.role
+
+  // Sort: pending-approval first, then by created_at desc
+  if (['admin','super_approver','approver_admin','approver_amb'].includes(role)) {
+    filtered.sort((a,b) => {
+      const so = (statusOrder[a.status]??9) - (statusOrder[b.status]??9)
+      if (so !== 0) return so
+      return new Date(b.created_at) - new Date(a.created_at)
+    })
+  }
 
   // Precompute: which PHT dates have 2+ poolable tickets (approved/assigned, no pool_id)
   // Used to decide whether to show the Pool Trip button per ticket
@@ -4149,7 +4159,12 @@ let _groups = []
 
 async function renderNewTicket() {
   // Load templates for quick-use
-  const { data: tmpl } = await SB.from('trip_templates').select('*').eq('is_active', true).order('name')
+  // Load templates — requesters see their dept only, approvers/admin see all
+  const role_tmpl = currentProfile?.role
+  let tmplQ = SB.from('trip_templates').select('*').eq('is_active', true).order('name')
+  if (role_tmpl === 'requester' && currentProfile?.department)
+    tmplQ = tmplQ.eq('department', currentProfile.department)
+  const { data: tmpl } = await tmplQ
   _templates = tmpl || []
 
   const role = currentProfile?.role
@@ -4560,19 +4575,51 @@ async function openSaveTemplateModal() {
            <select class="fs" id="tmplRecurType" onchange="toggleRecurDays()">
              <option value="weekly">Weekly</option>
              <option value="daily">Daily</option>
-             <option value="monthly">Monthly</option>
            </select>
          </div>
-         <div class="fg"><label class="fl">Time</label><input class="fi" type="time" id="tmplRecurTime"></div>
-         <div class="fg"><label class="fl">End Date</label><input class="fi" type="date" id="tmplRecurEnd"></div>
+         <div class="fg"><label class="fl">Time *</label><input class="fi" type="time" id="tmplRecurTime"></div>
+         <div class="fg"><label class="fl">Generate X days before</label>
+           <select class="fs" id="tmplAdvanceDays">
+             <option value="1">1 day before</option>
+             <option value="2">2 days before</option>
+             <option value="3" selected>3 days before</option>
+             <option value="5">5 days before</option>
+             <option value="7">7 days before</option>
+           </select>
+         </div>
        </div>
-       <div id="tmplDaysWrap" class="fg"><label class="fl">Days of Week</label>
+       <div id="tmplDaysWrap" class="fg"><label class="fl">Days of Week *</label>
          <div style="display:flex;gap:6px;flex-wrap:wrap">
-           ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,i) =>
+           ${['sunday','monday','tuesday','wednesday','thursday','friday','saturday'].map((d,i) =>
              `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:20px;font-size:11.5px">
-               <input type="checkbox" class="tmpl-day" value="${i}" style="width:13px;height:13px;accent-color:var(--pri)"> ${d}
+               <input type="checkbox" class="tmpl-day" value="${d}" style="width:13px;height:13px;accent-color:var(--pri)"> ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][i]}
              </label>`).join('')}
          </div>
+       </div>
+
+       <!-- Default Driver + Vehicle (optional, editable any time) -->
+       <div style="border-top:1px solid var(--border);margin:13px 0 10px;padding-top:10px">
+         <div style="font-size:11.5px;font-weight:700;color:var(--text2);margin-bottom:10px">
+           Default Driver & Vehicle
+           <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:6px">— optional, approver can change per trip</span>
+         </div>
+         <div class="fr">
+           <div class="fg"><label class="fl">Default Driver</label>
+             <select class="fs" id="tmplDefaultDriver">
+               <option value="">-- No default (assign per trip) --</option>
+               ${(_drivers||[]).filter(d=>d.status!=='off-duty').map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.driver_type}</option>`).join('')}
+             </select>
+           </div>
+           <div class="fg"><label class="fl">Default Vehicle</label>
+             <select class="fs" id="tmplDefaultVehicle">
+               <option value="">-- No default (assign per trip) --</option>
+               ${(_vehicles||[]).filter(v=>v.status!=='maintenance').map(v=>`<option value="${v.id}|${v.plate}|${v.name||v.type}">${v.plate} — ${v.name||v.type}</option>`).join('')}
+             </select>
+           </div>
+         </div>
+       </div>
+       <div class="fg"><label class="fl">End Date <span style="font-weight:400;font-size:10px;color:var(--text3)">(leave blank = indefinite)</span></label>
+         <input class="fi" type="date" id="tmplRecurEnd">
        </div>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
@@ -4592,27 +4639,56 @@ function toggleRecurDays() {
 async function doSaveTemplate() {
   const name = document.getElementById('tmplName')?.value?.trim()
   if (!name) { alert('Template name is required.'); return }
-  const btn = document.getElementById('saveTmplBtn'); btn.disabled=true; btn.textContent='Saving...'
   const isRecur = document.getElementById('tmplRecurring')?.checked
-  const days = isRecur ? [...document.querySelectorAll('.tmpl-day:checked')].map(el => parseInt(el.value)) : []
+  if (isRecur) {
+    const time = document.getElementById('tmplRecurTime')?.value
+    if (!time) { alert('Please set a departure time for the recurring schedule.'); return }
+    const days = [...document.querySelectorAll('.tmpl-day:checked')]
+    if (document.getElementById('tmplRecurType')?.value === 'weekly' && days.length === 0) {
+      alert('Please select at least one day of the week.'); return
+    }
+  }
+  const btn = document.getElementById('saveTmplBtn'); btn.disabled=true; btn.textContent='Saving...'
+
+  // Days saved as text ('friday', 'monday') for DB function compatibility
+  const days = isRecur ? [...document.querySelectorAll('.tmpl-day:checked')].map(el => el.value) : []
+
+  // Default driver/vehicle
+  const drvVal = document.getElementById('tmplDefaultDriver')?.value||''
+  const [drvId, drvName] = drvVal ? drvVal.split('|') : [null, null]
+  const vehVal = document.getElementById('tmplDefaultVehicle')?.value||''
+  const vehParts = vehVal ? vehVal.split('|') : [null, null, null]
+  const [vehId, vehPlate, vehName] = vehParts
+
+  const advanceDays = parseInt(document.getElementById('tmplAdvanceDays')?.value||'3')
+
   const { error } = await SB.from('trip_templates').insert({
     name,
-    department: document.getElementById('tmplDept')?.value||null,
-    vehicle_type: document.getElementById('tmplType')?.value||'regular',
-    purpose: document.getElementById('tmplPurpose')?.value||null,
-    destination: document.getElementById('tmplDest')?.value||null,
-    passengers: parseInt(document.getElementById('tmplPax')?.value)||1,
-    priority: document.getElementById('tmplPri')?.value||'normal',
-    is_recurring: isRecur,
-    recur_type: isRecur ? document.getElementById('tmplRecurType')?.value : null,
-    recur_days: isRecur ? days : [],
-    recur_time: isRecur ? document.getElementById('tmplRecurTime')?.value||null : null,
-    recur_end_date: isRecur ? document.getElementById('tmplRecurEnd')?.value||null : null,
-    created_by: currentProfile?.id
+    department:          document.getElementById('tmplDept')?.value||null,
+    vehicle_type:        document.getElementById('tmplType')?.value||'regular',
+    purpose:             document.getElementById('tmplPurpose')?.value||null,
+    destination:         document.getElementById('tmplDest')?.value||null,
+    passengers:          parseInt(document.getElementById('tmplPax')?.value)||1,
+    priority:            document.getElementById('tmplPri')?.value||'normal',
+    auto_approve:        document.getElementById('tmplAutoApprove')?.checked||false,
+    is_recurring:        isRecur,
+    recur_type:          isRecur ? document.getElementById('tmplRecurType')?.value : null,
+    recur_days:          days,
+    recur_time:          isRecur ? document.getElementById('tmplRecurTime')?.value||null : null,
+    recur_end_date:      isRecur ? document.getElementById('tmplRecurEnd')?.value||null : null,
+    advance_days:        isRecur ? advanceDays : null,
+    default_driver_id:   drvId || null,
+    default_driver_name: drvName || null,
+    default_vehicle_id:  vehId || null,
+    default_vehicle_plate: vehPlate || null,
+    default_vehicle_name:  vehName || null,
+    next_review_date:    isRecur ? new Date(new Date().setMonth(new Date().getMonth()+6)).toISOString().slice(0,10) : null,
+    created_by:          currentProfile?.id,
+    is_active:           true
   })
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Save Template'; return }
   closeMO()
-  alert('Template saved!')
+  alert('Template saved! Recurring trips will be auto-generated 3 days before each scheduled date.')
   renderNewTicket()
 }
 
@@ -4924,7 +5000,7 @@ async function submitNewTicket() {
     const priorityLabel = document.getElementById('ntPri')?.value === 'emergency' ? 'Emergency — immediate action' : 'Regular — standard processing'
 
     // Override modal backdrop click — don't close on outside click for success screen
-    openMO('',
+    openMO('✅ Request Submitted',
       `<div style="text-align:center;padding:8px 0">
         <div style="width:72px;height:72px;margin:0 auto 20px;position:relative">
           <svg viewBox="0 0 72 72" style="width:72px;height:72px">
@@ -4938,16 +5014,16 @@ async function submitNewTicket() {
               style="animation:checkIn .3s ease .4s forwards"/>
           </svg>
         </div>
-        <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">${isAdvance ? '✅ Request Submitted' : '✅ Request Submitted'}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">✅ REQUEST SUBMITTED</div>
         <div style="font-size:30px;font-weight:900;letter-spacing:-0.5px;margin-bottom:8px;color:var(--text1)">${trip.ticket_no}</div>
         ${groupId ? `<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Part of a bulk booking group</div>` : ''}
-        <div style="font-size:14px;color:var(--text2);margin-bottom:20px">Your vehicle request has been submitted.<br>An approver will be notified via SMS.</div>
+        <div style="font-size:14px;color:var(--text2);margin-bottom:20px">Your vehicle request has been submitted.${_appliedTemplateAutoApprove?'<br><strong style="color:var(--green)">Auto-approved via template ✓</strong>':'<br>An approver will be notified via SMS.'}</div>
         <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;text-align:left;margin-bottom:8px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             <span style="font-size:18px">📋</span>
             <div>
               <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Sent to</div>
-              <div style="font-size:13px;font-weight:700">${approverLabel}</div>
+              <div style="font-size:13px;font-weight:700">${_appliedTemplateAutoApprove?'Auto-Approved':approverLabel}</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
