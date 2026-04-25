@@ -1869,6 +1869,7 @@ async function openApproveModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
   const role   = currentProfile?.role
+  const canLastResort = ['admin','approver_admin','approver_amb'].includes(role)
 
   // Fetch ticket details + all needed data in parallel
   const [
@@ -1981,6 +1982,16 @@ async function openApproveModal(id, ticketNo, vtype) {
     <div style="font-size:11.5px;color:var(--text2)">There are ${sameDateAssigned.length} other trip${sameDateAssigned.length>1?'s':''} on the same date. After approving and assigning, you can pool them via the Pool Trip button.</div>
   </div>` : ''
 
+  // Store for Last Resort toggle
+  window._apAllDrivers  = (drvData||[]).filter(d => d.status !== 'off-duty')
+  window._apAllVehicles = (vehData||[]).filter(v => v.status !== 'maintenance')
+  window._apTypedDrivers  = avD
+  window._apTypedVehicles = avV
+  window._apBusyDrvIds = busyDrvIds
+  window._apBusyVehIds = busyVehIds
+  window._apDrvTripLabel = drvTripLabel
+  window._apVehTripLabel = vehTripLabel
+
   openMO(`Approve & Assign — ${ticketNo}`,
     `${tripInfo}
      ${poolSuggestionHTML}
@@ -1998,7 +2009,7 @@ async function openApproveModal(id, ticketNo, vtype) {
      <div class="fr">
        <div class="fg">
          <label class="fl">Driver <span style="font-size:10px;font-weight:400;color:var(--green)">${avD.length} available</span></label>
-         <select class="fs" id="dSel">
+         <select class="fs" id="dSel" onchange="updateApproveVehicleFilter()">
            <option value="">-- Skip / assign later --</option>
            ${avD.map(d => {
              const busy = busyDrvIds.has(d.id)
@@ -2018,12 +2029,46 @@ async function openApproveModal(id, ticketNo, vtype) {
            }).join('')}
          </select>
        </div>
+       ${canLastResort ? `
+       <div style="padding:8px 12px;background:var(--amber-s);border:1px solid rgba(217,119,6,.3);border-radius:9px;display:flex;align-items:center;gap:10px;margin-top:6px">
+         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
+           <input type="checkbox" id="apLastResort" style="width:15px;height:15px;accent-color:var(--amber)" onchange="toggleApproveLastResort()">
+           <span style="font-size:12px;font-weight:700;color:var(--amber)">⚠ Last Resort — show ALL drivers and vehicles regardless of type</span>
+         </label>
+       </div>` : ''}
      </div>`,
 
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-red btn-sm" onclick="closeMO();openRejectModal('${id}','${ticketNo}')">✕ Reject</button>
      <button class="btn btn-green" id="apBtn" onclick="doApproveAndAssign('${id}','${ticketNo}')">✓ Approve</button>`
   )
+}
+
+function toggleApproveLastResort() {
+  const checked = document.getElementById('apLastResort')?.checked
+  if (checked && !confirm('⚠ LAST RESORT MODE\n\nThis will show ALL available drivers and vehicles regardless of type.\n\nFor emergency use only. Will be logged in the audit trail.\n\nProceed?')) {
+    document.getElementById('apLastResort').checked = false
+    return
+  }
+  const dList = checked ? (window._apAllDrivers||[])   : (window._apTypedDrivers||[])
+  const vList = checked ? (window._apAllVehicles||[])  : (window._apTypedVehicles||[])
+  const bD = window._apBusyDrvIds || new Set()
+  const bV = window._apBusyVehIds || new Set()
+  const dL = window._apDrvTripLabel || {}
+  const vL = window._apVehTripLabel || {}
+
+  const dSel = document.getElementById('dSel')
+  const vSel = document.getElementById('vSel')
+  if (dSel) dSel.innerHTML = `<option value="">-- Skip / assign later --</option>` +
+    dList.map(d => {
+      const busy = bD.has(d.id), lbl = dL[d.id]
+      return `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ '+lbl:''}</option>`
+    }).join('')
+  if (vSel) vSel.innerHTML = `<option value="">-- Skip / assign later --</option>` +
+    vList.map(v => {
+      const busy = bV.has(v.id), lbl = vL[v.id]
+      return `<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)${busy&&lbl?' ⚠ '+lbl:''}</option>`
+    }).join('')
 }
 
 async function doApproveAndAssign(id, ticketNo) {
@@ -2696,9 +2741,45 @@ async function doFormPool() {
 
   // SMS to driver
   const { data: drvRow } = await SB.from('drivers').select('phone').eq('id',driverId).single()
+  const depStr = new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
   if (drvRow?.phone) {
-    const deptList = checked.length + ' departments'
-    await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL ASSIGNMENT\nPool: ${pool_no}\nTickets: ${checked.length} (${deptList})\nDeparture: ${new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}\nVehicle: ${vehicle.plate||'—'}\n\nReport to motor pool for briefing.`)
+    await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL ASSIGNMENT\nPool: ${pool_no}\nTickets: ${checked.length} departments\nDeparture: ${depStr}\nVehicle: ${vehicle.plate||'—'}\n\nReport to motor pool for briefing.`)
+  }
+
+  // Email each requester — notify them their trip is now part of a pool
+  const { data: poolTrips } = await SB.from('trips')
+    .select('id,ticket_no,department,destination,requester:users!trips_requester_id_fkey(email,full_name)')
+    .in('id', checked)
+
+  for (const t of (poolTrips||[])) {
+    const reqEmail = t.requester?.email
+    if (!reqEmail) continue
+    await sendEmail(reqEmail,
+      `[TDMH VTS] Your trip ${t.ticket_no} has been pooled — ${depStr}`,
+      `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
+        <div style="background:#0c2340;border-radius:10px 10px 0 0;padding:18px 22px">
+          <h2 style="margin:0;color:#fff;font-size:16px">🚌 Trip Pool Notification</h2>
+          <p style="margin:4px 0 0;color:#aabbcc;font-size:11px">TDMH Vehicle Ticketing System</p>
+        </div>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;padding:20px 22px">
+          <p>Hello <strong>${t.requester?.full_name||t.department}</strong>,</p>
+          <p>Your vehicle request <strong>${t.ticket_no}</strong> has been <strong>grouped into a Trip Pool</strong> with other department trips on the same date.</p>
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;margin:14px 0">
+            <table style="width:100%;font-size:13px;border-collapse:collapse">
+              <tr><td style="color:#6b7280;padding:4px 0;width:110px">Pool No.</td><td><strong>${pool_no}</strong></td></tr>
+              <tr><td style="color:#6b7280;padding:4px 0">Your Ticket</td><td><strong>${t.ticket_no}</strong></td></tr>
+              <tr><td style="color:#6b7280;padding:4px 0">Departure</td><td><strong style="color:#16a34a">${depStr}</strong></td></tr>
+              <tr><td style="color:#6b7280;padding:4px 0">Driver</td><td><strong>${driverName}</strong></td></tr>
+              <tr><td style="color:#6b7280;padding:4px 0">Vehicle</td><td><strong>${vehicle.plate||'—'} — ${vehicle.name||vehicle.type||'—'}</strong></td></tr>
+              <tr><td style="color:#6b7280;padding:4px 0">Pool Size</td><td><strong>${checked.length} departments in this pool</strong></td></tr>
+            </table>
+          </div>
+          <p style="color:#6b7280;font-size:12px">Your trip destination and details remain the same. The vehicle will serve all departments in this pool.</p>
+          <p style="color:#6b7280;font-size:12px">Track your trip: <a href="https://ittdmh.pro/vts" style="color:#0c2340">ittdmh.pro/vts</a></p>
+        </div>
+        <p style="text-align:center;font-size:11px;color:#9ca3af;padding:8px">Taytay Doctors Multispecialty Hospital · TDMH VTS</p>
+      </div>`
+    )
   }
 
   closeMO()
@@ -3033,7 +3114,7 @@ async function openAssignModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
   const role   = currentProfile?.role
-  const canLastResort = ['admin','super_approver'].includes(role)
+  const canLastResort = ['admin','approver_admin','approver_amb'].includes(role)
 
   // Fetch trip's departure/return for time-based filtering
   const { data: tripData } = await SB.from('trips')
@@ -4672,12 +4753,11 @@ async function submitNewTicket() {
     const deptEl = document.getElementById('ntDept')
     if (deptEl && deptEl.tagName === 'SELECT') { deptEl.style.borderColor='var(--red)'; hasError=true }
   }
+  const errEl = document.getElementById('ntFormErr')
   if (hasError) {
-    const errEl = document.getElementById('ntFormErr')
-    if (errEl) { errEl.style.display='block'; errEl.textContent='Please fill in all required fields marked with *' }
+    if (errEl) { errEl.style.display='block'; errEl.style.background='var(--red-s)'; errEl.style.color='var(--red)'; errEl.style.border='1px solid rgba(220,38,38,.3)'; errEl.textContent='Please fill in all required fields marked with *' }
     return
   }
-  const errEl = document.getElementById('ntFormErr')
   if (errEl) errEl.style.display='none'
 
   // Build departure ISO — require both date AND time
