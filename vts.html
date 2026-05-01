@@ -1262,150 +1262,227 @@ async function renderDashboard() {
   // ── Guard dashboard ──
   if (role === 'guard') {
     const today = new Date()
-    const todayStr = today.toLocaleDateString('en-PH',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'Asia/Manila'})
+    const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59)
 
-    // All assigned trips today (gate-out pending)
-    const gateOutToday = upcomingAdvance.filter(t => t.status === 'assigned')
-    // All on-trip (gate-in pending)
-    const { data: onTrip } = await SB.from('trips')
-      .select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,status')
-      .eq('status','on-trip')
-      .order('expected_return_at',{ascending:true})
-    const onTripList = onTrip || []
+    const [{ data: assigned }, { data: onTripData }, { data: completedToday }] = await Promise.all([
+      SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,vehicle_id,departure_at,expected_return_at,status,pool_id')
+        .eq('status','assigned').order('departure_at',{ascending:true}),
+      SB.from('trips').select('id,ticket_no,department,purpose,destination,stops,driver_name,vehicle_name,vehicle_plate,vehicle_id,driver_id,departure_at,expected_return_at,status,pool_id')
+        .eq('status','on-trip').order('expected_return_at',{ascending:true}),
+      SB.from('trips').select('id,ticket_no,department,destination,driver_name,vehicle_plate,gate_in_at,status')
+        .eq('status','completed')
+        .gte('gate_in_at', new Date(today.getFullYear(),today.getMonth(),today.getDate()).toISOString())
+        .order('gate_in_at',{ascending:false})
+    ])
 
-    // Build gate-out schedule grouped by urgency
-    const gateOutNow    = gateOutToday.filter(t => new Date(t.departure_at) <= today)
-    const gateOutSoon   = gateOutToday.filter(t => { const d = new Date(t.departure_at); return d > today && d <= new Date(today.getTime() + 2*3600000) })
-    const gateOutLater  = gateOutToday.filter(t => new Date(t.departure_at) > new Date(today.getTime() + 2*3600000))
+    const allAssigned    = assigned || []
+    const onTripList     = onTripData || []
+    const doneToday      = completedToday || []
+    const todayAssigned  = allAssigned.filter(t => t.departure_at && new Date(t.departure_at) <= todayEnd)
+    const futureAssigned = allAssigned.filter(t => !t.departure_at || new Date(t.departure_at) > todayEnd)
 
-    // Future advance bookings (beyond today)
-    const futureBookings = upcomingAdvance.filter(t => {
-      const dep = new Date(t.departure_at)
-      return dep > new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59)
+    // Pool grouping
+    const poolMapT = {}, soloT = []
+    ;[...todayAssigned, ...onTripList].forEach(t => {
+      if (t.pool_id) { if(!poolMapT[t.pool_id]) poolMapT[t.pool_id]=[]; poolMapT[t.pool_id].push(t) }
+      else soloT.push(t)
     })
+    const poolCards = Object.entries(poolMapT).map(([pid,ts]) => ({ ...ts[0], _isPool:true, _poolId:pid, _poolTickets:ts, _poolCount:ts.length }))
+    const allTodayItems = [...soloT, ...poolCards]
 
-    function gateOutCard(t, urgency) {
-      const depTime = new Date(t.departure_at).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
-      const colors = { now: '#dc2626', soon: '#d97706', later: '#0d9488' }
-      const bg = { now: '#fee2e2', soon: '#fef3c7', later: '#f0fdfa' }
-      const label = { now: '🚨 DEPART NOW', soon: '⏰ Departing Soon', later: '🕐 Later Today' }
-      const c = colors[urgency], b = bg[urgency]
-      const canGateOut = urgency === 'now' || urgency === 'soon'
-      return '<div style="background:' + b + ';border:2px solid ' + c + ';border-radius:13px;padding:15px 16px;margin-bottom:10px">'
-        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
-        + '<div style="display:flex;align-items:center;gap:8px">'
-        + '<span style="font-size:11px;font-weight:800;color:' + c + ';text-transform:uppercase;letter-spacing:.5px">' + label[urgency] + '</span>'
-        + '</div>'
-        + '<div style="font-size:18px;font-weight:800;color:' + c + '">' + depTime + '</div>'
-        + '</div>'
-        + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'
-        + '<div style="flex:1">'
-        + '<div style="font-size:13px;font-weight:800;font-family:monospace;margin-bottom:3px">' + (t.ticket_no||'—') + '</div>'
-        + '<div style="font-size:12.5px;font-weight:700;margin-bottom:2px">' + (t.department||'') + '</div>'
-        + '<div style="font-size:12px;color:#374151;margin-bottom:2px">→ ' + (t.destination||'—') + '</div>'
-        + '<div style="font-size:11.5px;color:#6b7280">👤 ' + (t.driver_name||'No driver') + ' · 🚗 ' + (t.vehicle_plate||'No vehicle') + '</div>'
-        + '</div>'
-        + (canGateOut
-          ? '<button onclick="openGateOutModal(\'' + t.id + '\',\'' + t.ticket_no + '\',\'' + (t.purpose||'').replace(/'/g,"\\'") + '\',\'' + (t.driver_name||'').replace(/'/g,"\\'") + '\',\'' + (t.vehicle_plate||'').replace(/'/g,"\\'") + '\',\'' + (t.destination||'').replace(/'/g,"\\'") + '\')" style="background:' + c + ';color:#fff;border:none;padding:10px 18px;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0">Gate Out →</button>'
-          : '<span style="color:' + c + ';font-size:12px;font-weight:700;flex-shrink:0">' + depTime + '</span>')
-        + '</div></div>'
+    const gateOutNow   = allTodayItems.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) <= today)
+    const gateOutSoon  = allTodayItems.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) > today && new Date(t.departure_at) <= new Date(today.getTime()+7200000))
+    const gateOutLater = allTodayItems.filter(t => t.status==='assigned' && t.departure_at && new Date(t.departure_at) > new Date(today.getTime()+7200000) && new Date(t.departure_at) <= todayEnd)
+    const onTripItems  = allTodayItems.filter(t => t.status==='on-trip')
+    const nowCount     = gateOutNow.length
+
+    const rAssigned = t => {
+      if (t._isPool) {
+        const dep = t.departure_at ? new Date(t.departure_at) : null
+        const depStr = dep ? dep.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
+        const late = dep && dep < today
+        const depts = t._poolTickets.map(x=>x.department).join(' · ')
+        return `<div style="background:linear-gradient(135deg,#fdf4ff,#f5f3ff);border:2px solid ${late?'#dc2626':'#c4b5fd'};border-radius:14px;padding:14px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+            <span style="font-size:13px;font-weight:900;color:#6b21a8">🚌 POOLED TRIP</span>
+            <span style="background:#7c3aed;color:#fff;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${t._poolCount} tickets</span>
+            <span style="margin-left:auto;font-size:20px;font-weight:900;font-family:monospace;color:${late?'#dc2626':'#6b21a8'}">${depStr}</span>
+          </div>
+          <div style="font-size:11px;color:#6b21a8;font-weight:600;margin-bottom:8px">${depts}</div>
+          <div style="background:rgba(124,58,237,.08);border-radius:8px;padding:8px;margin-bottom:10px;font-size:11.5px">
+            👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onclick="openPoolGateOut('${t._poolId}')" style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer">🚀 Gate Out All</button>
+            <button onclick="showPoolDetails('${t._poolId}')" style="background:rgba(124,58,237,.1);border:1px solid #c4b5fd;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer">Details</button>
+          </div>
+        </div>`
+      }
+      const dep = t.departure_at ? new Date(t.departure_at) : null
+      const depStr = dep ? dep.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
+      const late  = dep && dep < today
+      const isSoon = dep && dep > today && dep <= new Date(today.getTime()+7200000)
+      const btnColor = late ? '#dc2626' : isSoon ? '#d97706' : '#0d9488'
+      return `<div style="background:var(--card);border:2px solid ${late?'#fecdd3':'var(--border)'};border-radius:14px;padding:14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;cursor:pointer" onclick="openViewModal('${t.id}')">
+          <div>
+            <div style="font-size:14px;font-weight:900;font-family:monospace;color:var(--pri)">${t.ticket_no}</div>
+            <div style="font-size:13px;font-weight:700;margin-top:2px">${t.department}</div>
+            <div style="font-size:12px;color:var(--text2)">→ ${t.destination||'—'}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:22px;font-weight:900;font-family:monospace;color:${late?'#dc2626':'var(--text1)'}">${depStr}</div>
+            ${late?'<div style="font-size:10px;font-weight:800;color:#dc2626">OVERDUE</div>':''}
+          </div>
+        </div>
+        <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px;cursor:pointer" onclick="openViewModal('${t.id}')">
+          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
+        </div>
+        <button onclick="openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');"
+          style="width:100%;background:${btnColor};color:#fff;border:none;padding:13px;border-radius:10px;font-size:15px;font-weight:900;cursor:pointer">
+          🚦 GATE OUT →</button>
+      </div>`
     }
 
-    document.getElementById('CONTENT').innerHTML =
-      // Header
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'
-      + '<div>'
-      + '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px">Gate Operations</div>'
-      + '<div style="font-size:16px;font-weight:800;margin-top:2px">' + todayStr + '</div>'
-      + '</div>'
-      + '<button class="btn btn-ghost btn-sm" onclick="goTo(\'tickets\')">All Tickets</button>'
-      + '</div>'
+    const rOnTrip = t => {
+      if (t._isPool) {
+        const depts = t._poolTickets.map(x=>x.department).join(' · ')
+        return `<div style="background:linear-gradient(135deg,#fdf4ff,#f5f3ff);border:2px solid #a78bfa;border-radius:14px;padding:14px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+            <span style="width:8px;height:8px;border-radius:50%;background:#7c3aed;animation:pulse-overdue 1.5s infinite;display:inline-block"></span>
+            <span style="font-size:13px;font-weight:900;color:#6b21a8">🚌 POOLED TRIP — ON TRIP</span>
+          </div>
+          <div style="font-size:11px;color:#6b21a8;margin-bottom:8px">${depts}</div>
+          <div style="background:rgba(124,58,237,.08);border-radius:8px;padding:8px;margin-bottom:10px;font-size:11.5px">
+            👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onclick="openPoolGateIn('${t._poolId}')" style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer">✅ Gate In All</button>
+            <button onclick="showPoolDetails('${t._poolId}')" style="background:rgba(124,58,237,.1);border:1px solid #a78bfa;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer">Details</button>
+          </div>
+        </div>`
+      }
+      const exp = t.expected_return_at ? new Date(t.expected_return_at) : null
+      const expStr = exp ? exp.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
+      const late = exp && exp < today
+      return `<div style="background:var(--card);border:2px solid ${late?'#e9d5ff':'var(--border)'};border-radius:14px;padding:14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;cursor:pointer" onclick="openViewModal('${t.id}')">
+          <div>
+            <div style="font-size:14px;font-weight:900;font-family:monospace;color:#7c3aed">${t.ticket_no}</div>
+            <div style="font-size:13px;font-weight:700;margin-top:2px">${t.department}</div>
+            <div style="font-size:12px;color:var(--text2)">→ ${t.destination||'—'}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--text3)">Expected</div>
+            <div style="font-size:18px;font-weight:900;font-family:monospace;color:${late?'#dc2626':'#7c3aed'}">${expStr}</div>
+            ${late?'<div style="font-size:10px;font-weight:800;color:#dc2626">OVERDUE</div>':''}
+          </div>
+        </div>
+        <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px;cursor:pointer" onclick="openViewModal('${t.id}')">
+          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
+        </div>
+        <button onclick="openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')"
+          style="width:100%;background:#7c3aed;color:#fff;border:none;padding:13px;border-radius:10px;font-size:15px;font-weight:900;cursor:pointer">
+          ← GATE IN</button>
+      </div>`
+    }
 
-      // Stats strip
-      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">'
-      + '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px;text-align:center"><div style="font-size:22px;font-weight:800;color:#dc2626">' + gateOutToday.length + '</div><div style="font-size:11px;color:var(--text3);font-weight:600">Gate-Out Today</div></div>'
-      + '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px;text-align:center"><div style="font-size:22px;font-weight:800;color:#7c3aed">' + onTripList.length + '</div><div style="font-size:11px;color:var(--text3);font-weight:600">On Trip</div></div>'
-      + '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px;text-align:center"><div style="font-size:22px;font-weight:800;color:var(--pri)">' + futureBookings.length + '</div><div style="font-size:11px;color:var(--text3);font-weight:600">Advance Booked</div></div>'
-      + '</div>'
+    const buildTodayTab = () => {
+      const urgent = nowCount > 0 ? `<div style="background:#fef2f2;border:2px solid #fecdd3;border-radius:12px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:22px">🚨</span>
+        <div><div style="font-size:13px;font-weight:800;color:#dc2626">${nowCount} vehicle${nowCount>1?'s':''} overdue for gate-out!</div>
+        <div style="font-size:11.5px;color:#991b1b">Departure time has passed. Process gate-out immediately.</div></div>
+      </div>` : ''
+      const nowH   = gateOutNow.length   ? `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#dc2626;margin-bottom:8px">🚨 Gate Out Now (${gateOutNow.length})</div>${gateOutNow.map(rAssigned).join('')}` : ''
+      const soonH  = gateOutSoon.length  ? `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#d97706;margin:12px 0 8px">⏰ Departing Soon — within 2hrs (${gateOutSoon.length})</div>${gateOutSoon.map(rAssigned).join('')}` : ''
+      const tripH  = onTripItems.length  ? `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#7c3aed;margin:12px 0 8px">🟣 On Trip — Awaiting Return (${onTripItems.length})</div>${onTripItems.map(rOnTrip).join('')}` : ''
+      const laterH = gateOutLater.length ? `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#0d9488;margin:12px 0 8px">🕐 Later Today (${gateOutLater.length})</div>${gateOutLater.map(rAssigned).join('')}` : ''
+      const isEmpty = !gateOutNow.length && !gateOutSoon.length && !onTripItems.length && !gateOutLater.length
+      return urgent + (isEmpty ? `<div style="text-align:center;padding:52px 24px;color:var(--text3)"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:16px;font-weight:800;margin-bottom:6px">All clear today</div><div style="font-size:13px">No gate operations needed right now.</div></div>` : nowH+soonH+tripH+laterH)
+    }
 
-      // ── TODAY'S GATE-OUT SCHEDULE ──
-      + '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px">📋 Today\'s Gate-Out Schedule</div>'
+    const buildUpcomingTab = () => {
+      if (!futureAssigned.length) return `<div style="text-align:center;padding:52px 24px;color:var(--text3)"><div style="font-size:48px;margin-bottom:12px">📅</div><div style="font-size:16px;font-weight:800;margin-bottom:6px">No upcoming trips</div><div style="font-size:13px">No scheduled trips beyond today.</div></div>`
+      return futureAssigned.map(t => {
+        const dep = new Date(t.departure_at)
+        const timeStr = dep.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
+        return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 14px;margin-bottom:10px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="openViewModal('${t.id}')">
+          <div style="text-align:center;width:44px;flex-shrink:0">
+            <div style="font-size:15px;font-weight:800;color:var(--pri)">${dep.getDate()}</div>
+            <div style="font-size:10px;font-weight:600;color:var(--text3)">${dep.toLocaleDateString('en-PH',{month:'short',timeZone:'Asia/Manila'}).toUpperCase()}</div>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:700;font-family:monospace;color:var(--pri)">${t.ticket_no}</div>
+            <div style="font-size:12.5px;font-weight:700">${t.department} → ${t.destination||'—'}</div>
+            <div style="font-size:11px;color:var(--text3)">👤 ${t.driver_name||'TBD'} · ${timeStr}</div>
+          </div>
+        </div>`
+      }).join('')
+    }
 
-      + (gateOutToday.length === 0
-        ? '<div style="background:var(--card);border:1px solid var(--border);border-radius:13px;padding:32px;text-align:center;margin-bottom:16px">'
-          + '<div style="font-size:32px;margin-bottom:8px">✅</div>'
-          + '<div style="font-size:14px;font-weight:700;margin-bottom:4px">No departures scheduled today</div>'
-          + '<div style="font-size:12px;color:var(--text3)">All clear at the gate.</div>'
-          + '</div>'
-        : (gateOutNow.length > 0
-            ? '<div style="font-size:11px;font-weight:700;color:#dc2626;margin-bottom:6px;display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;background:#dc2626;border-radius:50%;display:inline-block;animation:pulse 1s infinite"></span> Ready to Depart</div>'
-              + gateOutNow.map(t => gateOutCard(t, 'now')).join('')
-            : '')
-          + (gateOutSoon.length > 0
-            ? '<div style="font-size:11px;font-weight:700;color:#d97706;margin:10px 0 6px">⏰ Departing Within 2 Hours</div>'
-              + gateOutSoon.map(t => gateOutCard(t, 'soon')).join('')
-            : '')
-          + (gateOutLater.length > 0
-            ? '<div style="font-size:11px;font-weight:700;color:var(--text3);margin:10px 0 6px">🕐 Later Today</div>'
-              + gateOutLater.map(t => gateOutCard(t, 'later')).join('')
-            : '')
-        )
+    const buildDoneTab = () => {
+      if (!doneToday.length) return `<div style="text-align:center;padding:52px 24px;color:var(--text3)"><div style="font-size:48px;margin-bottom:12px">🏁</div><div style="font-size:16px;font-weight:800;margin-bottom:6px">No completed trips today</div><div style="font-size:13px">Completed trips will appear here after gate-in.</div></div>`
+      return doneToday.map(t => {
+        const inTime = t.gate_in_at ? new Date(t.gate_in_at).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
+        return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;opacity:.85" onclick="openViewModal('${t.id}')">
+          <span style="font-size:20px">✅</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:700;font-family:monospace;color:var(--green)">${t.ticket_no}</div>
+            <div style="font-size:12.5px;font-weight:700">${t.department} → ${t.destination||'—'}</div>
+            <div style="font-size:11px;color:var(--text3)">👤 ${t.driver_name||'—'} · Gate-in: ${inTime}</div>
+          </div>
+        </div>`
+      }).join('')
+    }
 
-      // ── ON-TRIP / AWAITING GATE-IN ──
-      + (onTripList.length > 0
-        ? '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin:16px 0 10px">🔵 On Trip — Awaiting Gate-In</div>'
-          + onTripList.map(t => {
-              const expReturn = t.expected_return_at ? new Date(t.expected_return_at) : null
-              const isLate = expReturn && expReturn < new Date()
-              return '<div style="background:var(--card);border:2px solid ' + (isLate ? '#fecdd3' : 'var(--border)') + ';border-radius:13px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px">'
-                + '<div style="flex:1">'
-                + '<div style="font-size:13px;font-weight:800;font-family:monospace;margin-bottom:2px">' + (t.ticket_no||'—') + '</div>'
-                + '<div style="font-size:12px;font-weight:700;margin-bottom:2px">' + (t.department||'') + ' → ' + (t.destination||'—') + '</div>'
-                + '<div style="font-size:11.5px;color:var(--text2)">👤 ' + (t.driver_name||'—') + '</div>'
-                + (expReturn ? '<div style="font-size:11px;color:' + (isLate ? '#dc2626' : 'var(--text3)') + ';font-weight:' + (isLate ? '700' : '400') + ';margin-top:3px">'
-                  + (isLate ? '⚠ Overdue — Expected: ' : '🕐 Expected: ') + expReturn.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
-                  + '</div>' : '')
-                + '</div>'
-                + '<button onclick="openGateInModal(\'' + t.id + '\',\'' + t.ticket_no + '\',\'' + (t.destination||'').replace(/'/g,"\\'") + '\',\'' + '' + '\',\'' + '' + '\')" style="background:var(--purple,#7c3aed);color:#fff;border:none;padding:10px 16px;border-radius:10px;font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap;flex-shrink:0">Gate In ←</button>'
-                + '</div>'
-            }).join('')
-        : '')
+    window.guardSwitchTab = (activeTab) => {
+      const tabs = [
+        { id:'today',    label:'Today',      count: gateOutNow.length+gateOutSoon.length+onTripItems.length+gateOutLater.length, urgent: nowCount>0 },
+        { id:'upcoming', label:'Upcoming',   count: futureAssigned.length },
+        { id:'done',     label:'Done Today', count: doneToday.length },
+      ]
+      const tabBar = `<div style="display:flex;gap:4px;margin-bottom:16px;background:var(--bg);border-radius:12px;padding:4px">
+        ${tabs.map(tab => `<button onclick="guardSwitchTab('${tab.id}')"
+          style="flex:1;padding:10px 8px;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;position:relative;
+            ${activeTab===tab.id?'background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.1)':'background:transparent;color:var(--text3)'}">
+          ${tab.label}
+          ${tab.count>0?`<span style="position:absolute;top:5px;right:8px;background:${tab.urgent&&activeTab!==tab.id?'#dc2626':activeTab===tab.id?'var(--pri)':'#9ca3af'};color:#fff;border-radius:20px;font-size:10px;font-weight:800;padding:1px 6px;min-width:18px;text-align:center">${tab.count}</span>`:''}
+        </button>`).join('')}
+      </div>`
+      const content = activeTab==='today' ? buildTodayTab() : activeTab==='upcoming' ? buildUpcomingTab() : buildDoneTab()
+      const el = document.getElementById('_guardTabContent')
+      if (el) el.innerHTML = tabBar + content
+    }
 
-      // ── FUTURE ADVANCE BOOKINGS ──
-      + (futureBookings.length > 0
-        ? '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin:16px 0 10px">📅 Upcoming Advance Bookings</div>'
-          + '<div style="background:var(--card);border:1px solid var(--border);border-radius:13px;overflow:hidden">'
-          + futureBookings.map((t, i) => {
-              const dep = new Date(t.departure_at)
-              const daysAway = (() => {
-            const nowPH = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Manila'}))
-            const depPH = new Date(dep.toLocaleString('en-US',{timeZone:'Asia/Manila'}))
-            const nowMid = new Date(nowPH.getFullYear(),nowPH.getMonth(),nowPH.getDate())
-            const depMid = new Date(depPH.getFullYear(),depPH.getMonth(),depPH.getDate())
-            return Math.round((depMid - nowMid) / (1000*60*60*24))
-          })()
-              const depStr = dep.toLocaleDateString('en-PH',{weekday:'short',month:'short',day:'numeric',timeZone:'Asia/Manila'})
-              const timeStr = dep.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
-              const urgency = daysAway <= 1 ? '#dc2626' : daysAway <= 3 ? '#d97706' : 'var(--text2)'
-              return '<div style="padding:13px 16px;' + (i > 0 ? 'border-top:1px solid var(--border);' : '') + 'display:flex;align-items:center;gap:12px">'
-                + '<div style="width:42px;flex-shrink:0;text-align:center">'
-                + '<div style="font-size:15px;font-weight:800;color:' + urgency + ';line-height:1">' + dep.getDate() + '</div>'
-                + '<div style="font-size:9px;font-weight:600;color:var(--text3)">' + dep.toLocaleString('en-PH',{month:'short',timeZone:'Asia/Manila'}).toUpperCase() + '</div>'
-                + '</div>'
-                + '<div style="flex:1;min-width:0">'
-                + '<div style="font-size:12px;font-weight:700;font-family:monospace;color:var(--pri)">' + (t.ticket_no||'—') + '</div>'
-                + '<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (t.department||'') + ' — ' + (t.purpose||'—') + '</div>'
-                + '<div style="font-size:11px;color:var(--text3)">👤 ' + (t.driver_name||'TBD') + ' · ' + timeStr + '</div>'
-                + '</div>'
-                + '<div style="text-align:right;flex-shrink:0">'
-                + '<div style="font-size:11px;font-weight:700;color:' + urgency + '">' + (daysAway === 1 ? 'Tomorrow' : 'In ' + daysAway + ' days') + '</div>'
-                + '</div></div>'
-            }).join('')
-          + '</div>'
-        : '')
-
-    return // Guard gets their own view, skip admin dashboard below
+    const todayLabel = today.toLocaleDateString('en-PH',{weekday:'long',month:'long',day:'numeric',timeZone:'Asia/Manila'})
+    document.getElementById('CONTENT').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px">🛡 Gate Operations</div>
+          <div style="font-size:15px;font-weight:800;margin-top:2px">${todayLabel}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="renderDashboard()">↻ Refresh</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
+        <div style="background:${nowCount>0?'#fef2f2':'var(--card)'};border:1px solid ${nowCount>0?'#fecdd3':'var(--border)'};border-radius:12px;padding:12px;text-align:center">
+          <div style="font-size:24px;font-weight:800;color:${nowCount>0?'#dc2626':'var(--text2)'}">${nowCount}</div>
+          <div style="font-size:10px;font-weight:600;color:var(--text3)">Gate Out Now</div>
+        </div>
+        <div style="background:${onTripItems.length>0?'#f5f3ff':'var(--card)'};border:1px solid ${onTripItems.length>0?'#c4b5fd':'var(--border)'};border-radius:12px;padding:12px;text-align:center">
+          <div style="font-size:24px;font-weight:800;color:#7c3aed">${onTripItems.length}</div>
+          <div style="font-size:10px;font-weight:600;color:var(--text3)">On Trip</div>
+        </div>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center">
+          <div style="font-size:24px;font-weight:800;color:var(--green)">${doneToday.length}</div>
+          <div style="font-size:10px;font-weight:600;color:var(--text3)">Done Today</div>
+        </div>
+      </div>
+      <div id="_guardTabContent"></div>
+    `
+    guardSwitchTab('today')
+    return
   }
+
 }
 
 // ════════════════════════════════════════════════
@@ -2079,6 +2156,12 @@ async function openApproveModal(id, ticketNo, vtype) {
       .order('departure_at')
   ])
 
+  // Fetch passengers separately (not in destructured array above)
+  const { data: apPassengers } = await SB.from('trip_passengers')
+    .select('full_name,department,contact_no')
+    .eq('trip_id', id)
+    .order('added_at')
+
   const depISO = tripData?.departure_at || new Date().toISOString()
   const depTime = new Date(depISO).getTime()
   const FOUR_HRS = 4 * 3600000
@@ -2134,12 +2217,26 @@ async function openApproveModal(id, ticketNo, vtype) {
 
   const tripInfo = tripData ? `
   <div style="background:var(--bg);border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:12px">
-    <div style="display:flex;gap:16px;flex-wrap:wrap">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:${apPassengers&&apPassengers.length?'10px':'0'}">
       <div><span style="color:var(--text3)">Dept</span> <strong>${tripData.department||'—'}</strong></div>
       <div><span style="color:var(--text3)">Destination</span> <strong>${tripData.destination||'—'}</strong></div>
       <div><span style="color:var(--text3)">Departure</span> <strong>${new Date(depISO).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}</strong></div>
       <div><span style="color:var(--text3)">Type</span> <strong>${typeBadge(vtype)}</strong></div>
     </div>
+    ${apPassengers && apPassengers.length > 0 ? `
+    <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:6px">
+        👥 Passengers (${apPassengers.length})
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">
+        ${apPassengers.map(p=>`<span style="background:#fff;border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11.5px;font-weight:600">
+          ${p.full_name||'—'}${p.department?` <span style="font-weight:400;color:var(--text3)">(${p.department})</span>`:''}
+        </span>`).join('')}
+      </div>
+    </div>` : apPassengers && apPassengers.length === 0 ? `
+    <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px;font-size:11px;color:var(--text3)">
+      👥 ${tripData.passengers||1} pax — no manifest submitted yet
+    </div>` : ''}
   </div>` : ''
 
   // ── Pool suggestion block ───────────────────────────────────────────────────
