@@ -1597,7 +1597,7 @@ function renderTicketsTable() {
       const canApprove = t.status==='pending-approval' && (
         role==='admin' ||
         role==='super_approver' ||
-        (!isOwnTicket && role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
         (!isOwnTicket && role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
       )
       if (canApprove) {
@@ -1897,7 +1897,7 @@ function buildMobCards(filtered, role) {
     const canApprove = t.status==='pending-approval' && (
       role==='admin' ||
       role==='super_approver' ||
-      (!isOwnTicket && role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+      (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
       (!isOwnTicket && role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
     )
     if (canApprove) {
