@@ -1324,7 +1324,7 @@ async function renderDashboard() {
       const isSoon = dep && dep > today && dep <= new Date(today.getTime()+7200000)
       const btnColor = late ? '#dc2626' : isSoon ? '#d97706' : '#0d9488'
       return `<div style="background:var(--card);border:2px solid ${late?'#fecdd3':'var(--border)'};border-radius:14px;padding:14px;margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;cursor:pointer" onclick="openViewModal('${t.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
           <div>
             <div style="font-size:14px;font-weight:900;font-family:monospace;color:var(--pri)">${t.ticket_no}</div>
             <div style="font-size:13px;font-weight:700;margin-top:2px">${t.department}</div>
@@ -1333,13 +1333,16 @@ async function renderDashboard() {
           <div style="text-align:right">
             <div style="font-size:22px;font-weight:900;font-family:monospace;color:${late?'#dc2626':'var(--text1)'}">${depStr}</div>
             ${late?'<div style="font-size:10px;font-weight:800;color:#dc2626">OVERDUE</div>':''}
+            <div style="font-size:10px;color:var(--pri);text-decoration:underline;cursor:pointer;margin-top:2px" onclick="openViewModal('${t.id}')">View details</div>
           </div>
         </div>
-        <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px;cursor:pointer" onclick="openViewModal('${t.id}')">
+        <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px">
           👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
         </div>
-        <button onclick="openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');"
-          style="width:100%;background:${btnColor};color:#fff;border:none;padding:13px;border-radius:10px;font-size:15px;font-weight:900;cursor:pointer">
+        <button
+          onclick="event.stopPropagation();event.preventDefault();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');"
+          ontouchend="event.stopPropagation();event.preventDefault();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');"
+          style="width:100%;background:${btnColor};color:#fff;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation">
           🚦 GATE OUT →</button>
       </div>`
     }
@@ -1366,7 +1369,7 @@ async function renderDashboard() {
       const expStr = exp ? exp.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
       const late = exp && exp < today
       return `<div style="background:var(--card);border:2px solid ${late?'#e9d5ff':'var(--border)'};border-radius:14px;padding:14px;margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;cursor:pointer" onclick="openViewModal('${t.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
           <div>
             <div style="font-size:14px;font-weight:900;font-family:monospace;color:#7c3aed">${t.ticket_no}</div>
             <div style="font-size:13px;font-weight:700;margin-top:2px">${t.department}</div>
@@ -1376,13 +1379,16 @@ async function renderDashboard() {
             <div style="font-size:11px;color:var(--text3)">Expected</div>
             <div style="font-size:18px;font-weight:900;font-family:monospace;color:${late?'#dc2626':'#7c3aed'}">${expStr}</div>
             ${late?'<div style="font-size:10px;font-weight:800;color:#dc2626">OVERDUE</div>':''}
+            <div style="font-size:10px;color:var(--pri);text-decoration:underline;cursor:pointer;margin-top:2px" onclick="openViewModal('${t.id}')">View details</div>
           </div>
         </div>
-        <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px;cursor:pointer" onclick="openViewModal('${t.id}')">
+        <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px">
           👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
         </div>
-        <button onclick="openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')"
-          style="width:100%;background:#7c3aed;color:#fff;border:none;padding:13px;border-radius:10px;font-size:15px;font-weight:900;cursor:pointer">
+        <button
+          onclick="event.stopPropagation();event.preventDefault();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}');"
+          ontouchend="event.stopPropagation();event.preventDefault();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}');"
+          style="width:100%;background:#7c3aed;color:#fff;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation">
           ← GATE IN</button>
       </div>`
     }
@@ -1520,21 +1526,36 @@ function renderTicketsTable() {
   const sf = stEl?.value||''
   const tf = tyEl?.value||''
 
-  const statusOrder = {'pending-approval':0,'approved':1,'assigned':2,'on-trip':3,'completed':4,'rejected':5,'cancelled':6}
+  const statusOrder = {
+    'pending-approval': 0,  // needs action — oldest first
+    'approved':         1,  // approved, needs driver
+    'assigned':         2,  // assigned, upcoming
+    'on-trip':          3,  // currently out
+    'completed':        4,  // done — newest first
+    'rejected':         5,  // historical
+    'cancelled':        6   // historical
+  }
+
   const filtered = _tickets.filter(t => {
     const m = (t.ticket_no||'').toLowerCase().includes(q)||(t.department||'').toLowerCase().includes(q)||(t.purpose||'').toLowerCase().includes(q)
     return m && (!sf||t.status===sf) && (!tf||t.vehicle_type_needed===tf)
   })
   const role = currentProfile?.role
 
-  // Sort: pending-approval first, then by created_at desc
-  if (['admin','super_approver','approver_admin','approver_amb'].includes(role)) {
-    filtered.sort((a,b) => {
-      const so = (statusOrder[a.status]??9) - (statusOrder[b.status]??9)
-      if (so !== 0) return so
-      return new Date(b.created_at) - new Date(a.created_at)
-    })
-  }
+  // Smart sort — applies to ALL roles:
+  // Active statuses (pending/approved/assigned/on-trip): sort by departure_at ASC (soonest first)
+  // Historical (completed/rejected/cancelled): sort by departure_at DESC (most recent first, at bottom)
+  // Same status + no departure: fall back to created_at
+  const isActive = s => ['pending-approval','approved','assigned','on-trip'].includes(s)
+  filtered.sort((a,b) => {
+    const so = (statusOrder[a.status]??9) - (statusOrder[b.status]??9)
+    if (so !== 0) return so
+    // Same status group — active: soonest departure first; historical: most recent first (but still below active)
+    const aTime = a.departure_at ? new Date(a.departure_at).getTime() : (isActive(a.status) ? 0 : Infinity)
+    const bTime = b.departure_at ? new Date(b.departure_at).getTime() : (isActive(b.status) ? 0 : Infinity)
+    if (isActive(a.status)) return aTime - bTime  // soonest departure first
+    return bTime - aTime  // most recent completed first
+  })
 
   // Precompute: which PHT dates have 2+ poolable tickets (approved/assigned, no pool_id)
   // Used to decide whether to show the Pool Trip button per ticket
