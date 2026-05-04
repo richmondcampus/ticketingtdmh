@@ -1313,7 +1313,7 @@ async function renderDashboard() {
             👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
           </div>
           <div style="display:flex;gap:8px">
-            <button onclick="openPoolGateOut('${t._poolId}')" style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer">🚀 Gate Out All</button>
+            <button onpointerup="openPoolGateOut('${t._poolId}')" style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent">🚀 Gate Out All</button>
             <button onclick="showPoolDetails('${t._poolId}')" style="background:rgba(124,58,237,.1);border:1px solid #c4b5fd;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer">Details</button>
           </div>
         </div>`
@@ -1340,9 +1340,8 @@ async function renderDashboard() {
           👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
         </div>
         <button
-          onclick="event.stopPropagation();event.preventDefault();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');"
-          ontouchend="event.stopPropagation();event.preventDefault();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');"
-          style="width:100%;background:${btnColor};color:#fff;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation">
+          onpointerup="if(event.pointerType==='touch'){event.preventDefault();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');}else{openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');}"
+          style="width:100%;background:${btnColor};color:#fff;border:none;padding:18px;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none;-webkit-user-select:none">
           🚦 GATE OUT →</button>
       </div>`
     }
@@ -1360,7 +1359,7 @@ async function renderDashboard() {
             👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
           </div>
           <div style="display:flex;gap:8px">
-            <button onclick="openPoolGateIn('${t._poolId}')" style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer">✅ Gate In All</button>
+            <button onpointerup="openPoolGateIn('${t._poolId}')" style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent">✅ Gate In All</button>
             <button onclick="showPoolDetails('${t._poolId}')" style="background:rgba(124,58,237,.1);border:1px solid #a78bfa;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer">Details</button>
           </div>
         </div>`
@@ -1386,9 +1385,8 @@ async function renderDashboard() {
           👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
         </div>
         <button
-          onclick="event.stopPropagation();event.preventDefault();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}');"
-          ontouchend="event.stopPropagation();event.preventDefault();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}');"
-          style="width:100%;background:#7c3aed;color:#fff;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation">
+          onpointerup="if(event.pointerType==='touch'){event.preventDefault();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}');}else{openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}');}"
+          style="width:100%;background:#7c3aed;color:#fff;border:none;padding:18px;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none;-webkit-user-select:none">
           ← GATE IN</button>
       </div>`
     }
@@ -1782,7 +1780,7 @@ function buildGuardKanban(tickets) {
         </div>
         <div style="display:flex;gap:8px">
           ${isToday
-            ? `<button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onclick="event.stopPropagation();openPoolGateOut('${t._poolId}')">🚀 Gate Out All</button>`
+            ? `<button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onpointerup="openPoolGateOut('${t._poolId}')">🚀 Gate Out All</button>`
             : `<div style="flex:1;background:rgba(124,58,237,.08);border-radius:9px;padding:10px;text-align:center;font-size:11.5px;color:#6b21a8;font-weight:600">📅 Not today</div>`}
           <button style="flex-shrink:0;background:rgba(124,58,237,.1);border:1px solid #c4b5fd;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer" onclick="event.stopPropagation();showPoolDetails('${t._poolId}')">Details</button>
         </div>
@@ -1849,7 +1847,7 @@ function buildGuardKanban(tickets) {
           </div>
         </div>
         <div style="display:flex;gap:8px">
-          <button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onclick="event.stopPropagation();openPoolGateIn('${t._poolId}')">✅ Gate In All</button>
+          <button style="flex:1;background:#7c3aed;color:#fff;border:none;padding:12px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer" onpointerup="openPoolGateIn('${t._poolId}')">✅ Gate In All</button>
           <button style="flex-shrink:0;background:rgba(124,58,237,.1);border:1px solid #a78bfa;color:#6b21a8;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer" onclick="event.stopPropagation();showPoolDetails('${t._poolId}')">Details</button>
         </div>
       </div>`
