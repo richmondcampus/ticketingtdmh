@@ -1607,18 +1607,17 @@ function renderTicketsTable() {
 
   <!-- Desktop Table -->
   <div class="card card-np desktop-only" style="overflow:hidden">
-  <table style="width:100%;border-collapse:collapse">
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+  <table style="width:100%;border-collapse:collapse;min-width:700px">
     <thead>
       <tr style="background:var(--bg);border-bottom:2px solid var(--border)">
-        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Ticket</th>
-        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Department</th>
-        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Purpose</th>
-        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Urgency</th>
-        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Date</th>
-        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Type</th>
-        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Status</th>
-        <th style="padding:11px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Driver · Vehicle</th>
-        <th style="padding:11px 16px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Actions</th>
+        <th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Ticket</th>
+        <th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Department</th>
+        <th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Purpose</th>
+        <th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);white-space:nowrap">Date</th>
+        <th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Status</th>
+        <th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Driver · Vehicle</th>
+        <th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3)">Actions</th>
       </tr>
     </thead>
     <tbody>${filtered.map((t,i) => {
@@ -1683,38 +1682,37 @@ function renderTicketsTable() {
       const isPending = t.status==='pending-approval'
       const rowBg = isPending ? 'background:color-mix(in srgb,var(--amber-s) 40%,transparent)' : ''
       return `<tr onclick="openViewModal('${t.id}')" style="border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;${rowBg}" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${isPending?'color-mix(in srgb,var(--amber-s) 40%,transparent)':''}'">
-        <td style="padding:13px 16px;white-space:nowrap">
+        <td style="padding:10px 12px;white-space:nowrap">
           <div style="font-size:11px;font-weight:700;color:var(--pri);font-family:monospace;letter-spacing:.3px">${t.ticket_no||'—'}</div>
-          
+          <div style="margin-top:3px">${priorityBadge(t.priority)}</div>
           ${t.booking_group_id ? `<div style="font-size:9.5px;color:var(--purple,#7c3aed);margin-top:2px">🔗 BULK</div>` : ''}
         </td>
-        <td style="padding:13px 16px">
+        <td style="padding:10px 12px">
           <div style="font-size:12px;font-weight:600;color:var(--text1)">${t.department||'—'}</div>
         </td>
-        <td style="padding:13px 16px;max-width:180px">
+        <td style="padding:10px 12px;max-width:180px">
           <div style="font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${t.purpose||''}">${t.purpose||'—'}</div>
           ${(() => {
             const s = t.stops && Array.isArray(t.stops) && t.stops.length > 0 ? t.stops : (t.destination ? [t.destination] : [])
             if (s.length === 0) return ''
-            const label = s.length > 1 ? `→ ${s[0]} <span style="background:var(--pri-s);color:var(--pri);font-size:9px;font-weight:700;padding:1px 5px;border-radius:20px">+${s.length-1} stops</span>` : `→ ${s[0]}`
+            const label = s.length > 1 ? `→ ${s[0]} <span style="background:var(--pri-s);color:var(--pri);font-size:9px;font-weight:700;padding:1px 5px;border-radius:20px">+${s.length-1}</span>` : `→ ${s[0]}`
             return `<div style="font-size:10.5px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>`
           })()}
         </td>
-        <td style="padding:13px 16px;white-space:nowrap">${priorityBadge(t.priority)}</td>
-        <td style="padding:13px 16px;white-space:nowrap">
+        <td style="padding:10px 12px;white-space:nowrap">
           <div style="font-size:11.5px;color:var(--text1)">${fmtDate(t.departure_at||t.created_at)}</div>
         </td>
-        <td style="padding:13px 16px">${typeBadge(t.vehicle_type_needed)}</td>
-        <td style="padding:13px 16px;white-space:nowrap">
+        <td style="padding:10px 12px;white-space:nowrap">
           ${badge(t.status)}
-          ${isOverdue(t)?`<div style="margin-top:4px"><span class="badge b-overdue" style="font-size:9px;padding:2px 6px">⚠ ${overdueDuration(t)}</span></div>`:''}
+          <div style="margin-top:3px">${typeBadge(t.vehicle_type_needed)}</div>
+          ${isOverdue(t)?`<div style="margin-top:3px"><span class="badge b-overdue" style="font-size:9px;padding:2px 6px">⚠ ${overdueDuration(t)}</span></div>`:''}
         </td>
-        <td style="padding:13px 16px">
+        <td style="padding:10px 12px">
           ${t.driver_name
-            ? `<div style="font-size:11.5px;font-weight:600;color:var(--text1)">${t.driver_name}</div><div style="font-size:11px;color:var(--text2);margin-top:1px">${t.vehicle_name||''}</div><div style="font-size:10.5px;color:var(--text3);margin-top:1px;font-family:monospace">${t.vehicle?.plate||t.vehicle_plate||''}</div>`
+            ? `<div style="font-size:11.5px;font-weight:600;color:var(--text1)">${t.driver_name}</div><div style="font-size:10.5px;color:var(--text3);font-family:monospace">${t.vehicle?.plate||t.vehicle_plate||''}</div>`
             : `<span style="font-size:11px;color:var(--text3)">—</span>`}
         </td>
-        <td style="padding:13px 16px" onclick="event.stopPropagation()">
+        <td style="padding:10px 12px" onclick="event.stopPropagation()">
           <div style="display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap;align-items:center">
             ${acts.join('')}
             <button class="tbl-act tbl-act-ghost" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button>
@@ -1722,10 +1720,11 @@ function renderTicketsTable() {
         </td>
       </tr>`
     }).join('')}
-    ${filtered.length===0?`<tr><td colspan="8" style="text-align:center;padding:36px;color:var(--text3);font-size:13px">No tickets found.</td></tr>`:''}
+    ${filtered.length===0?`<tr><td colspan="7" style="text-align:center;padding:36px;color:var(--text3);font-size:13px">No tickets found.</td></tr>`:''}
     </tbody>
   </table>
-  </div>
+  </div><!-- /overflow-x -->
+  </div><!-- /card -->
   <!-- Guard: Kanban Operations Board | Others: Mobile cards -->
   <div class="mob-cards">
     ${role === 'guard' ? buildGuardKanban(filtered) : buildMobCards(filtered, role)}</div>`
@@ -1920,54 +1919,130 @@ function buildGuardKanban(tickets) {
 }
 
 function buildMobCards(filtered, role) {
-  if (filtered.length === 0) return '<div style="text-align:center;padding:32px;color:var(--text3)">No tickets found.</div>'
+  if (filtered.length === 0) return `
+    <div style="text-align:center;padding:48px 24px;color:var(--text3)">
+      <div style="font-size:40px;margin-bottom:10px">📋</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">No tickets found</div>
+      <div style="font-size:12px">Try changing the filter or search term</div>
+    </div>`
+
   return filtered.map(t => {
-    const acts = []
     const isOwnTicket = t.requester_id === currentProfile?.id
-    const canApprove = t.status==='pending-approval' && (
-      role==='admin' ||
-      role==='super_approver' ||
+    const isPending   = t.status === 'pending-approval'
+    const isAssigned  = t.status === 'assigned'
+    const isApproved  = t.status === 'approved'
+    const isOnTrip    = t.status === 'on-trip'
+    const isCompleted = t.status === 'completed'
+    const isCancelled = ['cancelled','rejected'].includes(t.status)
+
+    const canApprove = isPending && (
+      role==='admin' || role==='super_approver' ||
       (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
-      (!isOwnTicket && role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      (!isOwnTicket && role==='approver_amb' && t.vehicle_type_needed==='ambulance')
     )
-    if (canApprove) {
-      acts.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Approve</button>`)
-      acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">Reject</button>`)
-    }
-    if (t.status==='approved' && (
+    const canAssign = isApproved && (
       role==='admin' || role==='super_approver' ||
       (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
-      (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
-    ))
-      acts.push(`<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">Assign Driver</button>`)
-    if (t.status==='assigned' && (
+      (role==='approver_amb' && t.vehicle_type_needed==='ambulance')
+    )
+    const canReassign = isAssigned && (
       role==='admin' || role==='super_approver' ||
       (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
-      (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
-    ))
-      acts.push(`<button class="btn btn-sm" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.2)" onclick="event.stopPropagation();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`)
-    if ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
-      acts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-    if ((role==='admin' || role==='super_approver') && !['completed','cancelled'].includes(t.status))
-      acts.push(`<button class="btn btn-amber btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-    return `<div class="mob-card" onclick="openViewModal('${t.id}')">
-      <div class="mob-card-hd">
-        <div>
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">${chip(t.ticket_no)} ${typeBadge(t.vehicle_type_needed)} ${t.priority && t.priority !== 'normal' ? priorityBadge(t.priority) : ''}</div>
-          <div class="mob-card-title">${t.department||'—'}</div>
-          <div class="mob-card-sub">${t.purpose||'—'}</div>
+      (role==='approver_amb' && t.vehicle_type_needed==='ambulance')
+    )
+    const canCancel = (
+      ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && isPending && isOwnTicket) ||
+      ((role==='admin' || role==='super_approver') && !isCompleted && !isCancelled)
+    )
+
+    // Status color for left border
+    const borderColor = isPending  ? 'var(--amber)'  :
+                        isApproved ? 'var(--green)'  :
+                        isAssigned ? 'var(--pri)'    :
+                        isOnTrip   ? 'var(--purple)' :
+                        isCompleted? 'var(--teal)'   : 'var(--border)'
+
+    // Departure info
+    const dep = t.departure_at ? new Date(t.departure_at) : null
+    const depStr = dep ? dep.toLocaleString('en-PH',{
+      weekday:'short',month:'short',day:'numeric',
+      hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'
+    }) : '—'
+
+    // Route: destination or stops
+    const stops = t.stops && Array.isArray(t.stops) && t.stops.length > 0 ? t.stops : (t.destination ? [t.destination] : [])
+    const routeStr = stops.length === 0 ? '—' :
+                     stops.length === 1 ? stops[0] :
+                     `${stops[0]} +${stops.length-1} stops`
+
+    const overdue = isOverdue(t)
+
+    return `<div style="background:var(--card);border:1px solid var(--border);border-left:4px solid ${borderColor};border-radius:12px;margin-bottom:10px;overflow:hidden;${isPending?'background:color-mix(in srgb,var(--amber-s) 25%,var(--card))':''}" onclick="openViewModal('${t.id}')">
+
+      <!-- Header: Ticket No + Status -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 13px 0">
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:800;font-family:monospace;color:var(--pri);letter-spacing:.3px">${t.ticket_no||'—'}</span>
+          ${t.priority && t.priority !== 'normal' ? priorityBadge(t.priority) : ''}
+          ${t.pool_id ? `<span style="background:#fdf4ff;color:#6b21a8;border:1px solid #e9d5ff;border-radius:20px;padding:1px 7px;font-size:10px;font-weight:700">🚌 Pooled</span>` : ''}
         </div>
-        <div style="text-align:right;flex-shrink:0">
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
           ${badge(t.status)}
-          ${isOverdue(t)?`<br><span class="badge b-overdue" style="font-size:9px;margin-top:3px">⚠ ${overdueDuration(t)}</span>`:''}
+          ${overdue ? `<span class="badge b-overdue" style="font-size:9px;padding:2px 5px">⚠ ${overdueDuration(t)}</span>` : ''}
         </div>
       </div>
-      <div class="mob-card-row">
-        <span>📅 ${fmtDate(t.departure_at||t.created_at)}</span>
-        ${t.driver_name?`<span>· 👤 ${t.driver_name}</span>`:''}
-        ${t.vehicle?.plate||t.vehicle_plate?`<span>· 🚗 ${t.vehicle_name||''} ${t.vehicle?.plate||t.vehicle_plate}</span>`:''}
+
+      <!-- Department + Purpose -->
+      <div style="padding:8px 13px 0">
+        <div style="font-size:14px;font-weight:700;color:var(--text1);line-height:1.3">${t.department||'—'}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.purpose||'—'}</div>
       </div>
-      ${acts.length?`<div class="mob-card-acts" onclick="event.stopPropagation()">${acts.join('')}<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View</button></div>`:`<div class="mob-card-acts"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openViewModal('${t.id}')">View Details</button></div>`}
+
+      <!-- Route + Date/Time -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 13px;margin-top:2px">
+        <div style="background:var(--bg);border-radius:8px;padding:8px 10px">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:3px">📍 Destination</div>
+          <div style="font-size:12px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${routeStr}">${routeStr}</div>
+        </div>
+        <div style="background:var(--bg);border-radius:8px;padding:8px 10px">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:3px">📅 Departure</div>
+          <div style="font-size:11.5px;font-weight:600;color:var(--text1)">${depStr}</div>
+        </div>
+      </div>
+
+      <!-- Driver + Vehicle (if assigned) -->
+      ${t.driver_name ? `
+      <div style="display:flex;align-items:center;gap:8px;padding:0 13px 8px;font-size:12px">
+        <span style="color:var(--text3)">👤</span>
+        <span style="font-weight:600;color:var(--text1)">${t.driver_name}</span>
+        ${t.vehicle?.plate||t.vehicle_plate ? `
+        <span style="color:var(--text3)">·</span>
+        <span style="color:var(--text3)">🚗</span>
+        <span style="font-weight:600;font-family:monospace;color:var(--pri)">${t.vehicle?.plate||t.vehicle_plate}</span>` : ''}
+      </div>` : `<div style="padding:0 13px 8px"></div>`}
+
+      <!-- Vehicle type badge -->
+      <div style="padding:0 13px 10px;display:flex;align-items:center;gap:6px">
+        ${typeBadge(t.vehicle_type_needed)}
+      </div>
+
+      <!-- Action buttons -->
+      <div style="border-top:1px solid var(--border);padding:9px 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center" onclick="event.stopPropagation()">
+        ${canApprove ? `
+          <button class="btn btn-green btn-sm" style="flex:1" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">✓ Approve</button>
+          <button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">✕ Reject</button>
+        ` : ''}
+        ${canAssign ? `
+          <button class="btn btn-pri btn-sm" style="flex:1" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">+ Assign Driver</button>
+        ` : ''}
+        ${canReassign ? `
+          <button class="btn btn-sm" style="flex:1;background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.2)" onclick="event.stopPropagation();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>
+        ` : ''}
+        ${canCancel ? `
+          <button class="btn btn-amber btn-sm" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">✕ Cancel</button>
+        ` : ''}
+        <button class="btn btn-ghost btn-sm" ${canApprove||canAssign||canReassign||canCancel?'':'style="flex:1"'} onclick="event.stopPropagation();openViewModal('${t.id}')">View Details</button>
+      </div>
     </div>`
   }).join('')
 }
@@ -6897,7 +6972,7 @@ function renderAccountsTable() {
       <th>Phone</th><th>Email</th><th>Status</th><th>Actions</th>
     </tr></thead><tbody>
     ${filtered.length === 0
-      ? `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3)">No accounts match the current filter.</td></tr>`
+      ? `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text3)">No accounts match the current filter.</td></tr>`
       : filtered.map(u => {
           const c = ROLE_COLORS[u.role]||'#64748b'
           return `<tr>
