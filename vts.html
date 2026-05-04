@@ -309,11 +309,15 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 
   /* Table hidden on mobile — show mob-cards instead */
   .tbl-wrap.desktop-only{display:none}
+  .card.desktop-only{display:none!important}
   .mob-cards{display:block}
 
   /* Login card */
   .login-card{padding:28px 20px;border-radius:20px}
 }
+
+/* mob-cards hidden by default, shown only on mobile */
+.mob-cards{display:none}
 
 /* ── Desktop only ── */
 @media(min-width:769px){
