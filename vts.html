@@ -1340,7 +1340,13 @@ async function renderDashboard() {
           👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
         </div>
         <button
-          onpointerup="if(event.pointerType==='touch'){event.preventDefault();openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');}else{openGateOutModal('${t.id}','${t.ticket_no}','${(t.purpose||'').replace(/'/g,"\\'")}','${(t.driver_name||'').replace(/'/g,"\\'")}','${(t.vehicle_plate||'').replace(/'/g,"\\'")}','${(t.destination||'').replace(/'/g,"\\'")}');}"
+          data-id="${t.id}"
+          data-no="${t.ticket_no}"
+          data-purpose="${(t.purpose||'').replace(/"/g,'&quot;')}"
+          data-driver="${(t.driver_name||'').replace(/"/g,'&quot;')}"
+          data-plate="${(t.vehicle_plate||'').replace(/"/g,'&quot;')}"
+          data-dest="${(t.destination||'').replace(/"/g,'&quot;')}"
+          onpointerup="gateOutBtn(this)"
           style="width:100%;background:${btnColor};color:#fff;border:none;padding:18px;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none;-webkit-user-select:none">
           🚦 GATE OUT →</button>
       </div>`
@@ -1385,7 +1391,12 @@ async function renderDashboard() {
           👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
         </div>
         <button
-          onpointerup="if(event.pointerType==='touch'){event.preventDefault();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}');}else{openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}');}"
+          data-id="${t.id}"
+          data-no="${t.ticket_no}"
+          data-dest="${(t.destination||'').replace(/"/g,'&quot;')}"
+          data-vid="${t.vehicle_id||''}"
+          data-did="${t.driver_id||''}"
+          onpointerup="gateInBtn(this)"
           style="width:100%;background:#7c3aed;color:#fff;border:none;padding:18px;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none;-webkit-user-select:none">
           ← GATE IN</button>
       </div>`
@@ -3600,6 +3611,16 @@ async function doAssign(id, ticketNo) {
 }
 
 // GATE OUT
+// Guard gate helpers — called from data attributes on buttons
+function gateOutBtn(el) {
+  const b = el.dataset
+  openGateOutModal(b.id, b.no, b.purpose, b.driver, b.plate, b.dest)
+}
+function gateInBtn(el) {
+  const b = el.dataset
+  openGateInModal(b.id, b.no, b.dest, b.vid, b.did)
+}
+
 async function openGateOutModal(id, ticketNo, purpose, driverName, plate, dest) {
   // Fetch trip stops + vehicle current odometer
   const [{ data: tripData }, { data: vehData }] = await Promise.all([
