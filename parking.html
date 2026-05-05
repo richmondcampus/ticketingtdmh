@@ -792,7 +792,7 @@ function ReportsPanel({currentUser}){
               ))}</tbody>
             </table></div>
           )}
-          {voided.length>0&&(
+          {voided.length>0&&currentUser?.role!=="cashier"&&(
             <div className="rc" style={{marginTop:12}}>
               <div className="rch" style={{background:"#fef2f2",borderColor:"#fca5a5"}}>
                 <h4 style={{color:"#991b1b",margin:0}}>⚠️ Voided Transactions — {P(lossTotal)} lost</h4>
