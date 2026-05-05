@@ -567,7 +567,7 @@ function ReportsPanel({currentUser}){
   const [to,setTo]=useState(todayStr());
 
   function exportCSV(){
-    const rows=[['Date/Time','Ticket','Plate','Vehicle','Location','Duration','Type','Checked In By','Checked Out By','Status','Fee']];
+    const rows=[['Date/Time','Ticket','Plate','Vehicle','Location','Duration','Type','Checked In By','Checked Out By','Fee']];
     [...filtered].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).forEach(e=>{
       rows.push([
         fmtDT(e.checkout_at||e.checkout_time||e.checkin_at),
@@ -579,7 +579,6 @@ function ReportsPanel({currentUser}){
         e.overnight?'Overnight':'Regular',
         e.checkin_by||'',
         e.cashier||'',
-        e.status||'completed',
         e.fee||0
       ]);
     });
