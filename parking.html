@@ -568,7 +568,7 @@ function ReportsPanel({currentUser}){
 
   function exportCSV(){
     const rows=[['Date/Time','Ticket','Plate','Vehicle','Location','Duration','Type','Checked In By','Checked Out By','Status','Fee']];
-    [...filtered,...voided].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).forEach(e=>{
+    [...filtered].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).forEach(e=>{
       rows.push([
         fmtDT(e.checkout_at||e.checkout_time||e.checkin_at),
         e.ticket_no||'',
@@ -606,20 +606,28 @@ function ReportsPanel({currentUser}){
         // e.g. Apr 19 00:00 PHT = Apr 18 16:00 UTC
         const fromUTC=new Date(from+"T00:00:00+08:00").toISOString();
         const toUTC=new Date(to+"T23:59:59+08:00").toISOString();
-        const{data:d1,error:e1}=await sb.from("transactions")
-          .select("*")
-          .gte("checkout_at",fromUTC)
-          .lte("checkout_at",toUTC)
-          .order("checkout_at",{ascending:false})
-          .limit(5000);
+        // Paginated fetch — Supabase has 1000 row default limit
+        let allData=[], page=0, batchSize=1000, done=false;
+        let fetchError=null;
+        while(!done){
+          const{data:batch,error:bErr}=await sb.from("transactions")
+            .select("*")
+            .gte("checkout_at",fromUTC)
+            .lte("checkout_at",toUTC)
+            .order("checkout_at",{ascending:false})
+            .range(page*batchSize,(page+1)*batchSize-1);
+          if(bErr){fetchError=bErr;break;}
+          if(!batch||batch.length===0){done=true;}
+          else{allData=[...allData,...batch];if(batch.length<batchSize)done=true;page++;}
+        }
         const{data:d2}=await sb.from("transactions")
           .select("*")
           .is("checkout_at",null)
           .gte("checkout_time",fromUTC)
           .lte("checkout_time",toUTC);
         const seen=new Set();
-        const data=[...(d1||[]),...(d2||[])].filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
-        const error=e1;
+        const data=[...allData,...(d2||[])].filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
+        const error=fetchError;
         if(!cancelled&&!error&&data) setTxns(data);
       }catch(e){console.error("Reports fetch error:",e);}
       if(!cancelled) setFetching(false);
@@ -1787,7 +1795,7 @@ function TDMHParking(){
               <div className="mf">
                 <button className="btn bg" onClick={()=>{setModal(null);setLostTicket(false);}}>Cancel</button>
                 <button className="btn bg" style={{background:"#f0f9ff",color:"#0369a1",border:"1px solid #bae6fd",flex:"none",padding:"9px 11px"}} title="Reprint check-in ticket" onClick={()=>printThermal({isCheckIn:true,ticketNo:sel.vehicle.ticketNo||"—",plate:sel.vehicle.plate,name:sel.vehicle.name,vtype:sel.vehicle.vtype,locName:LOCS.find(l=>l.id===sel.locId)?.name,slotNum:sel.number,checkin:sel.vehicle.checkin,cashierName:user.name})}>🖨️ Reprint Ticket</button>
-                {user?.role==="admin"&&<button className="btn" style={{background:"#fee2e2",color:"#991b1b",border:"1px solid #fca5a5"}} onClick={()=>setModal("void")}>⚠️ Void</button>}
+                {(user?.role==="admin"||user?.role==="cashier")&&<button className="btn" style={{background:"#fee2e2",color:"#991b1b",border:"1px solid #fca5a5"}} onClick={()=>setModal("void")}>⚠️ Void</button>}
                 <button className="btn bd2" onClick={doCheckout} disabled={processing}>{processing&&<span className="spin"/>}{processing?"Processing…":"Confirm & Print Receipt"}</button>
               </div>
             </div>
