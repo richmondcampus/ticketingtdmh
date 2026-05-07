@@ -3208,22 +3208,47 @@ async function doPoolGateOut(poolId) {
   const now     = new Date().toISOString()
   const btn     = document.getElementById('cvyGoBtn'); btn.disabled=true; btn.textContent='Processing...'
 
-  // Update convoy
-  await SB.from('trip_pools').update({
-    gate_out_at:   now,
-    odometer_out:  odo,
-    condition_out: cond,
-    guard_out_id:  currentProfile?.id,
-    guard_out_remarks: remarks
-  }).eq('id',poolId)
+  // Fetch pool for vehicle/driver IDs
+  const { data: pool } = await SB.from('trip_pools').select('vehicle_id,driver_id').eq('id',poolId).single()
 
-  // Update all tickets in convoy
-  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('pool_id',poolId)
-  for (const t of (trips||[])) {
-    await SB.from('trips').update({ status:'on-trip', gate_out_at:now, odometer_out:odo, guard_out_id:currentProfile?.id, guard_out_remarks:remarks }).eq('id',t.id)
-    await addAudit(t.id, t.ticket_no, '🚌 Pool Gate Out', `Pool Gate Out · Odo: ${odo}km · Guard: ${currentProfile?.full_name}`)
+  // Batch update — all in parallel
+  const [poolUpdate, tripsUpdate] = await Promise.all([
+    SB.from('trip_pools').update({
+      gate_out_at:       now,
+      odometer_out:      odo,
+      condition_out:     cond,
+      guard_out_id:      currentProfile?.id,
+      guard_out_remarks: remarks
+    }).eq('id', poolId),
+
+    SB.from('trips').update({
+      status:            'on-trip',
+      gate_out_at:       now,
+      odometer_out:      odo,
+      guard_out_id:      currentProfile?.id,
+      guard_out_remarks: remarks
+    }).eq('pool_id', poolId)  // ← updates ALL tickets in pool at once
+  ])
+
+  if (tripsUpdate.error) { alert('Gate-out error: ' + tripsUpdate.error.message); btn.disabled=false; btn.textContent='🚀 Gate Out All'; return }
+
+  // Update vehicle odometer
+  if (pool?.vehicle_id) {
+    await SB.from('vehicles').update({ odometer: odo }).eq('id', pool.vehicle_id)
   }
-  closeMO(); renderDashboard()
+
+  // Single audit log
+  const { data: trips } = await SB.from('trips').select('ticket_no').eq('pool_id', poolId)
+  const ticketNos = (trips||[]).map(t=>t.ticket_no).join(', ')
+  await addAudit(null, ticketNos, '🚌 Pool Gate Out', `Pool gate-out · Odo: ${odo}km · Condition: ${cond} · Guard: ${currentProfile?.full_name}`)
+
+  // SMS to driver
+  if (pool?.driver_id) {
+    const { data: drv } = await SB.from('drivers').select('phone').eq('id', pool.driver_id).single()
+    if (drv?.phone) await sendSMS([drv.phone], `[TDMH VTS] Pool Gate Out cleared.\nTickets: ${ticketNos}\nOdo: ${odo.toLocaleString()} km\nSafe travels!`)
+  }
+
+  closeMO(true); renderDashboard()
 }
 
 // ── Pool Gate In ─────────────────────────────
@@ -3238,7 +3263,7 @@ async function openPoolGateIn(poolId) {
        ${(trips||[]).map(t=>`<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">${t.ticket_no} — <strong>${t.department}</strong> → ${t.destination||'—'}</div>`).join('')}
      </div>
      <div class="fr">
-       <div class="fg"><label class="fl">Odometer In (km) *</label><input class="fi" type="number" id="cvyOdoIn" placeholder="e.g. 12600"></div>
+       <div class="fg"><label class="fl" id="cvyOdoInLabel">Odometer In (km) *</label><input class="fi" type="number" id="cvyOdoIn" placeholder="Enter current reading"></div>
        <div class="fg"><label class="fl">Condition</label>
          <select class="fs" id="cvyCondIn">
            <option>Good</option><option>Fair</option><option>Needs Attention</option>
@@ -3255,6 +3280,15 @@ async function openPoolGateIn(poolId) {
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="cvyGiBtn" onclick="doPoolGateIn('${poolId}',${(trips||[]).length})">✅ Gate In All</button>`
   , { confirmClose: true })
+
+  // Fetch odometer_out in background to show reference
+  SB.from('trip_pools').select('odometer_out').eq('id',poolId).single().then(({data}) => {
+    const odoOut = data?.odometer_out
+    const lbl = document.getElementById('cvyOdoInLabel')
+    const inp = document.getElementById('cvyOdoIn')
+    if (lbl && odoOut) lbl.innerHTML = `Odometer In (km) * <span style="font-size:10px;font-weight:400;color:var(--text3)">— gate-out was ${odoOut.toLocaleString()} km</span>`
+    if (inp && odoOut) inp.placeholder = `Must be ≥ ${odoOut.toLocaleString()}`
+  })
 }
 
 function calcPoolFuel() {
@@ -3271,52 +3305,63 @@ async function doPoolGateIn(poolId, ticketCount) {
   const fuelL   = parseFloat(document.getElementById('cvyFuelL')?.value||0)||null
   const fuelP   = parseFloat(document.getElementById('cvyFuelP')?.value||70)
   const fuelCost= fuelL ? fuelL*fuelP : null
-  const fuelPerTicket = fuelCost ? fuelCost/ticketCount : null
+  const fuelPerTicket = fuelCost && ticketCount ? fuelCost/ticketCount : null
+  const fuelLPerTicket = fuelL && ticketCount ? parseFloat((fuelL/ticketCount).toFixed(2)) : null
   const remarks = document.getElementById('cvyRemarksIn')?.value||''
   const now     = new Date().toISOString()
   const btn     = document.getElementById('cvyGiBtn'); btn.disabled=true; btn.textContent='Processing...'
 
-  // Get convoy for odo_out
-  const { data: c } = await SB.from('trip_pools').select('odometer_out,driver_id,vehicle_id').eq('id',poolId).single()
-  const distKm = c?.odometer_out ? odoIn - c.odometer_out : null
-  const distPerTicket = distKm && distKm>0 ? Math.round(distKm/ticketCount) : null
+  // Fetch pool record for odo_out, driver_id, vehicle_id
+  const { data: c } = await SB.from('trip_pools').select('odometer_out,gate_out_at,driver_id,vehicle_id').eq('id',poolId).single()
+  const distKm = c?.odometer_out && odoIn > c.odometer_out ? odoIn - c.odometer_out : null
+  const distPerTicket = distKm && ticketCount ? Math.round(distKm/ticketCount) : null
+  const durationMins = c?.gate_out_at ? Math.round((new Date(now)-new Date(c.gate_out_at))/60000) : null
 
-  // Update trip pool record
-  await SB.from('trip_pools').update({
-    gate_in_at:           now,
-    odometer_in:          odoIn,
-    condition_in:         condIn,
-    guard_in_id:          currentProfile?.id,
-    guard_in_remarks:     remarks,
-    fuel_consumed_liters: fuelL,
-    fuel_cost:            fuelCost,
-    fuel_price_per_liter: fuelP
-  }).eq('id',poolId)
+  // ── BATCH update all tickets in the pool — ONE DB call ─────────────────────
+  const [poolUpdate, tripsUpdate] = await Promise.all([
+    SB.from('trip_pools').update({
+      gate_in_at:           now,
+      odometer_in:          odoIn,
+      condition_in:         condIn,
+      guard_in_id:          currentProfile?.id,
+      guard_in_remarks:     remarks,
+      fuel_consumed_liters: fuelL,
+      fuel_cost:            fuelCost,
+      fuel_price_per_liter: fuelP
+    }).eq('id', poolId),
 
-  // Update all tickets
-  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('pool_id',poolId)
-  for (const t of (trips||[])) {
-    await SB.from('trips').update({
+    SB.from('trips').update({
       status:                'completed',
       gate_in_at:            now,
       odometer_in:           odoIn,
       condition_in:          condIn,
       guard_in_id:           currentProfile?.id,
       guard_in_remarks:      remarks,
-      fuel_consumed_liters:  fuelL ? parseFloat((fuelL/ticketCount).toFixed(2)) : null,
+      fuel_consumed_liters:  fuelLPerTicket,
       fuel_cost:             fuelPerTicket,
-      fuel_price_per_liter:  fuelP||null,
+      fuel_price_per_liter:  fuelP || null,
       distance_km:           distPerTicket,
-      trip_duration_minutes: c?.gate_out_at ? Math.round((new Date(now)-new Date(c.gate_out_at))/60000) : null
-    }).eq('id',t.id)
-    await addAudit(t.id, t.ticket_no, '🚌 Pool Gate In', `Pool: Gate In · Odo: ${odoIn}km · Fuel split: ₱${fuelPerTicket?.toFixed(2)||'—'} · Guard: ${currentProfile?.full_name}`)
-  }
+      trip_duration_minutes: durationMins
+    }).eq('pool_id', poolId)  // ← updates ALL tickets in pool at once
+  ])
+
+  if (tripsUpdate.error) { alert('Gate-in error: ' + tripsUpdate.error.message); btn.disabled=false; btn.textContent='✅ Gate In All'; return }
 
   // Release driver + vehicle
-  if (c?.driver_id)  await SB.from('drivers').update({status:'available'}).eq('id',c.driver_id)
-  if (c?.vehicle_id) await SB.from('vehicles').update({status:'available'}).eq('id',c.vehicle_id)
+  const releaseOps = []
+  if (c?.driver_id)  releaseOps.push(SB.from('drivers').update({status:'available'}).eq('id',c.driver_id))
+  if (c?.vehicle_id) releaseOps.push(SB.from('vehicles').update({odometer:odoIn,status:'available'}).eq('id',c.vehicle_id))
+  if (releaseOps.length) await Promise.all(releaseOps)
 
-  closeMO(); renderDashboard()
+  // Single audit log for the pool (not per ticket)
+  const { data: trips } = await SB.from('trips').select('id,ticket_no').eq('pool_id',poolId)
+  const ticketNos = (trips||[]).map(t=>t.ticket_no).join(', ')
+  if (trips?.[0]) {
+    await addAudit(trips[0].id, ticketNos, '🚌 Pool Gate In', `Pool ${poolId} — Odo: ${odoIn}km · Fuel: ${fuelL||0}L ₱${fuelCost?.toFixed(2)||'—'} split ${ticketCount} ways · Guard: ${currentProfile?.full_name}`)
+  }
+
+  closeMO(true)
+  renderDashboard()
 }
 
 // ── Dissolve Pool (undo before gate-out) ────
@@ -3772,18 +3817,13 @@ async function doGateOut(id, ticketNo) {
 
 // GATE IN
 async function openGateInModal(id, ticketNo, dest, vehicleId, driverId) {
-  // Fetch trip's gate-out odometer for validation
-  const { data: tripData } = await SB.from('trips').select('odometer_out,departure_at').eq('id',id).single()
-  const odoOut = tripData?.odometer_out || null
-
+  // Open modal IMMEDIATELY — no waiting for DB fetch
   openMO(`Gate In — ${ticketNo}`,
     `<div class="info info-green">Vehicle returning from: <strong>${dest}</strong></div>
      <div class="fr">
-       <div class="fg"><label class="fl">Odometer In (km) *
-         ${odoOut ? `<span style="font-size:10px;font-weight:400;color:var(--text3)"> — gate-out was ${odoOut.toLocaleString()} km</span>` : ''}
-       </label>
-       <input class="fi" type="number" id="odoIn" placeholder="${odoOut ? 'Must be ≥ '+odoOut.toLocaleString() : 'e.g. 42740'}" min="${odoOut||0}" oninput="calcFuelCost();validateOdoIn(${odoOut||0})">
-       <div id="odoInErr" style="font-size:10.5px;color:var(--red);margin-top:3px;display:none">⚠ Odometer in cannot be less than gate-out reading (${odoOut?.toLocaleString()||0} km)</div>
+       <div class="fg"><label class="fl" id="odoInLabel">Odometer In (km) *</label>
+       <input class="fi" type="number" id="odoIn" placeholder="Loading current reading..." oninput="calcFuelCost();validateOdoIn(window._gateInOdoOut||0)">
+       <div id="odoInErr" style="font-size:10.5px;color:var(--red);margin-top:3px;display:none">⚠ Odometer in cannot be less than gate-out reading</div>
        </div>
        <div class="fg"><label class="fl">Fuel on Return</label><select class="fs" id="fuelIn"><option>Full</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Empty</option></select></div>
        <div class="fg"><label class="fl">Condition</label><select class="fs" id="condIn"><option>Good</option><option>Fair</option><option>With defects</option></select></div>
@@ -3800,12 +3840,19 @@ async function openGateInModal(id, ticketNo, dest, vehicleId, driverId) {
      <div class="fg"><label class="fl">Trip Remarks</label><textarea class="ft" id="giRem" placeholder="Incidents, observations..."></textarea></div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-purple" id="giBtn" onclick="doGateIn('${id}','${ticketNo}','${vehicleId}','${driverId}')">Complete Trip</button>`
-  )
-  // Pre-load odoOut for distance calc
-  SB.from('trips').select('odometer_out').eq('id',id).single().then(({data}) => {
-    if (data?.odometer_out) {
-      const el = document.getElementById('odoIn')
-      if (el) el.dataset.odoOut = data.odometer_out
+  , { confirmClose: true })
+
+  // Fetch odometer in background — update label and validation when ready
+  window._gateInOdoOut = 0
+  SB.from('trips').select('odometer_out').eq('id', id).single().then(({ data }) => {
+    const odoOut = data?.odometer_out || 0
+    window._gateInOdoOut = odoOut
+    const lbl = document.getElementById('odoInLabel')
+    const inp = document.getElementById('odoIn')
+    if (lbl && odoOut) lbl.innerHTML = `Odometer In (km) * <span style="font-size:10px;font-weight:400;color:var(--text3)">— gate-out was ${odoOut.toLocaleString()} km</span>`
+    if (inp && odoOut) {
+      inp.placeholder = `Must be ≥ ${odoOut.toLocaleString()}`
+      inp.min = odoOut
     }
   })
 }
