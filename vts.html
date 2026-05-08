@@ -4935,9 +4935,22 @@ async function applyTemplate(id) {
   _appliedTemplateAutoApprove = t.auto_approve || false
   if (t.vehicle_type) selectVtype(t.vehicle_type)
   if (t.purpose) document.getElementById('ntPurpose').value = t.purpose
-  if (t.destination) {
-    const firstStop = document.querySelector('#ntStopsContainer .ntStopInput')
-    if (firstStop) firstStop.value = t.destination
+  if (t.destination || t.stops?.length) {
+    const allStops = t.stops?.length > 0 ? t.stops : [t.destination].filter(Boolean)
+    const container = document.getElementById('ntStopsContainer')
+    if (container) {
+      // Clear existing stops except first
+      container.querySelectorAll('.ntStopRow:not(:first-child)').forEach(r => r.remove())
+      // Set first stop
+      const firstInput = container.querySelector('.ntStopInput')
+      if (firstInput) firstInput.value = allStops[0] || ''
+      // Add additional stops
+      for (let i = 1; i < allStops.length; i++) {
+        addStop && addStop()
+        const inputs = container.querySelectorAll('.ntStopInput')
+        if (inputs[i]) inputs[i].value = allStops[i]
+      }
+    }
   }
   if (t.passengers) document.getElementById('ntPax').value = t.passengers
   if (t.priority) {
@@ -4957,6 +4970,23 @@ async function applyTemplate(id) {
     }
   }
   if (t.remarks) document.getElementById('ntNotes').value = t.remarks
+
+  // Pre-fill default passengers
+  if (t.default_passengers?.length > 0) {
+    // Clear existing passenger rows
+    document.querySelectorAll('.ntPaxRow').forEach(r => r.remove())
+    // Add each default passenger
+    t.default_passengers.forEach(p => {
+      if (typeof addPassengerRow === 'function') addPassengerRow()
+      const rows = document.querySelectorAll('.ntPaxRow')
+      const lastRow = rows[rows.length - 1]
+      if (lastRow) {
+        const nameEl = lastRow.querySelector('.ntPaxName'); if (nameEl) nameEl.value = p.full_name || ''
+        const deptEl = lastRow.querySelector('.ntPaxDept'); if (deptEl) deptEl.value = p.department || ''
+        const telEl  = lastRow.querySelector('.ntPaxTel');  if (telEl)  telEl.value  = p.contact_no || ''
+      }
+    })
+  }
   if (t.department && currentProfile?.role === 'admin') {
     const deptEl = document.getElementById('ntDept')
     if (deptEl?.tagName === 'SELECT') deptEl.value = t.department
@@ -5015,12 +5045,29 @@ async function openSaveTemplateModal() {
        </div>
      </div>
      <div class="fg"><label class="fl">Purpose</label><input class="fi" id="tmplPurpose" placeholder="Purpose..."></div>
-     <div class="fg"><label class="fl">Destination</label><input class="fi" id="tmplDest" placeholder="Destination..."></div>
+     <div class="fg">
+       <label class="fl">Destination / Stops</label>
+       <div id="tmplStopsContainer">
+         <div class="tmpl-stop-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
+           <input class="fi tmpl-stop-input" placeholder="Primary destination..." style="flex:1;font-size:13px;padding:7px 10px">
+           <button type="button" onclick="addTmplStop()" style="background:var(--pri);color:#fff;border:none;border-radius:8px;width:30px;height:30px;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;line-height:1">+</button>
+         </div>
+       </div>
+       <div style="font-size:10.5px;color:var(--text3);margin-top:2px">Tap + to add more stops (optional)</div>
+     </div>
      <div class="fr">
-       <div class="fg"><label class="fl">Passengers</label><input class="fi" type="number" id="tmplPax" value="1" min="1"></div>
        <div class="fg"><label class="fl">Priority</label>
          <select class="fs" id="tmplPri"><option value="normal">Normal</option><option value="low">Low</option><option value="urgent">Urgent</option><option value="emergency">Emergency</option></select>
        </div>
+     </div>
+
+     <!-- Default Passengers -->
+     <div class="fg" style="margin-top:4px">
+       <label class="fl">Default Passengers <span style="font-size:10px;font-weight:400;color:var(--text3)">— optional, auto-added to every generated trip</span></label>
+       <div id="tmplPaxContainer" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
+       <button type="button" onclick="addTmplPax()" style="width:100%;padding:8px;border:1.5px dashed var(--border);border-radius:8px;background:transparent;color:var(--text3);cursor:pointer;font-size:12px;font-weight:700" onmouseover="this.style.borderColor='var(--pri)';this.style.color='var(--pri)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+         + Add Passenger
+       </button>
      </div>
      <div style="border-top:1px solid var(--border);margin:14px 0"></div>
      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -5102,6 +5149,51 @@ function toggleRecurDays() {
   document.getElementById('tmplDaysWrap').style.display = type === 'weekly' ? '' : 'none'
 }
 
+function addTmplPax() {
+  const container = document.getElementById('tmplPaxContainer')
+  if (!container) return
+  const idx = container.querySelectorAll('.tmpl-pax-row').length + 1
+  const div = document.createElement('div')
+  div.className = 'tmpl-pax-row'
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;align-items:center'
+  div.innerHTML = `
+    <input class="fi tmpl-pax-name" placeholder="Full name *" style="font-size:12px;padding:6px 8px">
+    <input class="fi tmpl-pax-dept" placeholder="Department" style="font-size:12px;padding:6px 8px">
+    <input class="fi tmpl-pax-contact" placeholder="Contact no." style="font-size:12px;padding:6px 8px">
+    <button type="button" onclick="this.closest('.tmpl-pax-row').remove()" style="background:var(--red-s);color:var(--red);border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;flex-shrink:0">×</button>
+  `
+  container.appendChild(div)
+  div.querySelector('.tmpl-pax-name')?.focus()
+}
+
+function getTmplPassengers() {
+  return [...document.querySelectorAll('.tmpl-pax-row')].map(row => ({
+    full_name:  row.querySelector('.tmpl-pax-name')?.value?.trim() || '',
+    department: row.querySelector('.tmpl-pax-dept')?.value?.trim() || '',
+    contact_no: row.querySelector('.tmpl-pax-contact')?.value?.trim() || ''
+  })).filter(p => p.full_name)
+}
+
+function addTmplStop() {
+  const container = document.getElementById('tmplStopsContainer')
+  if (!container) return
+  const count = container.querySelectorAll('.tmpl-stop-row').length + 1
+  const div = document.createElement('div')
+  div.className = 'tmpl-stop-row'
+  div.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center'
+  div.innerHTML = `
+    <input class="fi tmpl-stop-input" placeholder="Stop ${count}..." style="flex:1;font-size:13px;padding:7px 10px">
+    <button type="button" onclick="this.closest('.tmpl-stop-row').remove()" style="background:var(--red-s);color:var(--red);border:1px solid rgba(220,38,38,.2);border-radius:8px;width:30px;height:30px;font-size:16px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">×</button>
+  `
+  container.appendChild(div)
+  div.querySelector('input')?.focus()
+}
+
+function getTmplStops() {
+  const inputs = document.querySelectorAll('.tmpl-stop-input')
+  return [...inputs].map(el => el.value.trim()).filter(Boolean)
+}
+
 async function doSaveTemplate() {
   const name = document.getElementById('tmplName')?.value?.trim()
   if (!name) { alert('Template name is required.'); return }
@@ -5114,7 +5206,11 @@ async function doSaveTemplate() {
       alert('Please select at least one day of the week.'); return
     }
   }
+  const stops = getTmplStops()
+  if (!stops.length) { alert('Please enter at least one destination.'); return }
+  const destination = stops[0]
   const btn = document.getElementById('saveTmplBtn'); btn.disabled=true; btn.textContent='Saving...'
+  const paxList = getTmplPassengers()
 
   // Days saved as text ('friday', 'monday') for DB function compatibility
   const days = isRecur ? [...document.querySelectorAll('.tmpl-day:checked')].map(el => el.value) : []
@@ -5133,8 +5229,10 @@ async function doSaveTemplate() {
     department:          document.getElementById('tmplDept')?.value||null,
     vehicle_type:        document.getElementById('tmplType')?.value||'regular',
     purpose:             document.getElementById('tmplPurpose')?.value||null,
-    destination:         document.getElementById('tmplDest')?.value||null,
-    passengers:          parseInt(document.getElementById('tmplPax')?.value)||1,
+    destination:         destination,
+    stops:               stops.length > 1 ? stops : null,
+    passengers:          paxList.length > 0 ? paxList.length : parseInt(document.getElementById('tmplPax')?.value)||1,
+    default_passengers:  paxList.length > 0 ? paxList : null,
     priority:            document.getElementById('tmplPri')?.value||'normal',
     auto_approve:        document.getElementById('tmplAutoApprove')?.checked||false,
     is_recurring:        isRecur,
