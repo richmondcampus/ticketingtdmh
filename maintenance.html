@@ -1307,6 +1307,26 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
       </div>
     </div>
 
+    <!-- CSR -->
+    <div class="page" id="pg-csr">
+      <div class="sec-head">
+        <div>
+          <div class="sec-title">📦 CSR — Parts Management</div>
+          <div class="sec-sub">Parts requests mula sa maintenance team</div>
+        </div>
+      </div>
+      <div class="stats-row" id="csrStatsAdmin" style="margin-bottom:16px;"></div>
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">Parts Requests</div>
+            <div class="card-sub">Lahat ng pending at fulfilled requests</div>
+          </div>
+        </div>
+        <div id="csrPartsListAdmin"></div>
+      </div>
+    </div>
+
     <!-- NOTIFICATIONS -->
     <div class="page" id="pg-notifs">
       <div class="sec-title" style="margin-bottom:13px;">Notifications</div>
@@ -2021,7 +2041,7 @@ async function testSMS() {
 function buildNav() {
   const role = CU.role;
   let tabs = [];
-  if (role==='admin')       tabs=[{id:'dashboard',lbl:'📊',name:'Dashboard'},{id:'tickets',lbl:'🎫',name:'Tickets'},{id:'team',lbl:'👷',name:'Team'},{id:'analytics',lbl:'📈',name:'Analytics'},{id:'notifs',lbl:'🔔',name:'Alerts'}];
+  if (role==='admin')       tabs=[{id:'dashboard',lbl:'📊',name:'Dashboard'},{id:'tickets',lbl:'🎫',name:'Tickets'},{id:'team',lbl:'👷',name:'Team'},{id:'analytics',lbl:'📈',name:'Analytics'},{id:'csr',lbl:'📦',name:'CSR'},{id:'notifs',lbl:'🔔',name:'Alerts'}];
   else if (role==='maintenance') tabs=[{id:'mytickets',lbl:'🔧',name:'My Tickets'},{id:'tickets',lbl:'🎫',name:'All Tickets'},{id:'analytics',lbl:'📈',name:'My Stats'},{id:'notifs',lbl:'🔔',name:'Alerts'}];
   else if (role==='viewer') tabs=[{id:'dashboard',lbl:'📊',name:'Dashboard'},{id:'tickets',lbl:'🎫',name:'All Tickets'},{id:'analytics',lbl:'📈',name:'Analytics'},{id:'notifs',lbl:'🔔',name:'Alerts'}];
   else if (role==='csr')   tabs=[{id:'dashboard',lbl:'📋',name:'CSR Dashboard'},{id:'notifs',lbl:'🔔',name:'Alerts'}];
@@ -2075,6 +2095,7 @@ function switchPage(id) {
   // Close mobile sidebar on nav click
   if (window.innerWidth <= 900) document.getElementById('sidebar')?.classList.remove('open');
   if(id==='dashboard') renderDash();
+  if(id==='csr')       renderAdminCSRPage();
   if(id==='tickets') {
     // Maintenance only — default to Open filter
     if (CU && CU.role==='maintenance') {
@@ -4168,6 +4189,74 @@ function stLbl(s){return{open:'Open',claimed:'Claimed',teamed:'Teamed Up',resolv
 // ══════════════════════════════════════════════════════════════
 // CSR DASHBOARD
 // ══════════════════════════════════════════════════════════════
+async function renderAdminCSRPage() {
+  const statsEl = document.getElementById('csrStatsAdmin');
+  const listEl  = document.getElementById('csrPartsListAdmin');
+  if (!statsEl || !listEl) return;
+
+  statsEl.innerHTML = '<div class="loading"><div class="spin"></div></div>';
+  listEl.innerHTML  = '';
+
+  const { data: parts } = await sb.from('ticket_parts_requests')
+    .select('*, tickets(id,title,dept,priority,status,evaluation_status)')
+    .order('requested_at', { ascending: false });
+
+  const all       = parts || [];
+  const pending   = all.filter(p => p.status === 'pending');
+  const available = all.filter(p => p.status === 'available');
+  const cancelled = all.filter(p => p.status === 'cancelled');
+
+  statsEl.innerHTML =
+    '<div class="sc"><div class="sc-num" style="color:var(--amber2)">'+pending.length+'</div><div class="sc-lbl">Pending</div></div>'
+    + '<div class="sc"><div class="sc-num" style="color:var(--green2)">'+available.length+'</div><div class="sc-lbl">Available na</div></div>'
+    + '<div class="sc"><div class="sc-num" style="color:var(--text3)">'+cancelled.length+'</div><div class="sc-lbl">Cancelled</div></div>'
+    + '<div class="sc"><div class="sc-num" style="color:var(--text)">'+all.length+'</div><div class="sc-lbl">Lahat</div></div>';
+
+  if (!all.length) {
+    listEl.innerHTML = '<div class="empty"><div class="empty-ico">📦</div><p>Walang parts requests pa.</p></div>';
+    return;
+  }
+
+  const urgencyColor = { urgent:'var(--red2)', normal:'var(--accent2)', low:'var(--text3)' };
+  const statusColors = { pending:'var(--amber2)', available:'var(--green2)', cancelled:'var(--text3)' };
+
+  listEl.innerHTML = all.map(p => {
+    const t = p.tickets || {};
+    const isAvailable = p.status === 'available';
+    const isCancelled = p.status === 'cancelled';
+    return '<div class="parts-row">'
+      + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px;">'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">'
+      + '<span class="mono" style="font-size:10px;color:var(--accent2);cursor:pointer;" onclick="openTkt(\''+t.id+'\')">'+t.id+'</span>'
+      + '<span class="badge b-'+(t.priority||'normal')+'">'+( t.priority||'').toUpperCase()+'</span>'
+      + '<span style="font-size:10px;color:var(--text3);">'+( t.dept||'—')+'</span>'
+      + (t.evaluation_status ? '<span style="font-size:10px;font-weight:700;color:var(--amber2);">'+t.evaluation_status+'</span>' : '')
+      + '</div>'
+      + '<div style="font-weight:700;font-size:14px;margin-bottom:2px;">'+p.description+'</div>'
+      + '<div style="font-size:11px;color:var(--text3);">'
+      + 'Qty: <strong>'+p.quantity+'</strong>'
+      + ' · Urgency: <strong style="color:'+urgencyColor[p.urgency||'normal']+'">'+( p.urgency||'normal').toUpperCase()+'</strong>'
+      + (p.notes ? ' · '+p.notes : '')
+      + '</div>'
+      + '<div style="font-size:10px;color:var(--text4);margin-top:3px;">Requested: '+timeAgo(p.requested_at)
+      + (isAvailable && p.fulfilled_at ? ' · Fulfilled: '+timeAgo(p.fulfilled_at) : '')
+      + '</div>'
+      + '</div>'
+      + '<div style="flex-shrink:0;text-align:right;">'
+      + '<div style="font-size:12px;font-weight:700;color:'+statusColors[p.status||'pending']+';">'+( p.status||'pending').toUpperCase()+'</div>'
+      + (!isAvailable && !isCancelled
+          ? '<button onclick="markPartsAvailable(\''+p.id+'\',\''+t.id+'\',\''+( t.priority||'normal')+'\')" class="btn btn-green btn-sm" style="margin-top:6px;font-size:11px;">✅ Available na</button>'
+          : '')
+      + '</div>'
+      + '</div>'
+      + (isAvailable && p.notified_at
+          ? '<div style="font-size:10px;color:var(--green2);padding:4px 8px;background:var(--green-bg);border-radius:6px;">✅ Maintenance notified — '+timeAgo(p.notified_at)+'</div>'
+          : '')
+      + '</div>';
+  }).join('');
+}
+
 async function renderCSRDash() {
   document.getElementById('dashAdmin').style.display = 'none';
   document.getElementById('dashDept').style.display  = 'none';
