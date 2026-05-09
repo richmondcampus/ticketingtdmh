@@ -9,7 +9,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TDMH Maint">
 <meta name="theme-color" content="#f8faff">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,700;9..144,800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="manifest" href="manifest.json">
 <meta name="mobile-web-app-capable" content="yes">
@@ -26,9 +28,9 @@
 
 /* ── FONTS ──────────────────────────────────────────────── */
 :root {
-  --font-display: 'Fraunces', Georgia, serif;
-  --font-body: 'DM Sans', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: 'Fraunces', 'Georgia', 'Times New Roman', serif;
+  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
 }
 
 /* ── LIGHT THEME (DEFAULT) ──────────────────────────────── */
@@ -566,6 +568,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
   box-shadow:var(--shadow-lg);
   transform:scale(.97) translateY(8px);
   transition:transform .2s;
+  font-family:var(--font-body);
+  color:var(--text);
 }
 .overlay.open .modal{transform:none;}
 [data-theme="light"] .modal{box-shadow:0 8px 16px rgba(0,0,0,.06),0 32px 80px rgba(30,60,140,.16);}
@@ -1305,6 +1309,17 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
         </div>
         <div id="slaResponse"></div>
       </div>
+
+      <!-- CSR Turnaround Report -->
+      <div class="card" id="csrTurnaroundCard">
+        <div class="card-head">
+          <div>
+            <div class="card-title">📦 CSR Parts Turnaround</div>
+            <div class="card-sub">Gaano katagal bago naibigay ang parts mula sa request date</div>
+          </div>
+        </div>
+        <div id="csrTurnaround"></div>
+      </div>
     </div>
 
     <!-- CSR -->
@@ -1324,6 +1339,15 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
           </div>
         </div>
         <div id="csrPartsListAdmin"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">📊 Parts Turnaround Report</div>
+            <div class="card-sub">Gaano katagal bago naibigay ang parts</div>
+          </div>
+        </div>
+        <div id="csrTurnaroundAdmin"></div>
       </div>
     </div>
 
@@ -1413,33 +1437,32 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
 
 <!-- PARTS REQUEST MODAL -->
 <div class="overlay" id="partsReqModal">
-  <div class="modal" style="max-width:400px;">
+  <div class="modal" style="max-width:480px;">
     <div class="modal-head">
       <div class="modal-title">📦 Request Parts sa CSR</div>
       <button class="x-btn" onclick="closeM('partsReqModal')">✕</button>
     </div>
+    <!-- Overall request info -->
     <div class="fg">
-      <label>Parts / Gamit na Kailangan *</label>
-      <input type="text" id="partsDescInput" placeholder="e.g. Fluorescent bulb 40W, Circuit breaker 20A" maxlength="200">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-      <div class="fg">
-        <label>Quantity</label>
-        <input type="number" id="partsQtyInput" value="1" min="1" max="999">
-      </div>
-      <div class="fg">
-        <label>Urgency</label>
-        <select id="partsUrgencyInput">
-          <option value="normal">Normal</option>
-          <option value="urgent">🔴 Urgent</option>
-          <option value="low">Low</option>
-        </select>
-      </div>
+      <label>Urgency</label>
+      <select id="partsUrgencyInput">
+        <option value="normal">🔵 Normal</option>
+        <option value="urgent">🔴 Urgent</option>
+        <option value="low">⚪ Low</option>
+      </select>
     </div>
     <div class="fg">
-      <label>Additional Notes</label>
-      <input type="text" id="partsNotesInput" placeholder="Brand, specs, o iba pang detalye" maxlength="200">
+      <label>Additional Notes (para sa CSR)</label>
+      <input type="text" id="partsNotesInput" placeholder="e.g. Brand preference, specs, urgency reason" maxlength="200">
     </div>
+    <!-- Line items -->
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px;">
+      📋 Listahan ng Parts / Items
+    </div>
+    <div id="partsItemsList"></div>
+    <button onclick="addPartsItemRow()" class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:14px;">
+      ＋ Dagdag na Item
+    </button>
     <div id="partsReqErr" style="font-size:12px;color:var(--red2);margin-bottom:10px;display:none;padding:8px 10px;background:var(--red-bg);border-radius:6px;border:1px solid var(--red2);"></div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-ghost" style="flex:1;" onclick="closeM('partsReqModal')">Cancel</button>
@@ -3807,11 +3830,146 @@ async function renderAnalytics() {
         </div>
       </div>`).join('')}
   `;
+
+  // ── CSR Parts Turnaround Report ───────────────────────────────────────
+  await renderCSRTurnaround();
 }
 
 // ══════════════════════════════════════════════════════════════
-// NOTIFICATIONS
+// CSR PARTS TURNAROUND REPORT
 // ══════════════════════════════════════════════════════════════
+async function renderCSRTurnaround() {
+  const el = document.getElementById('csrTurnaround');
+  if (!el) return;
+
+  const { data: parts } = await sb.from('ticket_parts_requests')
+    .select('*')
+    .order('requested_at', { ascending: false });
+
+  const all = parts || [];
+  const fulfilled = all.filter(p => p.status === 'available' && p.fulfilled_at);
+  const pending   = all.filter(p => p.status === 'pending');
+
+  if (!all.length) {
+    el.innerHTML = '<div class="empty" style="padding:20px 0;"><div class="empty-ico">📦</div><p>Walang parts requests pa.</p></div>';
+    return;
+  }
+
+  // ── Compute turnaround per fulfilled request ───────────────────────
+  const withDuration = fulfilled.map(p => {
+    const start = new Date(p.requested_at).getTime();
+    const end   = new Date(p.fulfilled_at).getTime();
+    const mins  = (end - start) / 60000;
+    return { ...p, mins };
+  });
+
+  // ── Averages per urgency ───────────────────────────────────────────
+  const urgencies = ['urgent','normal','low'];
+  const urgencyLabel = { urgent:'🔴 Urgent', normal:'🔵 Normal', low:'⚪ Low' };
+  const urgencyColor = { urgent:'var(--red2)', normal:'var(--accent2)', low:'var(--text3)' };
+
+  const avgByUrgency = urgencies.map(u => {
+    const rows = withDuration.filter(p => (p.urgency||'normal') === u);
+    const avg  = rows.length ? rows.reduce((s,p) => s + p.mins, 0) / rows.length : null;
+    const best = rows.length ? Math.min(...rows.map(p=>p.mins)) : null;
+    const worst= rows.length ? Math.max(...rows.map(p=>p.mins)) : null;
+    return { u, label: urgencyLabel[u], color: urgencyColor[u], count: rows.length, avg, best, worst };
+  }).filter(r => r.count > 0);
+
+  // ── Overall average ───────────────────────────────────────────────
+  const overallAvg = withDuration.length
+    ? withDuration.reduce((s,p) => s + p.mins, 0) / withDuration.length
+    : null;
+
+  // ── Max duration for bar scaling ──────────────────────────────────
+  const maxAvgMin = avgByUrgency.length ? Math.max(...avgByUrgency.map(r=>r.avg||0)) : 1;
+
+  // ── Summary chips ─────────────────────────────────────────────────
+  const summaryChips = [
+    '<span style="background:var(--green-bg);color:var(--green2);border:1px solid rgba(5,150,105,.2);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;">✅ '+fulfilled.length+' Fulfilled</span>',
+    pending.length ? '<span style="background:var(--amber-bg);color:var(--amber2);border:1px solid rgba(180,83,9,.2);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;">⏳ '+pending.length+' Pending</span>' : '',
+    overallAvg !== null ? '<span style="background:var(--accent-bg);color:var(--accent2);border:1px solid rgba(37,99,235,.2);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;">⌀ Avg: '+fmtDuration(overallAvg*60000)+'</span>' : '',
+  ].filter(Boolean).join('');
+
+  // ── Build HTML ─────────────────────────────────────────────────────
+  let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">'+summaryChips+'</div>';
+
+  if (avgByUrgency.length) {
+    html += '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Average Turnaround per Urgency</div>';
+    html += avgByUrgency.map(r => {
+      const pct = maxAvgMin > 0 ? Math.round((r.avg / maxAvgMin) * 100) : 0;
+      return '<div style="margin-bottom:12px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">'
+        + '<span style="font-size:13px;font-weight:700;color:'+r.color+';">'+r.label+'</span>'
+        + '<span style="font-size:11px;color:var(--text3);">'+r.count+' request'+(r.count>1?'s':'')+'</span>'
+        + '</div>'
+        + '<div class="prog-bar" style="margin-bottom:5px;">'
+        + '<div class="prog-fill" style="width:'+pct+'%;background:'+r.color+';"></div>'
+        + '</div>'
+        + '<div style="display:flex;gap:16px;font-size:11px;color:var(--text3);">'
+        + '<span>⌀ Avg: <strong style="color:var(--text);">'+fmtDuration(r.avg*60000)+'</strong></span>'
+        + '<span>🏆 Best: <strong style="color:var(--green2);">'+fmtDuration(r.best*60000)+'</strong></span>'
+        + '<span>⚠️ Worst: <strong style="color:var(--red2);">'+fmtDuration(r.worst*60000)+'</strong></span>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  // ── Per-request breakdown (last 10) ──────────────────────────────
+  if (withDuration.length) {
+    html += '<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:14px;">';
+    html += '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Recent Fulfilled Requests</div>';
+    html += withDuration.slice(0,10).map(p => {
+      const hrs = p.mins / 60;
+      const isfast = hrs < 4;
+      const timeColor = isfast ? 'var(--green2)' : hrs < 24 ? 'var(--amber2)' : 'var(--red2)';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'
+        + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+p.description+'</div>'
+        + '<div style="font-size:10px;color:var(--text3);margin-top:1px;">'
+        + '<span style="color:'+urgencyColor[p.urgency||'normal']+';">'+( p.urgency||'normal').toUpperCase()+'</span>'
+        + ' · '+( p.ticket_id||'—')
+        + ' · Requested '+timeAgo(p.requested_at)
+        + '</div>'
+        + '</div>'
+        + '<div style="text-align:right;flex-shrink:0;">'
+        + '<div style="font-size:13px;font-weight:800;color:'+timeColor+';">'+fmtDuration(p.mins*60000)+'</div>'
+        + '<div style="font-size:9px;color:var(--text4);">turnaround</div>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+    if (withDuration.length > 10) {
+      html += '<div style="text-align:center;font-size:11px;color:var(--text3);padding-top:8px;">... at '+(withDuration.length-10)+' pa</div>';
+    }
+    html += '</div>';
+  }
+
+  // ── Pending requests (gaano na katagal naghihintay) ───────────────
+  if (pending.length) {
+    html += '<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:14px;">';
+    html += '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Still Pending — Gaano Na Katagal Naghihintay</div>';
+    html += pending.map(p => {
+      const waitMins = (Date.now() - new Date(p.requested_at).getTime()) / 60000;
+      const isLong = waitMins > 1440; // >24h
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'
+        + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+p.description+'</div>'
+        + '<div style="font-size:10px;color:var(--text3);margin-top:1px;">'
+        + '<span style="color:'+urgencyColor[p.urgency||'normal']+';">'+( p.urgency||'normal').toUpperCase()+'</span>'
+        + ' · '+( p.ticket_id||'—')
+        + '</div>'
+        + '</div>'
+        + '<div style="text-align:right;flex-shrink:0;">'
+        + '<div style="font-size:13px;font-weight:800;color:'+(isLong?'var(--red2)':'var(--amber2)')+';">'+fmtDuration(waitMins*60000)+'</div>'
+        + '<div style="font-size:9px;color:var(--text4);">waiting</div>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
 function renderNotifs() {
   NOTIFS.forEach(n=>n.read=true);
   updateNotifDot();buildNav();
@@ -4255,6 +4413,18 @@ async function renderAdminCSRPage() {
           : '')
       + '</div>';
   }).join('');
+
+  // Turnaround report — reuse same function, point to admin div
+  const origEl = document.getElementById('csrTurnaround');
+  const adminEl = document.getElementById('csrTurnaroundAdmin');
+  if (adminEl) {
+    // Temporarily swap target
+    if (origEl) origEl.id = 'csrTurnaround_bak';
+    adminEl.id = 'csrTurnaround';
+    await renderCSRTurnaround();
+    adminEl.id = 'csrTurnaroundAdmin';
+    if (origEl) origEl.id = 'csrTurnaround';
+  }
 }
 
 async function renderCSRDash() {
@@ -4277,7 +4447,18 @@ async function renderCSRDash() {
     .select('*, tickets(id,title,dept,priority,status,evaluation_status)')
     .order('requested_at', { ascending: false });
 
-  const all      = parts || [];
+  const all       = parts || [];
+
+  // Load all line items for these requests
+  const reqIds = all.map(p=>p.id);
+  const { data: allItems } = reqIds.length
+    ? await sb.from('ticket_parts_items').select('*').in('request_id', reqIds).order('created_at')
+    : { data: [] };
+  const itemsByReq = {};
+  (allItems||[]).forEach(i => {
+    if (!itemsByReq[i.request_id]) itemsByReq[i.request_id] = [];
+    itemsByReq[i.request_id].push(i);
+  });
   const pending  = all.filter(p => p.status === 'pending');
   const available= all.filter(p => p.status === 'available');
   const cancelled= all.filter(p => p.status === 'cancelled');
@@ -4308,10 +4489,21 @@ async function renderCSRDash() {
       + '<span class="badge b-'+(t.priority||'normal')+'">'+( t.priority||'').toUpperCase()+'</span>'
       + '<span style="font-size:10px;color:var(--text3);">'+( t.dept||'—')+'</span>'
       + '</div>'
-      + '<div style="font-weight:700;font-size:14px;margin-bottom:2px;">'+p.description+'</div>'
-      + '<div style="font-size:11px;color:var(--text3);">Qty: <strong>'+p.quantity+'</strong>'
+      + '<div style="font-weight:700;font-size:14px;margin-bottom:6px;">'+p.description+'</div>'
+      // Line items
+      + (itemsByReq[p.id]?.length
+          ? '<div style="background:var(--bg3);border-radius:8px;padding:8px 10px;margin-bottom:6px;">'
+            + itemsByReq[p.id].map(i =>
+                '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px;">'
+                + '<span style="color:var(--text2);">'+i.description+(i.notes?'<span style="color:var(--text3);font-size:10px;"> ('+i.notes+')</span>':'')+'</span>'
+                + '<span style="font-weight:700;color:var(--text);flex-shrink:0;margin-left:8px;">×'+i.quantity+' '+(i.unit||'pcs')+'</span>'
+                + '</div>'
+              ).join('')
+            + '</div>'
+          : '')
+      + '<div style="font-size:11px;color:var(--text3);">'
+      + 'Urgency: <strong style="color:'+urgencyColor[p.urgency||'normal']+'">'+( p.urgency||'normal').toUpperCase()+'</strong>'
       + (p.notes ? ' · '+p.notes : '')
-      + ' · Urgency: <strong style="color:'+urgencyColor[p.urgency||'normal']+'">'+( p.urgency||'normal').toUpperCase()+'</strong>'
       + '</div>'
       + '<div style="font-size:10px;color:var(--text4);margin-top:3px;">Requested: '+timeAgo(p.requested_at)+'</div>'
       + '</div>'
@@ -4450,51 +4642,138 @@ async function saveEvaluation(ticketId) {
   openTkt(ticketId);
 }
 
-// ── Parts Request Modal ───────────────────────────────────────────────
+// ── Parts Request Modal — Multi-item ─────────────────────────────────
 let _partsForTicket = null;
+let _partsItemCount = 0;
 
 function openPartsRequest(ticketId) {
   _partsForTicket = ticketId;
-  document.getElementById('partsDescInput').value   = '';
-  document.getElementById('partsQtyInput').value    = '1';
-  document.getElementById('partsUrgencyInput').value= 'normal';
-  document.getElementById('partsNotesInput').value  = '';
+  _partsItemCount = 0;
+  document.getElementById('partsUrgencyInput').value = 'normal';
+  document.getElementById('partsNotesInput').value   = '';
   document.getElementById('partsReqErr').style.display = 'none';
+  document.getElementById('partsItemsList').innerHTML = '';
+  // Start with 1 item row
+  addPartsItemRow();
   document.getElementById('partsReqModal').classList.add('open');
-  setTimeout(()=>document.getElementById('partsDescInput').focus(),100);
+}
+
+function addPartsItemRow() {
+  _partsItemCount++;
+  const idx = _partsItemCount;
+  const el  = document.createElement('div');
+  el.id     = 'parts-item-row-' + idx;
+  el.style.cssText = 'background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;position:relative;';
+  el.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+    + '<span style="font-size:11px;font-weight:700;color:var(--text3);">ITEM #'+idx+'</span>'
+    + (idx > 1 ? '<button onclick="removePartsItemRow('+idx+')" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--text3);padding:2px;">✕</button>' : '')
+    + '</div>'
+    + '<div class="fg" style="margin-bottom:8px;">'
+    + '<label style="font-size:10px;">Parts / Gamit *</label>'
+    + '<input type="text" id="parts-desc-'+idx+'" placeholder="e.g. Fluorescent bulb 40W" maxlength="200" style="font-size:13px;">'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
+    + '<div class="fg" style="margin-bottom:0;">'
+    + '<label style="font-size:10px;">Qty *</label>'
+    + '<input type="number" id="parts-qty-'+idx+'" value="1" min="1" max="9999" style="font-size:13px;">'
+    + '</div>'
+    + '<div class="fg" style="margin-bottom:0;">'
+    + '<label style="font-size:10px;">Unit</label>'
+    + '<select id="parts-unit-'+idx+'" style="font-size:12px;">'
+    + '<option value="pcs">pcs</option>'
+    + '<option value="sets">sets</option>'
+    + '<option value="meters">meters</option>'
+    + '<option value="liters">liters</option>'
+    + '<option value="boxes">boxes</option>'
+    + '<option value="rolls">rolls</option>'
+    + '<option value="bags">bags</option>'
+    + '</select>'
+    + '</div>'
+    + '<div class="fg" style="margin-bottom:0;">'
+    + '<label style="font-size:10px;">Notes</label>'
+    + '<input type="text" id="parts-notes-'+idx+'" placeholder="Brand, specs..." maxlength="100" style="font-size:12px;">'
+    + '</div>'
+    + '</div>';
+  document.getElementById('partsItemsList').appendChild(el);
+  document.getElementById('parts-desc-'+idx).focus();
+}
+
+function removePartsItemRow(idx) {
+  const el = document.getElementById('parts-item-row-' + idx);
+  if (el) el.remove();
+}
+
+function getPartsItems() {
+  const items = [];
+  // Collect all existing rows
+  document.querySelectorAll('[id^="parts-item-row-"]').forEach(row => {
+    const idx  = row.id.replace('parts-item-row-', '');
+    const desc = document.getElementById('parts-desc-' + idx)?.value.trim();
+    const qty  = parseInt(document.getElementById('parts-qty-'  + idx)?.value) || 1;
+    const unit = document.getElementById('parts-unit-' + idx)?.value || 'pcs';
+    const notes= document.getElementById('parts-notes-'+ idx)?.value.trim() || null;
+    if (desc) items.push({ description: desc, quantity: qty, unit, notes });
+  });
+  return items;
 }
 
 async function submitPartsRequest() {
-  const desc    = document.getElementById('partsDescInput').value.trim();
-  const qty     = parseInt(document.getElementById('partsQtyInput').value)||1;
-  const urgency = document.getElementById('partsUrgencyInput').value||'normal';
-  const notes   = document.getElementById('partsNotesInput').value.trim();
-  const errEl   = document.getElementById('partsReqErr');
-  const btn     = document.getElementById('partsReqSubmitBtn');
+  const urgency  = document.getElementById('partsUrgencyInput').value || 'normal';
+  const reqNotes = document.getElementById('partsNotesInput').value.trim();
+  const errEl    = document.getElementById('partsReqErr');
+  const btn      = document.getElementById('partsReqSubmitBtn');
+  errEl.style.display = 'none';
 
-  errEl.style.display='none';
-  if (!desc) { errEl.textContent='Pakienter ang description ng parts/gamit.'; errEl.style.display='block'; return; }
+  const items = getPartsItems();
+  if (!items.length) {
+    errEl.textContent = 'Magdagdag ng kahit isang item.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (items.some(i => !i.description)) {
+    errEl.textContent = 'Pakienter ang description ng lahat ng items.';
+    errEl.style.display = 'block';
+    return;
+  }
 
-  btn.disabled=true; btn.textContent='Submitting…';
+  btn.disabled = true; btn.textContent = 'Submitting…';
 
-  const { error } = await sb.from('ticket_parts_requests').insert({
+  // Summary title — first item description
+  const summaryTitle = items.length === 1
+    ? items[0].description
+    : items[0].description + ' + ' + (items.length - 1) + ' pa';
+
+  // Insert parent request
+  const { data: req, error } = await sb.from('ticket_parts_requests').insert({
     ticket_id:    _partsForTicket,
-    description:  desc,
-    quantity:     qty,
+    description:  summaryTitle,
+    quantity:     items.reduce((s,i) => s + i.quantity, 0), // total qty
     urgency,
-    notes:        notes||null,
+    notes:        reqNotes || null,
     requested_by: CU.id,
-  });
+    item_count:   items.length,
+  }).select('id').single();
 
-  if (error) { errEl.textContent=error.message; errEl.style.display='block'; btn.disabled=false; btn.textContent='📨 I-forward sa CSR'; return; }
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.style.display = 'block';
+    btn.disabled = false; btn.textContent = '📨 I-forward sa CSR';
+    return;
+  }
 
-  // Note in ticket
+  // Insert line items
+  const lineItems = items.map(i => ({ ...i, request_id: req.id }));
+  await sb.from('ticket_parts_items').insert(lineItems);
+
+  // Activity note
+  const itemSummary = items.map(i => '• '+i.description+' × '+i.quantity+' '+i.unit).join('\n');
   await addNote(_partsForTicket,
-    '📦 '+CU.name+' nag-request ng parts sa CSR: "'+desc+'" (Qty: '+qty+', Urgency: '+urgency.toUpperCase()+')');
+    '📦 ' + CU.name + ' nag-request ng parts sa CSR ('+urgency.toUpperCase()+'):\n' + itemSummary);
 
   closeM('partsReqModal');
-  btn.disabled=false; btn.textContent='📨 I-forward sa CSR';
-  toast('success','📦 Parts Request Sent!','Na-forward na sa CSR. Aabisuhan ka kapag available na.');
+  btn.disabled = false; btn.textContent = '📨 I-forward sa CSR';
+  toast('success', '📦 Parts Request Sent!', items.length + ' item' + (items.length > 1 ? 's' : '') + ' — na-forward na sa CSR.');
   openTkt(_partsForTicket);
 }
 
@@ -4506,23 +4785,49 @@ async function renderPartsSection(ticketId) {
     .select('*').eq('ticket_id', ticketId).order('requested_at');
 
   if (!parts || !parts.length) { el.style.display='none'; return; }
-  el.style.display='block';
 
-  const statusColor = {pending:'var(--amber2)',available:'var(--green2)',cancelled:'var(--text3)'};
+  // Load items for each request
+  const requestIds = parts.map(p => p.id);
+  const { data: allItems } = await sb.from('ticket_parts_items')
+    .select('*').in('request_id', requestIds).order('created_at');
+
+  const itemsByRequest = {};
+  (allItems||[]).forEach(i => {
+    if (!itemsByRequest[i.request_id]) itemsByRequest[i.request_id] = [];
+    itemsByRequest[i.request_id].push(i);
+  });
+
+  el.style.display = 'block';
+  const statusColor = { pending:'var(--amber2)', available:'var(--green2)', cancelled:'var(--text3)' };
 
   el.innerHTML = '<div class="eval-section">'
     + '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">📦 Parts Requests ('+parts.length+')</div>'
-    + parts.map(p=>'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">'
-      + '<div style="flex:1;min-width:0;">'
-      + '<div style="font-weight:700;font-size:13px;">'+p.description+'</div>'
-      + '<div style="font-size:10px;color:var(--text3);">Qty: '+p.quantity+' · '+( p.urgency||'normal').toUpperCase()+(p.notes?' · '+p.notes:'')+'</div>'
-      + (p.status==='available'&&p.notified_at
-          ? '<div style="font-size:10px;color:var(--green2);margin-top:2px;">✅ Available na — '+timeAgo(p.notified_at)+'</div>'
-          : '')
-      + '</div>'
-      + '<span style="font-size:11px;font-weight:700;color:'+statusColor[p.status||'pending']+';flex-shrink:0;">'+( p.status||'pending').toUpperCase()+'</span>'
-      + '</div>'
-    ).join('')
+    + parts.map(p => {
+        const items = itemsByRequest[p.id] || [];
+        return '<div style="padding:8px 0;border-bottom:1px solid var(--border);">'
+          + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">'
+          + '<div>'
+          + '<span style="font-weight:700;font-size:12px;">'+p.description+'</span>'
+          + '<span style="font-size:10px;color:var(--text3);margin-left:6px;">('+( p.urgency||'normal').toUpperCase()+')</span>'
+          + '</div>'
+          + '<span style="font-size:11px;font-weight:700;color:'+statusColor[p.status||'pending']+';flex-shrink:0;">'+( p.status||'pending').toUpperCase()+'</span>'
+          + '</div>'
+          // Line items
+          + (items.length
+              ? '<div style="background:var(--bg3);border-radius:8px;padding:8px 10px;">'
+                + items.map(i =>
+                    '<div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;font-size:12px;">'
+                    + '<span>'+i.description+(i.notes ? ' <span style="color:var(--text3);font-size:10px;">('+i.notes+')</span>' : '')+'</span>'
+                    + '<span style="font-weight:700;color:var(--text2);flex-shrink:0;margin-left:8px;">×'+i.quantity+' '+( i.unit||'pcs')+'</span>'
+                    + '</div>'
+                  ).join('')
+                + '</div>'
+              : '')
+          + (p.status==='available' && p.notified_at
+              ? '<div style="font-size:10px;color:var(--green2);margin-top:5px;">✅ Available na — '+timeAgo(p.notified_at)+'</div>'
+              : '')
+          + '</div>';
+      }).join('')
     + '</div>';
 }
 
