@@ -3573,48 +3573,68 @@ async function openAssignModal(id, ticketNo, vtype) {
     SB.rpc('get_busy_driver_ids',  { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id }),
   ])
 
-  const busyVehicleIds = new Set((busyVehicles||[]).map(t => t.vehicle_id).filter(Boolean))
-  const busyDriverIds  = new Set((busyDrivers||[]).map(t => t.driver_id).filter(Boolean))
+  // Build label map for busy drivers/vehicles
+  const busyDrvLabel = {}
+  ;(busyDrivers||[]).forEach(t => {
+    if (t.driver_id && !busyDrvLabel[t.driver_id]) {
+      const depStr2 = new Date(t.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
+      busyDrvLabel[t.driver_id] = depStr2
+    }
+  })
+  const busyVehLabel = {}
+  ;(busyVehicles||[]).forEach(t => {
+    if (t.vehicle_id && !busyVehLabel[t.vehicle_id]) {
+      const depStr2 = new Date(t.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
+      busyVehLabel[t.vehicle_id] = depStr2
+    }
+  })
 
-  // Filter by time availability AND type
+  // Filter by type only — show ALL non-off-duty drivers, busy ones get warning label
   const filterVehicles = (all, typeOnly) => all ? all.filter(v => {
+    if (v.status === 'maintenance') return false
     const t = (v.type||'').toLowerCase()
-    const typeMatch = typeOnly
-      ? (isAmb  ? t.includes('ambulance')||t.includes('bls')
-       : isMoto ? t.includes('motorcycle')
-       :          !t.includes('ambulance')&&!t.includes('motorcycle'))
-      : true
-    return typeMatch && !busyVehicleIds.has(v.id)
+    if (!typeOnly) return true
+    return isAmb  ? t.includes('ambulance')||t.includes('bls')
+         : isMoto ? t.includes('motorcycle')
+         :          !t.includes('ambulance')&&!t.includes('motorcycle')
   }) : []
 
-  // Filter drivers by driver_type matching the ticket's vehicle type
-  // off-duty = genuinely unavailable; on-trip but no time conflict = available
   const filterDrivers = (all, typeOnly) => all ? all.filter(d => {
-    if (d.status === 'off-duty') return false       // genuinely unavailable
-    if (busyDriverIds.has(d.id)) return false       // has overlapping trip at this time
-    if (!typeOnly) return true                       // Last Resort — show all
+    if (d.status === 'off-duty') return false  // genuinely unavailable
+    if (!typeOnly) return true                  // Last Resort — show all
     const dt = d.driver_type || 'regular'
     if (dt === 'both') return true
     if (isAmb)  return dt === 'ambulance'
     return dt === 'regular'
   }) : []
 
-  const avV = filterVehicles(allVehicles, true)   // type-matched + available
-  const avD = filterDrivers(allDrivers, true)      // available only
-
-  // All available (last resort — type ignored)
+  const avV = filterVehicles(allVehicles, true)
+  const avD = filterDrivers(allDrivers, true)
   const avV_all = filterVehicles(allVehicles, false)
   const avD_all = filterDrivers(allDrivers, false)
 
   const depStr = dep ? new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
   const scopeLabel = isAmb ? '🚑 Ambulance' : isMoto ? '🏍 Motorcycle' : '🚙 Regular'
 
-  const driverOpts = (drivers) => drivers.map(d =>
-    `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}</option>`
-  ).join('')
-  const vehicleOpts = (vehicles) => vehicles.map(v =>
-    `<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)</option>`
-  ).join('')
+  const driverOpts = (drivers) => drivers.map(d => {
+    const busy = busyDriverIds.has(d.id)
+    const lbl  = busyDrvLabel[d.id]
+    return `<option value="${d.id}|${d.full_name}" ${busy?'style="color:var(--amber)"':''}>
+      ${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ Has trip at '+lbl:''}
+    </option>`
+  }).join('')
+
+  const vehicleOpts = (vehicles) => vehicles.map(v => {
+    const busy = busyVehicleIds.has(v.id)
+    const lbl  = busyVehLabel[v.id]
+    return `<option value="${v.id}" ${busy?'style="color:var(--amber)"':''}>
+      ${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)${busy&&lbl?' ⚠ Has trip at '+lbl:''}
+    </option>`
+  }).join()
+
+  // Store busy sets for conflict warnings
+  window._asBusyDriverIds  = busyDriverIds
+  window._asBusyVehicleIds = busyVehicleIds
 
   openMO(`Assign Driver & Vehicle — ${ticketNo}`,
     `<div style="background:var(--bg);border-radius:9px;padding:10px 13px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
@@ -3623,23 +3643,30 @@ async function openAssignModal(id, ticketNo, vtype) {
      </div>
 
      <div class="fg"><label class="fl">Select Driver *
-       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} ${isAmb?'ambulance-qualified':isMoto?'available':'regular'} drivers available</span>
+       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} driver${avD.length!==1?'s':''} available</span>
      </label>
        <select class="fs" id="asDrv" onchange="checkAssignConflict()">
          <option value="">-- Select Driver --</option>
          ${driverOpts(avD)}
+       </select>
+       <div id="drvConflictWarn" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#92400e;margin-top:5px">
+         ⚠ This driver already has a trip at that time. You can still assign — consider pooling both trips for efficiency.
+       </div>
+     </div>
          ${avD.length === 0 ? '<option disabled>No available drivers at this time</option>' : ''}
        </select>
      </div>
 
      <div class="fg"><label class="fl">Select Vehicle *
-       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avV.length} available</span>
+       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avV.length} vehicle${avV.length!==1?'s':''} available</span>
      </label>
        <select class="fs" id="asVeh" onchange="checkAssignConflict()">
          <option value="">-- Select Vehicle --</option>
          ${vehicleOpts(avV)}
-         ${avV.length === 0 ? '<option disabled>No available vehicles at this time</option>' : ''}
        </select>
+       <div id="vehConflictWarn" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#92400e;margin-top:5px">
+         ⚠ This vehicle already has a trip at that time. You can still assign — consider pooling both trips.
+       </div>
      </div>
 
      <div id="assignConflictMsg" style="display:none" class="info info-red" style="margin-top:8px"></div>
@@ -3695,12 +3722,18 @@ function toggleLastResort(id, ticketNo, vtype, allV, allD) {
 }
 
 function checkAssignConflict() {
-  // Real-time conflict feedback when selection changes
-  const dv = document.getElementById('asDrv')?.value
-  const vv = document.getElementById('asVeh')?.value
-  const msg = document.getElementById('assignConflictMsg')
-  if (msg) msg.style.display = 'none'
-  // Could add client-side validation here if needed
+  const dv  = document.getElementById('asDrv')?.value
+  const vv  = document.getElementById('asVeh')?.value
+  const drvWarn = document.getElementById('drvConflictWarn')
+  const vehWarn = document.getElementById('vehConflictWarn')
+
+  // Show warning if selected driver or vehicle is in the busy sets
+  const busyDriverIds  = window._asBusyDriverIds  || new Set()
+  const busyVehicleIds = window._asBusyVehicleIds || new Set()
+
+  const driverId = dv ? dv.split('|')[0] : null
+  if (drvWarn) drvWarn.style.display = (driverId && busyDriverIds.has(driverId)) ? 'block' : 'none'
+  if (vehWarn) vehWarn.style.display = (vv && busyVehicleIds.has(vv)) ? 'block' : 'none'
 }
 async function doAssign(id, ticketNo) {
   const dv = document.getElementById('asDrv')?.value
@@ -7090,21 +7123,66 @@ function renderAccountsTable() {
     return `cursor:pointer;padding:5px 14px;border-radius:20px;font-size:11.5px;font-weight:700;border:1.5px solid ${isActive?c:c+'44'};background:${isActive?c+'18':'transparent'};color:${isActive?c:c+'99'};transition:all .15s;white-space:nowrap`
   }
 
+  const tbodyHTML = filtered.length === 0
+    ? `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3)">No accounts match the current filter.</td></tr>`
+    : filtered.map(u => {
+        const c = ROLE_COLORS[u.role]||'#64748b'
+        return `<tr>
+          <td><div style="font-weight:600;font-size:13px">${u.full_name||'—'}</div></td>
+          <td><span style="font-family:monospace;font-size:12px;background:var(--bg);padding:2px 7px;border-radius:5px">${u.username||'—'}</span></td>
+          <td><span style="background:${c}18;color:${c};border:1px solid ${c}44;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700">${ROLE_LABELS[u.role]||u.role}</span></td>
+          <td style="font-size:12px;color:var(--text2)">${u.department||'—'}</td>
+          <td style="font-size:12px">${u.phone||'—'}</td>
+          <td style="font-size:12px;color:var(--text2)">${u.email||'—'}</td>
+          <td><span style="font-size:11px;font-weight:700;color:${u.status==='active'?'var(--green)':'var(--red)'}">${u.status==='active'?'Active':'Inactive'}</span></td>
+          <td>
+            <button class="tbl-act tbl-act-pri" onclick="openEditAccount('${u.id}')">Edit</button>
+            <button class="tbl-act tbl-act-red" onclick="toggleAccountStatus('${u.id}','${u.status}','${u.full_name}')">
+              ${u.status==='active'?'Deactivate':'Activate'}
+            </button>
+          </td>
+        </tr>`
+      }).join('')
+
+  // If page already rendered — just update tbody and counts (no focus loss)
+  const existingTbody = document.getElementById('_acctTbody')
+  if (existingTbody) {
+    existingTbody.innerHTML = tbodyHTML
+    // Update count label
+    const countEl = document.getElementById('_acctCount')
+    if (countEl) countEl.textContent = `${U.length} total · ${filtered.length} shown`
+    // Update filter pills
+    const pillsEl = document.getElementById('_acctPills')
+    if (pillsEl) pillsEl.innerHTML = `
+      <span style="font-size:11px;color:var(--text3);font-weight:600;white-space:nowrap">Filter by role:</span>
+      <button style="${pillStyle('all')}" onclick="window._acctRoleFilter='all';renderAccountsTable()">
+        All <span style="opacity:.6">${U.length}</span>
+      </button>
+      ${Object.entries(ROLE_LABELS).map(([role,label]) => roleCounts[role]
+        ? `<button style="${pillStyle(role)}" onclick="window._acctRoleFilter='${role}';renderAccountsTable()">
+             ${label} <span style="opacity:.6">${roleCounts[role]||0}</span>
+           </button>`
+        : ''
+      ).join('')}
+    `
+    return
+  }
+
+  // First render — build full page
   document.getElementById('CONTENT').innerHTML = `
   <div class="card card-np" style="overflow:hidden;margin-bottom:14px">
     <div class="card-hd" style="padding:14px 16px 12px;flex-wrap:wrap;gap:10px">
-      <div class="card-title">User Accounts <span style="font-size:11px;color:var(--text3);font-weight:400">${U.length} total · ${filtered.length} shown</span></div>
+      <div class="card-title">User Accounts <span id="_acctCount" style="font-size:11px;color:var(--text3);font-weight:400">${U.length} total · ${filtered.length} shown</span></div>
       <button class="btn btn-pri btn-sm" onclick="openCreateAccount()">+ Create Account</button>
     </div>
 
-    <!-- Search + Role filter pills -->
     <div style="padding:0 16px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
       <input class="fi" id="acctSearch" placeholder="🔍 Search name, username, dept..."
         style="font-size:12px;padding:7px 12px;width:240px;flex-shrink:0"
         value="${window._acctSearch||''}"
         oninput="window._acctSearch=this.value;renderAccountsTable()">
 
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <div id="_acctPills" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <span style="font-size:11px;color:var(--text3);font-weight:600;white-space:nowrap">Filter by role:</span>
         <button style="${pillStyle('all')}" onclick="window._acctRoleFilter='all';renderAccountsTable()">
           All <span style="opacity:.6">${U.length}</span>
@@ -7118,45 +7196,13 @@ function renderAccountsTable() {
       </div>
     </div>
 
-    <!-- Table -->
+    <div style="overflow-x:auto">
     <table class="tbl"><thead><tr>
       <th>Full Name</th><th>Username</th><th>Role</th><th>Department</th>
       <th>Phone</th><th>Email</th><th>Status</th><th>Actions</th>
-    </tr></thead><tbody>
-    ${filtered.length === 0
-      ? `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text3)">No accounts match the current filter.</td></tr>`
-      : filtered.map(u => {
-          const c = ROLE_COLORS[u.role]||'#64748b'
-          return `<tr>
-            <td><div style="display:flex;align-items:center;gap:8px">
-              <div style="width:28px;height:28px;border-radius:50%;background:${c}22;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${c}">${ini(u.full_name)}</div>
-              <span style="font-weight:600">${u.full_name}</span>
-            </div></td>
-            <td>${chip(u.username||'—')}</td>
-            <td><span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:20px;background:${c}20;color:${c}">${ROLE_LABELS[u.role]||u.role}</span></td>
-            <td style="font-size:11.5px">${u.department||'—'}</td>
-            <td style="font-size:11px;color:var(--text2)">${u.phone||'—'}</td>
-            <td style="font-size:11px;color:var(--text2)">${u.email||'—'}</td>
-            <td><span class="badge ${u.status==='active'?'b-avail':'b-rejected'}">${u.status==='active'?'Active':'Inactive'}</span></td>
-            <td><div style="display:flex;gap:4px">
-              <button class="btn btn-ghost btn-sm" onclick="openEditAccount('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}','${u.role}','${u.department||''}','${u.phone||''}','${u.email||''}')">Edit</button>
-              <button class="btn btn-ghost btn-sm" onclick="openResetPw('${u.id}','${(u.full_name||'').replace(/'/g,"\\'")}','${u.username||''}')">Reset PW</button>
-              <button class="btn btn-ghost btn-sm" onclick="toggleUser('${u.id}','${u.status}')">${u.status==='active'?'Deactivate':'Activate'}</button>
-            </div></td>
-          </tr>`
-        }).join('')}
-    </tbody></table>
-  </div>
-
-  <div class="card">
-    <div class="card-title" style="margin-bottom:11px">Role Definitions</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">
-      ${Object.entries(ROLE_LABELS).map(([k,v])=>`
-      <div style="padding:11px;border:1px solid var(--border);border-radius:9px;border-left:3px solid ${ROLE_COLORS[k]};cursor:pointer"
-           onclick="window._acctRoleFilter='${k}';renderAccountsTable();window.scrollTo(0,0)">
-        <div style="font-size:11px;font-weight:700;color:${ROLE_COLORS[k]};margin-bottom:3px">${v}</div>
-        <div style="font-size:10px;color:var(--text3)">${roleCounts[k]||0} account${(roleCounts[k]||0)!==1?'s':''}</div>
-      </div>`).join('')}
+    </tr></thead>
+    <tbody id="_acctTbody">${tbodyHTML}</tbody>
+    </table>
     </div>
   </div>`
 }
