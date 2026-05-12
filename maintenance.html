@@ -877,6 +877,90 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
   .sc-num{font-size:24px;}
 }
 
+/* ── KANBAN ─────────────────────────────────────────────── */
+.kanban-board{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(220px,1fr));
+  gap:12px;
+  align-items:start;
+}
+@media(max-width:900px){
+  .kanban-board{grid-template-columns:repeat(2,1fr);}
+}
+@media(max-width:560px){
+  .kanban-board{grid-template-columns:1fr;}
+}
+.kanban-col{
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:12px;
+  min-height:200px;
+}
+[data-theme="light"] .kanban-col{box-shadow:var(--shadow-sm);}
+.kanban-col-header{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:10px;padding-bottom:10px;
+  border-bottom:2px solid var(--border);
+}
+.kanban-col-title{
+  font-size:12px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.6px;
+  display:flex;align-items:center;gap:6px;
+}
+.kanban-col-count{
+  font-size:11px;font-weight:700;
+  background:var(--bg4);
+  color:var(--text3);
+  border-radius:100px;
+  padding:1px 8px;
+  min-width:22px;text-align:center;
+}
+.kanban-card{
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:10px 12px;
+  margin-bottom:8px;
+  cursor:pointer;
+  transition:all .15s;
+  position:relative;
+  user-select:none;
+  -webkit-user-select:none;
+}
+[data-theme="light"] .kanban-card{box-shadow:0 1px 3px rgba(0,0,0,.04);}
+.kanban-card:hover{
+  border-color:var(--border2);
+  transform:translateY(-2px);
+}
+[data-theme="light"] .kanban-card:hover{box-shadow:var(--shadow);}
+.kanban-card:last-child{margin-bottom:0;}
+.kanban-card-id{font-size:9px;font-family:var(--font-mono);color:var(--text4);margin-bottom:3px;}
+.kanban-card-title{font-size:12px;font-weight:600;line-height:1.3;margin-bottom:5px;color:var(--text);}
+.kanban-card-meta{font-size:10px;color:var(--text3);display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.kanban-card-priority{
+  width:6px;height:6px;border-radius:50%;
+  flex-shrink:0;display:inline-block;
+}
+.kanban-empty{
+  text-align:center;padding:20px 8px;
+  font-size:11px;color:var(--text4);
+}
+
+/* Toggle buttons */
+.dash-toggle-btn{
+  padding:6px 14px;border-radius:7px;border:none;
+  font-size:12px;font-weight:600;cursor:pointer;
+  background:transparent;color:var(--text3);
+  font-family:var(--font-body);
+  transition:all .15s;
+}
+.dash-toggle-btn.active{
+  background:var(--bg2);color:var(--accent2);
+  box-shadow:var(--shadow-sm);
+}
+[data-theme="light"] .dash-toggle-btn.active{background:#fff;}
+
 /* ── TICKET DETAIL MODAL ─────────────────────────────── */
 /* Info rows — key:value */
 .inforow{
@@ -1204,20 +1288,37 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
     <div class="page active" id="pg-dashboard">
       <!-- Admin/Maintenance dashboard -->
       <div id="dashAdmin">
-        <div class="stats-row" id="dashStats"><div class="loading"><div class="spin"></div><br>Loading...</div></div>
-        <div class="g2">
-          <div class="card">
-            <div class="card-head"><div><div class="card-title">Weekly Activity</div><div class="card-sub">Tickets submitted</div></div></div>
-            <div class="barchart" id="weekChart"></div>
+        <!-- View toggle -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div id="dashViewToggle" style="display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px;">
+            <button onclick="setDashView('stats')" id="toggleStats" class="dash-toggle-btn active">📊 Overview</button>
+            <button onclick="setDashView('kanban')" id="toggleKanban" class="dash-toggle-btn">🗂️ Kanban</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="renderDash()" title="Refresh">↺ Refresh</button>
+        </div>
+
+        <!-- Overview / Stats view -->
+        <div id="dashStatsView">
+          <div class="stats-row" id="dashStats"><div class="loading"><div class="spin"></div><br>Loading...</div></div>
+          <div class="g2">
+            <div class="card">
+              <div class="card-head"><div><div class="card-title">Weekly Activity</div><div class="card-sub">Tickets submitted</div></div></div>
+              <div class="barchart" id="weekChart"></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><div><div class="card-title">By Priority</div><div class="card-sub">Active tickets</div></div></div>
+              <div id="priorityBars"></div>
+            </div>
           </div>
           <div class="card">
-            <div class="card-head"><div><div class="card-title">By Priority</div><div class="card-sub">Active tickets</div></div></div>
-            <div id="priorityBars"></div>
+            <div class="card-head"><div class="card-title">Recent Activity</div><button class="btn btn-ghost btn-sm" onclick="switchPage('tickets')">View All →</button></div>
+            <div id="dashRecent"></div>
           </div>
         </div>
-        <div class="card">
-          <div class="card-head"><div class="card-title">Recent Activity</div><button class="btn btn-ghost btn-sm" onclick="switchPage('tickets')">View All →</button></div>
-          <div id="dashRecent"></div>
+
+        <!-- Kanban view -->
+        <div id="dashKanbanView" style="display:none;">
+          <div id="kanbanBoard"></div>
         </div>
       </div>
 
@@ -2296,6 +2397,18 @@ async function renderDash() {
   document.getElementById('dashDept').style.display  = 'none';
   const csrEl = document.getElementById('dashCSR');
   if (csrEl) csrEl.style.display = 'none';
+
+  // Apply saved view (stats or kanban)
+  const savedView = localStorage.getItem('tdmh_dash_view') || 'stats';
+  setDashView(savedView);
+
+  // Stats view — load data
+  if (savedView === 'stats') {
+    await renderDashStats();
+  }
+}
+
+async function renderDashStats() {
   document.getElementById('dashStats').innerHTML = '<div class="loading"><div class="spin"></div><br>Loading…</div>';
   const { data: tickets } = await sb.from('tickets').select('*');
   if (!tickets) return;
@@ -4489,6 +4602,84 @@ async function deleteDept(id, name) {
   populateDeptDropdowns();
   renderDeptList();
   toast('info', '🗑️ Deleted', '"' + name + '" ay na-remove.');
+}
+
+// ══════════════════════════════════════════════════════════════
+// KANBAN BOARD
+// ══════════════════════════════════════════════════════════════
+let _dashView = localStorage.getItem('tdmh_dash_view') || 'stats';
+
+function setDashView(view) {
+  _dashView = view;
+  localStorage.setItem('tdmh_dash_view', view);
+  document.getElementById('dashStatsView').style.display  = view === 'stats'  ? 'block' : 'none';
+  document.getElementById('dashKanbanView').style.display = view === 'kanban' ? 'block' : 'none';
+  document.getElementById('toggleStats').classList.toggle('active',  view === 'stats');
+  document.getElementById('toggleKanban').classList.toggle('active', view === 'kanban');
+  if (view === 'kanban') renderKanban();
+  if (view === 'stats')  renderDashStats();
+}
+
+async function renderKanban() {
+  const el = document.getElementById('kanbanBoard');
+  if (!el) return;
+  el.innerHTML = '<div class="loading"><div class="spin"></div></div>';
+
+  // Fetch all tickets
+  let query = sb.from('tickets').select('*').order('created_at', { ascending: false });
+  if (CU.role === 'maintenance') {
+    // Maintenance sees only tickets in their team
+    const { data: myTeam } = await sb.from('ticket_team').select('ticket_id').eq('user_id', CU.id);
+    const myIds = (myTeam||[]).map(r=>r.ticket_id);
+    if (!myIds.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-ico">🔧</div><p>Wala ka pang assigned na tickets.</p></div>';
+      return;
+    }
+    query = query.in('id', myIds);
+  }
+  const { data: tickets } = await query;
+  const all = tickets || [];
+
+  // Define columns
+  const cols = [
+    { id:'open',     label:'📢 Open',              color:'var(--amber2)',  statuses:['open']              },
+    { id:'active',   label:'🔧 In Progress',        color:'var(--accent2)', statuses:['claimed','teamed']  },
+    { id:'resolved', label:'⏳ Para Kumpirmahin',   color:'var(--purple2)', statuses:['resolved']          },
+    { id:'closed',   label:'✅ Closed',             color:'var(--green2)',  statuses:['closed']            },
+  ];
+
+  const priorityColor = { urgent:'var(--red2)', high:'var(--amber2)', normal:'var(--accent2)', low:'var(--text4)' };
+
+  el.className = 'kanban-board';
+  el.innerHTML = cols.map(col => {
+    const colTickets = all.filter(t => col.statuses.includes(t.status));
+    const cards = colTickets.length
+      ? colTickets.map(t => {
+          const evalBadge = t.evaluation_status
+            ? '<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;background:var(--bg3);color:var(--text3);">'+t.evaluation_status+'</span>'
+            : '';
+          return '<div class="kanban-card" onclick="openTkt(\''+t.id+'\')">'
+            + '<div class="kanban-card-id">'+t.id+'</div>'
+            + '<div class="kanban-card-title">'+t.title+'</div>'
+            + '<div class="kanban-card-meta">'
+            + '<span class="kanban-card-priority" style="background:'+( priorityColor[t.priority]||'var(--text4)')+'"></span>'
+            + '<span>'+( t.dept||'—')+'</span>'
+            + (t.loc ? '<span>· '+t.loc+'</span>' : '')
+            + '</div>'
+            + (evalBadge ? '<div style="margin-top:5px;">'+evalBadge+'</div>' : '')
+            + '<div style="font-size:9px;color:var(--text4);margin-top:4px;">'+timeAgo(t.updated_at)+'</div>'
+            + '</div>';
+        }).join('')
+      : '<div class="kanban-empty">Wala</div>';
+
+    return '<div class="kanban-col">'
+      + '<div class="kanban-col-header">'
+      + '<div class="kanban-col-title" style="color:'+col.color+'">'+col.label+'</div>'
+      + '<span class="kanban-col-count">'+colTickets.length+'</span>'
+      + '</div>'
+      + cards
+      + '</div>';
+  }).join('');
 }
 
 function stLbl(s){return{open:'Open',claimed:'Claimed',teamed:'Teamed Up',resolved:'Pending Confirmation',closed:'Closed'}[s]||s;}
