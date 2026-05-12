@@ -4764,31 +4764,57 @@ async function saveEvaluation(ticketId) {
   btn.disabled = true; btn.textContent = 'Saving…';
 
   const now = new Date().toISOString();
-  await sb.from('tickets').update({
+  const statusData = EVAL_STATUSES.find(e=>e.value===status);
+
+  // Statuses that mean work is DONE → auto-resolve
+  const autoResolveStatuses = ['REPAIRED','REPLACED DONE','FUNCTIONING','FOR DISPOSAL'];
+  const shouldResolve = autoResolveStatuses.includes(status);
+
+  // Build ticket update
+  const ticketUpdate = {
     evaluation_status: status,
     evaluation_notes:  notes || null,
     evaluated_by:      CU.id,
     evaluated_at:      now,
     updated_at:        now,
-  }).eq('id', ticketId);
+  };
 
-  const statusData = EVAL_STATUSES.find(e=>e.value===status);
-  await addNote(ticketId, '📋 '+CU.name+' evaluated: '+(statusData?.label||status)+(notes?' — '+notes:''));
+  // Auto-resolve if applicable and ticket is still open/claimed/teamed
+  const { data: t } = await sb.from('tickets').select('status,email,dept,title,loc,priority').eq('id', ticketId).single();
+  if (shouldResolve && t && ['open','claimed','teamed'].includes(t.status)) {
+    ticketUpdate.status      = 'resolved';
+    ticketUpdate.resolved_at = now;
+  }
 
-  // If FOR REPLACEMENT — notify CSR via in-app notif
+  await sb.from('tickets').update(ticketUpdate).eq('id', ticketId);
+
+  // Activity note
+  const evalNote = '📋 '+CU.name+' evaluated: '+(statusData?.label||status)+(notes?' — '+notes:'');
+  await addNote(ticketId, evalNote + (shouldResolve && t && ['open','claimed','teamed'].includes(t.status) ? '\n✅ Ticket auto-resolved.' : ''));
+
+  // Notifications per status
   if (status === 'FOR REPLACEMENT') {
     addNotif('🔄', 'For Replacement — '+ticketId,
       'May ticket na nangangailangan ng parts. I-check ang CSR Dashboard.');
     toast('info','📦 Parts Needed','I-click ang "Mag-request ng Parts sa CSR" para i-forward sa CSR.');
-  } else if (status === 'REPAIRED' || status === 'REPLACED DONE' || status === 'FUNCTIONING') {
-    toast('success','✅ Evaluation Saved', statusData?.label||status);
+
+  } else if (shouldResolve && t && ['open','claimed','teamed'].includes(t.status)) {
+    // Auto-resolved — notify dept + schedule auto-close
+    toast('success','✅ '+(statusData?.label||status),'Ticket auto-resolved! Naghihintay ng confirmation ng dept.');
+    addNotif('✅', 'Auto-resolved — '+ticketId, statusData?.label||status);
+    await sendEmail('ticket_resolved', { ...t, id: ticketId, email: t.email }, { claimer: CU });
+    scheduleAutoClose(ticketId);
+
+  } else if (status === 'FOR DISPOSAL') {
+    toast('info','🗑️ For Disposal','Ticket resolved. I-dispose ang equipment.', );
+
   } else {
     toast('success','💾 Saved', statusData?.label||status);
   }
 
   btn.disabled = false; btn.textContent = '💾 I-save ang Evaluation';
-  // Refresh ticket
   openTkt(ticketId);
+  buildNav();
 }
 
 // ── Parts Request Modal — Multi-item ─────────────────────────────────
