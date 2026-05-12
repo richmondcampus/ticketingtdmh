@@ -12,6 +12,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Ensure Inter is used everywhere — critical override */
+html, body, input, select, textarea, button {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+</style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="manifest" href="manifest.json">
 <meta name="mobile-web-app-capable" content="yes">
@@ -850,7 +856,117 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
   .sc-num{font-size:24px;}
 }
 
-/* ── SCROLLBAR ──────────────────────────────────────────── */
+/* ── TICKET DETAIL MODAL ─────────────────────────────── */
+/* Info rows — key/value pairs */
+.inforow{
+  display:flex;align-items:baseline;
+  gap:8px;padding:5px 0;
+  border-bottom:1px solid var(--border);
+  font-size:13px;
+}
+.inforow:last-child{border-bottom:none;}
+.ir-lbl{
+  font-size:10px;font-weight:700;
+  color:var(--text3);text-transform:uppercase;letter-spacing:.6px;
+  flex-shrink:0;width:80px;
+}
+.ir-val{
+  color:var(--text2);font-size:13px;font-weight:500;
+  flex:1;min-width:0;word-break:break-word;
+}
+
+/* Timeline / Activity log */
+.timeline{display:flex;flex-direction:column;gap:0;}
+.tl-item{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:9px 0;border-bottom:1px solid var(--border);
+  font-size:12px;line-height:1.5;
+}
+.tl-item:last-child{border-bottom:none;}
+.tl-dot{
+  width:8px;height:8px;border-radius:50%;
+  flex-shrink:0;margin-top:5px;background:var(--accent2);
+}
+.tl-body{flex:1;min-width:0;}
+.tl-who{
+  font-size:11px;font-weight:700;color:var(--text2);
+  margin-bottom:1px;
+}
+.tl-time{
+  font-size:10px;color:var(--text4);margin-left:6px;font-weight:400;
+}
+.tl-text{color:var(--text3);white-space:pre-wrap;word-break:break-word;}
+
+/* Note input */
+.chat-row{
+  display:flex;gap:8px;align-items:center;
+  margin-top:12px;padding-top:12px;
+  border-top:1px solid var(--border);
+}
+.chat-row input{
+  flex:1;padding:9px 12px;
+  border-radius:var(--radius-xs);font-size:13px;
+}
+
+/* Action bar buttons */
+.action-bar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;}
+.dept-bar{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;}
+
+/* Team up section */
+.team-up-section{
+  background:var(--bg3);border-radius:10px;
+  padding:12px 14px;margin:10px 0;
+}
+.team-up-label{
+  font-size:10px;font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;
+}
+.team-pills{display:flex;flex-wrap:wrap;gap:8px;}
+.member-pill{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:5px 10px 5px 5px;border-radius:100px;
+  background:var(--bg2);border:1.5px solid var(--border);
+  font-size:12px;font-weight:600;cursor:pointer;
+  transition:all .15s;
+}
+.member-pill:hover{border-color:var(--border2);}
+.member-pill.tagged{
+  background:var(--accent-bg);border-color:var(--accent2);
+  color:var(--accent2);
+}
+.member-av{
+  width:22px;height:22px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;flex-shrink:0;
+  font-family:var(--font-display);
+}
+
+/* Divider */
+.divider{border:none;border-top:1px solid var(--border);margin:14px 0;}
+
+/* Scrollable container */
+.scl{max-height:280px;overflow-y:auto;padding-right:2px;}
+
+/* SLA countdown chip */
+.sla-chip{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:10px;font-weight:700;padding:3px 9px;
+  border-radius:6px;border:1px solid;margin-left:6px;
+}
+.sla-ok{border-color:rgba(5,150,105,.25);color:var(--green2);background:var(--green-bg);}
+.sla-warn{border-color:rgba(180,83,9,.25);color:var(--amber2);background:var(--amber-bg);}
+.sla-breach{border-color:rgba(185,28,28,.25);color:var(--red2);background:var(--red-bg);}
+
+/* Maint action buttons — big Filipino buttons */
+.maint-action{
+  width:100%;padding:14px;border-radius:12px;border:none;
+  font-size:15px;font-weight:700;cursor:pointer;
+  font-family:var(--font-body);transition:all .18s;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.maint-action:hover{transform:translateY(-1px);}
+
+/* ── SCROLLBAR ──────────────────────────────────────── */
 ::-webkit-scrollbar{width:4px;height:4px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
@@ -2862,12 +2978,16 @@ async function openTkt(id) {
   const tlHtml = notes.length ? notes.map(n=>{
     const u = n.user_id ? (ALL_USERS[n.user_id]||{}) : {};
     const nm = n.user_label || u.name || 'System';
-    const col = u.color || (nm==='System'?'#4d5d80':'#8b9fc7');
+    const col = u.color || (nm==='System'?'var(--text4)':'var(--accent2)');
     return `<div class="tl-item">
       <div class="tl-dot" style="background:${col}"></div>
-      <div><span class="tl-who">${nm}</span><span class="tl-time">${fmt(n.created_at)}</span></div>
-      <div class="tl-text">${n.message}</div>
-    </div>`;}).join('') : '<div class="tl-item"><div class="tl-dot" style="background:var(--text3)"></div><div class="tl-text" style="color:var(--text3)">No updates yet.</div></div>';
+      <div class="tl-body">
+        <div><span class="tl-who">${nm}</span><span class="tl-time">${fmt(n.created_at)}</span></div>
+        <div class="tl-text">${n.message}</div>
+      </div>
+    </div>`;
+  }).join('')
+  : '<div class="tl-item"><div class="tl-dot"></div><div class="tl-body"><div class="tl-text" style="color:var(--text4);">No updates yet.</div></div></div>';
 
   // Notes: only the team members assigned to THIS ticket + admin can post
   // Maintenance staff who are NOT tagged cannot post notes
@@ -2882,29 +3002,40 @@ async function openTkt(id) {
   const teamNames = teamIds.map(uid=>ALL_USERS[uid]?.name?.split(' ')[0]||uid).join(', ')||'Unassigned';
 
   document.getElementById('td-body').innerHTML=`
-    <div class="g2" style="margin-bottom:12px;">
+    <!-- Info grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;background:var(--bg3);border-radius:12px;padding:4px 16px;margin-bottom:14px;">
       <div>
-        <div class="inforow"><span class="ir-lbl">Department</span><span class="ir-val">${t.dept||'—'}</span></div>
+        <div class="inforow"><span class="ir-lbl">Dept</span><span class="ir-val">${t.dept||'—'}</span></div>
         <div class="inforow"><span class="ir-lbl">Location</span><span class="ir-val">${t.loc||'—'}</span></div>
         <div class="inforow"><span class="ir-lbl">Category</span><span class="ir-val">${t.cat||'—'}</span></div>
-        <div class="inforow"><span class="ir-lbl">Priority</span><span class="badge b-${t.priority}">${(t.priority||'').toUpperCase()}</span></div>
-        <div class="inforow"><span class="ir-lbl">Status</span><span class="badge ${stClass}">${stLbl(t.status)}</span></div>
+        <div class="inforow"><span class="ir-lbl">Priority</span><span class="ir-val"><span class="badge b-${t.priority}">${(t.priority||'').toUpperCase()}</span></span></div>
+        <div class="inforow"><span class="ir-lbl">Status</span><span class="ir-val"><span class="badge ${stClass}">${stLbl(t.status)}</span></span></div>
       </div>
       <div>
         <div class="inforow"><span class="ir-lbl">Submitted</span><span class="ir-val">${fmt(t.created_at)}</span></div>
         <div class="inforow"><span class="ir-lbl">Team</span><span class="ir-val">${teamNames}</span></div>
-        <div class="inforow"><span class="ir-lbl">Contact</span><span class="ir-val" style="font-size:11px;">${t.email||'—'}</span></div>
-        ${hrsToResolve!==null?`<div class="inforow"><span class="ir-lbl">Resolved In</span><span class="ir-val" style="color:var(--green2)">${hrsToResolve}</span></div>`:''}
-        ${t.status==='resolved'&&hrsLeft!==null?`<div class="inforow"><span class="ir-lbl">Auto-closes</span><span class="ir-val" style="color:var(--amber2)">in ${hrsLeft}h</span></div>`:''}
-        ${t.closed_at?`<div class="inforow"><span class="ir-lbl">Closed At</span><span class="ir-val">${fmt(t.closed_at)}</span></div>`:''}
+        <div class="inforow"><span class="ir-lbl">Contact</span><span class="ir-val">${t.email||'—'}</span></div>
+        ${hrsToResolve!==null?`<div class="inforow"><span class="ir-lbl">Resolved</span><span class="ir-val" style="color:var(--green2);font-weight:600;">${hrsToResolve}</span></div>`:''}
+        ${t.status==='resolved'&&hrsLeft!==null?`<div class="inforow"><span class="ir-lbl">Auto-close</span><span class="ir-val" style="color:var(--amber2);">in ${hrsLeft}h</span></div>`:''}
+        ${t.closed_at?`<div class="inforow"><span class="ir-lbl">Closed</span><span class="ir-val">${fmt(t.closed_at)}</span></div>`:''}
       </div>
     </div>
-    <div style="background:var(--bg3);border-left:3px solid var(--accent);border-radius:0 var(--radius-xs) var(--radius-xs) 0;padding:11px 13px;font-size:13px;color:var(--text2);margin-bottom:14px;">${t.description||'No description provided.'}</div>
+
+    <!-- Description -->
+    ${t.description?`
+    <div style="border-left:3px solid var(--accent2);border-radius:0 8px 8px 0;padding:10px 14px;background:var(--accent-bg);font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5;">
+      ${t.description}
+    </div>`:''}
+
+    <!-- Action bars -->
     ${actionBar}${deptBar}${teamUp}
-    <hr class="divider">
-    <div style="font-size:12px;font-weight:800;margin-bottom:10px;">Activity Log</div>
-    <div class="timeline scl">${tlHtml}</div>
-    ${noteInput}
+
+    <!-- Activity Log -->
+    <div style="margin-top:4px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Activity Log</div>
+      <div class="timeline scl">${tlHtml}</div>
+      ${noteInput}
+    </div>
   `;
 }
 
