@@ -14,7 +14,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="manifest" href="manifest.json">
+
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -561,6 +561,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
   opacity:0;pointer-events:none;
   transition:opacity .2s;
 }
+/* Prevent modal content clicks from closing overlay */
+.overlay .modal{pointer-events:all;}
 .overlay.open{opacity:1;pointer-events:all;}
 .modal{
   background:var(--bg2);border:1px solid var(--border);
@@ -4127,7 +4129,7 @@ function updateNotifDot(){const u=NOTIFS.filter(n=>!n.read).length;document.getE
 // UTILS
 // ══════════════════════════════════════════════════════════════
 function closeM(id){document.getElementById(id).classList.remove('open');}
-document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
+// Overlays only close via X button or Cancel — not by clicking outside
 document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 
 // ── PRIORITY DESCRIPTION ─────────────────────────────────────────────────
