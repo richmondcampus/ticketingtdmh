@@ -269,6 +269,9 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 
 /* ── Mobile: ≤768px ── */
 /* mob-cards hidden by default — shown only in mobile media query */
+.kb-tab{flex:1;padding:9px 6px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;position:relative;background:transparent;color:var(--text3);box-shadow:none;border:0.5px solid transparent}
+.kb-tab.active{background:#fff;color:var(--text1);box-shadow:0 1px 3px rgba(0,0,0,.08);border:0.5px solid var(--border)}
+@media(prefers-color-scheme:dark){.kb-tab.active{background:var(--card)}}
 .mob-cards{display:none}
 
 @media(max-width:768px){
@@ -1239,22 +1242,16 @@ async function renderDashboard() {
 
     const emptyCol = (msg) => `<div style="text-align:center;padding:24px 12px;color:var(--text3);font-size:12px;border:1px dashed var(--border);border-radius:10px">${msg}</div>`
 
-    const kanbanSwitchTab = (tabId) => {
-      // Scope to the dashboard container only
-      const container = document.getElementById('CONTENT')
-      if (!container) return
-      container.querySelectorAll('[data-kbTab]').forEach(el => {
-        const isActive = el.dataset.kbTab === tabId
-        el.style.background = isActive ? 'var(--white,#fff)' : 'transparent'
-        el.style.color = isActive ? 'var(--text1)' : 'var(--text3)'
-        el.style.boxShadow = isActive ? '0 1px 3px rgba(0,0,0,.08)' : 'none'
-        el.style.border = isActive ? '0.5px solid var(--border)' : '0.5px solid transparent'
+    window.kbTab = function(tabId) {
+      const content = document.getElementById('CONTENT')
+      if (!content) return
+      content.querySelectorAll('.kb-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-kbTab') === tabId)
       })
-      container.querySelectorAll('[data-kbPanel]').forEach(el => {
-        el.style.display = el.dataset.kbPanel === tabId ? 'block' : 'none'
+      content.querySelectorAll('[data-kbPanel]').forEach(panel => {
+        panel.style.display = panel.getAttribute('data-kbPanel') === tabId ? 'block' : 'none'
       })
     }
-    window.kbTab = kanbanSwitchTab
 
     // ── APPROVER / ADMIN / SUPER_APPROVER KANBAN ───────────────────────────
     if (['admin','approver_admin','approver_amb','super_approver'].includes(role)) {
@@ -1323,16 +1320,12 @@ async function renderDashboard() {
           ['pending', 'Needs action', pending.length, pending.length > 0],
           ['upcoming','Upcoming',     scheduled.length, false],
           ['done',    'Done',         thisWeekDone.length, false],
-        ].map(([id,lbl,cnt,urgent]) => `
-          <button data-kbTab="${id}" onclick="kbTab('${id}')"
-            style="flex:1;padding:9px 6px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;position:relative;
-            background:${id==='today'?'var(--white,#fff)':'transparent'};
-            color:${id==='today'?'var(--text1)':'var(--text3)'};
-            box-shadow:${id==='today'?'0 1px 3px rgba(0,0,0,.08)':'none'};
-            border:${id==='today'?'0.5px solid var(--border)':'0.5px solid transparent'}">
-            ${lbl}
-            ${cnt>0?`<span style="position:absolute;top:4px;right:6px;background:${urgent?'#dc2626':id==='today'?'var(--pri)':'#9ca3af'};color:#fff;border-radius:20px;font-size:9px;font-weight:800;padding:1px 5px;min-width:16px;text-align:center">${cnt}</span>`:''}
-          </button>`).join('')}
+        ].map(([id,lbl,cnt,urgent]) => {
+          const badgeBg = urgent?'#dc2626':id==='today'?'var(--pri)':'#9ca3af'
+          const badge = cnt>0 ? '<span style="position:absolute;top:4px;right:6px;background:'+badgeBg+';color:#fff;border-radius:20px;font-size:9px;font-weight:800;padding:1px 5px;min-width:16px;text-align:center">'+cnt+'</span>' : ''
+          const isActive = id==='today'
+          return '<button class="kb-tab'+(isActive?' active':'')+'" data-kbTab="'+id+'" onclick="kbTab(\'' +id+ '\')">'+lbl+badge+'</button>'
+        }).join('')}
       </div>
 
       <!-- Today Panel -->
@@ -1342,20 +1335,13 @@ async function renderDashboard() {
           const col1 = [...pendingToday,...approvedNoDriver]
           const col2 = assignedToday
           const col3 = onTrip
-          return `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
-            <div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--amber);margin-bottom:8px">⏳ Pending / Needs driver (${col1.length})</div>
-              ${col1.length?col1.map(t=>tripCard(t,approverActions(t))).join(''):emptyCol('All clear')}
-            </div>
-            <div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--green);margin-bottom:8px">✅ Assigned today (${col2.length})</div>
-              ${col2.length?col2.map(t=>tripCard(t,approverActions(t))).join(''):emptyCol('No assigned trips today')}
-            </div>
-            <div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#7c3aed;margin-bottom:8px">🚗 On trip now (${col3.length})</div>
-              ${col3.length?col3.map(t=>tripCard(t,approverActions(t))).join(''):emptyCol('No vehicles out')}
-            </div>
-          </div>`
+          const c1h = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--amber);margin-bottom:8px">⏳ Pending / Needs driver ('+col1.length+')</div>'
+          const c2h = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--green);margin-bottom:8px">✅ Assigned today ('+col2.length+')</div>'
+          const c3h = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#7c3aed;margin-bottom:8px">🚗 On trip now ('+col3.length+')</div>'
+          const c1b = col1.length ? col1.map(t=>tripCard(t,approverActions(t))).join('') : emptyCol('All clear')
+          const c2b = col2.length ? col2.map(t=>tripCard(t,approverActions(t))).join('') : emptyCol('No assigned trips today')
+          const c3b = col3.length ? col3.map(t=>tripCard(t,approverActions(t))).join('') : emptyCol('No vehicles out')
+          return '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"><div>'+c1h+c1b+'</div><div>'+c2h+c2b+'</div><div>'+c3h+c3b+'</div></div>'
         })()}
       </div>
 
@@ -1422,16 +1408,11 @@ async function renderDashboard() {
           ['pending', 'Pending',   myPending.length,  myPending.length>0],
           ['upcoming','Upcoming',  myUpcoming.length, false],
           ['done',    'History',   myDone.length,     false],
-        ].map(([id,lbl,cnt,urgent],i) => `
-          <button data-kbTab="${id}" onclick="kbTab('${id}')"
-            style="flex:1;padding:9px 6px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;position:relative;
-            background:${i===0?'var(--white,#fff)':'transparent'};
-            color:${i===0?'var(--text1)':'var(--text3)'};
-            box-shadow:${i===0?'0 1px 3px rgba(0,0,0,.08)':'none'};
-            border:${i===0?'0.5px solid var(--border)':'0.5px solid transparent'}">
-            ${lbl}
-            ${cnt>0?`<span style="position:absolute;top:4px;right:6px;background:${urgent?'#dc2626':'#9ca3af'};color:#fff;border-radius:20px;font-size:9px;font-weight:800;padding:1px 5px;min-width:16px;text-align:center">${cnt}</span>`:''}
-          </button>`).join('')}
+        ].map(([id,lbl,cnt,urgent],i) => {
+          const badgeBg2 = urgent?'#dc2626':'#9ca3af'
+          const badge2 = cnt>0 ? '<span style="position:absolute;top:4px;right:6px;background:'+badgeBg2+';color:#fff;border-radius:20px;font-size:9px;font-weight:800;padding:1px 5px;min-width:16px;text-align:center">'+cnt+'</span>' : ''
+          return '<button class="kb-tab'+(i===0?' active':'')+'" data-kbTab="'+id+'" onclick="kbTab(\'' +id+ '\')">'+lbl+badge2+'</button>'
+        }).join('')}
       </div>
 
       <div data-kbPanel="today">
