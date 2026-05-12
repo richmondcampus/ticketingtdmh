@@ -1240,14 +1240,17 @@ async function renderDashboard() {
     const emptyCol = (msg) => `<div style="text-align:center;padding:24px 12px;color:var(--text3);font-size:12px;border:1px dashed var(--border);border-radius:10px">${msg}</div>`
 
     const kanbanSwitchTab = (tabId) => {
-      document.querySelectorAll('[data-kbTab]').forEach(el => {
+      // Scope to the dashboard container only
+      const container = document.getElementById('CONTENT')
+      if (!container) return
+      container.querySelectorAll('[data-kbTab]').forEach(el => {
         const isActive = el.dataset.kbTab === tabId
         el.style.background = isActive ? 'var(--white,#fff)' : 'transparent'
         el.style.color = isActive ? 'var(--text1)' : 'var(--text3)'
         el.style.boxShadow = isActive ? '0 1px 3px rgba(0,0,0,.08)' : 'none'
         el.style.border = isActive ? '0.5px solid var(--border)' : '0.5px solid transparent'
       })
-      document.querySelectorAll('[data-kbPanel]').forEach(el => {
+      container.querySelectorAll('[data-kbPanel]').forEach(el => {
         el.style.display = el.dataset.kbPanel === tabId ? 'block' : 'none'
       })
     }
