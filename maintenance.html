@@ -12,12 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-/* Ensure Inter is used everywhere — critical override */
-html, body, input, select, textarea, button {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-}
-</style>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="manifest" href="manifest.json">
 <meta name="mobile-web-app-capable" content="yes">
@@ -123,12 +118,13 @@ html, body, input, select, textarea, button {
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 html{font-size:15px;-webkit-tap-highlight-color:transparent;}
 body{
-  font-family:var(--font-body);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   background:var(--bg);color:var(--text);
   min-height:100vh;
   transition:background .25s,color .25s;
   overflow-x:hidden;
 }
+*{font-family:inherit;}
 
 /* Background texture */
 [data-theme="light"] body::before{
@@ -857,22 +853,21 @@ textarea{resize:vertical;min-height:80px;line-height:1.5;}
 }
 
 /* ── TICKET DETAIL MODAL ─────────────────────────────── */
-/* Info rows — key/value pairs */
+/* Info rows — key:value */
 .inforow{
-  display:flex;align-items:baseline;
-  gap:8px;padding:5px 0;
+  display:flex;align-items:center;
+  gap:10px;padding:6px 0;
   border-bottom:1px solid var(--border);
-  font-size:13px;
 }
 .inforow:last-child{border-bottom:none;}
 .ir-lbl{
-  font-size:10px;font-weight:700;
-  color:var(--text3);text-transform:uppercase;letter-spacing:.6px;
-  flex-shrink:0;width:80px;
+  font-size:10px;font-weight:600;
+  color:var(--text3);text-transform:uppercase;letter-spacing:.5px;
+  flex-shrink:0;width:72px;
 }
 .ir-val{
-  color:var(--text2);font-size:13px;font-weight:500;
-  flex:1;min-width:0;word-break:break-word;
+  color:var(--text);font-size:13px;font-weight:500;
+  flex:1;min-width:0;word-break:break-word;line-height:1.3;
 }
 
 /* Timeline / Activity log */
@@ -3002,37 +2997,30 @@ async function openTkt(id) {
   const teamNames = teamIds.map(uid=>ALL_USERS[uid]?.name?.split(' ')[0]||uid).join(', ')||'Unassigned';
 
   document.getElementById('td-body').innerHTML=`
-    <!-- Info grid -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;background:var(--bg3);border-radius:12px;padding:4px 16px;margin-bottom:14px;">
-      <div>
-        <div class="inforow"><span class="ir-lbl">Dept</span><span class="ir-val">${t.dept||'—'}</span></div>
-        <div class="inforow"><span class="ir-lbl">Location</span><span class="ir-val">${t.loc||'—'}</span></div>
-        <div class="inforow"><span class="ir-lbl">Category</span><span class="ir-val">${t.cat||'—'}</span></div>
-        <div class="inforow"><span class="ir-lbl">Priority</span><span class="ir-val"><span class="badge b-${t.priority}">${(t.priority||'').toUpperCase()}</span></span></div>
-        <div class="inforow"><span class="ir-lbl">Status</span><span class="ir-val"><span class="badge ${stClass}">${stLbl(t.status)}</span></span></div>
-      </div>
-      <div>
-        <div class="inforow"><span class="ir-lbl">Submitted</span><span class="ir-val">${fmt(t.created_at)}</span></div>
-        <div class="inforow"><span class="ir-lbl">Team</span><span class="ir-val">${teamNames}</span></div>
-        <div class="inforow"><span class="ir-lbl">Contact</span><span class="ir-val">${t.email||'—'}</span></div>
-        ${hrsToResolve!==null?`<div class="inforow"><span class="ir-lbl">Resolved</span><span class="ir-val" style="color:var(--green2);font-weight:600;">${hrsToResolve}</span></div>`:''}
-        ${t.status==='resolved'&&hrsLeft!==null?`<div class="inforow"><span class="ir-lbl">Auto-close</span><span class="ir-val" style="color:var(--amber2);">in ${hrsLeft}h</span></div>`:''}
-        ${t.closed_at?`<div class="inforow"><span class="ir-lbl">Closed</span><span class="ir-val">${fmt(t.closed_at)}</span></div>`:''}
-      </div>
+    <!-- Info table — clean key:value layout -->
+    <div style="background:var(--bg3);border-radius:12px;padding:8px 14px;margin-bottom:14px;">
+      <div class="inforow"><span class="ir-lbl">Dept</span><span class="ir-val">${t.dept||'—'}</span></div>
+      <div class="inforow"><span class="ir-lbl">Location</span><span class="ir-val">${t.loc||'—'}</span></div>
+      <div class="inforow"><span class="ir-lbl">Category</span><span class="ir-val">${t.cat||'—'}</span></div>
+      <div class="inforow"><span class="ir-lbl">Priority</span><span class="ir-val"><span class="badge b-${t.priority}">${(t.priority||'').toUpperCase()}</span></span></div>
+      <div class="inforow"><span class="ir-lbl">Status</span><span class="ir-val"><span class="badge ${stClass}">${stLbl(t.status)}</span></span></div>
+      <div class="inforow"><span class="ir-lbl">Submitted</span><span class="ir-val">${fmt(t.created_at)}</span></div>
+      <div class="inforow"><span class="ir-lbl">Team</span><span class="ir-val">${teamNames}</span></div>
+      ${t.email?`<div class="inforow"><span class="ir-lbl">Contact</span><span class="ir-val">${t.email}</span></div>`:''}
+      ${hrsToResolve!==null?`<div class="inforow"><span class="ir-lbl">Resolved</span><span class="ir-val" style="color:var(--green2);font-weight:600;">${hrsToResolve}</span></div>`:''}
+      ${t.status==='resolved'&&hrsLeft!==null?`<div class="inforow"><span class="ir-lbl">Auto-close</span><span class="ir-val" style="color:var(--amber2);">in ${hrsLeft}h</span></div>`:''}
+      ${t.closed_at?`<div class="inforow"><span class="ir-lbl">Closed</span><span class="ir-val">${fmt(t.closed_at)}</span></div>`:''}
     </div>
 
     <!-- Description -->
-    ${t.description?`
-    <div style="border-left:3px solid var(--accent2);border-radius:0 8px 8px 0;padding:10px 14px;background:var(--accent-bg);font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5;">
-      ${t.description}
-    </div>`:''}
+    ${t.description?`<div style="border-left:3px solid var(--accent2);border-radius:0 8px 8px 0;padding:10px 14px;background:var(--accent-bg);font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.6;">${t.description}</div>`:''}
 
     <!-- Action bars -->
     ${actionBar}${deptBar}${teamUp}
 
     <!-- Activity Log -->
-    <div style="margin-top:4px;">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Activity Log</div>
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
+      <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;">📋 Activity Log</div>
       <div class="timeline scl">${tlHtml}</div>
       ${noteInput}
     </div>
