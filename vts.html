@@ -7476,7 +7476,8 @@ function renderAccountsTable() {
           <td><span style="font-size:11px;font-weight:700;color:${u.status==='active'?'var(--green)':'var(--red)'}">${u.status==='active'?'Active':'Inactive'}</span></td>
           <td>
             <button class="tbl-act tbl-act-pri" onclick="openEditAccount('${u.id}')">Edit</button>
-            <button class="tbl-act tbl-act-red" onclick="toggleAccountStatus('${u.id}','${u.status}','${u.full_name}')">
+            <button class="tbl-act tbl-act-ghost" onclick="openResetPw('${u.id}')">Reset PW</button>
+            <button class="tbl-act tbl-act-red" onclick="toggleAccountStatus('${u.id}','${u.status}','${(u.full_name||'').replace(/'/g,"\\'")}')">
               ${u.status==='active'?'Deactivate':'Activate'}
             </button>
           </td>
@@ -7583,20 +7584,33 @@ async function doCreateAccount() {
     alert(`Account created!\nUsername: ${username}\nPassword: ${pw}`)
   } catch(e) { alert(e.message); btn.disabled=false; btn.textContent='Create Account' }
 }
-function openEditAccount(id, name, username, role, dept, phone, email) {
-  openMO(`Edit — ${name}`,
+async function openEditAccount(id) {
+  // Fetch fresh user data by ID — no escaping issues, always up to date
+  const u = (window._allAccounts||[]).find(x => x.id === id)
+  if (!u) {
+    // Fallback: fetch from DB
+    const { data } = await SB.from('users').select('*').eq('id', id).single()
+    if (!data) { alert('User not found.'); return }
+    return _openEditAccountModal(data)
+  }
+  _openEditAccountModal(u)
+}
+
+function _openEditAccountModal(u) {
+  openMO(`Edit — ${u.full_name||'User'}`,
     `<div class="fr">
-       <div class="fg"><label class="fl">Full Name</label><input class="fi" id="eaName" value="${name}"></div>
-       <div class="fg"><label class="fl">Username</label><input class="fi" id="eaUsername" value="${username}" style="text-transform:lowercase"></div>
-       <div class="fg"><label class="fl">Role</label><select class="fs" id="eaRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}"${role===k?' selected':''}>${v}</option>`).join('')}</select></div>
-       <div class="fg"><label class="fl">Department</label><select class="fs" id="eaDept">${deptOptions(dept)}</select></div>
+       <div class="fg"><label class="fl">Full Name</label><input class="fi" id="eaName" value="${(u.full_name||'').replace(/"/g,'&quot;')}"></div>
+       <div class="fg"><label class="fl">Username</label><input class="fi" id="eaUsername" value="${(u.username||'').replace(/"/g,'&quot;')}" style="text-transform:lowercase"></div>
+       <div class="fg"><label class="fl">Role</label><select class="fs" id="eaRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}"${u.role===k?' selected':''}>${v}</option>`).join('')}</select></div>
+       <div class="fg"><label class="fl">Department</label><select class="fs" id="eaDept">${deptOptions(u.department)}</select></div>
      </div>
      <div class="fr">
-       <div class="fg"><label class="fl">Phone (for SMS)</label><input class="fi" id="eaPhone" value="${phone||''}" placeholder="09XXXXXXXXX"></div>
-       <div class="fg"><label class="fl">Email (for Email notif.)</label><input class="fi" type="email" id="eaEmail" value="${email||''}" placeholder="user@hospital.com"></div>
+       <div class="fg"><label class="fl">Phone (for SMS)</label><input class="fi" id="eaPhone" value="${(u.phone||'').replace(/"/g,'&quot;')}" placeholder="09XXXXXXXXX"></div>
+       <div class="fg"><label class="fl">Email (for notif.)</label><input class="fi" type="email" id="eaEmail" value="${(u.email||'').replace(/"/g,'&quot;')}" placeholder="user@hospital.com"></div>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-pri" id="eaBn" onclick="doEditAccount('${id}')">Save Changes</button>`
+     <button class="btn btn-pri" id="eaBn" onclick="doEditAccount('${u.id}')">Save Changes</button>`,
+    { confirmClose: true }
   )
 }
 async function doEditAccount(id) {
@@ -7617,7 +7631,10 @@ async function doEditAccount(id) {
   }
   closeMO(); renderAccounts()
 }
-function openResetPw(id, name, username) {
+function openResetPw(id) {
+  const u = (window._allAccounts||[]).find(x => x.id === id)
+  const name = u?.full_name || 'User'
+  const username = u?.username || ''
   openMO(`Reset Password — ${name}`,
     `<div class="fg"><label class="fl">New Password *</label><input class="fi" type="password" id="rp1" placeholder="New password"></div>
      <div class="fg"><label class="fl">Confirm Password *</label><input class="fi" type="password" id="rp2" placeholder="Confirm password"></div>`,
