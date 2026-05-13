@@ -2924,7 +2924,6 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
 
-  // Fetch trip departure for time-based filtering
   const { data: tripData } = await SB.from('trips')
     .select('departure_at,expected_return_at')
     .eq('id', id).single()
@@ -2932,7 +2931,6 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const depISO = tripData?.departure_at || new Date().toISOString()
   const retISO = tripData?.expected_return_at || new Date(new Date(depISO).getTime() + 4*3600000).toISOString()
 
-  // Fetch busy IDs at this time window (exclude current ticket)
   const [{ data: busyV }, { data: busyD }] = await Promise.all([
     SB.rpc('get_busy_vehicle_ids', { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id }),
     SB.rpc('get_busy_driver_ids',  { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id }),
@@ -2941,30 +2939,85 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const busyVIds = new Set((busyV||[]).map(t=>t.vehicle_id).filter(Boolean))
   const busyDIds = new Set((busyD||[]).map(t=>t.driver_id).filter(Boolean))
 
-  // Available drivers (exclude busy, include current so they appear)
-  // Filter by driver_type matching ticket type
-  // off-duty = unavailable; on-trip but no time conflict = available
-  const avD = (_drivers||[]).filter(d => {
-    const dt = d.driver_type || 'regular'
-    if (d.status === 'off-duty') return false
-    const notBusy = !busyDIds.has(d.id) || d.id === curDriverId
-    if (!notBusy) return false
-    if (dt === 'both') return true
-    if (isAmb) return dt === 'ambulance'
-    return dt === 'regular'
+  // Build busy labels for warning display
+  const busyVLabel = {}
+  ;(busyV||[]).forEach(t => {
+    if (t.vehicle_id && !busyVLabel[t.vehicle_id]) {
+      busyVLabel[t.vehicle_id] = new Date(t.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
+    }
   })
-  // Available vehicles filtered by type (exclude busy, include current)
-  const avV = (_vehicles||[]).filter(v => {
-    const t = (v.type||'').toLowerCase()
-    const typeMatch = isAmb  ? t.includes('ambulance')||t.includes('bls')
-                    : isMoto ? t.includes('motorcycle')
-                    :          !t.includes('ambulance')&&!t.includes('motorcycle')
-    return typeMatch && (!busyVIds.has(v.id) || v.id === curVehicleId)
+  const busyDLabel = {}
+  ;(busyD||[]).forEach(t => {
+    if (t.driver_id && !busyDLabel[t.driver_id]) {
+      busyDLabel[t.driver_id] = new Date(t.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
+    }
   })
 
+  // Store all drivers/vehicles for live type override filtering
+  window._rsaAllDrivers  = _drivers  || []
+  window._rsaAllVehicles = _vehicles || []
+  window._rsaBusyVIds    = busyVIds
+  window._rsaBusyDIds    = busyDIds
+  window._rsaBusyVLabel  = busyVLabel
+  window._rsaBusyDLabel  = busyDLabel
+  window._rsaCurDriverId  = curDriverId
+  window._rsaCurVehicleId = curVehicleId
+  window._rsaOrigVtype    = vtype
+
+  const buildDriverOpts = (typeOverride) => {
+    const isA = typeOverride === 'ambulance'
+    return (_drivers||[]).filter(d => {
+      if (d.status === 'off-duty') return false
+      const dt = d.driver_type || 'regular'
+      if (dt === 'both') return true
+      if (isA) return dt === 'ambulance'
+      return dt === 'regular'
+    }).map(d => {
+      const busy = busyDIds.has(d.id) && d.id !== curDriverId
+      const lbl  = busyDLabel[d.id]
+      const cur  = d.id === curDriverId
+      return `<option value="${d.id}|${d.full_name}"${cur?' style="font-weight:700;color:var(--pri)"':''}>
+        ${cur?'★ (Current) ':''}${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ Busy: '+lbl:''}
+      </option>`
+    }).join('')
+  }
+
+  const buildVehicleOpts = (typeOverride) => {
+    const isA = typeOverride === 'ambulance'
+    const isM = typeOverride === 'motorcycle'
+    return (_vehicles||[]).filter(v => {
+      if (v.status === 'maintenance') return false
+      const t = (v.type||'').toLowerCase()
+      if (isA) return t.includes('ambulance') || t.includes('bls')
+      if (isM) return t.includes('motorcycle')
+      return !t.includes('ambulance') && !t.includes('motorcycle')
+    }).map(v => {
+      const busy = busyVIds.has(v.id) && v.id !== curVehicleId
+      const lbl  = busyVLabel[v.id]
+      const cur  = v.id === curVehicleId
+      return `<option value="${v.id}"${cur?' style="font-weight:700;color:var(--pri)"':''}>
+        ${cur?'★ (Current) ':''}${v.name||v.plate} — ${v.plate}${busy&&lbl?' ⚠ Busy: '+lbl:''}
+      </option>`
+    }).join('')
+  }
+
+  window.rsaApplyTypeOverride = (sel) => {
+    const override = sel.value
+    const origVtype = window._rsaOrigVtype || ''
+    const note = document.getElementById('rsaVtypeNote')
+    if (note) note.style.display = override !== origVtype ? 'inline' : 'none'
+    const dSel = document.getElementById('rsaDrv')
+    const vSel = document.getElementById('rsaVeh')
+    if (dSel) dSel.innerHTML = '<option value="">-- Select New Driver --</option>' + buildDriverOpts(override)
+    if (vSel) vSel.innerHTML = '<option value="">-- Select New Vehicle --</option>' + buildVehicleOpts(override)
+    window._rsaVtypeOverride = override
+  }
+
   const depStr = tripData?.departure_at
-    ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true})
+    ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
     : '—'
+
+  const canOverrideType = ['admin','approver_admin','super_approver'].includes(currentProfile?.role) && vtype !== 'ambulance'
 
   openMO(`↻ Reassign — ${ticketNo}`,
     `<div class="info info-amber" style="margin-bottom:14px">
@@ -2974,32 +3027,37 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
 
      <div style="background:var(--bg);border-radius:9px;padding:10px 13px;margin-bottom:14px">
        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Currently Assigned</div>
-       <div style="display:flex;gap:16px;flex-wrap:wrap">
+       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
          <div><div style="font-size:10px;color:var(--text3)">Driver</div><div style="font-size:13px;font-weight:700">${curDriverName||'—'}</div></div>
          <div><div style="font-size:10px;color:var(--text3)">Vehicle</div><div style="font-size:13px;font-weight:700">${curVehicleName||'—'}</div></div>
          <div><div style="font-size:10px;color:var(--text3)">Departure</div><div style="font-size:13px;font-weight:700">${depStr}</div></div>
+         ${canOverrideType ? `
+         <div style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+           <span style="font-size:10px;color:var(--text3);font-weight:600">Vehicle type:</span>
+           <select class="fs" id="rsaVtypeOverride" style="font-size:11px;padding:4px 8px;border-radius:7px" onchange="rsaApplyTypeOverride(this)">
+             <option value="regular"    ${vtype==='regular'   ?'selected':''}>🚙 Regular</option>
+             <option value="motorcycle" ${vtype==='motorcycle'?'selected':''}>🏍 Motorcycle</option>
+           </select>
+           <span id="rsaVtypeNote" style="font-size:10px;color:var(--amber);font-weight:700;display:none">⚠ Overriding type</span>
+         </div>` : ''}
        </div>
      </div>
 
      <div class="fg"><label class="fl">New Driver *
-       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} available</span>
+       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — busy drivers shown with ⚠</span>
      </label>
        <select class="fs" id="rsaDrv">
          <option value="">-- Select New Driver --</option>
-         ${avD.map(d=>`<option value="${d.id}|${d.full_name}"${d.id===curDriverId?' style="font-weight:700;color:var(--pri)"':''}>
-           ${d.id===curDriverId?'★ (Current) ':''} ${d.full_name} · ${d.license_no||'—'}
-         </option>`).join('')}
+         ${buildDriverOpts(vtype)}
        </select>
      </div>
 
      <div class="fg"><label class="fl">New Vehicle *
-       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avV.length} available</span>
+       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — busy vehicles shown with ⚠</span>
      </label>
        <select class="fs" id="rsaVeh">
          <option value="">-- Select New Vehicle --</option>
-         ${avV.map(v=>`<option value="${v.id}"${v.id===curVehicleId?' style="font-weight:700;color:var(--pri)"':''}>
-           ${v.id===curVehicleId?'★ (Current) ':''} ${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)
-         </option>`).join('')}
+         ${buildVehicleOpts(vtype)}
        </select>
      </div>
 
@@ -3091,6 +3149,15 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
     closeMO()
     alert(`⚠ Reassignment failed.\n\n${res?.message || 'Unknown error.'}\n\nPlease refresh.`)
     renderTickets(); return
+  }
+
+  // Save vehicle type override if changed
+  const rsaVtypeOverride = window._rsaVtypeOverride
+  if (rsaVtypeOverride && rsaVtypeOverride !== window._rsaOrigVtype) {
+    await SB.from('trips').update({ vehicle_type_needed: rsaVtypeOverride }).eq('id', id)
+    await addAudit(id, ticketNo, '🔄 Vehicle Type Changed on Reassign',
+      `Changed from "${window._rsaOrigVtype}" to "${rsaVtypeOverride}" · ${currentProfile?.full_name}`)
+    window._rsaVtypeOverride = null
   }
 
   // Release OLD driver + vehicle → available (only if actually changing)
