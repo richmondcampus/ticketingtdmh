@@ -1241,7 +1241,7 @@ async function renderDashboard() {
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">'
         + '<div style="background:var(--bg);border-radius:7px;padding:6px 8px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">📅 Departure</div><div style="font-size:11px;font-weight:600">' + depStr + '</div></div>'
         + (t.driver_name
-          ? '<div style="background:var(--bg);border-radius:7px;padding:6px 8px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">👤 Driver</div><div style="font-size:11px;font-weight:600">' + t.driver_name + '</div></div>'
+          ? '<div style="background:var(--bg);border-radius:7px;padding:6px 8px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">👤 Driver · 🚗 Vehicle</div><div style="font-size:11px;font-weight:600">' + t.driver_name + '</div><div style="font-size:10.5px;color:var(--text3);margin-top:1px">' + (t.vehicle_name||t.vehicle_plate||'—') + '</div></div>'
           : '<div style="background:var(--bg);border-radius:7px;padding:6px 8px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">🚗 Vehicle</div><div style="font-size:11px;color:var(--text3)">Not assigned yet</div></div>')
         + '</div>'
         + (actions ? '<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;align-items:center" onclick="event.stopPropagation()">' + actions + '</div>' : '')
@@ -1521,7 +1521,7 @@ async function renderDashboard() {
           </div>
         </div>
         <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px">
-          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
+          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_name||t.vehicle_plate||'—'}
         </div>
         <button
           data-id="${t.id}"
@@ -1572,7 +1572,7 @@ async function renderDashboard() {
           </div>
         </div>
         <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px">
-          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
+          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_name||t.vehicle_plate||'—'}
         </div>
         <button
           data-id="${t.id}"
@@ -1906,7 +1906,7 @@ function renderTicketsTable() {
         </td>
         <td style="padding:10px 12px">
           ${t.driver_name
-            ? `<div style="font-size:11.5px;font-weight:600;color:var(--text1)">${t.driver_name}</div><div style="font-size:10.5px;color:var(--text3);font-family:monospace">${t.vehicle?.plate||t.vehicle_plate||''}</div>`
+            ? `<div style="font-size:11.5px;font-weight:600;color:var(--text1)">${t.driver_name}</div><div style="font-size:10.5px;color:var(--text3)">${t.vehicle_name||''}</div>`
             : `<span style="font-size:11px;color:var(--text3)">—</span>`}
         </td>
         <td style="padding:10px 12px" onclick="event.stopPropagation()">
@@ -2215,7 +2215,7 @@ function buildMobCards(filtered, role) {
         ${t.vehicle?.plate||t.vehicle_plate ? `
         <span style="color:var(--text3)">·</span>
         <span style="color:var(--text3)">🚗</span>
-        <span style="font-weight:600;font-family:monospace;color:var(--pri)">${t.vehicle?.plate||t.vehicle_plate}</span>` : ''}
+        <span style="font-weight:600;color:var(--pri)">${t.vehicle_name||t.vehicle_plate||'—'}</span>` : ''}
       </div>` : `<div style="padding:0 13px 8px"></div>`}
 
       <!-- Vehicle type badge -->
@@ -2573,6 +2573,8 @@ async function openApproveModal(id, ticketNo, vtype) {
   window._apDrvTripLabel = drvTripLabel
   window._apVehTripLabel = vehTripLabel
 
+  window._apOrigVtype = vtype
+
   openMO(`Approve & Assign — ${ticketNo}`,
     `${tripInfo}
      ${poolSuggestionHTML}
@@ -2582,9 +2584,20 @@ async function openApproveModal(id, ticketNo, vtype) {
      </div>
 
      <div style="border-top:1px solid var(--border);margin:13px 0"></div>
-     <div style="font-size:11.5px;font-weight:700;color:var(--text2);margin-bottom:11px">
-       Assign Driver & Vehicle
-       <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:6px">— or skip to approve without assigning yet</span>
+     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:11px">
+       <div style="font-size:11.5px;font-weight:700;color:var(--text2)">
+         Assign Driver & Vehicle
+         <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:6px">— or skip to approve without assigning yet</span>
+       </div>
+       ${['admin','approver_admin','super_approver'].includes(currentProfile?.role) && vtype !== 'ambulance' ? `
+       <div style="display:flex;align-items:center;gap:6px">
+         <span style="font-size:10px;color:var(--text3);font-weight:600">Override vehicle type:</span>
+         <select class="fs" id="apVtypeOverride" style="font-size:11px;padding:4px 8px;border-radius:7px" onchange="applyApproveTypeOverride('${id}','${ticketNo}')">
+           <option value="regular"    ${vtype==='regular'   ?'selected':''}>🚙 Regular</option>
+           <option value="motorcycle" ${vtype==='motorcycle'?'selected':''}>🏍 Motorcycle</option>
+         </select>
+         <span id="apVtypeNote" style="font-size:10px;color:var(--amber);font-weight:700;display:none">⚠ Overriding requested type</span>
+       </div>` : ''}
      </div>
 
      <div class="fr">
@@ -2623,6 +2636,64 @@ async function openApproveModal(id, ticketNo, vtype) {
      <button class="btn btn-red btn-sm" onclick="closeMO();openRejectModal('${id}','${ticketNo}')">✕ Reject</button>
      <button class="btn btn-green" id="apBtn" onclick="doApproveAndAssign('${id}','${ticketNo}')">✓ Approve</button>`
   , { confirmClose: true })
+}
+
+function applyApproveTypeOverride() {
+  const override = document.getElementById('apVtypeOverride')?.value
+  if (!override) return
+  const origVtype = window._apOrigVtype || ''
+  const note = document.getElementById('apVtypeNote')
+  if (note) note.style.display = override !== origVtype ? 'inline' : 'none'
+
+  const isMoto = override === 'motorcycle'
+  const allV = window._apAllVehicles || []
+  const allD = window._apAllDrivers  || []
+  const bV   = window._apBusyVehIds  || new Set()
+  const bD   = window._apBusyDrvIds  || new Set()
+  const vL   = window._apVehTripLabel || {}
+  const dL   = window._apDrvTripLabel || {}
+
+  // Filter vehicles by the overridden type (no ambulance allowed here)
+  const filteredV = allV.filter(v => {
+    if (v.status === 'maintenance') return false
+    const t = (v.type||'').toLowerCase()
+    if (isMoto) return t.includes('motorcycle')
+    return !t.includes('ambulance') && !t.includes('motorcycle')
+  })
+
+  // Filter drivers by overridden type
+  const filteredD = allD.filter(d => {
+    if (d.status === 'off-duty') return false
+    const dt = d.driver_type || 'regular'
+    if (dt === 'both') return true
+    if (isMoto) return dt === 'regular' || dt === 'both' // motorcycle riders = regular drivers
+    return dt === 'regular' || dt === 'both'
+  })
+
+  // Update vehicle select
+  const vSel = document.getElementById('vSel')
+  if (vSel) {
+    vSel.innerHTML = '<option value="">-- Skip / assign later --</option>'
+      + filteredV.map(v => {
+          const busy = bV.has(v.id)
+          const lbl  = vL[v.id]
+          return `<option value="${v.id}">${v.name||v.plate} — ${v.plate}${busy&&lbl?' ⚠ '+lbl:''}</option>`
+        }).join('')
+  }
+
+  // Update driver select
+  const dSel = document.getElementById('dSel')
+  if (dSel) {
+    dSel.innerHTML = '<option value="">-- Skip / assign later --</option>'
+      + filteredD.map(d => {
+          const busy = bD.has(d.id)
+          const lbl  = dL[d.id]
+          return `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ '+lbl:''}</option>`
+        }).join('')
+  }
+
+  // Store for doApproveAndAssign to use
+  window._apVtypeOverride = override
 }
 
 function toggleApproveLastResort() {
@@ -2774,7 +2845,7 @@ async function doApproveAndAssign(id, ticketNo) {
     return
   }
 
-  // Use atomic DB function — row-level lock prevents concurrent approvals
+  // ── ATOMIC APPROVAL (prevents double-approval race condition) ──
   const { data: lockResult, error: lockErr } = await SB.rpc('approve_trip_atomic', {
     p_trip_id:       id,
     p_approver_id:   currentProfile?.id,
@@ -2802,6 +2873,15 @@ async function doApproveAndAssign(id, ticketNo) {
     alert(`⚠ Could not approve ticket.\n\n${result?.message || 'The ticket was already processed.'}\n${result?.blocked_by ? 'Processed by: ' + result.blocked_by : ''}\n\nPlease refresh.`)
     renderTickets()
     return
+  }
+
+  // ── Save vehicle type override if approver changed it ──────────────────────
+  const vtypeOverride = window._apVtypeOverride
+  if (vtypeOverride && vtypeOverride !== window._apOrigVtype) {
+    await SB.from('trips').update({ vehicle_type_needed: vtypeOverride }).eq('id', id)
+    await addAudit(id, ticketNo, '🔄 Vehicle Type Overridden',
+      `Requester requested "${window._apOrigVtype}" — approver changed to "${vtypeOverride}" · ${currentProfile?.full_name}`)
+    window._apVtypeOverride = null
   }
 
   // ── APPROVED SUCCESSFULLY ──
