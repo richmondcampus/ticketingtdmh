@@ -1095,8 +1095,10 @@ async function renderDashboard() {
   let tripsQ = SB.from('trips').select('id,ticket_no,status,department,purpose,priority,vehicle_type_needed,driver_name,vehicle_name,vehicle_plate,departure_at,expected_return_at,created_at,requester_id,driver_id,vehicle_id,pool_id').order('created_at',{ascending:false})
   if (role === 'requester')     tripsQ = tripsQ.eq('requester_id', currentProfile.id)
   if (role === 'driver')        tripsQ = tripsQ.eq('driver_id', currentProfile.driver_record_id || currentProfile.id)
-  if (role === 'approver_admin') tripsQ = tripsQ.neq('vehicle_type_needed', 'ambulance')
-  if (role === 'approver_amb')   tripsQ = tripsQ.eq('vehicle_type_needed', 'ambulance')
+  // Fetch ALL tickets — no vehicle type filter at DB level
+  // Role-based action restrictions are applied in the UI
+  // if (role === 'approver_admin') tripsQ = tripsQ.neq('vehicle_type_needed', 'ambulance')
+  // if (role === 'approver_amb')   tripsQ = tripsQ.eq('vehicle_type_needed', 'ambulance')
 
   const [{ data: trips }, { data: logs }] = await Promise.all([
     tripsQ,
@@ -1108,8 +1110,9 @@ async function renderDashboard() {
 
   // Filter pending by approver type
   let pending = T.filter(t => t.status==='pending-approval').sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))
-  if (role === 'approver_admin')   pending = pending.filter(t => t.vehicle_type_needed !== 'ambulance')
-  if (role === 'approver_amb')     pending = pending.filter(t => t.vehicle_type_needed === 'ambulance')
+  // NOTE: pending shown to all — action buttons restricted per role in UI
+  // if (role === 'approver_admin')   pending = pending.filter(t => t.vehicle_type_needed !== 'ambulance')
+  // if (role === 'approver_amb')     pending = pending.filter(t => t.vehicle_type_needed === 'ambulance')
   // super_approver sees all pending (no filter)
 
   // Active = currently happening — exclude advance bookings that depart in the future
@@ -1207,37 +1210,42 @@ async function renderDashboard() {
   if (role !== 'guard') {
 
     // ── Shared card renderers ──────────────────────────────────────────────
+    // Role-based action scope — used by tripCard and approverActions
+    const canActOn = (t) => {
+      if (role === 'admin' || role === 'super_approver') return true
+      if (role === 'approver_admin') return t.vehicle_type_needed !== 'ambulance'
+      if (role === 'approver_amb')   return t.vehicle_type_needed === 'ambulance'
+      return true // requester, driver, owner — view only anyway
+    }
+
     const tripCard = (t, actions='') => {
       const dep = t.departure_at ? new Date(t.departure_at) : null
       const depStr = dep ? dep.toLocaleString('en-PH',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
       const bColor = t.status==='pending-approval'?'var(--amber)':t.status==='approved'?'var(--pri)':t.status==='assigned'?'var(--green)':t.status==='on-trip'?'#7c3aed':'var(--border)'
       const ov = isOverdue(t)
-      return `<div style="background:var(--card);border:1px solid var(--border);border-left:4px solid ${bColor};border-radius:12px;padding:12px 13px;margin-bottom:8px;cursor:pointer" onclick="openViewModal('${t.id}')">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:11px;font-weight:700;font-family:monospace;color:var(--pri)">${t.ticket_no||'—'}</div>
-            <div style="font-size:13px;font-weight:700;margin:2px 0">${t.department||'—'}</div>
-            <div style="font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">→ ${t.destination||'—'}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0">${badge(t.status)}${ov?`<div style="font-size:9px;font-weight:800;color:#dc2626;margin-top:3px">⚠ ${overdueDuration(t)}</div>`:''}</div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
-          <div style="background:var(--bg);border-radius:7px;padding:6px 8px">
-            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">📅 Departure</div>
-            <div style="font-size:11px;font-weight:600">${depStr}</div>
-          </div>
-          ${t.driver_name
-            ? `<div style="background:var(--bg);border-radius:7px;padding:6px 8px">
-                <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">👤 Driver</div>
-                <div style="font-size:11px;font-weight:600">${t.driver_name}</div>
-              </div>`
-            : `<div style="background:var(--bg);border-radius:7px;padding:6px 8px">
-                <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">🚗 Vehicle</div>
-                <div style="font-size:11px;color:var(--text3)">Not assigned yet</div>
-              </div>`}
-        </div>
-        ${actions ? `<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px;display:flex;gap:5px;flex-wrap:wrap" onclick="event.stopPropagation()">${actions}</div>` : ''}
-      </div>`
+      const viewOnly = ['approver_admin','approver_amb'].includes(role) && !canActOn(t)
+      const typeTag = t.vehicle_type_needed === 'ambulance'
+        ? '<span style="font-size:9px;font-weight:700;background:#fef2f2;color:#dc2626;border:0.5px solid #fecdd3;border-radius:4px;padding:1px 5px;margin-left:4px">🚑 AMB</span>'
+        : t.vehicle_type_needed === 'motorcycle'
+        ? '<span style="font-size:9px;font-weight:700;background:#fefce8;color:#92400e;border:0.5px solid #fde68a;border-radius:4px;padding:1px 5px;margin-left:4px">🏍 MOTO</span>'
+        : ''
+      return '<div style="background:var(--card);border:1px solid var(--border);border-left:4px solid ' + bColor + ';border-radius:12px;padding:12px 13px;margin-bottom:8px;cursor:pointer;opacity:' + (viewOnly?'.6':'1') + '" onclick="openViewModal(\'' + t.id + '\')">'
+        + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">'
+        + '<div style="flex:1;min-width:0">'
+        + '<div style="font-size:11px;font-weight:700;font-family:monospace;color:var(--pri)">' + (t.ticket_no||'—') + typeTag + '</div>'
+        + '<div style="font-size:13px;font-weight:700;margin:2px 0">' + (t.department||'—') + '</div>'
+        + '<div style="font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">→ ' + (t.destination||'—') + '</div>'
+        + '</div>'
+        + '<div style="text-align:right;flex-shrink:0">' + badge(t.status) + (ov?'<div style="font-size:9px;font-weight:800;color:#dc2626;margin-top:3px">⚠ ' + overdueDuration(t) + '</div>':'') + '</div>'
+        + '</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">'
+        + '<div style="background:var(--bg);border-radius:7px;padding:6px 8px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">📅 Departure</div><div style="font-size:11px;font-weight:600">' + depStr + '</div></div>'
+        + (t.driver_name
+          ? '<div style="background:var(--bg);border-radius:7px;padding:6px 8px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">👤 Driver · 🚗 Vehicle</div><div style="font-size:11px;font-weight:600">' + t.driver_name + '</div><div style="font-size:10.5px;color:var(--text3);margin-top:1px">' + (t.vehicle_name||t.vehicle_plate||'—') + '</div></div>'
+          : '<div style="background:var(--bg);border-radius:7px;padding:6px 8px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:2px">🚗 Vehicle</div><div style="font-size:11px;color:var(--text3)">Not assigned yet</div></div>')
+        + '</div>'
+        + (actions ? '<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;align-items:center" onclick="event.stopPropagation()">' + actions + '</div>' : '')
+        + '</div>'
     }
 
     const emptyCol = (msg) => `<div style="text-align:center;padding:24px 12px;color:var(--text3);font-size:12px;border:1px dashed var(--border);border-radius:10px">${msg}</div>`
@@ -1265,21 +1273,22 @@ async function renderDashboard() {
       })
 
       const approverActions = (t) => {
+        if (!canActOn(t)) {
+          const who = t.vehicle_type_needed === 'ambulance' ? 'Amb Approver' : 'Admin Approver'
+          return '<span style="font-size:10px;color:var(--text3);font-style:italic">👁 View only · ' + who + '</span>'
+        }
         const parts = []
-        const canApp = t.status==='pending-approval' && (
-          role==='admin' || role==='super_approver' ||
-          (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
-          (role==='approver_amb'   && t.vehicle_type_needed==='ambulance')
-        )
-        if (canApp) {
-          parts.push(`<button class="btn btn-green btn-sm" style="flex:1" onclick="event.stopPropagation();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">✓ Approve</button>`)
-          parts.push(`<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal('${t.id}','${t.ticket_no}')">✕</button>`)
+        if (t.status === 'pending-approval') {
+          parts.push('<button class="btn btn-green btn-sm" style="flex:1" onclick="event.stopPropagation();openApproveModal(\'' + t.id + '\',\'' + t.ticket_no + '\',\'' + t.vehicle_type_needed + '\')">✓ Approve</button>')
+          parts.push('<button class="btn btn-red btn-sm" onclick="event.stopPropagation();openRejectModal(\'' + t.id + '\',\'' + t.ticket_no + '\')">✕</button>')
         }
-        if (t.status==='approved') {
-          parts.push(`<button class="btn btn-pri btn-sm" style="flex:1" onclick="event.stopPropagation();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">+ Assign Driver</button>`)
+        if (t.status === 'approved') {
+          parts.push('<button class="btn btn-pri btn-sm" style="flex:1" onclick="event.stopPropagation();openAssignModal(\'' + t.id + '\',\'' + t.ticket_no + '\',\'' + t.vehicle_type_needed + '\')">+ Assign Driver</button>')
         }
-        if (t.status==='assigned') {
-          parts.push(`<button class="btn btn-sm" style="background:var(--amber-s);color:var(--amber);border:1px solid rgba(217,119,6,.2)" onclick="event.stopPropagation();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`)
+        if (t.status === 'assigned') {
+          const dn = (t.driver_name||'').replace(/'/g,"\\'")
+          const vn = (t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")
+          parts.push('<button class="btn btn-sm" style="background:var(--amber-s);color:var(--amber);border:1px solid rgba(217,119,6,.2)" onclick="event.stopPropagation();openReassignModal(\'' + t.id + '\',\'' + t.ticket_no + '\',\'' + t.vehicle_type_needed + '\',\'' + dn + '\',\'' + (t.driver_id||'') + '\',\'' + vn + '\',\'' + (t.vehicle_id||'') + '\')">↻ Reassign</button>')
         }
         return parts.join('')
       }
@@ -1512,7 +1521,7 @@ async function renderDashboard() {
           </div>
         </div>
         <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px">
-          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
+          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_name||t.vehicle_plate||'—'}
         </div>
         <button
           data-id="${t.id}"
@@ -1563,7 +1572,7 @@ async function renderDashboard() {
           </div>
         </div>
         <div style="background:var(--bg);border-radius:9px;padding:8px;margin-bottom:10px;font-size:11.5px">
-          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}
+          👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_name||t.vehicle_plate||'—'}
         </div>
         <button
           data-id="${t.id}"
@@ -1703,26 +1712,35 @@ async function renderTickets() {
 }
 
 function renderTicketsTable() {
-  const sEl = document.getElementById('tkSearch')
+  const sEl  = document.getElementById('tkSearch')
   const stEl = document.getElementById('tkStatus')
   const tyEl = document.getElementById('tkType')
-  const q = (sEl?.value||'').toLowerCase()
+  const dtEl = document.getElementById('tkDate')
+  const q  = (sEl?.value||'').toLowerCase()
   const sf = stEl?.value||''
   const tf = tyEl?.value||''
+  const df = dtEl?.value||''  // YYYY-MM-DD format
 
   const statusOrder = {
-    'pending-approval': 0,  // needs action — oldest first
-    'approved':         1,  // approved, needs driver
-    'assigned':         2,  // assigned, upcoming
-    'on-trip':          3,  // currently out
-    'completed':        4,  // done — newest first
-    'rejected':         5,  // historical
-    'cancelled':        6   // historical
+    'pending-approval': 0,
+    'approved':         1,
+    'assigned':         2,
+    'on-trip':          3,
+    'completed':        4,
+    'rejected':         5,
+    'cancelled':        6
   }
 
   const filtered = _tickets.filter(t => {
     const m = (t.ticket_no||'').toLowerCase().includes(q)||(t.department||'').toLowerCase().includes(q)||(t.purpose||'').toLowerCase().includes(q)
-    return m && (!sf||t.status===sf) && (!tf||t.vehicle_type_needed===tf)
+    if (!m) return false
+    if (sf && t.status !== sf) return false
+    if (tf && t.vehicle_type_needed !== tf) return false
+    if (df && t.departure_at) {
+      const depDate = new Date(t.departure_at).toLocaleDateString('en-CA',{timeZone:'Asia/Manila'}) // YYYY-MM-DD
+      if (depDate !== df) return false
+    }
+    return true
   })
   const role = currentProfile?.role
 
@@ -1777,6 +1795,10 @@ function renderTicketsTable() {
       <option value="motorcycle" ${tf==='motorcycle'?'selected':''}>🏍 Motorcycle</option>
       <option value="ambulance" ${tf==='ambulance'?'selected':''}>🚑 Ambulance</option>
     </select>`}
+    <div style="display:flex;align-items:center;gap:5px">
+      <input type="date" id="tkDate" class="fs" value="${df}" style="font-size:12px;padding:6px 10px;min-width:145px" onchange="renderTicketsTable()" title="Filter by departure date">
+      ${df ? `<button onclick="document.getElementById('tkDate').value='';renderTicketsTable()" style="background:var(--red-s);color:var(--red);border:none;border-radius:6px;padding:5px 8px;font-size:11px;font-weight:700;cursor:pointer" title="Clear date filter">✕</button>` : ''}
+    </div>
     <div style="margin-left:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-size:11.5px;color:var(--text2);font-weight:600;white-space:nowrap">${filtered.length} ticket${filtered.length!==1?'s':''}</div>
   </div>
 
@@ -1884,7 +1906,7 @@ function renderTicketsTable() {
         </td>
         <td style="padding:10px 12px">
           ${t.driver_name
-            ? `<div style="font-size:11.5px;font-weight:600;color:var(--text1)">${t.driver_name}</div><div style="font-size:10.5px;color:var(--text3);font-family:monospace">${t.vehicle?.plate||t.vehicle_plate||''}</div>`
+            ? `<div style="font-size:11.5px;font-weight:600;color:var(--text1)">${t.driver_name}</div><div style="font-size:10.5px;color:var(--text3)">${t.vehicle_name||''}</div>`
             : `<span style="font-size:11px;color:var(--text3)">—</span>`}
         </td>
         <td style="padding:10px 12px" onclick="event.stopPropagation()">
@@ -2193,7 +2215,7 @@ function buildMobCards(filtered, role) {
         ${t.vehicle?.plate||t.vehicle_plate ? `
         <span style="color:var(--text3)">·</span>
         <span style="color:var(--text3)">🚗</span>
-        <span style="font-weight:600;font-family:monospace;color:var(--pri)">${t.vehicle?.plate||t.vehicle_plate}</span>` : ''}
+        <span style="font-weight:600;color:var(--pri)">${t.vehicle_name||t.vehicle_plate||'—'}</span>` : ''}
       </div>` : `<div style="padding:0 13px 8px"></div>`}
 
       <!-- Vehicle type badge -->
@@ -2551,6 +2573,8 @@ async function openApproveModal(id, ticketNo, vtype) {
   window._apDrvTripLabel = drvTripLabel
   window._apVehTripLabel = vehTripLabel
 
+  window._apOrigVtype = vtype
+
   openMO(`Approve & Assign — ${ticketNo}`,
     `${tripInfo}
      ${poolSuggestionHTML}
@@ -2560,9 +2584,20 @@ async function openApproveModal(id, ticketNo, vtype) {
      </div>
 
      <div style="border-top:1px solid var(--border);margin:13px 0"></div>
-     <div style="font-size:11.5px;font-weight:700;color:var(--text2);margin-bottom:11px">
-       Assign Driver & Vehicle
-       <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:6px">— or skip to approve without assigning yet</span>
+     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:11px">
+       <div style="font-size:11.5px;font-weight:700;color:var(--text2)">
+         Assign Driver & Vehicle
+         <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:6px">— or skip to approve without assigning yet</span>
+       </div>
+       ${['admin','approver_admin','super_approver'].includes(currentProfile?.role) && vtype !== 'ambulance' ? `
+       <div style="display:flex;align-items:center;gap:6px">
+         <span style="font-size:10px;color:var(--text3);font-weight:600">Override vehicle type:</span>
+         <select class="fs" id="apVtypeOverride" style="font-size:11px;padding:4px 8px;border-radius:7px" onchange="applyApproveTypeOverride('${id}','${ticketNo}')">
+           <option value="regular"    ${vtype==='regular'   ?'selected':''}>🚙 Regular</option>
+           <option value="motorcycle" ${vtype==='motorcycle'?'selected':''}>🏍 Motorcycle</option>
+         </select>
+         <span id="apVtypeNote" style="font-size:10px;color:var(--amber);font-weight:700;display:none">⚠ Overriding requested type</span>
+       </div>` : ''}
      </div>
 
      <div class="fr">
@@ -2601,6 +2636,64 @@ async function openApproveModal(id, ticketNo, vtype) {
      <button class="btn btn-red btn-sm" onclick="closeMO();openRejectModal('${id}','${ticketNo}')">✕ Reject</button>
      <button class="btn btn-green" id="apBtn" onclick="doApproveAndAssign('${id}','${ticketNo}')">✓ Approve</button>`
   , { confirmClose: true })
+}
+
+function applyApproveTypeOverride() {
+  const override = document.getElementById('apVtypeOverride')?.value
+  if (!override) return
+  const origVtype = window._apOrigVtype || ''
+  const note = document.getElementById('apVtypeNote')
+  if (note) note.style.display = override !== origVtype ? 'inline' : 'none'
+
+  const isMoto = override === 'motorcycle'
+  const allV = window._apAllVehicles || []
+  const allD = window._apAllDrivers  || []
+  const bV   = window._apBusyVehIds  || new Set()
+  const bD   = window._apBusyDrvIds  || new Set()
+  const vL   = window._apVehTripLabel || {}
+  const dL   = window._apDrvTripLabel || {}
+
+  // Filter vehicles by the overridden type (no ambulance allowed here)
+  const filteredV = allV.filter(v => {
+    if (v.status === 'maintenance') return false
+    const t = (v.type||'').toLowerCase()
+    if (isMoto) return t.includes('motorcycle')
+    return !t.includes('ambulance') && !t.includes('motorcycle')
+  })
+
+  // Filter drivers by overridden type
+  const filteredD = allD.filter(d => {
+    if (d.status === 'off-duty') return false
+    const dt = d.driver_type || 'regular'
+    if (dt === 'both') return true
+    if (isMoto) return dt === 'regular' || dt === 'both' // motorcycle riders = regular drivers
+    return dt === 'regular' || dt === 'both'
+  })
+
+  // Update vehicle select
+  const vSel = document.getElementById('vSel')
+  if (vSel) {
+    vSel.innerHTML = '<option value="">-- Skip / assign later --</option>'
+      + filteredV.map(v => {
+          const busy = bV.has(v.id)
+          const lbl  = vL[v.id]
+          return `<option value="${v.id}">${v.name||v.plate} — ${v.plate}${busy&&lbl?' ⚠ '+lbl:''}</option>`
+        }).join('')
+  }
+
+  // Update driver select
+  const dSel = document.getElementById('dSel')
+  if (dSel) {
+    dSel.innerHTML = '<option value="">-- Skip / assign later --</option>'
+      + filteredD.map(d => {
+          const busy = bD.has(d.id)
+          const lbl  = dL[d.id]
+          return `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ '+lbl:''}</option>`
+        }).join('')
+  }
+
+  // Store for doApproveAndAssign to use
+  window._apVtypeOverride = override
 }
 
 function toggleApproveLastResort() {
@@ -2752,7 +2845,7 @@ async function doApproveAndAssign(id, ticketNo) {
     return
   }
 
-  // Use atomic DB function — row-level lock prevents concurrent approvals
+  // ── ATOMIC APPROVAL (prevents double-approval race condition) ──
   const { data: lockResult, error: lockErr } = await SB.rpc('approve_trip_atomic', {
     p_trip_id:       id,
     p_approver_id:   currentProfile?.id,
@@ -2780,6 +2873,15 @@ async function doApproveAndAssign(id, ticketNo) {
     alert(`⚠ Could not approve ticket.\n\n${result?.message || 'The ticket was already processed.'}\n${result?.blocked_by ? 'Processed by: ' + result.blocked_by : ''}\n\nPlease refresh.`)
     renderTickets()
     return
+  }
+
+  // ── Save vehicle type override if approver changed it ──────────────────────
+  const vtypeOverride = window._apVtypeOverride
+  if (vtypeOverride && vtypeOverride !== window._apOrigVtype) {
+    await SB.from('trips').update({ vehicle_type_needed: vtypeOverride }).eq('id', id)
+    await addAudit(id, ticketNo, '🔄 Vehicle Type Overridden',
+      `Requester requested "${window._apOrigVtype}" — approver changed to "${vtypeOverride}" · ${currentProfile?.full_name}`)
+    window._apVtypeOverride = null
   }
 
   // ── APPROVED SUCCESSFULLY ──
@@ -2822,7 +2924,6 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
 
-  // Fetch trip departure for time-based filtering
   const { data: tripData } = await SB.from('trips')
     .select('departure_at,expected_return_at')
     .eq('id', id).single()
@@ -2830,7 +2931,6 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const depISO = tripData?.departure_at || new Date().toISOString()
   const retISO = tripData?.expected_return_at || new Date(new Date(depISO).getTime() + 4*3600000).toISOString()
 
-  // Fetch busy IDs at this time window (exclude current ticket)
   const [{ data: busyV }, { data: busyD }] = await Promise.all([
     SB.rpc('get_busy_vehicle_ids', { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id }),
     SB.rpc('get_busy_driver_ids',  { p_dep: depISO, p_ret: retISO, p_exclude_trip_id: id }),
@@ -2839,30 +2939,85 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const busyVIds = new Set((busyV||[]).map(t=>t.vehicle_id).filter(Boolean))
   const busyDIds = new Set((busyD||[]).map(t=>t.driver_id).filter(Boolean))
 
-  // Available drivers (exclude busy, include current so they appear)
-  // Filter by driver_type matching ticket type
-  // off-duty = unavailable; on-trip but no time conflict = available
-  const avD = (_drivers||[]).filter(d => {
-    const dt = d.driver_type || 'regular'
-    if (d.status === 'off-duty') return false
-    const notBusy = !busyDIds.has(d.id) || d.id === curDriverId
-    if (!notBusy) return false
-    if (dt === 'both') return true
-    if (isAmb) return dt === 'ambulance'
-    return dt === 'regular'
+  // Build busy labels for warning display
+  const busyVLabel = {}
+  ;(busyV||[]).forEach(t => {
+    if (t.vehicle_id && !busyVLabel[t.vehicle_id]) {
+      busyVLabel[t.vehicle_id] = new Date(t.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
+    }
   })
-  // Available vehicles filtered by type (exclude busy, include current)
-  const avV = (_vehicles||[]).filter(v => {
-    const t = (v.type||'').toLowerCase()
-    const typeMatch = isAmb  ? t.includes('ambulance')||t.includes('bls')
-                    : isMoto ? t.includes('motorcycle')
-                    :          !t.includes('ambulance')&&!t.includes('motorcycle')
-    return typeMatch && (!busyVIds.has(v.id) || v.id === curVehicleId)
+  const busyDLabel = {}
+  ;(busyD||[]).forEach(t => {
+    if (t.driver_id && !busyDLabel[t.driver_id]) {
+      busyDLabel[t.driver_id] = new Date(t.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
+    }
   })
 
+  // Store all drivers/vehicles for live type override filtering
+  window._rsaAllDrivers  = _drivers  || []
+  window._rsaAllVehicles = _vehicles || []
+  window._rsaBusyVIds    = busyVIds
+  window._rsaBusyDIds    = busyDIds
+  window._rsaBusyVLabel  = busyVLabel
+  window._rsaBusyDLabel  = busyDLabel
+  window._rsaCurDriverId  = curDriverId
+  window._rsaCurVehicleId = curVehicleId
+  window._rsaOrigVtype    = vtype
+
+  const buildDriverOpts = (typeOverride) => {
+    const isA = typeOverride === 'ambulance'
+    return (_drivers||[]).filter(d => {
+      if (d.status === 'off-duty') return false
+      const dt = d.driver_type || 'regular'
+      if (dt === 'both') return true
+      if (isA) return dt === 'ambulance'
+      return dt === 'regular'
+    }).map(d => {
+      const busy = busyDIds.has(d.id) && d.id !== curDriverId
+      const lbl  = busyDLabel[d.id]
+      const cur  = d.id === curDriverId
+      return `<option value="${d.id}|${d.full_name}"${cur?' style="font-weight:700;color:var(--pri)"':''}>
+        ${cur?'★ (Current) ':''}${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ Busy: '+lbl:''}
+      </option>`
+    }).join('')
+  }
+
+  const buildVehicleOpts = (typeOverride) => {
+    const isA = typeOverride === 'ambulance'
+    const isM = typeOverride === 'motorcycle'
+    return (_vehicles||[]).filter(v => {
+      if (v.status === 'maintenance') return false
+      const t = (v.type||'').toLowerCase()
+      if (isA) return t.includes('ambulance') || t.includes('bls')
+      if (isM) return t.includes('motorcycle')
+      return !t.includes('ambulance') && !t.includes('motorcycle')
+    }).map(v => {
+      const busy = busyVIds.has(v.id) && v.id !== curVehicleId
+      const lbl  = busyVLabel[v.id]
+      const cur  = v.id === curVehicleId
+      return `<option value="${v.id}"${cur?' style="font-weight:700;color:var(--pri)"':''}>
+        ${cur?'★ (Current) ':''}${v.name||v.plate} — ${v.plate}${busy&&lbl?' ⚠ Busy: '+lbl:''}
+      </option>`
+    }).join('')
+  }
+
+  window.rsaApplyTypeOverride = (sel) => {
+    const override = sel.value
+    const origVtype = window._rsaOrigVtype || ''
+    const note = document.getElementById('rsaVtypeNote')
+    if (note) note.style.display = override !== origVtype ? 'inline' : 'none'
+    const dSel = document.getElementById('rsaDrv')
+    const vSel = document.getElementById('rsaVeh')
+    if (dSel) dSel.innerHTML = '<option value="">-- Select New Driver --</option>' + buildDriverOpts(override)
+    if (vSel) vSel.innerHTML = '<option value="">-- Select New Vehicle --</option>' + buildVehicleOpts(override)
+    window._rsaVtypeOverride = override
+  }
+
   const depStr = tripData?.departure_at
-    ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true})
+    ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
     : '—'
+
+  const canOverrideType = ['admin','approver_admin','super_approver'].includes(currentProfile?.role) && vtype !== 'ambulance'
 
   openMO(`↻ Reassign — ${ticketNo}`,
     `<div class="info info-amber" style="margin-bottom:14px">
@@ -2872,32 +3027,37 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
 
      <div style="background:var(--bg);border-radius:9px;padding:10px 13px;margin-bottom:14px">
        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Currently Assigned</div>
-       <div style="display:flex;gap:16px;flex-wrap:wrap">
+       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
          <div><div style="font-size:10px;color:var(--text3)">Driver</div><div style="font-size:13px;font-weight:700">${curDriverName||'—'}</div></div>
          <div><div style="font-size:10px;color:var(--text3)">Vehicle</div><div style="font-size:13px;font-weight:700">${curVehicleName||'—'}</div></div>
          <div><div style="font-size:10px;color:var(--text3)">Departure</div><div style="font-size:13px;font-weight:700">${depStr}</div></div>
+         ${canOverrideType ? `
+         <div style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+           <span style="font-size:10px;color:var(--text3);font-weight:600">Vehicle type:</span>
+           <select class="fs" id="rsaVtypeOverride" style="font-size:11px;padding:4px 8px;border-radius:7px" onchange="rsaApplyTypeOverride(this)">
+             <option value="regular"    ${vtype==='regular'   ?'selected':''}>🚙 Regular</option>
+             <option value="motorcycle" ${vtype==='motorcycle'?'selected':''}>🏍 Motorcycle</option>
+           </select>
+           <span id="rsaVtypeNote" style="font-size:10px;color:var(--amber);font-weight:700;display:none">⚠ Overriding type</span>
+         </div>` : ''}
        </div>
      </div>
 
      <div class="fg"><label class="fl">New Driver *
-       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} available</span>
+       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — busy drivers shown with ⚠</span>
      </label>
        <select class="fs" id="rsaDrv">
          <option value="">-- Select New Driver --</option>
-         ${avD.map(d=>`<option value="${d.id}|${d.full_name}"${d.id===curDriverId?' style="font-weight:700;color:var(--pri)"':''}>
-           ${d.id===curDriverId?'★ (Current) ':''} ${d.full_name} · ${d.license_no||'—'}
-         </option>`).join('')}
+         ${buildDriverOpts(vtype)}
        </select>
      </div>
 
      <div class="fg"><label class="fl">New Vehicle *
-       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avV.length} available</span>
+       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — busy vehicles shown with ⚠</span>
      </label>
        <select class="fs" id="rsaVeh">
          <option value="">-- Select New Vehicle --</option>
-         ${avV.map(v=>`<option value="${v.id}"${v.id===curVehicleId?' style="font-weight:700;color:var(--pri)"':''}>
-           ${v.id===curVehicleId?'★ (Current) ':''} ${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)
-         </option>`).join('')}
+         ${buildVehicleOpts(vtype)}
        </select>
      </div>
 
@@ -2989,6 +3149,15 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
     closeMO()
     alert(`⚠ Reassignment failed.\n\n${res?.message || 'Unknown error.'}\n\nPlease refresh.`)
     renderTickets(); return
+  }
+
+  // Save vehicle type override if changed
+  const rsaVtypeOverride = window._rsaVtypeOverride
+  if (rsaVtypeOverride && rsaVtypeOverride !== window._rsaOrigVtype) {
+    await SB.from('trips').update({ vehicle_type_needed: rsaVtypeOverride }).eq('id', id)
+    await addAudit(id, ticketNo, '🔄 Vehicle Type Changed on Reassign',
+      `Changed from "${window._rsaOrigVtype}" to "${rsaVtypeOverride}" · ${currentProfile?.full_name}`)
+    window._rsaVtypeOverride = null
   }
 
   // Release OLD driver + vehicle → available (only if actually changing)
@@ -7307,7 +7476,8 @@ function renderAccountsTable() {
           <td><span style="font-size:11px;font-weight:700;color:${u.status==='active'?'var(--green)':'var(--red)'}">${u.status==='active'?'Active':'Inactive'}</span></td>
           <td>
             <button class="tbl-act tbl-act-pri" onclick="openEditAccount('${u.id}')">Edit</button>
-            <button class="tbl-act tbl-act-red" onclick="toggleAccountStatus('${u.id}','${u.status}','${u.full_name}')">
+            <button class="tbl-act tbl-act-ghost" onclick="openResetPw('${u.id}')">Reset PW</button>
+            <button class="tbl-act tbl-act-red" onclick="toggleAccountStatus('${u.id}','${u.status}','${(u.full_name||'').replace(/'/g,"\\'")}')">
               ${u.status==='active'?'Deactivate':'Activate'}
             </button>
           </td>
@@ -7414,20 +7584,33 @@ async function doCreateAccount() {
     alert(`Account created!\nUsername: ${username}\nPassword: ${pw}`)
   } catch(e) { alert(e.message); btn.disabled=false; btn.textContent='Create Account' }
 }
-function openEditAccount(id, name, username, role, dept, phone, email) {
-  openMO(`Edit — ${name}`,
+async function openEditAccount(id) {
+  // Fetch fresh user data by ID — no escaping issues, always up to date
+  const u = (window._allAccounts||[]).find(x => x.id === id)
+  if (!u) {
+    // Fallback: fetch from DB
+    const { data } = await SB.from('users').select('*').eq('id', id).single()
+    if (!data) { alert('User not found.'); return }
+    return _openEditAccountModal(data)
+  }
+  _openEditAccountModal(u)
+}
+
+function _openEditAccountModal(u) {
+  openMO(`Edit — ${u.full_name||'User'}`,
     `<div class="fr">
-       <div class="fg"><label class="fl">Full Name</label><input class="fi" id="eaName" value="${name}"></div>
-       <div class="fg"><label class="fl">Username</label><input class="fi" id="eaUsername" value="${username}" style="text-transform:lowercase"></div>
-       <div class="fg"><label class="fl">Role</label><select class="fs" id="eaRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}"${role===k?' selected':''}>${v}</option>`).join('')}</select></div>
-       <div class="fg"><label class="fl">Department</label><select class="fs" id="eaDept">${deptOptions(dept)}</select></div>
+       <div class="fg"><label class="fl">Full Name</label><input class="fi" id="eaName" value="${(u.full_name||'').replace(/"/g,'&quot;')}"></div>
+       <div class="fg"><label class="fl">Username</label><input class="fi" id="eaUsername" value="${(u.username||'').replace(/"/g,'&quot;')}" style="text-transform:lowercase"></div>
+       <div class="fg"><label class="fl">Role</label><select class="fs" id="eaRole">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}"${u.role===k?' selected':''}>${v}</option>`).join('')}</select></div>
+       <div class="fg"><label class="fl">Department</label><select class="fs" id="eaDept">${deptOptions(u.department)}</select></div>
      </div>
      <div class="fr">
-       <div class="fg"><label class="fl">Phone (for SMS)</label><input class="fi" id="eaPhone" value="${phone||''}" placeholder="09XXXXXXXXX"></div>
-       <div class="fg"><label class="fl">Email (for Email notif.)</label><input class="fi" type="email" id="eaEmail" value="${email||''}" placeholder="user@hospital.com"></div>
+       <div class="fg"><label class="fl">Phone (for SMS)</label><input class="fi" id="eaPhone" value="${(u.phone||'').replace(/"/g,'&quot;')}" placeholder="09XXXXXXXXX"></div>
+       <div class="fg"><label class="fl">Email (for notif.)</label><input class="fi" type="email" id="eaEmail" value="${(u.email||'').replace(/"/g,'&quot;')}" placeholder="user@hospital.com"></div>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-pri" id="eaBn" onclick="doEditAccount('${id}')">Save Changes</button>`
+     <button class="btn btn-pri" id="eaBn" onclick="doEditAccount('${u.id}')">Save Changes</button>`,
+    { confirmClose: true }
   )
 }
 async function doEditAccount(id) {
@@ -7448,7 +7631,10 @@ async function doEditAccount(id) {
   }
   closeMO(); renderAccounts()
 }
-function openResetPw(id, name, username) {
+function openResetPw(id) {
+  const u = (window._allAccounts||[]).find(x => x.id === id)
+  const name = u?.full_name || 'User'
+  const username = u?.username || ''
   openMO(`Reset Password — ${name}`,
     `<div class="fg"><label class="fl">New Password *</label><input class="fi" type="password" id="rp1" placeholder="New password"></div>
      <div class="fg"><label class="fl">Confirm Password *</label><input class="fi" type="password" id="rp2" placeholder="Confirm password"></div>`,
