@@ -2314,9 +2314,47 @@ async function openViewModal(id) {
      ${ratingHTML}
      <div style="font-size:10.5px;color:var(--text3);margin-top:13px">Created: ${fmtDT(t.created_at)} · Approver: ${t.vehicle_type_needed==='ambulance'?'Ambulance Approver':'Admin Approver'}</div>`,
     // Footer buttons
-    `${(['admin','super_approver','approver_admin','approver_amb'].includes(currentProfile?.role) && t.status === 'assigned' && (currentProfile?.role==='admin'||currentProfile?.role==='super_approver'||(currentProfile?.role==='approver_admin'&&t.vehicle_type_needed!=='ambulance')||(currentProfile?.role==='approver_amb'&&t.vehicle_type_needed==='ambulance')))
-      ? `<button class="btn" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.25)" onclick="closeMO();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`
-      : ''}`
+    (() => {
+      const r = currentProfile?.role
+      const btns = []
+
+      // Approve + Reject (pending)
+      if (t.status === 'pending-approval' && (
+        r==='admin' || r==='super_approver' ||
+        (r==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (r==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      )) {
+        btns.push(`<button class="btn btn-green" onclick="closeMO();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">✓ Approve</button>`)
+        btns.push(`<button class="btn btn-red"   onclick="closeMO();openRejectModal('${t.id}','${t.ticket_no}')">✕ Reject</button>`)
+      }
+
+      // Assign Driver (approved, no driver yet)
+      if (t.status === 'approved' && (
+        r==='admin' || r==='super_approver' ||
+        (r==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (r==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      )) {
+        btns.push(`<button class="btn btn-pri" onclick="closeMO();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">+ Assign Driver</button>`)
+      }
+
+      // Reassign (already assigned)
+      if (t.status === 'assigned' && (
+        r==='admin' || r==='super_approver' ||
+        (r==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (r==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      )) {
+        const dn = (t.driver_name||'').replace(/'/g,"\\'")
+        const vn = (t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")
+        btns.push(`<button class="btn" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.25)" onclick="closeMO();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${dn}','${t.driver_id||''}','${vn}','${t.vehicle_id||''}')">↻ Reassign</button>`)
+      }
+
+      // Guard manifest editor
+      if (r === 'guard' && !['completed','cancelled','rejected'].includes(t.status)) {
+        btns.push(`<button class="btn btn-ghost" onclick="closeMO();openManifestEditor('${t.id}','${t.ticket_no}')">✏ Edit Manifest</button>`)
+      }
+
+      return btns.join('') || `<span></span>`
+    })()
   )
 }
 
@@ -3956,7 +3994,7 @@ async function openAssignModal(id, ticketNo, vtype) {
   const scopeLabel = isAmb ? '🚑 Ambulance' : isMoto ? '🏍 Motorcycle' : '🚙 Regular'
 
   const driverOpts = (drivers) => drivers.map(d => {
-    const busy = busyDriverIds.has(d.id)
+    const busy = busyDrvIds.has(d.id)
     const lbl  = busyDrvLabel[d.id]
     return `<option value="${d.id}|${d.full_name}" ${busy?'style="color:var(--amber)"':''}>
       ${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ Has trip at '+lbl:''}
@@ -3964,16 +4002,16 @@ async function openAssignModal(id, ticketNo, vtype) {
   }).join('')
 
   const vehicleOpts = (vehicles) => vehicles.map(v => {
-    const busy = busyVehicleIds.has(v.id)
+    const busy = busyVehIds.has(v.id)
     const lbl  = busyVehLabel[v.id]
     return `<option value="${v.id}" ${busy?'style="color:var(--amber)"':''}>
       ${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)${busy&&lbl?' ⚠ Has trip at '+lbl:''}
     </option>`
-  }).join()
+  }).join('')
 
   // Store busy sets for conflict warnings
-  window._asBusyDriverIds  = busyDriverIds
-  window._asBusyVehicleIds = busyVehicleIds
+  window._asBusyDriverIds  = busyDrvIds
+  window._asBusyVehicleIds = busyVehIds
 
   openMO(`Assign Driver & Vehicle — ${ticketNo}`,
     `<div style="background:var(--bg);border-radius:9px;padding:10px 13px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
