@@ -3966,6 +3966,10 @@ async function openAssignModal(id, ticketNo, vtype) {
     }
   })
 
+  // Build busy ID Sets for .has() checks
+  const busyDrvIds = new Set((busyDrivers||[]).map(t => t.driver_id).filter(Boolean))
+  const busyVehIds = new Set((busyVehicles||[]).map(t => t.vehicle_id).filter(Boolean))
+
   // Filter by type only — show ALL non-off-duty drivers, busy ones get warning label
   const filterVehicles = (all, typeOnly) => all ? all.filter(v => {
     if (v.status === 'maintenance') return false
