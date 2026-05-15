@@ -825,43 +825,28 @@
       <div class="auth-switch">
         <a onclick="showForm('forgot')">Forgot password?</a>
         &nbsp;·&nbsp;
-        <a onclick="showForm('register')">Create account</a>
+        <a onclick="showForm('no-access')">No account?</a>
       </div>
     </div>
 
-    <!-- REGISTER FORM -->
-    <div id="form-register" style="display:none">
-      <div class="auth-title">Create account</div>
-      <div class="auth-sub">Request access to TDMH IT Helpdesk.</div>
-      <div class="auth-error" id="register-error"></div>
-      <div class="auth-success" id="register-success"></div>
-      <div class="form-group">
-        <label class="form-label">Full name</label>
-        <input class="form-input" id="reg-name" type="text" placeholder="Juan dela Cruz">
+    <!-- NO ACCESS NOTICE (replaces register form) -->
+    <div id="form-no-access" style="display:none">
+      <div class="auth-title">Need an account?</div>
+      <div class="auth-sub">Account creation is managed by the IT Department.</div>
+      <div style="background:#E6F1FB;border:1px solid #B5D4F4;border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-size:13px;color:#0C447C;margin-bottom:10px;font-weight:600">
+          <i class="ti ti-shield-lock" style="margin-right:6px"></i>Closed system — TDMH staff only
+        </div>
+        <div style="font-size:12px;color:#185FA5;line-height:1.7">
+          Access to TDMH IT Helpdesk is by invitation only. To request an account, contact the IT Department:
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#0C447C">
+          <div style="margin-bottom:4px"><i class="ti ti-mail" style="margin-right:5px"></i>it@tdmh.ph</div>
+          <div><i class="ti ti-phone" style="margin-right:5px"></i>IT Help Desk — local extension</div>
+        </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Email address</label>
-        <input class="form-input" id="reg-email" type="email" placeholder="you@tdmh.ph">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Password</label>
-        <input class="form-input" id="reg-password" type="password" placeholder="Min. 8 characters">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Department</label>
-        <select class="form-input" id="reg-dept">
-          <option value="">Select department...</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Phone (optional)</label>
-        <input class="form-input" id="reg-phone" type="tel" placeholder="09xxxxxxxxx">
-      </div>
-      <button class="btn btn-primary btn-full" id="btn-register" onclick="doRegister()">
-        <i class="ti ti-user-plus"></i> <span>Create account</span>
-      </button>
       <div class="auth-switch">
-        Already have an account? <a onclick="showForm('login')">Sign in</a>
+        <a onclick="showForm('login')">Back to sign in</a>
       </div>
     </div>
 
@@ -1119,6 +1104,9 @@
         <div class="card">
           <div class="card-header">
             <span class="card-title">User Management</span>
+            <button class="btn btn-primary btn-sm" onclick="openCreateUser()" style="margin-left:auto">
+              <i class="ti ti-user-plus"></i> Create User
+            </button>
           </div>
           <div id="users-table-wrap">
             <div class="empty-state"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i><p>Loading...</p></div>
@@ -1267,6 +1255,62 @@
   </div>
 </div>
 
+<!-- CREATE USER MODAL (Admin only) -->
+<div id="modal-create-user" style="display:none" class="modal-overlay" onclick="closeIfOverlay(event,'modal-create-user')">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <span class="modal-title">Create User Account</span>
+      <button class="modal-close" onclick="closeModal('modal-create-user')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="auth-error" id="cu-error"></div>
+      <div class="auth-success" id="cu-success"></div>
+      <div style="background:#FAEEDA;border:1px solid #FAC775;border-radius:8px;padding:10px 12px;font-size:12px;color:#633806;margin-bottom:16px">
+        <i class="ti ti-info-circle"></i> Ang user ay makakatanggap ng <strong>email confirmation</strong> sa email nila. Kailangan nilang i-click ang link bago makapag-login.
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Full name <span style="color:var(--red)">*</span></label>
+          <input class="form-input" id="cu-name" type="text" placeholder="Juan dela Cruz">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email address <span style="color:var(--red)">*</span></label>
+          <input class="form-input" id="cu-email" type="email" placeholder="juan@tdmh.ph">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Temporary password <span style="color:var(--red)">*</span></label>
+          <input class="form-input" id="cu-password" type="text" placeholder="Min. 8 characters">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role <span style="color:var(--red)">*</span></label>
+          <select class="form-input" id="cu-role">
+            <option value="end_user">End User</option>
+            <option value="it_staff">IT Staff</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">Department</label>
+          <select class="form-input" id="cu-dept">
+            <option value="">Select department...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone (optional)</label>
+          <input class="form-input" id="cu-phone" type="tel" placeholder="09xxxxxxxxx">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="closeModal('modal-create-user')">Cancel</button>
+      <button class="btn btn-primary" id="btn-cu-submit" onclick="doCreateUser()">
+        <i class="ti ti-user-plus"></i> Create Account
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -1335,7 +1379,7 @@ async function loadCategoriesSimple() {
 }
 
 function populateDeptSelects() {
-  const selects = ['reg-dept', 'ag-dept'];
+  const selects = ['ag-dept'];
   selects.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -1366,7 +1410,7 @@ function populateCategorySelects() {
 
 // ── AUTH ──────────────────────────────────────────────────────
 function showForm(name) {
-  ['login','register','forgot'].forEach(f => {
+  ['login','no-access','forgot'].forEach(f => {
     document.getElementById('form-' + f).style.display = f === name ? '' : 'none';
   });
   clearAuthErrors();
@@ -1401,30 +1445,6 @@ async function doLogin() {
   if (error) showAuthError('login-error', error.message);
 }
 
-async function doRegister() {
-  const name = document.getElementById('reg-name').value.trim();
-  const email = document.getElementById('reg-email').value.trim();
-  const password = document.getElementById('reg-password').value;
-  const deptId = document.getElementById('reg-dept').value;
-  const phone = document.getElementById('reg-phone').value.trim();
-  if (!name || !email || !password) return showAuthError('register-error', 'Name, email, and password are required.');
-  if (password.length < 8) return showAuthError('register-error', 'Password must be at least 8 characters.');
-  const btn = document.getElementById('btn-register');
-  btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
-  const { data, error } = await sb.auth.signUp({
-    email, password,
-    options: { data: { full_name: name, department_id: deptId || null, phone: phone || null } }
-  });
-  btn.innerHTML = '<i class="ti ti-user-plus"></i> <span>Create account</span>'; btn.disabled = false;
-  if (error) return showAuthError('register-error', error.message);
-  // Update profile with dept and phone
-  if (data.user && deptId) {
-    await sb.from('profiles').update({ department_id: deptId, phone: phone || null, full_name: name })
-      .eq('id', data.user.id);
-  }
-  showAuthSuccess('register-success', 'Account created! Check your email for a verification link, then sign in.');
-}
-
 async function doForgotPassword() {
   const email = document.getElementById('forgot-email').value.trim();
   if (!email) return showAuthError('forgot-error', 'Enter your email address.');
@@ -1436,6 +1456,81 @@ async function doForgotPassword() {
   btn.innerHTML = '<i class="ti ti-mail"></i> <span>Send reset link</span>'; btn.disabled = false;
   if (error) return showAuthError('forgot-error', error.message);
   showAuthSuccess('forgot-success', 'Password reset link sent! Check your email.');
+}
+
+function openCreateUser() {
+  document.getElementById('modal-create-user').style.display = 'flex';
+  document.getElementById('cu-error').style.display = 'none';
+  document.getElementById('cu-success').style.display = 'none';
+  document.getElementById('cu-name').value = '';
+  document.getElementById('cu-email').value = '';
+  document.getElementById('cu-password').value = '';
+  document.getElementById('cu-phone').value = '';
+  document.getElementById('cu-role').value = 'end_user';
+  document.getElementById('cu-dept').value = '';
+  // populate dept select
+  const sel = document.getElementById('cu-dept');
+  sel.innerHTML = '<option value="">Select department...</option>';
+  departments.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id; o.textContent = d.name;
+    sel.appendChild(o);
+  });
+}
+
+async function doCreateUser() {
+  const name     = document.getElementById('cu-name').value.trim();
+  const email    = document.getElementById('cu-email').value.trim();
+  const password = document.getElementById('cu-password').value;
+  const role     = document.getElementById('cu-role').value;
+  const deptId   = document.getElementById('cu-dept').value;
+  const phone    = document.getElementById('cu-phone').value.trim();
+
+  const errEl = document.getElementById('cu-error');
+  const sucEl = document.getElementById('cu-success');
+  errEl.style.display = 'none'; sucEl.style.display = 'none';
+
+  if (!name || !email || !password) {
+    errEl.textContent = 'Name, email, and password are required.';
+    errEl.style.display = ''; return;
+  }
+  if (password.length < 8) {
+    errEl.textContent = 'Password must be at least 8 characters.';
+    errEl.style.display = ''; return;
+  }
+
+  const btn = document.getElementById('btn-cu-submit');
+  btn.innerHTML = '<span class="spinner"></span> Creating...'; btn.disabled = true;
+
+  // Use Supabase Auth Admin API via signUp — profile trigger auto-fires
+  const { data, error } = await sb.auth.signUp({
+    email, password,
+    options: { data: { full_name: name } }
+  });
+
+  if (error) {
+    errEl.textContent = error.message; errEl.style.display = '';
+    btn.innerHTML = '<i class="ti ti-user-plus"></i> Create Account'; btn.disabled = false;
+    return;
+  }
+
+  // Update profile with role, dept, phone
+  if (data.user) {
+    await sb.from('profiles').update({
+      full_name: name,
+      role: role,
+      department_id: deptId || null,
+      phone: phone || null
+    }).eq('id', data.user.id);
+  }
+
+  btn.innerHTML = '<i class="ti ti-user-plus"></i> Create Account'; btn.disabled = false;
+  sucEl.textContent = `Account created for ${name}. They will receive a confirmation email at ${email}.`;
+  sucEl.style.display = '';
+  document.getElementById('cu-name').value = '';
+  document.getElementById('cu-email').value = '';
+  document.getElementById('cu-password').value = '';
+  loadUsers();
 }
 
 async function doLogout() {
