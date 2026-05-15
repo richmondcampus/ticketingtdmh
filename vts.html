@@ -2252,7 +2252,7 @@ async function openViewModal(id) {
   ])
   if (!t) return
   const fields = [
-    ['Department',t.department],['Requester',t.requester_name],
+    ['Department',t.department],['Requester',t.requester_name + (t.template_id ? ' <span style="background:var(--pri-s);color:var(--pri);border-radius:20px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:4px">🔁 Recurring Auto</span>' : '')],
     ['Purpose',t.purpose,'span2'],
     ['Route', (() => {
       const s = t.stops && Array.isArray(t.stops) && t.stops.length > 0 ? t.stops : (t.destination ? [t.destination] : [])
@@ -6267,8 +6267,11 @@ async function renderTemplates() {
 }
 
 async function deleteTemplate(id, name) {
-  if (!confirm(`Delete template "${name}"?`)) return
-  await SB.from('trip_templates').delete().eq('id', id)
+  if (!confirm(`Delete template "${name}"?\n\nExisting tickets generated from this template will not be affected. Future auto-generation will stop.`)) return
+  // Soft delete — set is_active=false instead of hard delete
+  // This preserves the template_id reference on existing generated trips
+  // and prevents re-generation while keeping audit history intact
+  await SB.from('trip_templates').update({ is_active: false, is_recurring: false }).eq('id', id)
   renderTemplates()
 }
 
