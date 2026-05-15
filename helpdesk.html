@@ -1,0 +1,2237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TDMH IT Helpdesk</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<style>
+  /* ── RESET & VARIABLES ─────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #f5f4f0;
+    --surface:  #ffffff;
+    --surface2: #f0efe9;
+    --border:   #e2e0d8;
+    --border2:  #ccc9bf;
+    --text:     #1a1917;
+    --text2:    #6b6960;
+    --text3:    #9b9a93;
+    --accent:   #185FA5;
+    --accent-l: #E6F1FB;
+    --accent-t: #0C447C;
+    --green:    #3B6D11;
+    --green-l:  #EAF3DE;
+    --amber:    #854F0B;
+    --amber-l:  #FAEEDA;
+    --red:      #A32D2D;
+    --red-l:    #FCEBEB;
+    --purple:   #534AB7;
+    --purple-l: #EEEDFE;
+    --font: 'Segoe UI', system-ui, sans-serif;
+    --radius: 8px;
+    --radius-lg: 12px;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── AUTH SCREEN ───────────────────────────────────────── */
+  #auth-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--bg);
+  }
+
+  .auth-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 40px;
+    width: 400px;
+    box-shadow: var(--shadow);
+  }
+
+  .auth-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .auth-brand-icon {
+    width: 40px; height: 40px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 20px;
+  }
+
+  .auth-brand-name { font-size: 16px; font-weight: 600; color: var(--text); }
+  .auth-brand-sub  { font-size: 12px; color: var(--text2); }
+
+  .auth-title { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+  .auth-sub   { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
+
+  .form-group { margin-bottom: 14px; }
+  .form-label { font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 5px; display: block; }
+
+  .form-input {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-family: var(--font);
+    color: var(--text);
+    background: var(--surface);
+    outline: none;
+    transition: border .15s;
+  }
+  .form-input:focus { border-color: var(--accent); }
+  .form-input::placeholder { color: var(--text3); }
+
+  select.form-input { cursor: pointer; }
+  textarea.form-input { resize: vertical; min-height: 80px; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font);
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all .15s;
+    text-decoration: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { background: var(--accent-t); border-color: var(--accent-t); }
+
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .btn-secondary:hover { background: var(--surface2); }
+
+  .btn-danger {
+    background: var(--red-l);
+    color: var(--red);
+    border-color: transparent;
+  }
+  .btn-danger:hover { background: #f7c1c1; }
+
+  .btn-full { width: 100%; justify-content: center; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+  .auth-switch {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text2);
+  }
+  .auth-switch a { color: var(--accent); cursor: pointer; text-decoration: none; }
+  .auth-switch a:hover { text-decoration: underline; }
+
+  .auth-error {
+    background: var(--red-l);
+    color: var(--red);
+    border: 1px solid #f0acac;
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-bottom: 14px;
+    display: none;
+  }
+
+  .auth-success {
+    background: var(--green-l);
+    color: var(--green);
+    border: 1px solid #b8d98a;
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-bottom: 14px;
+    display: none;
+  }
+
+  /* ── APP SHELL ─────────────────────────────────────────── */
+  #app { display: none; height: 100vh; overflow: hidden; }
+  .app-layout { display: flex; height: 100%; }
+
+  /* ── SIDEBAR ───────────────────────────────────────────── */
+  .sidebar {
+    width: 230px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .sidebar-brand {
+    padding: 18px 16px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-icon {
+    width: 34px; height: 34px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 16px; flex-shrink: 0;
+  }
+
+  .brand-name { font-size: 13px; font-weight: 600; line-height: 1.2; }
+  .brand-sub  { font-size: 11px; color: var(--text2); }
+
+  .nav-section { padding: 10px 8px 4px; }
+  .nav-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    padding: 0 8px 6px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 1px;
+    transition: all .12s;
+    user-select: none;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: var(--accent-l); color: var(--accent); font-weight: 500; }
+  .nav-item i { font-size: 16px; flex-shrink: 0; }
+
+  .nav-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--red-l);
+    color: var(--red);
+    border-radius: 10px;
+    padding: 1px 6px;
+    min-width: 18px;
+    text-align: center;
+  }
+  .nav-badge.blue { background: var(--accent-l); color: var(--accent); }
+
+  .nav-agimat {
+    margin: 8px 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    transition: background .12s;
+  }
+  .nav-agimat:hover { background: var(--accent-t); }
+  .nav-agimat i { font-size: 16px; }
+
+  .sidebar-footer {
+    margin-top: auto;
+    padding: 10px 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  .user-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .user-pill:hover { background: var(--surface2); }
+
+  .avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--accent-l);
+    color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .user-name { font-size: 12px; font-weight: 500; }
+  .user-role { font-size: 11px; color: var(--text2); }
+  .user-pill .ti-chevron-right { margin-left: auto; font-size: 13px; color: var(--text3); }
+
+  /* ── MAIN CONTENT ──────────────────────────────────────── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .topbar-title { font-size: 15px; font-weight: 600; flex: 1; }
+
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 7px 12px;
+    font-size: 13px;
+    color: var(--text3);
+    width: 220px;
+    cursor: text;
+  }
+  .search-box input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 13px;
+    color: var(--text);
+    width: 100%;
+    font-family: var(--font);
+  }
+  .search-box input::placeholder { color: var(--text3); }
+
+  .notif-btn {
+    position: relative;
+    width: 34px; height: 34px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    color: var(--text2);
+    transition: background .12s;
+    flex-shrink: 0;
+  }
+  .notif-btn:hover { background: var(--surface2); }
+
+  .notif-dot {
+    position: absolute;
+    top: 5px; right: 5px;
+    width: 7px; height: 7px;
+    background: var(--red);
+    border-radius: 50%;
+    border: 1.5px solid var(--surface);
+  }
+
+  .page { display: none; flex: 1; overflow-y: auto; padding: 20px; }
+  .page.active { display: block; }
+
+  /* ── STATS GRID ────────────────────────────────────────── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+
+  .stat-label { font-size: 11px; color: var(--text2); margin-bottom: 4px; font-weight: 500; }
+  .stat-num   { font-size: 26px; font-weight: 600; }
+  .stat-sub   { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  /* ── TABLE ─────────────────────────────────────────────── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .card-title { font-size: 14px; font-weight: 600; }
+
+  .tab-row {
+    display: flex;
+    gap: 3px;
+    margin-left: 4px;
+  }
+
+  .tab {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text2);
+    border: 1px solid transparent;
+    transition: all .12s;
+  }
+  .tab:hover { background: var(--surface2); color: var(--text); }
+  .tab.active { background: var(--accent-l); color: var(--accent); border-color: #b5d4f4; font-weight: 500; }
+
+  .filter-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  .filter-select {
+    font-size: 12px;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    outline: none;
+    font-family: var(--font);
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text2);
+    text-align: left;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafaf7; cursor: pointer; }
+
+  .ticket-id { font-family: monospace; font-size: 11px; color: var(--text3); }
+
+  .priority-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+  .prio-critical { background: #E24B4A; }
+  .prio-high     { background: #EF9F27; }
+  .prio-medium   { background: #378ADD; }
+  .prio-low      { background: #639922; }
+
+  .status-pill {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .s-open       { background: var(--accent-l);  color: var(--accent); }
+  .s-in_progress{ background: var(--amber-l);   color: var(--amber); }
+  .s-on_hold    { background: #f1efe8;           color: #5f5e5a; }
+  .s-escalated  { background: var(--red-l);     color: var(--red); }
+  .s-resolved   { background: var(--green-l);   color: var(--green); }
+  .s-closed     { background: var(--surface2);  color: var(--text3); }
+
+  .sla-bar { width: 60px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .sla-fill { height: 100%; border-radius: 2px; transition: width .3s; }
+
+  .assignee-stack { display: flex; }
+  .a-av {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
+    font-size: 9px;
+    font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    margin-left: -5px;
+  }
+  .a-av:first-child { margin-left: 0; }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--text3);
+  }
+  .empty-state i { font-size: 36px; display: block; margin-bottom: 8px; }
+  .empty-state p { font-size: 13px; }
+
+  /* ── KANBAN ────────────────────────────────────────────── */
+  .kanban-board {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+    min-height: calc(100vh - 120px);
+    align-items: start;
+  }
+
+  .kanban-col {
+    background: var(--surface2);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 8px;
+    min-height: 200px;
+    transition: border-color .15s, background .15s;
+  }
+  .kanban-col.drag-over { border-color: var(--accent); background: var(--accent-l); }
+
+  .kanban-col-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 2px 8px;
+  }
+  .kanban-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .kanban-col-name { font-size: 11px; font-weight: 600; color: var(--text2); }
+  .kanban-count {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--surface);
+    color: var(--text3);
+    border-radius: 8px;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+  }
+
+  .kanban-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 9px 10px;
+    margin-bottom: 6px;
+    cursor: grab;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .kanban-card:hover { border-color: var(--border2); box-shadow: var(--shadow); }
+  .kanban-card.dragging { opacity: .5; cursor: grabbing; }
+
+  .kc-id    { font-family: monospace; font-size: 10px; color: var(--text3); margin-bottom: 3px; }
+  .kc-title { font-size: 11px; font-weight: 500; line-height: 1.3; margin-bottom: 5px; }
+  .kc-dept  { font-size: 10px; color: var(--text2); margin-bottom: 6px; }
+  .kc-footer{ display: flex; align-items: center; gap: 4px; }
+  .kc-prio  { font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 8px; }
+
+  .kanban-drop-hint {
+    border: 1.5px dashed var(--border);
+    border-radius: 7px;
+    padding: 14px;
+    text-align: center;
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 4px;
+  }
+
+  /* ── TICKET DETAIL / MODAL ─────────────────────────────── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    z-index: 100;
+    padding: 0;
+  }
+
+  .modal-panel {
+    width: 580px;
+    height: 100vh;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slide-in .2s ease;
+  }
+
+  @keyframes slide-in {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .modal-title  { font-size: 15px; font-weight: 600; flex: 1; }
+  .modal-close  { width: 28px; height: 28px; border-radius: 6px; border: none; background: none; cursor: pointer; font-size: 18px; color: var(--text2); display: flex; align-items: center; justify-content: center; }
+  .modal-close:hover { background: var(--surface2); }
+
+  .modal-body { flex: 1; overflow-y: auto; padding: 20px; }
+  .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+
+  .detail-row { display: flex; gap: 20px; margin-bottom: 14px; }
+  .detail-group { flex: 1; }
+  .detail-label { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+  .detail-value { font-size: 13px; color: var(--text); }
+
+  .detail-desc { margin-bottom: 20px; }
+  .detail-desc-text {
+    font-size: 13px;
+    color: var(--text);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+
+  .replies-section { margin-top: 20px; }
+  .replies-title { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+  .reply-bubble {
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .reply-bubble.own { align-items: flex-end; }
+
+  .reply-meta { font-size: 11px; color: var(--text3); margin-bottom: 3px; }
+
+  .reply-body {
+    max-width: 85%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
+  .reply-bubble.own .reply-body {
+    background: var(--accent-l);
+    border-color: #b5d4f4;
+    color: var(--accent-t);
+  }
+
+  .reply-bubble.internal .reply-body {
+    background: var(--amber-l);
+    border-color: #fac775;
+    border-left: 3px solid var(--amber);
+  }
+
+  .reply-internal-badge {
+    font-size: 10px;
+    background: var(--amber-l);
+    color: var(--amber);
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  .reply-compose {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .reply-compose textarea {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-family: var(--font);
+    color: var(--text);
+    background: var(--surface);
+    resize: vertical;
+    min-height: 72px;
+    outline: none;
+  }
+  .reply-compose textarea:focus { border-color: var(--accent); }
+
+  .reply-actions { display: flex; align-items: center; gap: 8px; }
+  .reply-internal-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text2);
+    cursor: pointer;
+    user-select: none;
+  }
+  .reply-internal-toggle input { cursor: pointer; }
+
+  .audit-section { margin-top: 20px; }
+  .audit-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .audit-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--text2);
+  }
+  .audit-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border2); margin-top: 4px; flex-shrink: 0; }
+  .audit-item b { color: var(--text); }
+
+  .assignees-section { margin-bottom: 16px; }
+  .assignee-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 3px 10px 3px 5px;
+    font-size: 12px;
+    margin: 3px 3px 0 0;
+  }
+  .assignee-chip .avatar { width: 20px; height: 20px; font-size: 9px; }
+  .lead-badge { font-size: 9px; background: var(--accent-l); color: var(--accent); padding: 1px 5px; border-radius: 6px; font-weight: 600; }
+
+  /* ── CREATE TICKET FORM ─────────────────────────────────── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-full { grid-column: 1 / -1; }
+
+  /* ── TOAST ─────────────────────────────────────────────── */
+  #toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--text);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s;
+    z-index: 999;
+    max-width: 300px;
+  }
+  #toast.show { opacity: 1; }
+  #toast.success { background: var(--green); }
+  #toast.error   { background: var(--red); }
+
+  /* ── SPINNER ───────────────────────────────────────────── */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── RESPONSIVE ────────────────────────────────────────── */
+  @media (max-width: 1100px) {
+    .stats-grid { grid-template-columns: repeat(3, 1fr); }
+    .kanban-board { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 768px) {
+    .sidebar { width: 56px; }
+    .sidebar-brand .brand-name,
+    .sidebar-brand .brand-sub,
+    .nav-item span,
+    .nav-agimat span,
+    .user-name, .user-role,
+    .nav-section-label { display: none; }
+    .nav-agimat { justify-content: center; padding: 9px; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .kanban-board { grid-template-columns: repeat(2, 1fr); }
+    .modal-panel { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── AUTH SCREEN ─────────────────────────────────────────── -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="auth-brand-icon"><i class="ti ti-ticket"></i></div>
+      <div>
+        <div class="auth-brand-name">TDMH IT Helpdesk</div>
+        <div class="auth-brand-sub">Taytay Doctors Multispecialty Hospital</div>
+      </div>
+    </div>
+
+    <!-- LOGIN FORM -->
+    <div id="form-login">
+      <div class="auth-title">Sign in</div>
+      <div class="auth-sub">Use your hospital IT account credentials.</div>
+      <div class="auth-error" id="login-error"></div>
+      <div class="form-group">
+        <label class="form-label">Email address</label>
+        <input class="form-input" id="login-email" type="email" placeholder="you@tdmh.ph" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-login" onclick="doLogin()">
+        <i class="ti ti-login"></i> <span>Sign in</span>
+      </button>
+      <div class="auth-switch">
+        <a onclick="showForm('forgot')">Forgot password?</a>
+        &nbsp;·&nbsp;
+        <a onclick="showForm('register')">Create account</a>
+      </div>
+    </div>
+
+    <!-- REGISTER FORM -->
+    <div id="form-register" style="display:none">
+      <div class="auth-title">Create account</div>
+      <div class="auth-sub">Request access to TDMH IT Helpdesk.</div>
+      <div class="auth-error" id="register-error"></div>
+      <div class="auth-success" id="register-success"></div>
+      <div class="form-group">
+        <label class="form-label">Full name</label>
+        <input class="form-input" id="reg-name" type="text" placeholder="Juan dela Cruz">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email address</label>
+        <input class="form-input" id="reg-email" type="email" placeholder="you@tdmh.ph">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" id="reg-password" type="password" placeholder="Min. 8 characters">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Department</label>
+        <select class="form-input" id="reg-dept">
+          <option value="">Select department...</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone (optional)</label>
+        <input class="form-input" id="reg-phone" type="tel" placeholder="09xxxxxxxxx">
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-register" onclick="doRegister()">
+        <i class="ti ti-user-plus"></i> <span>Create account</span>
+      </button>
+      <div class="auth-switch">
+        Already have an account? <a onclick="showForm('login')">Sign in</a>
+      </div>
+    </div>
+
+    <!-- FORGOT PASSWORD FORM -->
+    <div id="form-forgot" style="display:none">
+      <div class="auth-title">Reset password</div>
+      <div class="auth-sub">Enter your email and we'll send you a reset link.</div>
+      <div class="auth-error" id="forgot-error"></div>
+      <div class="auth-success" id="forgot-success"></div>
+      <div class="form-group">
+        <label class="form-label">Email address</label>
+        <input class="form-input" id="forgot-email" type="email" placeholder="you@tdmh.ph">
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-forgot" onclick="doForgotPassword()">
+        <i class="ti ti-mail"></i> <span>Send reset link</span>
+      </button>
+      <div class="auth-switch">
+        <a onclick="showForm('login')">Back to sign in</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── APP SHELL ────────────────────────────────────────────── -->
+<div id="app">
+  <div class="app-layout">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon"><i class="ti ti-ticket"></i></div>
+        <div>
+          <div class="brand-name">IT Helpdesk</div>
+          <div class="brand-sub">TDMH</div>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-label">Main</div>
+        <div class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')">
+          <i class="ti ti-layout-dashboard"></i> <span>Dashboard</span>
+        </div>
+        <div class="nav-item" data-page="tickets" onclick="navigate('tickets')">
+          <i class="ti ti-ticket"></i> <span>All Tickets</span>
+          <span class="nav-badge blue" id="badge-open">0</span>
+        </div>
+        <div class="nav-item" data-page="kanban" onclick="navigate('kanban')">
+          <i class="ti ti-layout-kanban"></i> <span>Kanban Board</span>
+        </div>
+        <div class="nav-item" data-page="my-tickets" onclick="navigate('my-tickets')">
+          <i class="ti ti-user-check"></i> <span>My Tickets</span>
+        </div>
+        <div class="nav-item" data-page="notifications" onclick="navigate('notifications')">
+          <i class="ti ti-bell"></i> <span>Notifications</span>
+          <span class="nav-badge" id="badge-notif" style="display:none">0</span>
+        </div>
+      </div>
+
+      <div style="padding: 4px 8px 0;">
+        <button class="nav-agimat" onclick="openAgimat()">
+          <i class="ti ti-user-plus"></i> <span>Agimat Account</span>
+        </button>
+      </div>
+
+      <!-- Staff-only nav -->
+      <div class="nav-section" id="staff-nav" style="display:none">
+        <div class="nav-section-label">Manage</div>
+        <div class="nav-item" data-page="kb" onclick="navigate('kb')">
+          <i class="ti ti-book-2"></i> <span>Knowledge Base</span>
+        </div>
+        <div class="nav-item" data-page="reports" onclick="navigate('reports')">
+          <i class="ti ti-chart-bar"></i> <span>Reports</span>
+        </div>
+      </div>
+
+      <!-- Admin-only nav -->
+      <div class="nav-section" id="admin-nav" style="display:none">
+        <div class="nav-section-label">Admin</div>
+        <div class="nav-item" data-page="users" onclick="navigate('users')">
+          <i class="ti ti-users"></i> <span>Users</span>
+        </div>
+        <div class="nav-item" data-page="audit" onclick="navigate('audit')">
+          <i class="ti ti-shield-check"></i> <span>Audit Trail</span>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-pill" onclick="navigate('profile')">
+          <div class="avatar" id="nav-avatar">?</div>
+          <div>
+            <div class="user-name" id="nav-name">Loading...</div>
+            <div class="user-role" id="nav-role">—</div>
+          </div>
+          <i class="ti ti-chevron-right"></i>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+      <div class="topbar">
+        <span class="topbar-title" id="topbar-title">Dashboard</span>
+        <div class="search-box">
+          <i class="ti ti-search" style="font-size:14px;flex-shrink:0"></i>
+          <input type="text" placeholder="Search tickets..." id="global-search" oninput="globalSearch(this.value)">
+        </div>
+        <button class="btn btn-primary" onclick="openCreateTicket()">
+          <i class="ti ti-plus"></i> New Ticket
+        </button>
+        <div class="notif-btn" onclick="navigate('notifications')">
+          <i class="ti ti-bell"></i>
+          <div class="notif-dot" id="notif-dot" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- DASHBOARD PAGE -->
+      <div class="page active" id="page-dashboard">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Open</div>
+            <div class="stat-num" id="stat-open" style="color:var(--accent)">—</div>
+            <div class="stat-sub" id="stat-open-sub"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">In Progress</div>
+            <div class="stat-num" id="stat-inprog" style="color:var(--amber)">—</div>
+            <div class="stat-sub"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Escalated</div>
+            <div class="stat-num" id="stat-esc" style="color:var(--red)">—</div>
+            <div class="stat-sub" id="stat-esc-sub"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Resolved Today</div>
+            <div class="stat-num" id="stat-res" style="color:var(--green)">—</div>
+            <div class="stat-sub"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">SLA Breached</div>
+            <div class="stat-num" id="stat-sla" style="color:var(--red)">—</div>
+            <div class="stat-sub">Past resolution due</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Recent Tickets</span>
+            <div class="tab-row" id="dash-tabs">
+              <div class="tab active" onclick="setDashTab('all',this)">All</div>
+              <div class="tab" onclick="setDashTab('hardware',this)">Hardware</div>
+              <div class="tab" onclick="setDashTab('software',this)">Software</div>
+              <div class="tab" onclick="setDashTab('network',this)">Network</div>
+              <div class="tab" onclick="setDashTab('agimat',this)">Agimat</div>
+            </div>
+          </div>
+          <div id="dash-table-wrap">
+            <div class="empty-state"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i><p>Loading tickets...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ALL TICKETS PAGE -->
+      <div class="page" id="page-tickets">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">All Tickets</span>
+            <div class="filter-row">
+              <select class="filter-select" id="filter-status" onchange="applyFilters()">
+                <option value="">All statuses</option>
+                <option value="open">Open</option>
+                <option value="in_progress">In Progress</option>
+                <option value="on_hold">On Hold</option>
+                <option value="escalated">Escalated</option>
+                <option value="resolved">Resolved</option>
+                <option value="closed">Closed</option>
+              </select>
+              <select class="filter-select" id="filter-priority" onchange="applyFilters()">
+                <option value="">All priorities</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+              <select class="filter-select" id="filter-category" onchange="applyFilters()">
+                <option value="">All categories</option>
+              </select>
+            </div>
+          </div>
+          <div id="tickets-table-wrap">
+            <div class="empty-state"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i><p>Loading...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KANBAN PAGE -->
+      <div class="page" id="page-kanban">
+        <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:13px;font-weight:600">Kanban Board</span>
+          <span style="font-size:12px;color:var(--text3)" id="kanban-drag-hint"></span>
+        </div>
+        <div class="kanban-board" id="kanban-board"></div>
+      </div>
+
+      <!-- MY TICKETS PAGE -->
+      <div class="page" id="page-my-tickets">
+        <div class="card">
+          <div class="card-header"><span class="card-title">My Tickets</span></div>
+          <div id="my-tickets-wrap">
+            <div class="empty-state"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i><p>Loading...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NOTIFICATIONS PAGE -->
+      <div class="page" id="page-notifications">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Notifications</span>
+            <button class="btn btn-secondary btn-sm" onclick="markAllRead()" style="margin-left:auto">Mark all read</button>
+          </div>
+          <div id="notif-list">
+            <div class="empty-state"><i class="ti ti-bell-off"></i><p>No notifications yet</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- REPORTS PAGE -->
+      <div class="page" id="page-reports">
+        <div class="card" style="padding:20px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:16px">Reports & Analytics</div>
+          <div id="reports-content">
+            <div class="empty-state"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i><p>Loading...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KNOWLEDGE BASE PAGE -->
+      <div class="page" id="page-kb">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Knowledge Base</span>
+            <button class="btn btn-primary btn-sm" id="btn-new-kb" onclick="openNewKB()" style="margin-left:auto">
+              <i class="ti ti-plus"></i> New Article
+            </button>
+          </div>
+          <div id="kb-list">
+            <div class="empty-state"><i class="ti ti-book-2"></i><p>No articles yet</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- USERS PAGE -->
+      <div class="page" id="page-users">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">User Management</span>
+          </div>
+          <div id="users-table-wrap">
+            <div class="empty-state"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i><p>Loading...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AUDIT PAGE -->
+      <div class="page" id="page-audit">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Audit Trail</span></div>
+          <div id="audit-wrap">
+            <div class="empty-state"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i><p>Loading...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROFILE PAGE -->
+      <div class="page" id="page-profile">
+        <div class="card" style="max-width:500px;padding:24px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:20px">Profile Settings</div>
+          <div id="profile-content"></div>
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+            <button class="btn btn-danger" onclick="doLogout()">
+              <i class="ti ti-logout"></i> Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ── MODALS ────────────────────────────────────────────────── -->
+
+<!-- CREATE TICKET MODAL -->
+<div id="modal-create" style="display:none" class="modal-overlay" onclick="closeIfOverlay(event,'modal-create')">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <span class="modal-title">New Ticket</span>
+      <button class="modal-close" onclick="closeModal('modal-create')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="auth-error" id="create-error"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Requester name <span style="color:var(--red)">*</span></label>
+          <input class="form-input" id="c-requester" type="text" placeholder="Actual person requesting">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Department</label>
+          <input class="form-input" id="c-dept-display" type="text" readonly style="background:var(--surface2);cursor:not-allowed">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category <span style="color:var(--red)">*</span></label>
+          <select class="form-input" id="c-category">
+            <option value="">Select category...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority <span style="color:var(--red)">*</span></label>
+          <select class="form-input" id="c-priority">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">Subject <span style="color:var(--red)">*</span></label>
+          <input class="form-input" id="c-subject" type="text" placeholder="Brief description of the issue">
+        </div>
+        <div class="form-group form-full">
+          <label class="form-label">Description <span style="color:var(--red)">*</span></label>
+          <textarea class="form-input" id="c-description" style="min-height:100px" placeholder="Detailed description — steps to reproduce, error messages, affected devices..."></textarea>
+        </div>
+      </div>
+      <div style="background:var(--amber-l);border:1px solid #fac775;border-radius:var(--radius);padding:10px 12px;font-size:12px;color:var(--amber)">
+        <i class="ti ti-info-circle"></i> SLA response and resolution times will be automatically calculated based on category and priority.
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="closeModal('modal-create')">Cancel</button>
+      <button class="btn btn-primary" id="btn-submit-ticket" onclick="doCreateTicket()">
+        <i class="ti ti-send"></i> Submit Ticket
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- TICKET DETAIL MODAL -->
+<div id="modal-detail" style="display:none" class="modal-overlay" onclick="closeIfOverlay(event,'modal-detail')">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <span class="modal-title" id="detail-title">Ticket</span>
+      <div id="detail-status-pill"></div>
+      <button class="modal-close" onclick="closeModal('modal-detail')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" id="detail-body">
+      <div class="empty-state"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i><p>Loading...</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- AGIMAT MODAL -->
+<div id="modal-agimat" style="display:none" class="modal-overlay" onclick="closeIfOverlay(event,'modal-agimat')">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <span class="modal-title">Agimat Account Creation</span>
+      <button class="modal-close" onclick="closeModal('modal-agimat')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--accent-l);border:1px solid #b5d4f4;border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--accent-t)">
+        <i class="ti ti-info-circle"></i> This will create an IT ticket with category "Agimat Account Creation" and high priority.
+      </div>
+      <div class="auth-error" id="agimat-error"></div>
+      <div class="form-group">
+        <label class="form-label">Requesting for (Full name) <span style="color:var(--red)">*</span></label>
+        <input class="form-input" id="ag-for" type="text" placeholder="Dr. Juan dela Cruz">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Position / Designation <span style="color:var(--red)">*</span></label>
+        <input class="form-input" id="ag-position" type="text" placeholder="Resident Physician">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Department <span style="color:var(--red)">*</span></label>
+        <select class="form-input" id="ag-dept">
+          <option value="">Select department...</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Requested by (your name)</label>
+        <input class="form-input" id="ag-requestor" type="text" placeholder="Auto-filled from profile" readonly style="background:var(--surface2)">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Additional notes</label>
+        <textarea class="form-input" id="ag-notes" placeholder="Access level required, start date, etc."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="closeModal('modal-agimat')">Cancel</button>
+      <button class="btn btn-primary" onclick="doAgimatTicket()">
+        <i class="ti ti-user-plus"></i> Submit Request
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ── SCRIPT ────────────────────────────────────────────────── -->
+<script>
+const SUPABASE_URL = 'https://bivrkajfhmjtshmaxptb.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpdnJrYWpmaG1qdHNobWF4cHRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4Mjk1MjQsImV4cCI6MjA5NDQwNTUyNH0.SP8GxhsUKaMGgp7kjwPWipegvftJTj_Kt7IIXI747hE';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true }
+});
+
+// ── STATE ─────────────────────────────────────────────────────
+let currentUser = null;
+let currentProfile = null;
+let allTickets = [];
+let categories = [];
+let departments = [];
+let currentDashTab = 'all';
+let currentTicketId = null;
+let draggedCard = null;
+
+const ROLE_LABELS = {
+  end_user: 'End User',
+  it_staff: 'IT Staff',
+  supervisor: 'Supervisor',
+  admin: 'Admin'
+};
+
+const STATUS_LABELS = {
+  open: 'Open', in_progress: 'In Progress', on_hold: 'On Hold',
+  escalated: 'Escalated', resolved: 'Resolved', closed: 'Closed'
+};
+
+const PRIO_COLORS = { critical: '#E24B4A', high: '#EF9F27', medium: '#378ADD', low: '#639922' };
+
+// ── INIT ──────────────────────────────────────────────────────
+(async function init() {
+  await loadDepartments();
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await onLogin(session.user);
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session) await onLogin(session.user);
+    if (event === 'SIGNED_OUT') showAuthScreen();
+  });
+})();
+
+async function loadDepartments() {
+  const { data } = await sb.from('departments').select('*').order('name');
+  departments = data || [];
+  populateDeptSelects();
+}
+
+async function loadCategories() {
+  const { data } = await sb.from('categories').select('*').where ? 
+    await sb.from('categories').select('*') :
+    await sb.from('categories').select('*');
+  categories = data || [];
+  populateCategorySelects();
+}
+
+async function loadCategoriesSimple() {
+  const { data } = await sb.from('categories').select('*');
+  categories = data || [];
+  populateCategorySelects();
+}
+
+function populateDeptSelects() {
+  const selects = ['reg-dept', 'ag-dept'];
+  selects.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '<option value="">Select department...</option>';
+    departments.forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.id; o.textContent = d.name;
+      el.appendChild(o);
+    });
+  });
+}
+
+function populateCategorySelects() {
+  const selects = ['c-category', 'filter-category'];
+  selects.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = id === 'filter-category'
+      ? '<option value="">All categories</option>'
+      : '<option value="">Select category...</option>';
+    categories.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id; o.textContent = c.name;
+      el.appendChild(o);
+    });
+  });
+}
+
+// ── AUTH ──────────────────────────────────────────────────────
+function showForm(name) {
+  ['login','register','forgot'].forEach(f => {
+    document.getElementById('form-' + f).style.display = f === name ? '' : 'none';
+  });
+  clearAuthErrors();
+}
+
+function clearAuthErrors() {
+  document.querySelectorAll('.auth-error, .auth-success').forEach(el => {
+    el.style.display = 'none'; el.textContent = '';
+  });
+}
+
+function showAuthError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.style.display = '';
+}
+
+function showAuthSuccess(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.style.display = '';
+}
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) return showAuthError('login-error', 'Please enter email and password.');
+  const btn = document.getElementById('btn-login');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  btn.innerHTML = '<i class="ti ti-login"></i> <span>Sign in</span>';
+  btn.disabled = false;
+  if (error) showAuthError('login-error', error.message);
+}
+
+async function doRegister() {
+  const name = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const deptId = document.getElementById('reg-dept').value;
+  const phone = document.getElementById('reg-phone').value.trim();
+  if (!name || !email || !password) return showAuthError('register-error', 'Name, email, and password are required.');
+  if (password.length < 8) return showAuthError('register-error', 'Password must be at least 8 characters.');
+  const btn = document.getElementById('btn-register');
+  btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
+  const { data, error } = await sb.auth.signUp({
+    email, password,
+    options: { data: { full_name: name, department_id: deptId || null, phone: phone || null } }
+  });
+  btn.innerHTML = '<i class="ti ti-user-plus"></i> <span>Create account</span>'; btn.disabled = false;
+  if (error) return showAuthError('register-error', error.message);
+  // Update profile with dept and phone
+  if (data.user && deptId) {
+    await sb.from('profiles').update({ department_id: deptId, phone: phone || null, full_name: name })
+      .eq('id', data.user.id);
+  }
+  showAuthSuccess('register-success', 'Account created! Check your email for a verification link, then sign in.');
+}
+
+async function doForgotPassword() {
+  const email = document.getElementById('forgot-email').value.trim();
+  if (!email) return showAuthError('forgot-error', 'Enter your email address.');
+  const btn = document.getElementById('btn-forgot');
+  btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href
+  });
+  btn.innerHTML = '<i class="ti ti-mail"></i> <span>Send reset link</span>'; btn.disabled = false;
+  if (error) return showAuthError('forgot-error', error.message);
+  showAuthSuccess('forgot-success', 'Password reset link sent! Check your email.');
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+}
+
+async function onLogin(user) {
+  currentUser = user;
+  const { data: profile } = await sb.from('profiles').select('*, departments(name, code)').eq('id', user.id).single();
+  currentProfile = profile;
+  await loadCategoriesSimple();
+  renderNav();
+  await showApp();
+}
+
+function showAuthScreen() {
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  currentUser = null; currentProfile = null;
+}
+
+function renderNav() {
+  if (!currentProfile) return;
+  const initials = (currentProfile.full_name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('nav-avatar').textContent = initials;
+  document.getElementById('nav-name').textContent = currentProfile.full_name;
+  document.getElementById('nav-role').textContent = ROLE_LABELS[currentProfile.role] || currentProfile.role;
+
+  const isStaff = ['it_staff','supervisor','admin'].includes(currentProfile.role);
+  const isAdmin = ['supervisor','admin'].includes(currentProfile.role);
+  document.getElementById('staff-nav').style.display = isStaff ? '' : 'none';
+  document.getElementById('admin-nav').style.display = isAdmin ? '' : 'none';
+
+  const isDragEnabled = isStaff;
+  document.getElementById('kanban-drag-hint').textContent = isDragEnabled ? 'Drag cards to update status' : 'View-only for your role';
+}
+
+async function showApp() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  navigate('dashboard');
+  loadNotifCount();
+}
+
+// ── NAVIGATION ────────────────────────────────────────────────
+function navigate(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const pageEl = document.getElementById('page-' + page);
+  if (pageEl) pageEl.classList.add('active');
+  const navEl = document.querySelector('[data-page="' + page + '"]');
+  if (navEl) navEl.classList.add('active');
+
+  const titles = {
+    dashboard: 'Dashboard', tickets: 'All Tickets', kanban: 'Kanban Board',
+    'my-tickets': 'My Tickets', notifications: 'Notifications',
+    reports: 'Reports', kb: 'Knowledge Base', users: 'Users', audit: 'Audit Trail', profile: 'Profile'
+  };
+  document.getElementById('topbar-title').textContent = titles[page] || page;
+
+  if (page === 'dashboard') loadDashboard();
+  else if (page === 'tickets') loadTickets();
+  else if (page === 'kanban') loadKanban();
+  else if (page === 'my-tickets') loadMyTickets();
+  else if (page === 'notifications') loadNotifications();
+  else if (page === 'reports') loadReports();
+  else if (page === 'users') loadUsers();
+  else if (page === 'audit') loadAudit();
+  else if (page === 'profile') loadProfile();
+}
+
+// ── TICKET TABLE RENDERER ─────────────────────────────────────
+function renderTicketTable(tickets, containerId) {
+  const wrap = document.getElementById(containerId);
+  if (!tickets.length) {
+    wrap.innerHTML = '<div class="empty-state"><i class="ti ti-ticket-off"></i><p>No tickets found</p></div>';
+    return;
+  }
+  const rows = tickets.map(t => {
+    const slaMs = t.sla_resolution_due ? new Date(t.sla_resolution_due) - new Date() : null;
+    const slaPct = slaMs !== null ? Math.max(0, Math.min(100, 100 - (slaMs / (72*3600000) * 100))) : 0;
+    const slaColor = slaPct > 85 ? '#E24B4A' : slaPct > 60 ? '#EF9F27' : '#639922';
+    const catName = t.categories ? t.categories.name : '—';
+    const deptName = t.departments ? t.departments.code : '—';
+    return `<tr onclick="openTicketDetail('${t.id}')">
+      <td><span class="ticket-id">#${t.ticket_no}</span></td>
+      <td>${esc(t.requester_name)}</td>
+      <td>${esc(deptName)}</td>
+      <td>${esc(catName)}</td>
+      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--text2)">${esc(t.subject)}</td>
+      <td><span class="priority-dot prio-${t.priority}"></span>${cap(t.priority)}</td>
+      <td><span class="status-pill s-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
+      <td>
+        <div class="sla-bar"><div class="sla-fill" style="width:${slaPct}%;background:${slaColor}"></div></div>
+      </td>
+      <td style="font-size:11px;color:var(--text3)">${timeAgo(t.created_at)}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<table>
+    <thead><tr>
+      <th>ID</th><th>Requester</th><th>Dept</th><th>Category</th>
+      <th>Subject</th><th>Priority</th><th>Status</th><th>SLA</th><th>Created</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────
+async function loadDashboard() {
+  const { data: tickets } = await sb.from('tickets')
+    .select('*, categories(name,slug), departments(name,code)')
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  allTickets = tickets || [];
+
+  const open    = allTickets.filter(t => t.status === 'open').length;
+  const inprog  = allTickets.filter(t => t.status === 'in_progress').length;
+  const esc     = allTickets.filter(t => t.status === 'escalated').length;
+  const today   = new Date().toDateString();
+  const res     = allTickets.filter(t => t.status === 'resolved' && t.resolved_at && new Date(t.resolved_at).toDateString() === today).length;
+  const now     = new Date();
+  const sla     = allTickets.filter(t => !['resolved','closed'].includes(t.status) && t.sla_resolution_due && new Date(t.sla_resolution_due) < now).length;
+
+  document.getElementById('stat-open').textContent   = open;
+  document.getElementById('stat-inprog').textContent = inprog;
+  document.getElementById('stat-esc').textContent    = esc;
+  document.getElementById('stat-res').textContent    = res;
+  document.getElementById('stat-sla').textContent    = sla;
+  document.getElementById('badge-open').textContent  = open;
+
+  renderDashTable();
+}
+
+function setDashTab(tab, el) {
+  currentDashTab = tab;
+  document.querySelectorAll('#dash-tabs .tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderDashTable();
+}
+
+function renderDashTable() {
+  let filtered = allTickets;
+  if (currentDashTab !== 'all') {
+    filtered = allTickets.filter(t => t.categories && t.categories.slug === currentDashTab);
+  }
+  renderTicketTable(filtered.slice(0, 20), 'dash-table-wrap');
+}
+
+// ── ALL TICKETS ───────────────────────────────────────────────
+async function loadTickets() {
+  const { data } = await sb.from('tickets')
+    .select('*, categories(name,slug), departments(name,code)')
+    .order('created_at', { ascending: false });
+  allTickets = data || [];
+  applyFilters();
+}
+
+function applyFilters() {
+  const status   = document.getElementById('filter-status')?.value || '';
+  const priority = document.getElementById('filter-priority')?.value || '';
+  const catId    = document.getElementById('filter-category')?.value || '';
+  let filtered = allTickets;
+  if (status)   filtered = filtered.filter(t => t.status === status);
+  if (priority) filtered = filtered.filter(t => t.priority === priority);
+  if (catId)    filtered = filtered.filter(t => t.category_id === catId);
+  renderTicketTable(filtered, 'tickets-table-wrap');
+}
+
+function globalSearch(q) {
+  if (!q.trim()) { renderDashTable(); return; }
+  const lq = q.toLowerCase();
+  const filtered = allTickets.filter(t =>
+    t.ticket_no?.toLowerCase().includes(lq) ||
+    t.subject?.toLowerCase().includes(lq) ||
+    t.requester_name?.toLowerCase().includes(lq)
+  );
+  renderTicketTable(filtered, 'dash-table-wrap');
+}
+
+// ── MY TICKETS ────────────────────────────────────────────────
+async function loadMyTickets() {
+  const { data } = await sb.from('tickets')
+    .select('*, categories(name,slug), departments(name,code)')
+    .eq('requester_id', currentUser.id)
+    .order('created_at', { ascending: false });
+  renderTicketTable(data || [], 'my-tickets-wrap');
+}
+
+// ── KANBAN ────────────────────────────────────────────────────
+const KANBAN_COLS = [
+  { key: 'open',        label: 'Open',        color: '#378ADD' },
+  { key: 'in_progress', label: 'In Progress',  color: '#EF9F27' },
+  { key: 'on_hold',     label: 'On Hold',      color: '#888780' },
+  { key: 'escalated',   label: 'Escalated',    color: '#E24B4A' },
+  { key: 'resolved',    label: 'Resolved',     color: '#639922' },
+  { key: 'closed',      label: 'Closed',       color: '#B4B2A9' },
+];
+
+async function loadKanban() {
+  const { data } = await sb.from('tickets')
+    .select('*, categories(name,slug), departments(code)')
+    .order('created_at', { ascending: false });
+  const tickets = data || [];
+  const board = document.getElementById('kanban-board');
+  const isStaff = ['it_staff','supervisor','admin'].includes(currentProfile?.role);
+
+  board.innerHTML = KANBAN_COLS.map(col => {
+    const colTickets = tickets.filter(t => t.status === col.key);
+    const cards = colTickets.map(t => `
+      <div class="kanban-card" draggable="${isStaff}" id="kcard-${t.id}"
+           ondragstart="kDragStart(event,'${t.id}')"
+           onclick="openTicketDetail('${t.id}')">
+        <div class="kc-id">#${t.ticket_no}</div>
+        <div class="kc-title">${esc(t.subject)}</div>
+        <div class="kc-dept">${t.categories?.name || '—'} · ${t.departments?.code || '—'}</div>
+        <div class="kc-footer">
+          <span class="kc-prio" style="background:${PRIO_COLORS[t.priority]}22;color:${PRIO_COLORS[t.priority]}">${cap(t.priority)}</span>
+        </div>
+      </div>`).join('');
+
+    return `<div class="kanban-col" data-status="${col.key}"
+              ondragover="kDragOver(event)"
+              ondrop="kDrop(event,'${col.key}')"
+              ondragleave="kDragLeave(event)">
+      <div class="kanban-col-header">
+        <div class="kanban-dot" style="background:${col.color}"></div>
+        <span class="kanban-col-name">${col.label}</span>
+        <span class="kanban-count">${colTickets.length}</span>
+      </div>
+      ${cards}
+      <div class="kanban-drop-hint">Drop here</div>
+    </div>`;
+  }).join('');
+}
+
+function kDragStart(e, id) {
+  draggedCard = id;
+  setTimeout(() => { const el = document.getElementById('kcard-' + id); if (el) el.classList.add('dragging'); }, 0);
+}
+
+function kDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+}
+
+function kDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+async function kDrop(e, newStatus) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (!draggedCard) return;
+  const el = document.getElementById('kcard-' + draggedCard);
+  if (el) el.classList.remove('dragging');
+  const { error } = await sb.from('tickets').update({ status: newStatus }).eq('id', draggedCard);
+  if (error) { toast('Failed to update status', 'error'); return; }
+  toast('Status updated to ' + STATUS_LABELS[newStatus], 'success');
+  await logAudit(draggedCard, 'status_change', null, { status: newStatus });
+  draggedCard = null;
+  loadKanban();
+}
+
+// ── TICKET DETAIL ─────────────────────────────────────────────
+async function openTicketDetail(id) {
+  currentTicketId = id;
+  document.getElementById('modal-detail').style.display = 'flex';
+  document.getElementById('detail-body').innerHTML = '<div class="empty-state"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i><p>Loading...</p></div>';
+
+  const [{ data: ticket }, { data: replies }, { data: assignments }, { data: audit }] = await Promise.all([
+    sb.from('tickets').select('*, categories(name), departments(name), profiles!requester_id(full_name)').eq('id', id).single(),
+    sb.from('ticket_replies').select('*, profiles!author_id(full_name, role)').eq('ticket_id', id).order('created_at'),
+    sb.from('ticket_assignments').select('*, profiles!staff_id(full_name, role)').eq('ticket_id', id),
+    sb.from('audit_logs').select('*, profiles!actor_id(full_name)').eq('ticket_id', id).order('occurred_at', { ascending: false }).limit(20),
+  ]);
+
+  if (!ticket) { document.getElementById('detail-body').innerHTML = '<div class="empty-state"><i class="ti ti-alert-circle"></i><p>Ticket not found</p></div>'; return; }
+
+  document.getElementById('detail-title').textContent = '#' + ticket.ticket_no;
+  document.getElementById('detail-status-pill').innerHTML = `<span class="status-pill s-${ticket.status}">${STATUS_LABELS[ticket.status]}</span>`;
+
+  const isStaff = ['it_staff','supervisor','admin'].includes(currentProfile?.role);
+  const isAdmin = ['supervisor','admin'].includes(currentProfile?.role);
+
+  // Status change controls
+  const statusOpts = Object.entries(STATUS_LABELS).map(([k,v]) =>
+    `<option value="${k}" ${k === ticket.status ? 'selected' : ''}>${v}</option>`).join('');
+
+  const priorityOpts = ['low','medium','high','critical'].map(p =>
+    `<option value="${p}" ${p === ticket.priority ? 'selected' : ''}>${cap(p)}</option>`).join('');
+
+  const staffControls = isStaff ? `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius);border:1px solid var(--border)">
+      <span style="font-size:12px;font-weight:600;color:var(--text2)">Update:</span>
+      <select class="filter-select" id="det-status" onchange="updateTicketStatus('${id}',this.value)">${statusOpts}</select>
+      <select class="filter-select" id="det-priority" onchange="updateTicketPriority('${id}',this.value)">${priorityOpts}</select>
+      ${isAdmin ? `<button class="btn btn-sm btn-secondary" onclick="openAssignModal('${id}')"><i class="ti ti-users"></i> Assign</button>` : ''}
+    </div>` : '';
+
+  // Assignees
+  const assigneeHtml = assignments?.length ? `
+    <div class="assignees-section">
+      <div class="detail-label">Assigned Staff</div>
+      <div style="margin-top:4px">
+        ${assignments.map(a => `
+          <div class="assignee-chip">
+            <div class="avatar" style="background:var(--accent-l);color:var(--accent)">${initials(a.profiles?.full_name)}</div>
+            ${esc(a.profiles?.full_name || '—')}
+            ${a.is_lead ? '<span class="lead-badge">Lead</span>' : ''}
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  // Replies
+  const repliesHtml = (replies || []).map(r => {
+    const isOwn = r.author_id === currentUser?.id;
+    const isInternal = r.is_internal;
+    return `<div class="reply-bubble ${isOwn ? 'own' : ''} ${isInternal ? 'internal' : ''}">
+      ${isInternal ? '<div class="reply-internal-badge"><i class="ti ti-lock" style="font-size:10px"></i> Internal note</div>' : ''}
+      <div class="reply-meta">${esc(r.profiles?.full_name || '?')} · ${timeAgo(r.created_at)}</div>
+      <div class="reply-body">${esc(r.body)}</div>
+    </div>`;
+  }).join('');
+
+  // Audit trail
+  const auditHtml = (audit || []).map(a => `
+    <div class="audit-item">
+      <div class="audit-dot"></div>
+      <div>
+        <b>${esc(a.profiles?.full_name || 'System')}</b>
+        ${formatAudit(a)}
+        <span style="color:var(--text3)"> · ${timeAgo(a.occurred_at)}</span>
+      </div>
+    </div>`).join('');
+
+  const slaInfo = ticket.sla_resolution_due
+    ? `<div style="font-size:11px;color:${new Date(ticket.sla_resolution_due) < new Date() && !['resolved','closed'].includes(ticket.status) ? 'var(--red)' : 'var(--text3)'}">
+        SLA due: ${new Date(ticket.sla_resolution_due).toLocaleString()}
+       </div>`
+    : '';
+
+  document.getElementById('detail-body').innerHTML = `
+    ${staffControls}
+    <div class="detail-row">
+      <div class="detail-group">
+        <div class="detail-label">Requester</div>
+        <div class="detail-value">${esc(ticket.requester_name)}</div>
+      </div>
+      <div class="detail-group">
+        <div class="detail-label">Department</div>
+        <div class="detail-value">${esc(ticket.departments?.name || '—')}</div>
+      </div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-group">
+        <div class="detail-label">Category</div>
+        <div class="detail-value">${esc(ticket.categories?.name || '—')}</div>
+      </div>
+      <div class="detail-group">
+        <div class="detail-label">Priority</div>
+        <div class="detail-value"><span class="priority-dot prio-${ticket.priority}"></span>${cap(ticket.priority)}</div>
+      </div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-group">
+        <div class="detail-label">Created</div>
+        <div class="detail-value" style="font-size:12px">${new Date(ticket.created_at).toLocaleString()}</div>
+      </div>
+      <div class="detail-group">${slaInfo}</div>
+    </div>
+    ${assigneeHtml}
+    <div class="detail-desc">
+      <div class="detail-label" style="margin-bottom:6px">Description</div>
+      <div class="detail-desc-text">${esc(ticket.description)}</div>
+    </div>
+
+    <div class="replies-section">
+      <div class="replies-title">Conversation (${(replies||[]).length})</div>
+      <div id="replies-list">${repliesHtml || '<div style="font-size:13px;color:var(--text3);text-align:center;padding:20px">No replies yet</div>'}</div>
+      <div class="reply-compose">
+        <textarea id="reply-input" placeholder="${isStaff ? 'Write a reply or update...' : 'Write a reply or add information...'}" rows="3"></textarea>
+        <div class="reply-actions">
+          ${isStaff ? `<label class="reply-internal-toggle"><input type="checkbox" id="reply-internal"> Internal note (staff only)</label>` : ''}
+          <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="submitReply('${id}')">
+            <i class="ti ti-send"></i> Send
+          </button>
+        </div>
+      </div>
+    </div>
+
+    ${isStaff && auditHtml ? `<div class="audit-section">
+      <div class="audit-title">Audit Trail</div>
+      ${auditHtml}
+    </div>` : ''}
+  `;
+}
+
+async function updateTicketStatus(id, status) {
+  const { error } = await sb.from('tickets').update({ status, ...(status === 'resolved' ? { resolved_at: new Date().toISOString() } : {}) }).eq('id', id);
+  if (error) return toast('Failed to update status', 'error');
+  document.getElementById('detail-status-pill').innerHTML = `<span class="status-pill s-${status}">${STATUS_LABELS[status]}</span>`;
+  toast('Status updated', 'success');
+}
+
+async function updateTicketPriority(id, priority) {
+  const { error } = await sb.from('tickets').update({ priority }).eq('id', id);
+  if (error) return toast('Failed to update priority', 'error');
+  toast('Priority updated', 'success');
+}
+
+async function submitReply(ticketId) {
+  const body = document.getElementById('reply-input').value.trim();
+  const isInternal = document.getElementById('reply-internal')?.checked || false;
+  if (!body) return toast('Reply cannot be empty', 'error');
+
+  const { error } = await sb.from('ticket_replies').insert({
+    ticket_id: ticketId,
+    author_id: currentUser.id,
+    body,
+    is_internal: isInternal
+  });
+  if (error) return toast('Failed to send reply: ' + error.message, 'error');
+  toast('Reply sent', 'success');
+  await logAudit(ticketId, 'reply_added', null, { is_internal: isInternal });
+  openTicketDetail(ticketId);
+}
+
+async function logAudit(ticketId, action, oldVal, newVal) {
+  await sb.from('audit_logs').insert({
+    ticket_id: ticketId,
+    actor_id: currentUser?.id,
+    action,
+    old_value: oldVal ? JSON.stringify(oldVal) : null,
+    new_value: newVal ? JSON.stringify(newVal) : null
+  });
+}
+
+function formatAudit(a) {
+  if (a.action === 'status_change') {
+    const nv = typeof a.new_value === 'string' ? JSON.parse(a.new_value) : a.new_value;
+    return ` changed status to <b>${STATUS_LABELS[nv?.status] || nv?.status}</b>`;
+  }
+  if (a.action === 'priority_change') {
+    const nv = typeof a.new_value === 'string' ? JSON.parse(a.new_value) : a.new_value;
+    return ` changed priority to <b>${cap(nv?.priority)}</b>`;
+  }
+  if (a.action === 'reply_added') return ' added a reply';
+  return ' performed ' + a.action;
+}
+
+// ── CREATE TICKET ─────────────────────────────────────────────
+function openCreateTicket() {
+  document.getElementById('modal-create').style.display = 'flex';
+  document.getElementById('create-error').style.display = 'none';
+  document.getElementById('c-requester').value = '';
+  document.getElementById('c-subject').value = '';
+  document.getElementById('c-description').value = '';
+  document.getElementById('c-priority').value = 'medium';
+  document.getElementById('c-category').value = '';
+  const deptName = currentProfile?.departments?.name || currentProfile?.department_id || '—';
+  document.getElementById('c-dept-display').value = deptName;
+}
+
+async function doCreateTicket() {
+  const requester = document.getElementById('c-requester').value.trim();
+  const catId = document.getElementById('c-category').value;
+  const priority = document.getElementById('c-priority').value;
+  const subject = document.getElementById('c-subject').value.trim();
+  const desc = document.getElementById('c-description').value.trim();
+
+  if (!requester || !catId || !subject || !desc) {
+    document.getElementById('create-error').textContent = 'Please fill in all required fields.';
+    document.getElementById('create-error').style.display = '';
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit-ticket');
+  btn.innerHTML = '<span class="spinner"></span> Submitting...'; btn.disabled = true;
+
+  const { error } = await sb.from('tickets').insert({
+    requester_id: currentUser.id,
+    department_id: currentProfile.department_id,
+    category_id: catId,
+    requester_name: requester,
+    priority,
+    subject,
+    description: desc,
+    ticket_no: 'TMP'
+  });
+
+  btn.innerHTML = '<i class="ti ti-send"></i> Submit Ticket'; btn.disabled = false;
+
+  if (error) {
+    document.getElementById('create-error').textContent = error.message;
+    document.getElementById('create-error').style.display = '';
+    return;
+  }
+
+  toast('Ticket submitted successfully!', 'success');
+  closeModal('modal-create');
+  loadDashboard();
+}
+
+// ── AGIMAT ────────────────────────────────────────────────────
+function openAgimat() {
+  document.getElementById('modal-agimat').style.display = 'flex';
+  document.getElementById('ag-requestor').value = currentProfile?.full_name || '';
+  document.getElementById('ag-for').value = '';
+  document.getElementById('ag-position').value = '';
+  document.getElementById('ag-notes').value = '';
+  document.getElementById('agimat-error').style.display = 'none';
+  // Pre-select user's dept
+  if (currentProfile?.department_id) {
+    const s = document.getElementById('ag-dept');
+    if (s) s.value = currentProfile.department_id;
+  }
+}
+
+async function doAgimatTicket() {
+  const forName = document.getElementById('ag-for').value.trim();
+  const position = document.getElementById('ag-position').value.trim();
+  const deptId = document.getElementById('ag-dept').value;
+  const notes = document.getElementById('ag-notes').value.trim();
+
+  if (!forName || !position || !deptId) {
+    document.getElementById('agimat-error').textContent = 'Name, position, and department are required.';
+    document.getElementById('agimat-error').style.display = '';
+    return;
+  }
+
+  const agimatCat = categories.find(c => c.slug === 'agimat');
+  if (!agimatCat) return toast('Agimat category not found. Contact admin.', 'error');
+
+  const desc = `Agimat Account Creation Request\n\nFor: ${forName}\nPosition: ${position}\nRequested by: ${currentProfile?.full_name || 'Unknown'}\n${notes ? '\nAdditional notes:\n' + notes : ''}`;
+
+  const { error } = await sb.from('tickets').insert({
+    requester_id: currentUser.id,
+    department_id: deptId,
+    category_id: agimatCat.id,
+    requester_name: currentProfile?.full_name || 'Unknown',
+    priority: 'high',
+    subject: `Agimat account for ${forName} (${position})`,
+    description: desc,
+    ticket_no: 'TMP'
+  });
+
+  if (error) {
+    document.getElementById('agimat-error').textContent = error.message;
+    document.getElementById('agimat-error').style.display = '';
+    return;
+  }
+
+  toast('Agimat account request submitted!', 'success');
+  closeModal('modal-agimat');
+  loadDashboard();
+}
+
+// ── NOTIFICATIONS ─────────────────────────────────────────────
+async function loadNotifCount() {
+  const { count } = await sb.from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', currentUser.id)
+    .eq('is_read', false);
+  const badge = document.getElementById('badge-notif');
+  const dot = document.getElementById('notif-dot');
+  if (count > 0) {
+    badge.textContent = count; badge.style.display = '';
+    dot.style.display = '';
+  } else {
+    badge.style.display = 'none'; dot.style.display = 'none';
+  }
+}
+
+async function loadNotifications() {
+  const { data } = await sb.from('notifications')
+    .select('*, tickets(ticket_no, subject)')
+    .eq('user_id', currentUser.id)
+    .order('sent_at', { ascending: false })
+    .limit(30);
+
+  const list = document.getElementById('notif-list');
+  if (!data?.length) {
+    list.innerHTML = '<div class="empty-state"><i class="ti ti-bell-off"></i><p>No notifications</p></div>';
+    return;
+  }
+
+  list.innerHTML = data.map(n => `
+    <div style="display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);${n.is_read ? 'opacity:.7' : ''};cursor:pointer"
+         onclick="markRead('${n.id}')${n.ticket_id ? ";openTicketDetail('" + n.ticket_id + "')" : ''}">
+      <div style="width:8px;height:8px;border-radius:50%;background:${n.is_read ? 'var(--border2)' : 'var(--accent)'};flex-shrink:0;margin-top:5px"></div>
+      <div>
+        <div style="font-size:13px;font-weight:${n.is_read ? '400' : '600'}">${esc(n.title)}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">${esc(n.body)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px">${timeAgo(n.sent_at)}</div>
+      </div>
+    </div>`).join('');
+
+  await sb.from('notifications').update({ is_read: true }).eq('user_id', currentUser.id).eq('is_read', false);
+  loadNotifCount();
+}
+
+async function markRead(id) {
+  await sb.from('notifications').update({ is_read: true }).eq('id', id);
+}
+
+async function markAllRead() {
+  await sb.from('notifications').update({ is_read: true }).eq('user_id', currentUser.id);
+  loadNotifications();
+}
+
+// ── REPORTS ───────────────────────────────────────────────────
+async function loadReports() {
+  const { data: tickets } = await sb.from('tickets').select('status, priority, category_id, categories(name), department_id, departments(name), created_at, resolved_at, sla_resolution_due');
+  const t = tickets || [];
+
+  const byStatus = {};
+  const byPrio = {};
+  const byCat = {};
+  t.forEach(tk => {
+    byStatus[tk.status] = (byStatus[tk.status] || 0) + 1;
+    byPrio[tk.priority] = (byPrio[tk.priority] || 0) + 1;
+    const cn = tk.categories?.name || 'Unknown';
+    byCat[cn] = (byCat[cn] || 0) + 1;
+  });
+
+  const resolved = t.filter(tk => tk.resolved_at);
+  const avgRes = resolved.length ? Math.round(resolved.reduce((sum, tk) => {
+    return sum + (new Date(tk.resolved_at) - new Date(tk.created_at)) / 3600000;
+  }, 0) / resolved.length * 10) / 10 : 0;
+
+  const slaBreached = t.filter(tk => tk.sla_resolution_due && new Date(tk.sla_resolution_due) < new Date() && !['resolved','closed'].includes(tk.status)).length;
+  const slaMet = resolved.filter(tk => tk.sla_resolution_due && new Date(tk.resolved_at) <= new Date(tk.sla_resolution_due)).length;
+  const slaPct = resolved.length ? Math.round(slaMet / resolved.length * 100) : 0;
+
+  const barChart = (data, title) => {
+    const max = Math.max(...Object.values(data), 1);
+    return `<div style="margin-bottom:20px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text2)">${title}</div>
+      ${Object.entries(data).map(([k,v]) => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <div style="width:80px;font-size:11px;color:var(--text2);text-align:right">${k}</div>
+          <div style="flex:1;height:18px;background:var(--surface2);border-radius:3px;overflow:hidden">
+            <div style="width:${(v/max*100).toFixed(0)}%;height:100%;background:var(--accent);border-radius:3px;transition:width .3s"></div>
+          </div>
+          <div style="width:24px;font-size:11px;font-weight:600">${v}</div>
+        </div>`).join('')}
+    </div>`;
+  };
+
+  document.getElementById('reports-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px">
+      <div class="stat-card"><div class="stat-label">Total Tickets</div><div class="stat-num">${t.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Resolution</div><div class="stat-num" style="font-size:20px">${avgRes}h</div></div>
+      <div class="stat-card"><div class="stat-label">SLA Compliance</div><div class="stat-num" style="color:${slaPct>=80?'var(--green)':'var(--red)'}">${slaPct}%</div></div>
+      <div class="stat-card"><div class="stat-label">SLA Breached</div><div class="stat-num" style="color:var(--red)">${slaBreached}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
+      ${barChart(Object.fromEntries(Object.entries(byStatus).map(([k,v])=>[STATUS_LABELS[k]||k,v])), 'By Status')}
+      ${barChart(Object.fromEntries(Object.entries(byPrio).map(([k,v])=>[cap(k),v])), 'By Priority')}
+      ${barChart(byCat, 'By Category')}
+    </div>
+  `;
+}
+
+// ── USERS ─────────────────────────────────────────────────────
+async function loadUsers() {
+  const { data } = await sb.from('profiles').select('*, departments(name)').order('full_name');
+  const wrap = document.getElementById('users-table-wrap');
+  if (!data?.length) { wrap.innerHTML = '<div class="empty-state"><i class="ti ti-users"></i><p>No users</p></div>'; return; }
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Name</th><th>Email (from auth)</th><th>Department</th><th>Role</th><th>Status</th><th>Joined</th></tr></thead>
+    <tbody>${data.map(u => `<tr>
+      <td><div style="display:flex;align-items:center;gap:8px">
+        <div class="avatar">${initials(u.full_name)}</div>
+        <span style="font-size:13px;font-weight:500">${esc(u.full_name)}</span>
+      </div></td>
+      <td style="font-size:12px;color:var(--text2)">—</td>
+      <td style="font-size:12px">${esc(u.departments?.name || '—')}</td>
+      <td><span class="status-pill" style="background:var(--accent-l);color:var(--accent)">${ROLE_LABELS[u.role] || u.role}</span></td>
+      <td><span class="status-pill ${u.is_active ? 's-resolved' : 's-closed'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
+      <td style="font-size:11px;color:var(--text3)">${timeAgo(u.created_at)}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// ── AUDIT ─────────────────────────────────────────────────────
+async function loadAudit() {
+  const { data } = await sb.from('audit_logs').select('*, profiles!actor_id(full_name), tickets(ticket_no)').order('occurred_at', { ascending: false }).limit(100);
+  const wrap = document.getElementById('audit-wrap');
+  if (!data?.length) { wrap.innerHTML = '<div class="empty-state"><i class="ti ti-shield"></i><p>No audit records</p></div>'; return; }
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Actor</th><th>Ticket</th><th>Action</th><th>Time</th></tr></thead>
+    <tbody>${data.map(a => `<tr>
+      <td style="font-size:12px;font-weight:500">${esc(a.profiles?.full_name || 'System')}</td>
+      <td><span class="ticket-id">${a.tickets ? '#' + a.tickets.ticket_no : '—'}</span></td>
+      <td style="font-size:12px;color:var(--text2)">${a.action.replace(/_/g,' ')}</td>
+      <td style="font-size:11px;color:var(--text3)">${new Date(a.occurred_at).toLocaleString()}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// ── PROFILE ───────────────────────────────────────────────────
+function loadProfile() {
+  const p = currentProfile;
+  document.getElementById('profile-content').innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div class="avatar" style="width:48px;height:48px;font-size:18px">${initials(p?.full_name)}</div>
+      <div>
+        <div style="font-size:16px;font-weight:600">${esc(p?.full_name || '—')}</div>
+        <div style="font-size:12px;color:var(--text2)">${ROLE_LABELS[p?.role] || p?.role} · ${p?.departments?.name || '—'}</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Full name</label>
+      <input class="form-input" id="prof-name" value="${esc(p?.full_name || '')}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Phone</label>
+      <input class="form-input" id="prof-phone" value="${esc(p?.phone || '')}" placeholder="09xxxxxxxxx">
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="saveProfile()"><i class="ti ti-check"></i> Save changes</button>
+  `;
+}
+
+async function saveProfile() {
+  const name = document.getElementById('prof-name').value.trim();
+  const phone = document.getElementById('prof-phone').value.trim();
+  if (!name) return toast('Name cannot be empty', 'error');
+  const { error } = await sb.from('profiles').update({ full_name: name, phone: phone || null }).eq('id', currentUser.id);
+  if (error) return toast('Failed to save: ' + error.message, 'error');
+  currentProfile.full_name = name;
+  currentProfile.phone = phone;
+  renderNav();
+  toast('Profile saved', 'success');
+}
+
+// ── MODALS ────────────────────────────────────────────────────
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+function closeIfOverlay(e, id) {
+  if (e.target.id === id) closeModal(id);
+}
+
+// ── HELPERS ───────────────────────────────────────────────────
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function cap(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function initials(name) {
+  if (!name) return '?';
+  return name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '—';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24);
+  return d + 'd ago';
+}
+
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => el.className = '', 3000);
+}
+
+// Handle password reset redirect
+const hash = window.location.hash;
+if (hash.includes('type=recovery')) {
+  const newPw = prompt('Enter your new password (min. 8 characters):');
+  if (newPw && newPw.length >= 8) {
+    sb.auth.updateUser({ password: newPw }).then(({ error }) => {
+      if (error) alert('Error: ' + error.message);
+      else { alert('Password updated successfully! Please sign in.'); window.location.hash = ''; }
+    });
+  }
+}
+</script>
+</body>
+</html>
