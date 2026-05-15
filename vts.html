@@ -1706,7 +1706,7 @@ async function renderTickets() {
   ])
   _tickets = trips || []; _drivers = drvs || []; _vehicles = vehs || []
   // Only admin/approver see the pending badge count
-  if (['admin','approver_admin','approver_amb'].includes(role))
+  if (['admin','approver_admin','super_approver'].includes(role))
     updateNavBadge(_tickets.filter(t=>t.status==='pending-approval').length)
   renderTicketsTable()
 }
@@ -2468,7 +2468,7 @@ async function openApproveModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
   const role   = currentProfile?.role
-  const canLastResort = ['admin','approver_admin','approver_amb'].includes(role)
+  const canLastResort = ['admin','approver_admin','super_approver'].includes(role)
 
   // Fetch ticket details + all needed data in parallel
   const [
@@ -2934,11 +2934,12 @@ async function doApproveAndAssign(id, ticketNo) {
 
   // Notifications
   const vehiclePlate = _vehicles.find(v => v.id === vv)?.plate || ''
+  const vehicleName  = vehicle?.name || vehiclePlate
   const { data: driverRow } = await SB.from('drivers').select('phone,user_id').eq('id', driverId).single()
 
   // SMS → driver (time-critical)
   if (driverRow?.phone) await sendSMS([driverRow.phone],
-    `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${trip?.purpose||''}\nDestination: ${trip?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(trip?.departure_at)}\nPlease report to the motor pool.`
+    `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${trip?.purpose||''}\nDestination: ${trip?.destination||''}\nVehicle: ${vehicle?.name||vehicle?.plate||'—'} (${vehicle?.plate||'—'})\nDeparture: ${fmtDT(trip?.departure_at)}\nPlease report to the motor pool.`
   )
   // Email → driver
   if (driverRow?.user_id) {
@@ -3231,7 +3232,7 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
   if (newDriverId !== curDriverId) {
     const { data: newDrv } = await SB.from('drivers').select('phone').eq('id', newDriverId).single()
     const dep = tripData?.departure_at ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
-    if (newDrv?.phone) await sendSMS([newDrv.phone], `[TDMH VTS] You have been ASSIGNED to trip ${ticketNo}.\nVehicle: ${newVehicle?.plate||'—'}\nDeparture: ${dep}\nPlease report to the motor pool.`)
+    if (newDrv?.phone) await sendSMS([newDrv.phone], `[TDMH VTS] You have been ASSIGNED to trip ${ticketNo}.\nVehicle: ${newVehicle?.name||newVehicle?.plate||'—'} (${newVehicle?.plate||'—'})\nDeparture: ${dep}\nPlease report to the motor pool.`)
   }
 
   closeMO(true)
@@ -3509,7 +3510,7 @@ async function doFormPool() {
   const { data: drvRow } = await SB.from('drivers').select('phone').eq('id',driverId).single()
   const depStr = new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
   if (drvRow?.phone) {
-    await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL ASSIGNMENT\nPool: ${pool_no}\nTickets: ${checked.length} departments\nDeparture: ${depStr}\nVehicle: ${vehicle.plate||'—'}\n\nReport to motor pool for briefing.`)
+    await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL ASSIGNMENT\nPool: ${pool_no}\nTickets: ${checked.length} departments\nDeparture: ${depStr}\nVehicle: ${vehicle.name||vehicle.plate||'—'} (${vehicle.plate||'—'})\n\nReport to motor pool for briefing.`)
   }
 
   // Email each requester — notify them their trip is now part of a pool
@@ -3925,7 +3926,7 @@ async function openAssignModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
   const role   = currentProfile?.role
-  const canLastResort = ['admin','approver_admin','approver_amb'].includes(role)
+  const canLastResort = ['admin','approver_admin','super_approver'].includes(role)
 
   // Fetch trip's departure/return for time-based filtering
   const { data: tripData } = await SB.from('trips')
@@ -4132,6 +4133,7 @@ async function doAssign(id, ticketNo) {
   const { data: tripData }  = await SB.from('trips').select('purpose,destination,stops,departure_at,department,vehicle_plate,requester_id').eq('id',id).single()
   const { data: driverRow } = await SB.from('drivers').select('phone,user_id').eq('id',driverId).single()
   const vehiclePlate = _vehicles.find(v => v.id === vv)?.plate || ''
+  const vehicleName  = _vehicles.find(v => v.id === vv)?.name  || vehiclePlate
   // Get driver's email via their linked user account (user_id on drivers table)
   let driverEmail = null
   if (driverRow?.user_id) {
@@ -4139,7 +4141,7 @@ async function doAssign(id, ticketNo) {
     driverEmail = du?.email || null
   }
   // SMS → driver only (time-critical: needs to know ASAP to prepare)
-  if (driverRow?.phone) await sendSMS([driverRow.phone], `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nUrgency: ${(tripData?.priority||'normal').toUpperCase()}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
+  if (driverRow?.phone) await sendSMS([driverRow.phone], `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nUrgency: ${(tripData?.priority||'normal').toUpperCase()}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehicleName||vehiclePlate} (${vehiclePlate})\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
   // Email only → driver, requester, guard
   if (driverEmail) await sendEmail([driverEmail], 'driver_assigned', { ticket_no: ticketNo, department: tripData?.department||'', purpose: tripData?.purpose||'', destination: tripData?.destination||'', departure_at: fmtDT(tripData?.departure_at), vehicle_plate: vehiclePlate })
   const reqContacts = await getRequesterContacts(id)
