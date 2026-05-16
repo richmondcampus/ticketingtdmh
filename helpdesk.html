@@ -2421,9 +2421,10 @@ const CAT_ICON = {
 async function quickAction(e, ticketId, newStatus) {
   e.stopPropagation();
   e.preventDefault();
+  console.log('[quickAction] called — ticketId:', ticketId, 'newStatus:', newStatus);
 
   const btn = e.currentTarget || e.target.closest('.qa-btn');
-  if (!btn) return;
+  if (!btn) { console.warn('[quickAction] no btn found'); return; }
   const oldHtml = btn.innerHTML;
 
   btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin .5s linear infinite"></i>';
@@ -2434,29 +2435,28 @@ async function quickAction(e, ticketId, newStatus) {
     if (newStatus === 'resolved') updateData.resolved_at = new Date().toISOString();
     if (newStatus === 'closed')   updateData.closed_at   = new Date().toISOString();
 
+    console.log('[quickAction] updating ticket...');
     const { error } = await sb.from('tickets').update(updateData).eq('id', ticketId);
 
     if (error) {
-      console.error('quickAction update error:', error);
+      console.error('[quickAction] update error:', error);
       btn.innerHTML = oldHtml;
       btn.disabled = false;
       toast('Update failed: ' + error.message, 'error');
       return;
     }
 
-    // Success — restore button and show toast immediately
+    console.log('[quickAction] success');
     btn.innerHTML = oldHtml;
     btn.disabled = false;
     toast('\u2192 ' + (STATUS_LABELS[newStatus] || newStatus), 'success');
 
-    // Refresh active list
     const activePage = document.querySelector('.page.active')?.id?.replace('page-', '');
     if (activePage === 'dashboard') loadDashboard();
     else if (activePage === 'tickets') loadTickets();
     else if (activePage === 'my-tickets') loadMyTickets();
     else if (activePage === 'kanban') loadKanban();
 
-    // Background: audit + notify (non-blocking)
     logAudit(ticketId, 'status_change', null, { status: newStatus }).catch(console.warn);
     sb.from('tickets').select('ticket_no, requester_name, requester_id').eq('id', ticketId).single()
       .then(({ data: tkt }) => {
@@ -2464,7 +2464,7 @@ async function quickAction(e, ticketId, newStatus) {
       }).catch(console.warn);
 
   } catch (err) {
-    console.error('quickAction exception:', err);
+    console.error('[quickAction] exception:', err);
     btn.innerHTML = oldHtml;
     btn.disabled = false;
     toast('Something went wrong', 'error');
@@ -2527,7 +2527,7 @@ function renderMobileTicketList(tickets, containerId) {
       ? '<span class="sla-tag">SLA</span>'
       : '';
 
-    html += '<div class="mtc" onclick="openTicketDetail(\'' + t.id + '\')">';
+    html += '<div class="mtc" data-open-ticket="' + t.id + '">';
 
     // Left accent bar color by priority
     html += '<div class="mtc-accent" style="background:' + prio.color + '"></div>';
@@ -2603,7 +2603,7 @@ function renderTicketTable(tickets, containerId) {
         + '</td>'
       : '';
 
-    return '<tr onclick="openTicketDetail(\'' + t.id + '\')" class="ticket-row">'
+    return '<tr data-open-ticket="' + t.id + '" class="ticket-row">'
       + '<td><span class="ticket-id">#' + t.ticket_no + '</span></td>'
       + '<td style="font-size:13px">' + esc(t.requester_name) + '</td>'
       + '<td style="font-size:12px;color:var(--text2)">' + esc(deptName) + '</td>'
@@ -2758,7 +2758,7 @@ async function loadKanban() {
     const cards = colTickets.map(t => `
       <div class="kanban-card" draggable="${isStaff}" id="kcard-${t.id}"
            ondragstart="kDragStart(event,'${t.id}')"
-           onclick="openTicketDetail('${t.id}')">
+           data-open-ticket="${t.id}">
         <div class="kc-id">#${t.ticket_no}</div>
         <div class="kc-title">${esc(t.subject)}</div>
         <div class="kc-dept">${t.categories?.name || '—'} · ${t.departments?.code || '—'}</div>
@@ -3575,20 +3575,27 @@ function toast(msg, type = '') {
   window._toastTimer = setTimeout(() => el.className = '', 3000);
 }
 
-// Event delegation for quick action buttons — more reliable than inline onclick on mobile
+// Unified event delegation — handles both ticket open and quick actions
 document.addEventListener('click', function(e) {
-  // Stop card from opening when tapping action row
-  if (e.target.closest('[data-stop-prop="1"]')) {
-    const btn = e.target.closest('[data-qa="1"]');
-    if (!btn) { e.stopPropagation(); return; }
+  // Quick action button — check FIRST before ticket open
+  const qaBtn = e.target.closest('[data-qa="1"]');
+  if (qaBtn) {
+    e.stopPropagation();
+    e.preventDefault();
+    console.log('[delegation] qa button clicked, data:', qaBtn.dataset);
+    const ticketId  = qaBtn.dataset.ticketId;
+    const newStatus = qaBtn.dataset.nextStatus;
+    if (!ticketId || !newStatus) { console.warn('[delegation] missing data', qaBtn.dataset); return; }
+    quickAction(e, ticketId, newStatus);
+    return; // stop here — don't fall through to ticket open
   }
-  const btn = e.target.closest('[data-qa="1"]');
-  if (!btn) return;
-  e.stopPropagation();
-  const ticketId  = btn.dataset.ticketId;
-  const newStatus = btn.dataset.nextStatus;
-  if (!ticketId || !newStatus) return;
-  quickAction(e, ticketId, newStatus);
+
+  // Ticket card / row open — only if not clicking a qa button
+  const openEl = e.target.closest('[data-open-ticket]');
+  if (openEl) {
+    openTicketDetail(openEl.dataset.openTicket);
+    return;
+  }
 });
 
 // Auto-adjust on resize / orientation change
