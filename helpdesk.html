@@ -1279,6 +1279,7 @@
     <div class="auth-success" id="reset-success"></div>
 
     <form onsubmit="doPasswordReset(); return false" autocomplete="new-password">
+    <input type="email" name="username" id="reset-email-hint" autocomplete="username" style="display:none" tabindex="-1" aria-hidden="true">
     <div class="form-group">
       <label class="form-label" for="reset-pw">New password</label>
       <div class="pw-input-wrap">
@@ -3637,6 +3638,9 @@ function showPasswordResetScreen() {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('reset-screen').style.display = 'flex';
+  // Help password managers know which account is being reset
+  const hint = document.getElementById('reset-email-hint');
+  if (hint && currentUser?.email) hint.value = currentUser.email;
 }
 
 async function doPasswordReset() {
