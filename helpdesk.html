@@ -1278,10 +1278,11 @@
     <div class="auth-error" id="reset-error"></div>
     <div class="auth-success" id="reset-success"></div>
 
+    <form onsubmit="doPasswordReset(); return false" autocomplete="new-password">
     <div class="form-group">
-      <label class="form-label">New password</label>
+      <label class="form-label" for="reset-pw">New password</label>
       <div class="pw-input-wrap">
-        <input class="form-input" id="reset-pw" type="password"
+        <input class="form-input" id="reset-pw" name="new-password" type="password"
           placeholder="Min. 8 characters"
           oninput="checkPwStrength(this.value)"
           autocomplete="new-password">
@@ -1298,9 +1299,9 @@
     </div>
 
     <div class="form-group">
-      <label class="form-label">Confirm password</label>
+      <label class="form-label" for="reset-pw2">Confirm password</label>
       <div class="pw-input-wrap">
-        <input class="form-input" id="reset-pw2" type="password"
+        <input class="form-input" id="reset-pw2" name="confirm-password" type="password"
           placeholder="Re-enter password"
           autocomplete="new-password">
         <button class="pw-toggle" type="button" onclick="togglePwVisible('reset-pw2', this.querySelector('i'))">
@@ -1309,9 +1310,10 @@
       </div>
     </div>
 
-    <button class="btn btn-primary btn-full" id="btn-reset-pw" onclick="doPasswordReset()">
+    <button class="btn btn-primary btn-full" type="submit" id="btn-reset-pw">
       <i class="ti ti-lock-check"></i> Set new password
     </button>
+    </form>
   </div>
 </div>
 
@@ -1331,17 +1333,19 @@
       <div class="auth-title">Sign in</div>
       <div class="auth-sub">Use your hospital IT account credentials.</div>
       <div class="auth-error" id="login-error"></div>
+      <form onsubmit="doLogin(); return false" autocomplete="on">
       <div class="form-group">
-        <label class="form-label">Email address</label>
-        <input class="form-input" id="login-email" type="email" placeholder="you@tdmh.ph" autocomplete="email">
+        <label class="form-label" for="login-email">Email address</label>
+        <input class="form-input" id="login-email" name="email" type="email" placeholder="you@tdmh.ph" autocomplete="email">
       </div>
       <div class="form-group">
-        <label class="form-label">Password</label>
-        <input class="form-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password">
+        <label class="form-label" for="login-password">Password</label>
+        <input class="form-input" id="login-password" name="password" type="password" placeholder="••••••••" autocomplete="current-password">
       </div>
-      <button class="btn btn-primary btn-full" id="btn-login" onclick="doLogin()">
+      <button class="btn btn-primary btn-full" type="submit" id="btn-login">
         <i class="ti ti-login"></i> <span>Sign in</span>
       </button>
+      </form>
       <div class="auth-switch">
         <a onclick="showForm('forgot')">Forgot password?</a>
         &nbsp;·&nbsp;
@@ -2259,8 +2263,7 @@ async function doCreateUser() {
   const phone    = document.getElementById('cu-phone').value.trim();
 
   const errEl = document.getElementById('cu-error');
-  const sucEl = document.getElementById('cu-success');
-  errEl.style.display = 'none'; sucEl.style.display = 'none';
+  errEl.style.display = 'none';
 
   if (!name || !email || !password) {
     errEl.textContent = 'Name, email, and password are required.';
