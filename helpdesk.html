@@ -1751,7 +1751,12 @@ const SUPABASE_URL = 'https://bivrkajfhmjtshmaxptb.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpdnJrYWpmaG1qdHNobWF4cHRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4Mjk1MjQsImV4cCI6MjA5NDQwNTUyNH0.SP8GxhsUKaMGgp7kjwPWipegvftJTj_Kt7IIXI747hE';
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true }
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: 'implicit'
+  }
 });
 
 // ── STATE ─────────────────────────────────────────────────────
@@ -1784,6 +1789,10 @@ const PRIO_COLORS = { critical: '#E24B4A', high: '#EF9F27', medium: '#378ADD', l
   const { data: { session } } = await sb.auth.getSession();
   if (session) await onLogin(session.user);
   sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      showPasswordResetScreen();
+      return;
+    }
     if (event === 'SIGNED_IN' && session) await onLogin(session.user);
     if (event === 'SIGNED_OUT') showAuthScreen();
   });
@@ -2969,19 +2978,45 @@ window.addEventListener('resize', () => {
   else if (pageId === 'tickets') applyFilters();
 });
 
-// Handle password reset redirect — show proper reset screen
-const hash = window.location.hash;
-if (hash.includes('type=recovery')) {
-  // Wait for Supabase to process the token from URL
-  sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'PASSWORD_RECOVERY') {
-      showPasswordResetScreen();
+// Handle password reset redirect — detect recovery token from URL
+(async function handleAuthRedirect() {
+  const fullHash = window.location.hash;
+
+  // Supabase puts access_token in hash — find it regardless of position
+  const tokenMatch = fullHash.match(/access_token=([^&]+)/);
+  const typeMatch  = fullHash.match(/type=([^&]+)/);
+
+  if (!tokenMatch || !typeMatch) return;
+
+  const tokenType = decodeURIComponent(typeMatch[1]);
+  if (tokenType !== 'recovery') return;
+
+  // Let Supabase process the tokens from the URL
+  const { data, error } = await sb.auth.getSession();
+
+  if (error || !data.session) {
+    // Try to set session manually from URL tokens
+    const accessToken  = tokenMatch[1];
+    const refreshMatch = fullHash.match(/refresh_token=([^&]+)/);
+    const refreshToken = refreshMatch ? refreshMatch[1] : '';
+
+    if (accessToken && refreshToken) {
+      const { error: setErr } = await sb.auth.setSession({
+        access_token:  decodeURIComponent(accessToken),
+        refresh_token: decodeURIComponent(refreshToken)
+      });
+      if (setErr) {
+        console.error('Session set error:', setErr);
+        return;
+      }
     }
-  });
-}
+  }
+
+  // Show the reset screen
+  showPasswordResetScreen();
+})();
 
 function showPasswordResetScreen() {
-  // Hide everything, show reset screen
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('reset-screen').style.display = 'flex';
