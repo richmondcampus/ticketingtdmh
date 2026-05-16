@@ -2422,7 +2422,6 @@ async function quickAction(e, ticketId, newStatus) {
   e.stopPropagation();
   e.preventDefault();
 
-  // Capture button reference BEFORE any await — async loses currentTarget on mobile
   const btn = e.currentTarget || e.target.closest('.qa-btn');
   if (!btn) return;
   const oldHtml = btn.innerHTML;
@@ -2445,19 +2444,24 @@ async function quickAction(e, ticketId, newStatus) {
       return;
     }
 
-    // Non-blocking audit log — don't let failure block the UI
-    logAudit(ticketId, 'status_change', null, { status: newStatus }).catch(console.warn);
-    // Notify requester of status change
-    const { data: tkt } = await sb.from('tickets').select('ticket_no, requester_name, profiles!requester_id(phone)').eq('id', ticketId).single();
-    if (tkt) notifyStatusChange(ticketId, tkt.ticket_no, tkt.requester_name, newStatus, tkt.profiles?.phone);
+    // Success — restore button and show toast immediately
+    btn.innerHTML = oldHtml;
+    btn.disabled = false;
+    toast('\u2192 ' + (STATUS_LABELS[newStatus] || newStatus), 'success');
 
-    toast('→ ' + (STATUS_LABELS[newStatus] || newStatus), 'success');
-
-    // Refresh the active list
+    // Refresh active list
     const activePage = document.querySelector('.page.active')?.id?.replace('page-', '');
     if (activePage === 'dashboard') loadDashboard();
     else if (activePage === 'tickets') loadTickets();
     else if (activePage === 'my-tickets') loadMyTickets();
+    else if (activePage === 'kanban') loadKanban();
+
+    // Background: audit + notify (non-blocking)
+    logAudit(ticketId, 'status_change', null, { status: newStatus }).catch(console.warn);
+    sb.from('tickets').select('ticket_no, requester_name, requester_id').eq('id', ticketId).single()
+      .then(({ data: tkt }) => {
+        if (tkt) notifyStatusChange(ticketId, tkt.ticket_no, tkt.requester_name, newStatus, null);
+      }).catch(console.warn);
 
   } catch (err) {
     console.error('quickAction exception:', err);
