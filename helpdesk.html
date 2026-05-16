@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#ffffff">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co https://cdn.jsdelivr.net https://esm.sh https://api.textbee.dev data: blob:; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co https://api.textbee.dev wss://*.supabase.co;">
 <title>TDMH IT Helpdesk</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
@@ -1886,54 +1887,87 @@
       <span class="modal-title">Create User Account</span>
       <button class="modal-close" onclick="closeModal('modal-create-user')"><i class="ti ti-x"></i></button>
     </div>
-    <div class="modal-body">
-      <div class="auth-error" id="cu-error"></div>
-      <div class="auth-success" id="cu-success"></div>
-      <div style="background:#FAEEDA;border:1px solid #FAC775;border-radius:8px;padding:10px 12px;font-size:12px;color:#633806;margin-bottom:16px">
-        <i class="ti ti-info-circle"></i> Ang user ay makakatanggap ng <strong>email confirmation</strong> sa email nila. Kailangan nilang i-click ang link bago makapag-login.
+
+    <!-- Form state -->
+    <div id="cu-form-state">
+      <div class="modal-body">
+        <div class="auth-error" id="cu-error"></div>
+        <div style="background:#E6F1FB;border:1px solid #B5D4F4;border-radius:8px;padding:10px 12px;font-size:12px;color:#0C447C;margin-bottom:16px">
+          <i class="ti ti-info-circle"></i> Account is <strong>active immediately</strong> — user can log in right away with the password you set.
+        </div>
+        <form id="cu-form" onsubmit="return false" autocomplete="off">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Full name <span style="color:var(--red)">*</span></label>
+              <input class="form-input" id="cu-name" type="text" placeholder="Juan dela Cruz" autocomplete="name">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email address <span style="color:var(--red)">*</span></label>
+              <input class="form-input" id="cu-email" type="email" placeholder="juan@tdmh.ph" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Temporary password <span style="color:var(--red)">*</span></label>
+              <div class="pw-input-wrap">
+                <input class="form-input" id="cu-password" type="password" placeholder="Min. 8 characters" autocomplete="new-password">
+                <button class="pw-toggle" type="button" onclick="togglePwVisible('cu-password', this.querySelector('i'))"><i class="ti ti-eye"></i></button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Role <span style="color:var(--red)">*</span></label>
+              <select class="form-input" id="cu-role">
+                <option value="end_user">End User</option>
+                <option value="it_staff">IT Staff</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div class="form-group form-full">
+              <label class="form-label">Department</label>
+              <select class="form-input" id="cu-dept">
+                <option value="">Select department...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone (optional)</label>
+              <input class="form-input" id="cu-phone" type="tel" placeholder="09xxxxxxxxx" autocomplete="tel">
+            </div>
+          </div>
+        </form>
       </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Full name <span style="color:var(--red)">*</span></label>
-          <input class="form-input" id="cu-name" type="text" placeholder="Juan dela Cruz">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Email address <span style="color:var(--red)">*</span></label>
-          <input class="form-input" id="cu-email" type="email" placeholder="juan@tdmh.ph">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Temporary password <span style="color:var(--red)">*</span></label>
-          <input class="form-input" id="cu-password" type="text" placeholder="Min. 8 characters">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Role <span style="color:var(--red)">*</span></label>
-          <select class="form-input" id="cu-role">
-            <option value="end_user">End User</option>
-            <option value="it_staff">IT Staff</option>
-            <option value="supervisor">Supervisor</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <div class="form-group form-full">
-          <label class="form-label">Department</label>
-          <select class="form-input" id="cu-dept">
-            <option value="">Select department...</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Phone (optional)</label>
-          <input class="form-input" id="cu-phone" type="tel" placeholder="09xxxxxxxxx">
-        </div>
+      <div class="modal-footer" style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="closeModal('modal-create-user')">Cancel</button>
+        <button class="btn btn-primary" id="btn-cu-submit" onclick="doCreateUser()">
+          <i class="ti ti-user-plus"></i> Create Account
+        </button>
       </div>
     </div>
-    <div class="modal-footer" style="display:flex;gap:8px">
-      <button class="btn btn-secondary" onclick="closeModal('modal-create-user')">Cancel</button>
-      <button class="btn btn-primary" id="btn-cu-submit" onclick="doCreateUser()">
-        <i class="ti ti-user-plus"></i> Create Account
-      </button>
+
+    <!-- Success state -->
+    <div id="cu-success-state" style="display:none">
+      <div class="modal-body" style="text-align:center;padding:40px 24px">
+        <div style="width:64px;height:64px;background:var(--green-l);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:30px;color:var(--green)">
+          <i class="ti ti-user-check"></i>
+        </div>
+        <div style="font-size:18px;font-weight:600;margin-bottom:8px">Account Created!</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:6px">Account for</div>
+        <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px" id="cu-success-name"></div>
+        <div style="font-size:13px;color:var(--text3);margin-bottom:20px" id="cu-success-email"></div>
+        <div style="background:var(--surface2);border-radius:var(--radius);padding:12px 16px;text-align:left;font-size:12px;color:var(--text2);line-height:1.8">
+          <div><i class="ti ti-check" style="color:var(--green)"></i> Account is active immediately</div>
+          <div><i class="ti ti-check" style="color:var(--green)"></i> Role and department assigned</div>
+          <div><i class="ti ti-check" style="color:var(--green)"></i> User can log in right away</div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="closeModal('modal-create-user')">Close</button>
+        <button class="btn btn-primary" onclick="resetCreateUserForm()">
+          <i class="ti ti-user-plus"></i> Create Another
+        </button>
+      </div>
     </div>
+
   </div>
-</div>
+</div></div>
 
 <!-- TOAST -->
 <div id="toast"></div>
@@ -2193,16 +2227,21 @@ function resetForgotForm() {
 }
 
 function openCreateUser() {
+  resetCreateUserForm();
   document.getElementById('modal-create-user').style.display = 'flex';
+}
+
+function resetCreateUserForm() {
+  document.getElementById('cu-form-state').style.display = '';
+  document.getElementById('cu-success-state').style.display = 'none';
   document.getElementById('cu-error').style.display = 'none';
-  document.getElementById('cu-success').style.display = 'none';
   document.getElementById('cu-name').value = '';
   document.getElementById('cu-email').value = '';
   document.getElementById('cu-password').value = '';
   document.getElementById('cu-phone').value = '';
   document.getElementById('cu-role').value = 'end_user';
   document.getElementById('cu-dept').value = '';
-  // populate dept select
+  // Populate dept select
   const sel = document.getElementById('cu-dept');
   sel.innerHTML = '<option value="">Select department...</option>';
   departments.forEach(d => {
@@ -2259,12 +2298,12 @@ async function doCreateUser() {
     }
 
     btn.innerHTML = '<i class="ti ti-user-plus"></i> Create Account'; btn.disabled = false;
-    sucEl.textContent = 'Account created for ' + name + '. They can now log in immediately.';
-    sucEl.style.display = '';
-    document.getElementById('cu-name').value = '';
-    document.getElementById('cu-email').value = '';
-    document.getElementById('cu-password').value = '';
-    document.getElementById('cu-phone').value = '';
+
+    // Show success state
+    document.getElementById('cu-success-name').textContent = name;
+    document.getElementById('cu-success-email').textContent = email;
+    document.getElementById('cu-form-state').style.display = 'none';
+    document.getElementById('cu-success-state').style.display = '';
     loadUsers();
 
   } catch (err) {
