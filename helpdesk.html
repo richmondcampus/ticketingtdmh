@@ -835,6 +835,56 @@
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── PROFILE PAGE ──────────────────────────────────────── */
+  .prof-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .prof-avatar-lg {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: var(--accent-l);
+    color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 600;
+    flex-shrink: 0;
+  }
+  .prof-name  { font-size: 16px; font-weight: 600; }
+  .prof-meta  { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .prof-email { font-size: 12px; color: var(--text3); margin-top: 1px; }
+
+  .prof-section {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .prof-section:last-child { border-bottom: none; }
+  .prof-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-bottom: 14px;
+  }
+  .prof-danger-zone { padding: 16px 24px; }
+
+  /* ── USER MANAGEMENT ROLE PILLS ────────────────────────── */
+  .um-role-pill {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 10px;
+  }
+  .role-admin      { background: #E6F1FB; color: #0C447C; }
+  .role-supervisor { background: #EEEDFE; color: #534AB7; }
+  .role-it_staff   { background: #EAF3DE; color: #3B6D11; }
+  .role-end_user   { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+
   /* ── TICKET ACTION BAR (desktop detail panel) ──────────── */
   .ticket-action-bar {
     display: flex;
@@ -1621,7 +1671,11 @@
         <div class="card">
           <div class="card-header">
             <span class="card-title">User Management</span>
-            <button class="btn btn-primary btn-sm" onclick="openCreateUser()" style="margin-left:auto">
+            <div class="search-box" style="width:200px;margin-left:auto">
+              <i class="ti ti-search" style="font-size:13px;flex-shrink:0"></i>
+              <input type="text" placeholder="Search users..." oninput="renderUsersTable(this.value)">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="openCreateUser()">
               <i class="ti ti-user-plus"></i> Create User
             </button>
           </div>
@@ -1643,14 +1697,8 @@
 
       <!-- PROFILE PAGE -->
       <div class="page" id="page-profile">
-        <div class="card" style="max-width:500px;padding:24px">
-          <div style="font-size:14px;font-weight:600;margin-bottom:20px">Profile Settings</div>
+        <div class="card" style="max-width:560px">
           <div id="profile-content"></div>
-          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-            <button class="btn btn-danger" onclick="doLogout()">
-              <i class="ti ti-logout"></i> Sign out
-            </button>
-          </div>
         </div>
       </div>
     </main>
@@ -1767,6 +1815,62 @@
       <button class="btn btn-secondary" onclick="closeModal('modal-agimat')">Cancel</button>
       <button class="btn btn-primary" onclick="doAgimatTicket()">
         <i class="ti ti-user-plus"></i> Submit Request
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT USER MODAL (Admin only) -->
+<div id="modal-edit-user" style="display:none" class="modal-overlay" onclick="closeIfOverlay(event,'modal-edit-user')">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <span class="modal-title">Edit User — <span id="eu-modal-name" style="color:var(--text2);font-weight:400"></span></span>
+      <button class="modal-close" onclick="closeModal('modal-edit-user')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="auth-error" id="eu-error"></div>
+      <div class="auth-success" id="eu-success"></div>
+      <input type="hidden" id="eu-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Full name <span style="color:var(--red)">*</span></label>
+          <input class="form-input" id="eu-name" type="text" placeholder="Juan dela Cruz">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input class="form-input" id="eu-phone" type="tel" placeholder="09xxxxxxxxx">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role <span style="color:var(--red)">*</span></label>
+          <select class="form-input" id="eu-role">
+            <option value="end_user">End User</option>
+            <option value="it_staff">IT Staff</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Department</label>
+          <select class="form-input" id="eu-dept">
+            <option value="">Select department...</option>
+          </select>
+        </div>
+        <div class="form-group form-full">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="eu-active" style="width:16px;height:16px;cursor:pointer">
+            <span class="form-label" style="margin-bottom:0">Active account</span>
+          </label>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;margin-left:26px">Inactive users cannot log in to the system</div>
+        </div>
+      </div>
+      <div style="background:var(--amber-l);border:1px solid #fac775;border-radius:var(--radius);padding:10px 12px;font-size:12px;color:var(--amber)">
+        <i class="ti ti-info-circle"></i> To reset this user's password, ask them to use <strong>Forgot Password</strong> on the login screen.
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="closeModal('modal-edit-user')">Cancel</button>
+      <button class="btn btn-primary" id="btn-eu-save" onclick="doEditUser()">
+        <i class="ti ti-check"></i> Save changes
       </button>
     </div>
   </div>
@@ -2989,25 +3093,109 @@ async function loadReports() {
 }
 
 // ── USERS ─────────────────────────────────────────────────────
+let usersData = [];
+
 async function loadUsers() {
   const { data } = await sb.from('profiles').select('*, departments(name)').order('full_name');
-  const wrap = document.getElementById('users-table-wrap');
-  if (!data?.length) { wrap.innerHTML = '<div class="empty-state"><i class="ti ti-users"></i><p>No users</p></div>'; return; }
+  usersData = data || [];
+  renderUsersTable();
+}
 
-  wrap.innerHTML = `<table>
-    <thead><tr><th>Name</th><th>Email (from auth)</th><th>Department</th><th>Role</th><th>Status</th><th>Joined</th></tr></thead>
-    <tbody>${data.map(u => `<tr>
-      <td><div style="display:flex;align-items:center;gap:8px">
-        <div class="avatar">${initials(u.full_name)}</div>
-        <span style="font-size:13px;font-weight:500">${esc(u.full_name)}</span>
-      </div></td>
-      <td style="font-size:12px;color:var(--text2)">—</td>
-      <td style="font-size:12px">${esc(u.departments?.name || '—')}</td>
-      <td><span class="status-pill" style="background:var(--accent-l);color:var(--accent)">${ROLE_LABELS[u.role] || u.role}</span></td>
-      <td><span class="status-pill ${u.is_active ? 's-resolved' : 's-closed'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
-      <td style="font-size:11px;color:var(--text3)">${timeAgo(u.created_at)}</td>
-    </tr>`).join('')}</tbody>
-  </table>`;
+function renderUsersTable(filter = '') {
+  const wrap = document.getElementById('users-table-wrap');
+  let list = usersData;
+  if (filter) {
+    const lf = filter.toLowerCase();
+    list = list.filter(u =>
+      u.full_name?.toLowerCase().includes(lf) ||
+      u.departments?.name?.toLowerCase().includes(lf) ||
+      u.role?.toLowerCase().includes(lf)
+    );
+  }
+  if (!list.length) {
+    wrap.innerHTML = '<div class="empty-state"><i class="ti ti-users"></i><p>No users found</p></div>';
+    return;
+  }
+  let rows = '';
+  for (const u of list) {
+    const av = initials(u.full_name);
+    const avBg = u.role === 'admin' ? '#E6F1FB;color:#0C447C'
+      : u.role === 'supervisor'     ? '#EEEDFE;color:#534AB7'
+      : u.role === 'it_staff'       ? '#EAF3DE;color:#3B6D11'
+      : 'var(--surface2);color:var(--text2)';
+    rows += '<tr>'
+      + '<td><div style="display:flex;align-items:center;gap:9px">'
+        + '<div class="avatar" style="width:30px;height:30px;font-size:11px;background:' + avBg + '">' + av + '</div>'
+        + '<div><div style="font-size:13px;font-weight:500">' + esc(u.full_name) + '</div>'
+        + (u.phone ? '<div style="font-size:11px;color:var(--text3)">' + esc(u.phone) + '</div>' : '')
+        + '</div></div></td>'
+      + '<td style="font-size:12px;color:var(--text2)">' + esc(u.departments?.name || '—') + '</td>'
+      + '<td><span class="um-role-pill role-' + u.role + '">' + (ROLE_LABELS[u.role] || u.role) + '</span></td>'
+      + '<td><span class="status-pill ' + (u.is_active ? 's-resolved' : 's-closed') + '">' + (u.is_active ? 'Active' : 'Inactive') + '</span></td>'
+      + '<td style="font-size:11px;color:var(--text3)">' + timeAgo(u.created_at) + '</td>'
+      + '<td class="qa-cell"><div class="qa-inline">'
+        + '<button class="qa-btn qa-blue qa-xs" title="Edit" onclick="openEditUser(\'' + u.id + '\')">'
+          + '<i class="ti ti-pencil"></i></button>'
+        + (u.id !== currentUser?.id
+          ? '<button class="qa-btn ' + (u.is_active ? 'qa-amber' : 'qa-green') + ' qa-xs" title="' + (u.is_active ? 'Deactivate' : 'Activate') + '" onclick="toggleUserActive(\'' + u.id + '\',' + u.is_active + ')">'
+            + '<i class="ti ' + (u.is_active ? 'ti-user-off' : 'ti-user-check') + '"></i></button>'
+          : '')
+        + '</div></td>'
+      + '</tr>';
+  }
+  wrap.innerHTML = '<table>'
+    + '<thead><tr><th>Name</th><th>Department</th><th>Role</th><th>Status</th><th>Joined</th><th style="width:80px">Actions</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table>';
+}
+
+function openEditUser(userId) {
+  const u = usersData.find(x => x.id === userId);
+  if (!u) return;
+  const deptOpts = departments.map(d =>
+    '<option value="' + d.id + '"' + (d.id === u.department_id ? ' selected' : '') + '>' + esc(d.name) + '</option>'
+  ).join('');
+  document.getElementById('eu-id').value       = u.id;
+  document.getElementById('eu-name').value     = u.full_name || '';
+  document.getElementById('eu-phone').value    = u.phone || '';
+  document.getElementById('eu-role').value     = u.role || 'end_user';
+  document.getElementById('eu-active').checked = u.is_active;
+  document.getElementById('eu-dept').innerHTML = '<option value="">Select department...</option>' + deptOpts;
+  document.getElementById('eu-error').style.display   = 'none';
+  document.getElementById('eu-success').style.display = 'none';
+  document.getElementById('eu-modal-name').textContent = u.full_name;
+  document.getElementById('modal-edit-user').style.display = 'flex';
+}
+
+async function doEditUser() {
+  const id      = document.getElementById('eu-id').value;
+  const name    = document.getElementById('eu-name').value.trim();
+  const phone   = document.getElementById('eu-phone').value.trim();
+  const role    = document.getElementById('eu-role').value;
+  const deptId  = document.getElementById('eu-dept').value;
+  const isActive= document.getElementById('eu-active').checked;
+  const errEl   = document.getElementById('eu-error');
+  const sucEl   = document.getElementById('eu-success');
+  errEl.style.display = 'none'; sucEl.style.display = 'none';
+  if (!name) { errEl.textContent = 'Name is required.'; errEl.style.display = ''; return; }
+  const btn = document.getElementById('btn-eu-save');
+  btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
+  const { error } = await sb.from('profiles').update({
+    full_name: name, phone: phone || null, role, department_id: deptId || null, is_active: isActive
+  }).eq('id', id);
+  btn.innerHTML = '<i class="ti ti-check"></i> Save changes'; btn.disabled = false;
+  if (error) { errEl.textContent = error.message; errEl.style.display = ''; return; }
+  sucEl.textContent = 'User updated successfully!';
+  sucEl.style.display = '';
+  logAudit(null, 'user_updated', null, { user_id: id, role, is_active: isActive }).catch(console.warn);
+  await loadUsers();
+  setTimeout(() => closeModal('modal-edit-user'), 1200);
+}
+
+async function toggleUserActive(userId, currentActive) {
+  const { error } = await sb.from('profiles').update({ is_active: !currentActive }).eq('id', userId);
+  if (error) return toast('Failed to update user', 'error');
+  toast(currentActive ? 'User deactivated' : 'User activated', 'success');
+  await loadUsers();
 }
 
 // ── AUDIT ─────────────────────────────────────────────────────
@@ -3030,36 +3218,144 @@ async function loadAudit() {
 // ── PROFILE ───────────────────────────────────────────────────
 function loadProfile() {
   const p = currentProfile;
+  const deptOpts = departments.map(d =>
+    '<option value="' + d.id + '"' + (d.id === p?.department_id ? ' selected' : '') + '>' + esc(d.name) + '</option>'
+  ).join('');
+
   document.getElementById('profile-content').innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
-      <div class="avatar" style="width:48px;height:48px;font-size:18px">${initials(p?.full_name)}</div>
+    <div class="prof-header">
+      <div class="prof-avatar-lg">${initials(p?.full_name)}</div>
       <div>
-        <div style="font-size:16px;font-weight:600">${esc(p?.full_name || '—')}</div>
-        <div style="font-size:12px;color:var(--text2)">${ROLE_LABELS[p?.role] || p?.role} · ${p?.departments?.name || '—'}</div>
+        <div class="prof-name">${esc(p?.full_name || '—')}</div>
+        <div class="prof-meta">${ROLE_LABELS[p?.role] || p?.role} · ${p?.departments?.name || '—'}</div>
+        <div class="prof-email">${currentUser?.email || ''}</div>
       </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Full name</label>
-      <input class="form-input" id="prof-name" value="${esc(p?.full_name || '')}">
+
+    <div class="prof-section">
+      <div class="prof-section-title">Personal Information</div>
+      <div class="form-group">
+        <label class="form-label">Full name</label>
+        <input class="form-input" id="prof-name" value="${esc(p?.full_name || '')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Department</label>
+        <select class="form-input" id="prof-dept">
+          <option value="">Select department...</option>
+          ${deptOpts}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input class="form-input" id="prof-phone" value="${esc(p?.phone || '')}" placeholder="09xxxxxxxxx" type="tel">
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-save-profile" onclick="saveProfile()">
+        <i class="ti ti-check"></i> Save changes
+      </button>
     </div>
-    <div class="form-group">
-      <label class="form-label">Phone</label>
-      <input class="form-input" id="prof-phone" value="${esc(p?.phone || '')}" placeholder="09xxxxxxxxx">
+
+    <div class="prof-section">
+      <div class="prof-section-title">Change Password</div>
+      <div class="auth-error" id="pw-change-error"></div>
+      <div class="auth-success" id="pw-change-success"></div>
+      <div class="form-group">
+        <label class="form-label">Current password</label>
+        <div class="pw-input-wrap">
+          <input class="form-input" id="prof-pw-current" type="password" placeholder="Your current password" autocomplete="current-password">
+          <button class="pw-toggle" type="button" onclick="togglePwVisible('prof-pw-current', this.querySelector('i'))"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">New password</label>
+        <div class="pw-input-wrap">
+          <input class="form-input" id="prof-pw-new" type="password" placeholder="Min. 8 characters" autocomplete="new-password" oninput="checkPwStrength(this.value)">
+          <button class="pw-toggle" type="button" onclick="togglePwVisible('prof-pw-new', this.querySelector('i'))"><i class="ti ti-eye"></i></button>
+        </div>
+        <div class="pw-strength-wrap">
+          <div class="pw-strength-track"><div class="pw-strength-fill" id="pw-strength-bar"></div></div>
+          <span class="pw-strength-label" id="pw-strength-label"></span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm new password</label>
+        <div class="pw-input-wrap">
+          <input class="form-input" id="prof-pw-confirm" type="password" placeholder="Re-enter new password" autocomplete="new-password">
+          <button class="pw-toggle" type="button" onclick="togglePwVisible('prof-pw-confirm', this.querySelector('i'))"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btn-change-pw" onclick="doChangePassword()">
+        <i class="ti ti-lock"></i> Change password
+      </button>
     </div>
-    <button class="btn btn-primary btn-sm" onclick="saveProfile()"><i class="ti ti-check"></i> Save changes</button>
+
+    <div class="prof-section prof-danger-zone">
+      <button class="btn btn-danger" onclick="doLogout()">
+        <i class="ti ti-logout"></i> Sign out
+      </button>
+    </div>
   `;
 }
 
 async function saveProfile() {
-  const name = document.getElementById('prof-name').value.trim();
+  const name  = document.getElementById('prof-name').value.trim();
   const phone = document.getElementById('prof-phone').value.trim();
+  const deptId= document.getElementById('prof-dept').value;
   if (!name) return toast('Name cannot be empty', 'error');
-  const { error } = await sb.from('profiles').update({ full_name: name, phone: phone || null }).eq('id', currentUser.id);
+  const btn = document.getElementById('btn-save-profile');
+  btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
+  const { error } = await sb.from('profiles').update({
+    full_name: name, phone: phone || null, department_id: deptId || null
+  }).eq('id', currentUser.id);
+  btn.innerHTML = '<i class="ti ti-check"></i> Save changes'; btn.disabled = false;
   if (error) return toast('Failed to save: ' + error.message, 'error');
-  currentProfile.full_name = name;
-  currentProfile.phone = phone;
+  currentProfile.full_name  = name;
+  currentProfile.phone      = phone;
+  currentProfile.department_id = deptId;
   renderNav();
-  toast('Profile saved', 'success');
+  toast('Profile saved!', 'success');
+}
+
+async function doChangePassword() {
+  const current = document.getElementById('prof-pw-current').value;
+  const newPw   = document.getElementById('prof-pw-new').value;
+  const confirm = document.getElementById('prof-pw-confirm').value;
+  const errEl   = document.getElementById('pw-change-error');
+  const sucEl   = document.getElementById('pw-change-success');
+  errEl.style.display = 'none'; sucEl.style.display = 'none';
+
+  if (!current) { errEl.textContent = 'Enter your current password.'; errEl.style.display = ''; return; }
+  if (newPw.length < 8) { errEl.textContent = 'New password must be at least 8 characters.'; errEl.style.display = ''; return; }
+  if (newPw !== confirm) { errEl.textContent = 'New passwords do not match.'; errEl.style.display = ''; return; }
+  if (current === newPw) { errEl.textContent = 'New password must be different from current.'; errEl.style.display = ''; return; }
+
+  const btn = document.getElementById('btn-change-pw');
+  btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
+
+  // Re-authenticate first to verify current password
+  const { error: signInErr } = await sb.auth.signInWithPassword({
+    email: currentUser.email, password: current
+  });
+  if (signInErr) {
+    errEl.textContent = 'Current password is incorrect.';
+    errEl.style.display = '';
+    btn.innerHTML = '<i class="ti ti-lock"></i> Change password'; btn.disabled = false;
+    return;
+  }
+
+  const { error } = await sb.auth.updateUser({ password: newPw });
+  btn.innerHTML = '<i class="ti ti-lock"></i> Change password'; btn.disabled = false;
+  if (error) { errEl.textContent = error.message; errEl.style.display = ''; return; }
+
+  sucEl.textContent = 'Password changed successfully!';
+  sucEl.style.display = '';
+  document.getElementById('prof-pw-current').value = '';
+  document.getElementById('prof-pw-new').value = '';
+  document.getElementById('prof-pw-confirm').value = '';
+  // Reset strength bar
+  const bar = document.getElementById('pw-strength-bar');
+  const lbl = document.getElementById('pw-strength-label');
+  if (bar) { bar.style.width = '0'; }
+  if (lbl) { lbl.textContent = ''; }
 }
 
 // ── MODALS ────────────────────────────────────────────────────
