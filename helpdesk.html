@@ -835,6 +835,66 @@
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── TICKET ACTION BAR (desktop detail panel) ──────────── */
+  .ticket-action-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .ticket-qa-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ticket-action-right { display: flex; gap: 6px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+  .ticket-qa-empty {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--green);
+    background: var(--green-l);
+    padding: 5px 12px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* Larger quick action buttons for detail panel */
+  .qa-lg {
+    padding: 7px 14px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+  }
+  .qa-lg i { font-size: 15px !important; }
+
+  /* Extra small quick action buttons for table rows */
+  .qa-xs {
+    flex: unset !important;
+    padding: 5px 7px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+    min-width: 32px;
+    justify-content: center;
+  }
+  .qa-xs i { font-size: 13px !important; }
+  .qa-xs span { display: none; }
+
+  .qa-inline { display: flex; gap: 4px; align-items: center; }
+  .qa-cell   { width: 90px; vertical-align: middle; }
+
+  .ticket-row td { vertical-align: middle; }
+  .subject-cell {
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    color: var(--text2);
+  }
+
   /* ── MOBILE TICKET CARDS ───────────────────────────────── */
   .mtc {
     display: flex;
@@ -1262,19 +1322,45 @@
 
     <!-- FORGOT PASSWORD FORM -->
     <div id="form-forgot" style="display:none">
-      <div class="auth-title">Reset password</div>
-      <div class="auth-sub">Enter your email and we'll send you a reset link.</div>
-      <div class="auth-error" id="forgot-error"></div>
-      <div class="auth-success" id="forgot-success"></div>
-      <div class="form-group">
-        <label class="form-label">Email address</label>
-        <input class="form-input" id="forgot-email" type="email" placeholder="you@tdmh.ph">
+      <!-- Step 1: Input email -->
+      <div id="forgot-step-input">
+        <div class="auth-title">Reset password</div>
+        <div class="auth-sub">Enter your hospital email and we'll send you a reset link.</div>
+        <div class="auth-error" id="forgot-error"></div>
+        <div class="form-group">
+          <label class="form-label">Email address</label>
+          <input class="form-input" id="forgot-email" type="email" placeholder="you@tdmh.ph" autocomplete="email">
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-forgot" onclick="doForgotPassword()">
+          <i class="ti ti-mail"></i> <span>Send reset link</span>
+        </button>
+        <div class="auth-switch">
+          <a onclick="showForm('login')">Back to sign in</a>
+        </div>
       </div>
-      <button class="btn btn-primary btn-full" id="btn-forgot" onclick="doForgotPassword()">
-        <i class="ti ti-mail"></i> <span>Send reset link</span>
-      </button>
-      <div class="auth-switch">
-        <a onclick="showForm('login')">Back to sign in</a>
+      <!-- Step 2: Success state -->
+      <div id="forgot-step-success" style="display:none">
+        <div style="text-align:center;padding:8px 0 24px">
+          <div style="width:60px;height:60px;background:var(--green-l);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:28px;color:var(--green)">
+            <i class="ti ti-mail-check"></i>
+          </div>
+          <div style="font-size:18px;font-weight:600;margin-bottom:8px">Check your email</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:6px">
+            We sent a password reset link to
+          </div>
+          <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:20px" id="forgot-sent-email"></div>
+          <div style="font-size:12px;color:var(--text3);background:var(--surface2);border-radius:var(--radius);padding:10px 14px;text-align:left;line-height:1.7">
+            <div style="margin-bottom:4px"><i class="ti ti-clock" style="font-size:12px"></i> Link expires in <strong>1 hour</strong></div>
+            <div style="margin-bottom:4px"><i class="ti ti-mail" style="font-size:12px"></i> Check your <strong>spam folder</strong> if not in inbox</div>
+            <div><i class="ti ti-device-mobile" style="font-size:12px"></i> Sent from <strong>it@taytaydoctorshospital.com</strong></div>
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-full" onclick="resetForgotForm()" style="margin-bottom:10px">
+          <i class="ti ti-refresh"></i> Send again
+        </button>
+        <div class="auth-switch">
+          <a onclick="showForm('login')">Back to sign in</a>
+        </div>
       </div>
     </div>
   </div>
@@ -1853,6 +1939,13 @@ function showForm(name) {
   ['login','no-access','forgot'].forEach(f => {
     document.getElementById('form-' + f).style.display = f === name ? '' : 'none';
   });
+  // Reset forgot form state when switching away
+  if (name !== 'forgot') {
+    const si = document.getElementById('forgot-step-input');
+    const ss = document.getElementById('forgot-step-success');
+    if (si) si.style.display = '';
+    if (ss) ss.style.display = 'none';
+  }
   clearAuthErrors();
 }
 
@@ -1887,15 +1980,33 @@ async function doLogin() {
 
 async function doForgotPassword() {
   const email = document.getElementById('forgot-email').value.trim();
-  if (!email) return showAuthError('forgot-error', 'Enter your email address.');
+  const errEl = document.getElementById('forgot-error');
+  errEl.style.display = 'none';
+  if (!email) {
+    errEl.textContent = 'Enter your email address.';
+    errEl.style.display = ''; return;
+  }
   const btn = document.getElementById('btn-forgot');
   btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true;
   const { error } = await sb.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.href
+    redirectTo: window.location.href.split('#')[0]
   });
   btn.innerHTML = '<i class="ti ti-mail"></i> <span>Send reset link</span>'; btn.disabled = false;
-  if (error) return showAuthError('forgot-error', error.message);
-  showAuthSuccess('forgot-success', 'Password reset link sent! Check your email.');
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.style.display = ''; return;
+  }
+  // Show success state
+  document.getElementById('forgot-sent-email').textContent = email;
+  document.getElementById('forgot-step-input').style.display = 'none';
+  document.getElementById('forgot-step-success').style.display = '';
+}
+
+function resetForgotForm() {
+  document.getElementById('forgot-step-input').style.display = '';
+  document.getElementById('forgot-step-success').style.display = 'none';
+  document.getElementById('forgot-email').value = '';
+  document.getElementById('forgot-error').style.display = 'none';
 }
 
 function openCreateUser() {
@@ -2229,34 +2340,61 @@ function renderTicketTable(tickets, containerId) {
     wrap.innerHTML = '<div class="empty-state"><i class="ti ti-ticket-off"></i><p>No tickets found</p></div>';
     return;
   }
+  const isStaff = ['it_staff','supervisor','admin'].includes(currentProfile?.role);
+  const now = new Date();
+
   const rows = tickets.map(t => {
-    const slaMs = t.sla_resolution_due ? new Date(t.sla_resolution_due) - new Date() : null;
-    const slaPct = slaMs !== null ? Math.max(0, Math.min(100, 100 - (slaMs / (72*3600000) * 100))) : 0;
-    const slaColor = slaPct > 85 ? '#E24B4A' : slaPct > 60 ? '#EF9F27' : '#639922';
-    const catName = t.categories ? t.categories.name : '—';
-    const deptName = t.departments ? t.departments.code : '—';
-    return `<tr onclick="openTicketDetail('${t.id}')">
-      <td><span class="ticket-id">#${t.ticket_no}</span></td>
-      <td>${esc(t.requester_name)}</td>
-      <td>${esc(deptName)}</td>
-      <td>${esc(catName)}</td>
-      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--text2)">${esc(t.subject)}</td>
-      <td><span class="priority-dot prio-${t.priority}"></span>${cap(t.priority)}</td>
-      <td><span class="status-pill s-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
-      <td>
-        <div class="sla-bar"><div class="sla-fill" style="width:${slaPct}%;background:${slaColor}"></div></div>
-      </td>
-      <td style="font-size:11px;color:var(--text3)">${timeAgo(t.created_at)}</td>
-    </tr>`;
+    const slaMs   = t.sla_resolution_due ? new Date(t.sla_resolution_due) - now : null;
+    const slaPct  = slaMs !== null ? Math.max(0, Math.min(100, 100 - (slaMs / (72*3600000) * 100))) : 0;
+    const slaColor= slaPct > 85 ? '#E24B4A' : slaPct > 60 ? '#EF9F27' : '#639922';
+    const catName = t.categories?.name || '—';
+    const deptName= t.departments?.code || '—';
+    const actions = isStaff ? (QUICK_ACTIONS[t.status] || []) : [];
+
+    // Build inline action buttons — compact for table
+    let inlineActions = '';
+    for (const a of actions) {
+      inlineActions += '<button class="qa-btn ' + a.style + ' qa-xs" data-ticket-id="' + t.id + '" data-next-status="' + a.next + '" data-qa="1" title="' + a.label + '">'
+        + '<i class="ti ' + a.icon + '"></i>'
+        + '</button>';
+    }
+    const actionsCell = isStaff
+      ? '<td class="qa-cell" onclick="event.stopPropagation()">'
+        + '<div class="qa-inline">' + (inlineActions || '<span style="font-size:11px;color:var(--text3)">—</span>') + '</div>'
+        + '</td>'
+      : '';
+
+    return '<tr onclick="openTicketDetail(\'' + t.id + '\')" class="ticket-row">'
+      + '<td><span class="ticket-id">#' + t.ticket_no + '</span></td>'
+      + '<td style="font-size:13px">' + esc(t.requester_name) + '</td>'
+      + '<td style="font-size:12px;color:var(--text2)">' + esc(deptName) + '</td>'
+      + '<td style="font-size:12px;color:var(--text2)">' + esc(catName) + '</td>'
+      + '<td class="subject-cell">' + esc(t.subject) + '</td>'
+      + '<td><span class="priority-dot prio-' + t.priority + '"></span>' + cap(t.priority) + '</td>'
+      + '<td><span class="status-pill s-' + t.status + '">' + (STATUS_LABELS[t.status] || t.status) + '</span></td>'
+      + '<td><div class="sla-bar"><div class="sla-fill" style="width:' + slaPct.toFixed(0) + '%;background:' + slaColor + '"></div></div></td>'
+      + '<td style="font-size:11px;color:var(--text3)">' + timeAgo(t.created_at) + '</td>'
+      + actionsCell
+      + '</tr>';
   }).join('');
 
-  wrap.innerHTML = `<table>
-    <thead><tr>
-      <th>ID</th><th>Requester</th><th>Dept</th><th>Category</th>
-      <th>Subject</th><th>Priority</th><th>Status</th><th>SLA</th><th>Created</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+  const actionsHeader = isStaff ? '<th style="width:90px">Actions</th>' : '';
+
+  wrap.innerHTML = '<table>'
+    + '<thead><tr>'
+    + '<th style="width:100px">ID</th>'
+    + '<th>Requester</th>'
+    + '<th style="width:70px">Dept</th>'
+    + '<th style="width:100px">Category</th>'
+    + '<th>Subject</th>'
+    + '<th style="width:90px">Priority</th>'
+    + '<th style="width:110px">Status</th>'
+    + '<th style="width:70px">SLA</th>'
+    + '<th style="width:80px">Created</th>'
+    + actionsHeader
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table>';
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────
@@ -2461,13 +2599,29 @@ async function openTicketDetail(id) {
   const priorityOpts = ['low','medium','high','critical'].map(p =>
     `<option value="${p}" ${p === ticket.priority ? 'selected' : ''}>${cap(p)}</option>`).join('');
 
-  const staffControls = isStaff ? `
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius);border:1px solid var(--border)">
-      <span style="font-size:12px;font-weight:600;color:var(--text2)">Update:</span>
-      <select class="filter-select" id="det-status" onchange="updateTicketStatus('${id}',this.value)">${statusOpts}</select>
-      <select class="filter-select" id="det-priority" onchange="updateTicketPriority('${id}',this.value)">${priorityOpts}</select>
-      ${isAdmin ? `<button class="btn btn-sm btn-secondary" onclick="openAssignModal('${id}')"><i class="ti ti-users"></i> Assign</button>` : ''}
-    </div>` : '';
+  // Build staff controls — quick action buttons instead of dropdowns
+  let staffControlsHtml = '';
+  if (isStaff) {
+    const actions = QUICK_ACTIONS[ticket.status] || [];
+    let actionBtnsHtml = '';
+    for (const a of actions) {
+      actionBtnsHtml += '<button class="qa-btn ' + a.style + ' qa-lg" data-ticket-id="' + ticket.id + '" data-next-status="' + a.next + '" data-qa="1">'
+        + '<i class="ti ' + a.icon + '"></i> ' + a.label + '</button>';
+    }
+    // Priority selector stays as select — useful on desktop
+    const prioOpts = ['low','medium','high','critical'].map(p =>
+      '<option value="' + p + '"' + (p === ticket.priority ? ' selected' : '') + '>' + cap(p) + '</option>').join('');
+
+    staffControlsHtml = '<div class="ticket-action-bar">'
+      + (actionBtnsHtml
+          ? '<div class="ticket-qa-group">' + actionBtnsHtml + '</div>'
+          : '<div class="ticket-qa-empty"><i class="ti ti-circle-check"></i> ' + STATUS_LABELS[ticket.status] + '</div>')
+      + '<div class="ticket-action-right">'
+      + '<select class="filter-select" onchange="updateTicketPriority(\'' + ticket.id + '\',this.value)">' + prioOpts + '</select>'
+      + (isAdmin ? '<button class="btn btn-sm btn-secondary" onclick="openAssignModal(\'' + ticket.id + '\')"><i class="ti ti-users"></i> Assign</button>' : '')
+      + '</div>'
+      + '</div>';
+  }
 
   // Assignees
   const assigneeHtml = assignments?.length ? `
@@ -2512,7 +2666,7 @@ async function openTicketDetail(id) {
     : '';
 
   document.getElementById('detail-body').innerHTML = `
-    ${staffControls}
+    ${staffControlsHtml}
     <div class="detail-row">
       <div class="detail-group">
         <div class="detail-label">Requester</div>
