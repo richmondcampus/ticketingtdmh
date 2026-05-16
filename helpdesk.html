@@ -1869,6 +1869,9 @@
     </div>
     <div class="modal-footer" style="display:flex;gap:8px">
       <button class="btn btn-secondary" onclick="closeModal('modal-edit-user')">Cancel</button>
+      <button class="btn btn-secondary" id="btn-eu-reset" onclick="sendUserResetLink()">
+        <i class="ti ti-mail-forward"></i> Send Reset Link
+      </button>
       <button class="btn btn-primary" id="btn-eu-save" onclick="doEditUser()">
         <i class="ti ti-check"></i> Save changes
       </button>
@@ -1939,6 +1942,82 @@
 <script>
 const SUPABASE_URL = 'https://bivrkajfhmjtshmaxptb.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpdnJrYWpmaG1qdHNobWF4cHRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4Mjk1MjQsImV4cCI6MjA5NDQwNTUyNH0.SP8GxhsUKaMGgp7kjwPWipegvftJTj_Kt7IIXI747hE';
+
+const SMS_FN   = SUPABASE_URL + '/functions/v1/send-sms';
+const EMAIL_FN = SUPABASE_URL + '/functions/v1/send-email';
+
+// ── NOTIFICATION HELPERS ──────────────────────────────────────
+
+async function sendSMS(phones, message) {
+  const list = (Array.isArray(phones) ? phones : [phones]).filter(Boolean);
+  if (!list.length) return;
+  try {
+    await fetch(SMS_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phones: list, message })
+    });
+  } catch(e) { console.warn('[SMS]', e.message); }
+}
+
+async function sendEmail(to, subject, html) {
+  if (!to) return;
+  try {
+    await fetch(EMAIL_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, subject, html })
+    });
+  } catch(e) { console.warn('[Email]', e.message); }
+}
+
+// Get phones of all IT Staff + Supervisors + Admins
+async function getITStaffPhones() {
+  const { data } = await sb.from('profiles')
+    .select('phone')
+    .in('role', ['it_staff', 'supervisor', 'admin'])
+    .eq('is_active', true);
+  return (data || []).map(u => u.phone).filter(Boolean);
+}
+
+// Notify requester via in-app + optionally email
+async function notifyUser(userId, ticketId, title, body) {
+  await sb.from('notifications').insert({ user_id: userId, ticket_id: ticketId, title, body, channel: 'in_app' });
+}
+
+// Full notification on new ticket — SMS to all IT staff
+async function notifyNewTicket(ticket) {
+  const msg = '[TDMH IT Helpdesk] New ticket #' + ticket.ticket_no
+    + ' | ' + ticket.priority.toUpperCase()
+    + ' | ' + ticket.subject.substring(0, 60)
+    + ' | From: ' + ticket.requester_name;
+  const phones = await getITStaffPhones();
+  sendSMS(phones, msg);
+  // In-app notif for requester
+  notifyUser(ticket.requester_id, ticket.id, 'Ticket submitted', 'Your ticket #' + ticket.ticket_no + ' has been received by the IT Department.');
+}
+
+// Notify on status change — SMS to requester if they have phone
+async function notifyStatusChange(ticketId, ticketNo, requesterName, newStatus, requesterPhone) {
+  const label = STATUS_LABELS[newStatus] || newStatus;
+  // In-app notif
+  const { data: ticket } = await sb.from('tickets').select('requester_id').eq('id', ticketId).single();
+  if (ticket) notifyUser(ticket.requester_id, ticketId, 'Ticket updated', 'Your ticket #' + ticketNo + ' is now ' + label + '.');
+  // SMS to requester if phone on file
+  if (requesterPhone) sendSMS([requesterPhone], '[TDMH IT Helpdesk] Ticket #' + ticketNo + ' status: ' + label);
+  // SMS to IT staff on escalation
+  if (newStatus === 'escalated') {
+    const phones = await getITStaffPhones();
+    sendSMS(phones, '[TDMH IT Helpdesk] ESCALATED: #' + ticketNo + ' - ' + requesterName + '. Immediate attention needed.');
+  }
+}
+
+// Notify on new reply — in-app only
+async function notifyNewReply(ticketId, ticketNo, authorName, isInternal) {
+  if (isInternal) return; // internal notes don't notify requester
+  const { data: ticket } = await sb.from('tickets').select('requester_id').eq('id', ticketId).single();
+  if (ticket) notifyUser(ticket.requester_id, ticketId, 'New reply on #' + ticketNo, authorName + ' replied to your ticket.');
+}
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -2157,35 +2236,42 @@ async function doCreateUser() {
   const btn = document.getElementById('btn-cu-submit');
   btn.innerHTML = '<span class="spinner"></span> Creating...'; btn.disabled = true;
 
-  // Use Supabase Auth Admin API via signUp — profile trigger auto-fires
-  const { data, error } = await sb.auth.signUp({
-    email, password,
-    options: { data: { full_name: name } }
-  });
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Not authenticated');
 
-  if (error) {
-    errEl.textContent = error.message; errEl.style.display = '';
+    const res = await fetch(SUPABASE_URL + '/functions/v1/create-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token
+      },
+      body: JSON.stringify({ name, email, password, role, department_id: deptId || null, phone: phone || null })
+    });
+
+    const result = await res.json();
+
+    if (!res.ok || result.error) {
+      errEl.textContent = result.error || 'Failed to create user.';
+      errEl.style.display = '';
+      btn.innerHTML = '<i class="ti ti-user-plus"></i> Create Account'; btn.disabled = false;
+      return;
+    }
+
     btn.innerHTML = '<i class="ti ti-user-plus"></i> Create Account'; btn.disabled = false;
-    return;
-  }
+    sucEl.textContent = 'Account created for ' + name + '. They can now log in immediately.';
+    sucEl.style.display = '';
+    document.getElementById('cu-name').value = '';
+    document.getElementById('cu-email').value = '';
+    document.getElementById('cu-password').value = '';
+    document.getElementById('cu-phone').value = '';
+    loadUsers();
 
-  // Update profile with role, dept, phone
-  if (data.user) {
-    await sb.from('profiles').update({
-      full_name: name,
-      role: role,
-      department_id: deptId || null,
-      phone: phone || null
-    }).eq('id', data.user.id);
+  } catch (err) {
+    errEl.textContent = err.message || 'Something went wrong.';
+    errEl.style.display = '';
+    btn.innerHTML = '<i class="ti ti-user-plus"></i> Create Account'; btn.disabled = false;
   }
-
-  btn.innerHTML = '<i class="ti ti-user-plus"></i> Create Account'; btn.disabled = false;
-  sucEl.textContent = `Account created for ${name}. They will receive a confirmation email at ${email}.`;
-  sucEl.style.display = '';
-  document.getElementById('cu-name').value = '';
-  document.getElementById('cu-email').value = '';
-  document.getElementById('cu-password').value = '';
-  loadUsers();
 }
 
 async function doLogout() {
@@ -2319,6 +2405,9 @@ async function quickAction(e, ticketId, newStatus) {
 
     // Non-blocking audit log — don't let failure block the UI
     logAudit(ticketId, 'status_change', null, { status: newStatus }).catch(console.warn);
+    // Notify requester of status change
+    const { data: tkt } = await sb.from('tickets').select('ticket_no, requester_name, profiles!requester_id(phone)').eq('id', ticketId).single();
+    if (tkt) notifyStatusChange(ticketId, tkt.ticket_no, tkt.requester_name, newStatus, tkt.profiles?.phone);
 
     toast('→ ' + (STATUS_LABELS[newStatus] || newStatus), 'success');
 
@@ -2852,6 +2941,8 @@ async function submitReply(ticketId) {
   if (error) return toast('Failed to send reply: ' + error.message, 'error');
   toast('Reply sent', 'success');
   await logAudit(ticketId, 'reply_added', null, { is_internal: isInternal });
+  const { data: tkt } = await sb.from('tickets').select('ticket_no').eq('id', ticketId).single();
+  if (tkt) notifyNewReply(ticketId, tkt.ticket_no, currentProfile?.full_name || 'IT Staff', isInternal);
   openTicketDetail(ticketId);
 }
 
@@ -2928,7 +3019,15 @@ async function doCreateTicket() {
 
   toast('Ticket submitted successfully!', 'success');
   closeModal('modal-create');
-  loadDashboard();
+  // Load dashboard first to get the new ticket data, then notify
+  await loadDashboard();
+  // Get the latest ticket for this user to notify
+  const { data: newTicket } = await sb.from('tickets')
+    .select('id, ticket_no, subject, priority, requester_id, requester_name')
+    .eq('requester_id', currentUser.id)
+    .order('created_at', { ascending: false })
+    .limit(1).single();
+  if (newTicket) notifyNewTicket(newTicket);
 }
 
 // ── AGIMAT ────────────────────────────────────────────────────
@@ -3096,7 +3195,7 @@ async function loadReports() {
 let usersData = [];
 
 async function loadUsers() {
-  const { data } = await sb.from('profiles').select('*, departments(name)').order('full_name');
+  const { data } = await sb.from('profiles_with_email').select('*, departments(name)').order('full_name');
   usersData = data || [];
   renderUsersTable();
 }
@@ -3164,6 +3263,33 @@ function openEditUser(userId) {
   document.getElementById('eu-success').style.display = 'none';
   document.getElementById('eu-modal-name').textContent = u.full_name;
   document.getElementById('modal-edit-user').style.display = 'flex';
+}
+
+async function sendUserResetLink() {
+  const userId = document.getElementById('eu-id').value;
+  const u = usersData.find(x => x.id === userId);
+  if (!u?.email) {
+    toast('No email found for this user', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-eu-reset');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+
+  const { error } = await sb.auth.resetPasswordForEmail(u.email, {
+    redirectTo: window.location.href.split('#')[0]
+  });
+
+  btn.innerHTML = '<i class="ti ti-mail-forward"></i> Send Reset Link';
+  btn.disabled = false;
+
+  if (error) { toast('Failed: ' + error.message, 'error'); return; }
+
+  const sucEl = document.getElementById('eu-success');
+  sucEl.textContent = '✓ Reset link sent to ' + u.email;
+  sucEl.style.display = '';
+  toast('Reset link sent to ' + u.full_name, 'success');
 }
 
 async function doEditUser() {
