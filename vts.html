@@ -4168,6 +4168,18 @@ function gateInBtn(el) {
 }
 
 async function openGateOutModal(id, ticketNo, purpose, driverName, plate, dest) {
+  // Block individual gate-out for pooled tickets — must use Pool Gate Out All
+  const { data: poolCheck } = await SB.from('trips').select('pool_id').eq('id',id).single()
+  if (poolCheck?.pool_id) {
+    openMO('🚌 Pooled Trip',
+      `<div class="info info-amber">
+        <strong>This ticket is part of a pool.</strong><br>
+        <span style="font-size:12px">Gate-out must be done together with all tickets in the pool.<br>Use the <strong>🚀 Gate Out All</strong> button on the pool card instead.</span>
+      </div>`,
+      `<button class="btn btn-pri" onclick="closeMO();openPoolGateOut('${poolCheck.pool_id}')">Go to Pool Gate Out →</button>`
+    )
+    return
+  }
   // Fetch trip stops + vehicle current odometer
   const [{ data: tripData }, { data: vehData }] = await Promise.all([
     SB.from('trips').select('stops,destination,vehicle_id').eq('id',id).single(),
@@ -4238,6 +4250,18 @@ async function doGateOut(id, ticketNo) {
 
 // GATE IN
 async function openGateInModal(id, ticketNo, dest, vehicleId, driverId) {
+  // Block individual gate-in for pooled tickets — must use Pool Gate In All
+  const { data: poolCheck } = await SB.from('trips').select('pool_id').eq('id',id).single()
+  if (poolCheck?.pool_id) {
+    openMO('🚌 Pooled Trip',
+      `<div class="info info-purple">
+        <strong>This ticket is part of a pool.</strong><br>
+        <span style="font-size:12px">Gate-in must be done together with all tickets in the pool.<br>Use the <strong>✅ Gate In All</strong> button on the pool card instead.</span>
+      </div>`,
+      `<button class="btn btn-purple" onclick="closeMO();openPoolGateIn('${poolCheck.pool_id}')">Go to Pool Gate In →</button>`
+    )
+    return
+  }
   // Open modal IMMEDIATELY — no waiting for DB fetch
   openMO(`Gate In — ${ticketNo}`,
     `<div class="info info-green">Vehicle returning from: <strong>${dest}</strong></div>
@@ -4314,6 +4338,23 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
     fuel_cost: fuelCost
   }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Complete Trip'; return }
+
+  // If this ticket is in a pool, update the pool record too
+  const { data: tripData2 } = await SB.from('trips').select('pool_id,odometer_out').eq('id',id).single()
+  if (tripData2?.pool_id) {
+    // Check if all other tickets in the pool are also completed
+    const { data: poolTrips } = await SB.from('trips').select('status').eq('pool_id', tripData2.pool_id).neq('id', id)
+    const allDone = (poolTrips||[]).every(t => ['completed','cancelled'].includes(t.status))
+    if (allDone) {
+      // All tickets done — close the pool
+      await SB.from('trip_pools').update({
+        gate_in_at:   new Date().toISOString(),
+        odometer_in:  odo,
+        condition_in: document.getElementById('condIn')?.value || 'Good',
+        guard_in_id:  currentProfile?.id
+      }).eq('id', tripData2.pool_id)
+    }
+  }
   // Always update vehicle odometer on gate-in
   if (vehicleId && vehicleId !== 'null') await SB.from('vehicles').update({ odometer: odo }).eq('id', vehicleId).catch(() => {})
   // Log fuel if recorded
