@@ -1266,10 +1266,16 @@ async function renderDashboard() {
       const approvedNoDriver = active.filter(t => t.status==='approved')
       const assignedToday    = active.filter(t => t.status==='assigned')
       const onTrip           = T.filter(t => t.status==='on-trip')
-      const thisWeekDone     = done.filter(t => {
+      const thisWeekDone = done.filter(t => {
         if (!t.departure_at) return false
-        const w = new Date(); w.setDate(w.getDate()-7)
-        return new Date(t.departure_at) >= w
+        // Start of current week = Monday 12:00AM PHT
+        const now = new Date()
+        const dayOfWeek = now.getDay() // 0=Sun, 1=Mon...6=Sat
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Sunday = 6 days back
+        const monday = new Date(now)
+        monday.setDate(now.getDate() - daysFromMonday)
+        monday.setHours(0, 0, 0, 0)
+        return new Date(t.departure_at) >= monday
       })
 
       const approverActions = (t) => {
@@ -3718,7 +3724,6 @@ async function doPoolGateIn(poolId, ticketCount) {
       fuel_consumed_liters:  fuelLPerTicket,
       fuel_cost:             fuelPerTicket,
       fuel_price_per_liter:  fuelP || null,
-      distance_km:           distPerTicket,
       trip_duration_minutes: durationMins
     }).eq('pool_id', poolId)  // ← updates ALL tickets in pool at once
   ])
@@ -4322,7 +4327,7 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
   const approverRole = trip?.vehicle_type_needed === 'ambulance' ? 'approver_amb' : 'approver_admin'
   const approverEmails = await getEmailsForRole(approverRole)
   const requester = await getRequesterContacts(id)
-  const tripPayload = { ticket_no: ticketNo, department: trip?.department||'', purpose: trip?.purpose||'', destination: trip?.destination||'', driver_name: trip?.driver_name||'', vehicle_plate: trip?.vehicle_plate||'', gate_out_at: trip?.gate_out_at||'', gate_in_at: trip?.gate_in_at||'', odometer_out: trip?.odometer_out, odometer_in: odo, distance_km: trip?.odometer_out ? odo - trip.odometer_out : null }
+  const tripPayload = { ticket_no: ticketNo, department: trip?.department||'', purpose: trip?.purpose||'', destination: trip?.destination||'', driver_name: trip?.driver_name||'', vehicle_plate: trip?.vehicle_plate||'', gate_out_at: trip?.gate_out_at||'', gate_in_at: trip?.gate_in_at||'', odometer_out: trip?.odometer_out, odometer_in: odo }
   await sendEmail(approverEmails, 'trip_completed_approver', tripPayload)
   await sendEmail(requester.emails, 'trip_completed_requester', tripPayload)
   if (driverId && driverId !== 'null') {
