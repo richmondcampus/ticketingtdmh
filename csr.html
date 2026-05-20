@@ -1,0 +1,1914 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TDMH — Central Supply Request</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+/* ═══════════════════════════════════════════
+   THEME VARIABLES
+═══════════════════════════════════════════ */
+[data-theme="dark"] {
+  --bg:#080e14;--surf1:#0d1520;--surf2:#111d2b;--surf3:#162235;--surf4:#1b2940;
+  --bdr:rgba(255,255,255,0.06);--bdr2:rgba(255,255,255,0.11);--bdr3:rgba(255,255,255,0.18);
+  --txt:#e2edf8;--txt2:#5f8099;--txt3:#324f66;
+  --shadow:0 2px 20px rgba(0,0,0,0.55);--shadow2:0 8px 32px rgba(0,0,0,0.6);
+  --accent:#f0a500;--accent2:#c07800;--accent-a:rgba(240,165,0,0.12);--accent-b:rgba(240,165,0,0.22);
+  --green:#36c98e;--green-a:rgba(54,201,142,0.12);
+  --red:#f04060;--red-a:rgba(240,64,96,0.12);
+  --blue:#4d9fff;--blue-a:rgba(77,159,255,0.12);
+  --violet:#a070ff;--violet-a:rgba(160,112,255,0.12);
+  --amber:#f0a500;--amber-a:rgba(240,165,0,0.12);
+  --sidebar-w:240px;
+}
+[data-theme="light"] {
+  --bg:#f0f5fb;--surf1:#ffffff;--surf2:#f7fafd;--surf3:#edf3fa;--surf4:#e3ecf5;
+  --bdr:rgba(0,0,0,0.07);--bdr2:rgba(0,0,0,0.13);--bdr3:rgba(0,0,0,0.20);
+  --txt:#0c1e2e;--txt2:#4a6a80;--txt3:#9ab8cc;
+  --shadow:0 2px 16px rgba(0,0,0,0.08);--shadow2:0 8px 28px rgba(0,0,0,0.12);
+  --accent:#c07800;--accent2:#9a5e00;--accent-a:rgba(192,120,0,0.10);--accent-b:rgba(192,120,0,0.18);
+  --green:#1a9966;--green-a:rgba(26,153,102,0.10);
+  --red:#d03050;--red-a:rgba(208,48,80,0.09);
+  --blue:#2070d0;--blue-a:rgba(32,112,208,0.09);
+  --violet:#7040d0;--violet-a:rgba(112,64,208,0.09);
+  --amber:#c07800;--amber-a:rgba(192,120,0,0.10);
+  --sidebar-w:240px;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+*{transition:background-color .2s,border-color .2s,color .15s;}
+.btn,.badge,.toast,.modal-overlay{transition:none!important;}
+html,body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;font-size:14px;line-height:1.55;overscroll-behavior:none;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--surf4);border-radius:2px;}
+h1,h2,h3,h4{font-family:'Bricolage Grotesque',sans-serif;}
+code,pre,.mono{font-family:'JetBrains Mono',monospace;}
+a{color:var(--accent);text-decoration:none;}
+
+/* ═══════════════════════════════════════════
+   LOGIN SCREEN
+═══════════════════════════════════════════ */
+#loginScreen{
+  display:flex;align-items:center;justify-content:center;
+  min-height:100vh;background:var(--bg);
+  background-image:radial-gradient(ellipse at 20% 50%, rgba(240,165,0,0.04) 0%, transparent 60%),
+                   radial-gradient(ellipse at 80% 20%, rgba(77,159,255,0.04) 0%, transparent 50%);
+}
+.login-card{
+  width:100%;max-width:400px;background:var(--surf1);
+  border:1px solid var(--bdr2);border-radius:20px;
+  padding:40px;box-shadow:var(--shadow2);
+}
+.login-logo{
+  display:flex;align-items:center;gap:12px;margin-bottom:32px;
+}
+.login-logo-mark{
+  width:44px;height:44px;background:var(--accent-a);border:1px solid var(--accent-b);
+  border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-size:20px;flex-shrink:0;
+}
+.login-logo-text h1{font-size:18px;font-weight:700;color:var(--txt);}
+.login-logo-text p{font-size:12px;color:var(--txt2);margin-top:1px;}
+.login-card h2{font-size:22px;font-weight:700;margin-bottom:6px;}
+.login-card .sub{color:var(--txt2);font-size:13px;margin-bottom:28px;}
+.form-group{margin-bottom:16px;}
+.form-group label{display:block;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;}
+.form-group input{
+  width:100%;padding:10px 14px;background:var(--surf2);
+  border:1px solid var(--bdr2);border-radius:10px;
+  color:var(--txt);font-family:'Instrument Sans',sans-serif;font-size:14px;
+  outline:none;
+}
+.form-group input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-a);}
+.login-err{
+  background:var(--red-a);border:1px solid var(--red);
+  color:var(--red);padding:10px 14px;border-radius:10px;
+  font-size:13px;margin-bottom:16px;display:none;
+}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:10px 18px;border-radius:10px;font-family:'Instrument Sans',sans-serif;
+  font-size:14px;font-weight:600;cursor:pointer;border:none;
+  transition:transform .1s,opacity .15s!important;
+}
+.btn:active{transform:scale(.97);}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-primary:hover{opacity:.88;}
+.btn-secondary{background:var(--surf3);color:var(--txt);border:1px solid var(--bdr2);}
+.btn-secondary:hover{background:var(--surf4);}
+.btn-ghost{background:transparent;color:var(--txt2);border:1px solid var(--bdr2);}
+.btn-ghost:hover{background:var(--surf3);color:var(--txt);}
+.btn-danger{background:var(--red-a);color:var(--red);border:1px solid var(--red);}
+.btn-danger:hover{background:var(--red);color:#fff;}
+.btn-success{background:var(--green-a);color:var(--green);border:1px solid var(--green);}
+.btn-success:hover{background:var(--green);color:#fff;}
+.btn-full{width:100%;}
+.btn-sm{padding:6px 12px;font-size:12px;border-radius:8px;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* ═══════════════════════════════════════════
+   APP SHELL
+═══════════════════════════════════════════ */
+#appShell{display:none;height:100vh;overflow:hidden;}
+.shell{display:flex;height:100vh;}
+
+/* SIDEBAR */
+.sidebar{
+  width:var(--sidebar-w);min-width:var(--sidebar-w);
+  background:var(--surf1);border-right:1px solid var(--bdr);
+  display:flex;flex-direction:column;height:100vh;
+  position:relative;z-index:10;flex-shrink:0;
+}
+.sidebar-logo{
+  padding:20px 18px 16px;
+  display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--bdr);
+}
+.sidebar-logo-mark{
+  width:34px;height:34px;background:var(--accent-a);
+  border:1px solid var(--accent-b);border-radius:9px;
+  display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;
+}
+.sidebar-logo-text{overflow:hidden;}
+.sidebar-logo-text h2{font-size:13px;font-weight:700;white-space:nowrap;color:var(--txt);}
+.sidebar-logo-text p{font-size:11px;color:var(--txt2);white-space:nowrap;}
+.sidebar-nav{flex:1;overflow-y:auto;padding:10px 10px;}
+.nav-section{margin-bottom:6px;}
+.nav-label{
+  font-size:10px;font-weight:700;color:var(--txt3);
+  text-transform:uppercase;letter-spacing:.8px;
+  padding:8px 8px 4px;
+}
+.nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 10px;border-radius:9px;cursor:pointer;
+  color:var(--txt2);font-size:13px;font-weight:500;
+  margin-bottom:2px;position:relative;
+}
+.nav-item:hover{background:var(--surf3);color:var(--txt);}
+.nav-item.active{background:var(--accent-a);color:var(--accent);border:1px solid var(--accent-b);}
+.nav-item.active .nav-icon{color:var(--accent);}
+.nav-icon{font-size:15px;width:18px;text-align:center;flex-shrink:0;}
+.nav-badge{
+  margin-left:auto;background:var(--red);color:#fff;
+  border-radius:20px;padding:1px 6px;font-size:10px;font-weight:700;
+}
+.sidebar-footer{
+  padding:12px;border-top:1px solid var(--bdr);
+}
+.user-chip{
+  display:flex;align-items:center;gap:10px;
+  padding:10px;background:var(--surf2);border-radius:10px;
+  border:1px solid var(--bdr);cursor:pointer;
+}
+.user-chip:hover{background:var(--surf3);}
+.user-avatar{
+  width:30px;height:30px;border-radius:8px;
+  background:var(--accent-a);border:1px solid var(--accent-b);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0;
+}
+.user-info{overflow:hidden;flex:1;}
+.user-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.user-role{font-size:10px;color:var(--txt2);white-space:nowrap;}
+
+/* TOPBAR */
+.topbar{
+  height:56px;background:var(--surf1);border-bottom:1px solid var(--bdr);
+  display:flex;align-items:center;padding:0 20px;gap:12px;
+  flex-shrink:0;
+}
+.topbar-title{font-family:'Bricolage Grotesque',sans-serif;font-size:16px;font-weight:700;flex:1;}
+.topbar-actions{display:flex;align-items:center;gap:8px;}
+.icon-btn{
+  width:34px;height:34px;border-radius:9px;background:var(--surf2);
+  border:1px solid var(--bdr2);display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:15px;color:var(--txt2);position:relative;
+}
+.icon-btn:hover{background:var(--surf3);color:var(--txt);}
+.notif-dot{
+  position:absolute;top:6px;right:6px;width:7px;height:7px;
+  background:var(--red);border-radius:50%;border:2px solid var(--surf1);
+}
+
+/* MAIN CONTENT */
+.main{display:flex;flex-direction:column;flex:1;overflow:hidden;}
+.content{flex:1;overflow-y:auto;padding:24px;}
+
+/* ═══════════════════════════════════════════
+   BADGES / STATUS
+═══════════════════════════════════════════ */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;
+}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.badge-draft{background:var(--surf3);color:var(--txt2);}
+.badge-draft::before{background:var(--txt3);}
+.badge-pending{background:var(--amber-a);color:var(--amber);}
+.badge-pending::before{background:var(--amber);}
+.badge-approved{background:var(--green-a);color:var(--green);}
+.badge-approved::before{background:var(--green);}
+.badge-rejected{background:var(--red-a);color:var(--red);}
+.badge-rejected::before{background:var(--red);}
+.badge-issued{background:var(--blue-a);color:var(--blue);}
+.badge-issued::before{background:var(--blue);}
+.badge-cancelled{background:var(--surf3);color:var(--txt3);}
+.badge-cancelled::before{background:var(--txt3);}
+.badge-for_po,.badge-ordered,.badge-delivered{background:var(--violet-a);color:var(--violet);}
+.badge-for_po::before,.badge-ordered::before,.badge-delivered::before{background:var(--violet);}
+.badge-derp{background:var(--violet-a);color:var(--violet);}
+.badge-derp::before{background:var(--violet);}
+.badge-urgent{background:var(--amber-a);color:var(--amber);}
+.badge-emergency{background:var(--red-a);color:var(--red);}
+.badge-routine{background:var(--surf3);color:var(--txt2);}
+.badge-supply{background:var(--green-a);color:var(--green);}
+.badge-purchase{background:var(--blue-a);color:var(--blue);}
+.badge-issuance{background:var(--violet-a);color:var(--violet);}
+.badge-admin{background:var(--accent-b);color:var(--accent);}
+
+/* ═══════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════ */
+.card{
+  background:var(--surf1);border:1px solid var(--bdr);
+  border-radius:14px;padding:20px;
+}
+.card-sm{padding:16px;}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px;}
+.stat-card{
+  background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;
+  padding:18px 20px;display:flex;flex-direction:column;gap:6px;
+}
+.stat-card:hover{border-color:var(--bdr2);}
+.stat-label{font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;}
+.stat-value{font-family:'Bricolage Grotesque',sans-serif;font-size:28px;font-weight:700;}
+.stat-sub{font-size:11px;color:var(--txt2);}
+.stat-accent{color:var(--accent);}
+.stat-green{color:var(--green);}
+.stat-red{color:var(--red);}
+.stat-blue{color:var(--blue);}
+
+/* ═══════════════════════════════════════════
+   TABLES
+═══════════════════════════════════════════ */
+.table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--bdr);}
+table{width:100%;border-collapse:collapse;background:var(--surf1);}
+th{
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--txt2);padding:10px 14px;text-align:left;
+  background:var(--surf2);border-bottom:1px solid var(--bdr);white-space:nowrap;
+}
+td{padding:12px 14px;border-bottom:1px solid var(--bdr);font-size:13px;vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--surf2);}
+.td-mono{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);}
+
+/* ═══════════════════════════════════════════
+   MODALS
+═══════════════════════════════════════════ */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.65);
+  display:flex;align-items:center;justify-content:center;
+  z-index:1000;padding:20px;opacity:0;pointer-events:none;
+  transition:opacity .2s!important;
+}
+.modal-overlay.open{opacity:1;pointer-events:all;}
+.modal{
+  background:var(--surf1);border:1px solid var(--bdr2);
+  border-radius:18px;width:100%;max-width:600px;
+  max-height:90vh;overflow-y:auto;box-shadow:var(--shadow2);
+  transform:translateY(12px);transition:transform .2s!important;
+}
+.modal-overlay.open .modal{transform:translateY(0);}
+.modal-lg{max-width:800px;}
+.modal-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 24px 0;
+}
+.modal-header h3{font-size:17px;font-weight:700;}
+.modal-close{
+  width:28px;height:28px;border-radius:7px;background:var(--surf3);
+  border:none;cursor:pointer;font-size:16px;color:var(--txt2);
+  display:flex;align-items:center;justify-content:center;
+}
+.modal-close:hover{background:var(--surf4);color:var(--txt);}
+.modal-body{padding:20px 24px;}
+.modal-footer{
+  display:flex;justify-content:flex-end;gap:10px;
+  padding:16px 24px;border-top:1px solid var(--bdr);
+}
+
+/* ═══════════════════════════════════════════
+   FORMS
+═══════════════════════════════════════════ */
+.field{margin-bottom:16px;}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;}
+.field input,.field select,.field textarea{
+  width:100%;padding:9px 13px;background:var(--surf2);
+  border:1px solid var(--bdr2);border-radius:9px;
+  color:var(--txt);font-family:'Instrument Sans',sans-serif;font-size:13px;outline:none;
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-a);}
+.field textarea{resize:vertical;min-height:80px;}
+.field select option{background:var(--surf1);}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.field-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+.field-hint{font-size:11px;color:var(--txt2);margin-top:4px;}
+
+/* ═══════════════════════════════════════════
+   ITEMS TABLE (in forms)
+═══════════════════════════════════════════ */
+.items-table-wrap{border:1px solid var(--bdr2);border-radius:10px;overflow:hidden;margin-bottom:10px;}
+.items-table{width:100%;border-collapse:collapse;}
+.items-table th{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;padding:8px 10px;background:var(--surf2);border-bottom:1px solid var(--bdr);}
+.items-table td{padding:6px 8px;border-bottom:1px solid var(--bdr);}
+.items-table tr:last-child td{border-bottom:none;}
+.items-table input,.items-table select{
+  width:100%;padding:5px 8px;background:transparent;
+  border:1px solid transparent;border-radius:6px;
+  color:var(--txt);font-family:'Instrument Sans',sans-serif;font-size:12px;outline:none;
+}
+.items-table input:focus,.items-table select:focus{background:var(--surf3);border-color:var(--accent);}
+.items-table select option{background:var(--surf1);}
+.remove-row{
+  width:24px;height:24px;border-radius:6px;background:transparent;border:none;
+  cursor:pointer;color:var(--txt3);font-size:14px;
+  display:flex;align-items:center;justify-content:center;
+}
+.remove-row:hover{background:var(--red-a);color:var(--red);}
+
+/* ═══════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════ */
+#toastContainer{
+  position:fixed;top:16px;right:16px;z-index:9999;
+  display:flex;flex-direction:column;gap:8px;
+}
+.toast{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:12px 14px;border-radius:12px;
+  background:var(--surf1);border:1px solid var(--bdr2);
+  box-shadow:var(--shadow2);min-width:260px;max-width:340px;
+  animation:toastIn .25s ease;
+}
+@keyframes toastIn{from{transform:translateX(20px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+.toast-icon{font-size:16px;flex-shrink:0;margin-top:1px;}
+.toast-title{font-size:13px;font-weight:600;margin-bottom:2px;}
+.toast-body{font-size:12px;color:var(--txt2);}
+
+/* ═══════════════════════════════════════════
+   PAGE-SPECIFIC
+═══════════════════════════════════════════ */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;}
+.page-header h2{font-size:20px;font-weight:700;}
+.page-header-actions{display:flex;gap:10px;align-items:center;}
+.filter-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+.filter-bar select,.filter-bar input{
+  padding:7px 12px;background:var(--surf1);border:1px solid var(--bdr2);
+  border-radius:9px;color:var(--txt);font-family:'Instrument Sans',sans-serif;
+  font-size:13px;outline:none;
+}
+.filter-bar select:focus,.filter-bar input:focus{border-color:var(--accent);}
+.empty-state{
+  text-align:center;padding:60px 20px;color:var(--txt2);
+}
+.empty-state .empty-icon{font-size:40px;margin-bottom:12px;}
+.empty-state h3{font-size:16px;font-weight:600;color:var(--txt);margin-bottom:6px;}
+.empty-state p{font-size:13px;}
+.timeline{display:flex;flex-direction:column;gap:0;}
+.timeline-item{display:flex;gap:14px;position:relative;padding-bottom:20px;}
+.timeline-item:last-child{padding-bottom:0;}
+.timeline-item:not(:last-child)::before{
+  content:'';position:absolute;left:15px;top:32px;
+  width:2px;bottom:0;background:var(--bdr2);
+}
+.tl-dot{
+  width:32px;height:32px;border-radius:50%;background:var(--surf3);
+  border:2px solid var(--bdr2);display:flex;align-items:center;
+  justify-content:center;font-size:13px;flex-shrink:0;
+}
+.tl-dot.done{background:var(--green-a);border-color:var(--green);}
+.tl-dot.active{background:var(--accent-a);border-color:var(--accent);}
+.tl-dot.rejected{background:var(--red-a);border-color:var(--red);}
+.tl-content{flex:1;padding-top:6px;}
+.tl-title{font-size:13px;font-weight:600;}
+.tl-sub{font-size:12px;color:var(--txt2);margin-top:2px;}
+
+/* Approval stepper */
+.stepper{display:flex;align-items:center;gap:0;margin:20px 0;}
+.step{display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;}
+.step-dot{
+  width:34px;height:34px;border-radius:50%;border:2px solid var(--bdr2);
+  display:flex;align-items:center;justify-content:center;font-size:14px;
+  background:var(--surf2);position:relative;z-index:1;
+}
+.step-dot.done{background:var(--green-a);border-color:var(--green);color:var(--green);}
+.step-dot.active{background:var(--accent-a);border-color:var(--accent);color:var(--accent);}
+.step-dot.rejected{background:var(--red-a);border-color:var(--red);color:var(--red);}
+.step-label{font-size:11px;color:var(--txt2);text-align:center;}
+.step-line{flex:1;height:2px;background:var(--bdr2);margin-bottom:20px;}
+.step-line.done{background:var(--green);}
+
+/* Source badge */
+.source-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:5px 10px;background:var(--blue-a);border:1px solid var(--blue);
+  border-radius:8px;font-size:12px;color:var(--blue);font-weight:500;
+}
+
+/* No access screen */
+#noAccessScreen{
+  display:none;align-items:center;justify-content:center;
+  min-height:100vh;background:var(--bg);flex-direction:column;gap:12px;text-align:center;
+}
+
+/* Skeleton loader */
+.skeleton{background:var(--surf3);border-radius:6px;animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+
+/* ═══════════════════════════════════════════
+   DASHBOARD CHARTS
+═══════════════════════════════════════════ */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
+.chart-card{background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;padding:18px;}
+.chart-title{font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px;}
+.bar-chart{display:flex;flex-direction:column;gap:8px;}
+.bar-row{display:flex;align-items:center;gap:10px;}
+.bar-label{font-size:12px;color:var(--txt2);width:90px;text-align:right;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bar-track{flex:1;height:8px;background:var(--surf3);border-radius:4px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:4px;transition:width .6s ease;}
+.bar-val{font-size:11px;color:var(--txt2);width:28px;text-align:right;flex-shrink:0;}
+.donut-wrap{display:flex;align-items:center;gap:20px;}
+.donut-legend{display:flex;flex-direction:column;gap:6px;}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:12px;}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+
+/* ═══════════════════════════════════════════
+   PRINT
+═══════════════════════════════════════════ */
+@media print{
+  .sidebar,.topbar,#toastContainer,.no-print{display:none!important;}
+  .main{overflow:visible!important;}
+  .content{padding:0!important;}
+  body{background:#fff!important;color:#000!important;}
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════ */
+@media(max-width:768px){
+  .sidebar{
+    position:fixed;left:-100%;top:0;bottom:0;z-index:100;
+    transition:left .25s ease!important;
+  }
+  .sidebar.open{left:0;}
+  .sidebar-overlay{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99;
+  }
+  .sidebar.open~.sidebar-overlay{display:block;}
+  .field-row,.field-row-3{grid-template-columns:1fr;}
+  .stat-grid{grid-template-columns:1fr 1fr;}
+  .chart-grid{grid-template-columns:1fr;}
+  .topbar{padding:0 14px;}
+  .content{padding:16px;}
+  .hamburger{display:flex!important;}
+}
+.hamburger{
+  display:none;width:34px;height:34px;border-radius:9px;
+  background:var(--surf2);border:1px solid var(--bdr2);
+  align-items:center;justify-content:center;cursor:pointer;font-size:16px;
+}
+</style>
+</head>
+<body>
+
+<!-- TOAST CONTAINER -->
+<div id="toastContainer"></div>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-mark">📦</div>
+      <div class="login-logo-text">
+        <h1>TDMH — CSR</h1>
+        <p>Central Supply Request System</p>
+      </div>
+    </div>
+    <h2>Welcome back</h2>
+    <p class="sub">Sign in with your employee credentials</p>
+    <div class="login-err" id="loginErr"></div>
+    <div class="form-group">
+      <label>Employee No.</label>
+      <input type="text" id="loginEmpNo" placeholder="e.g. ADMIN-001" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-full" id="loginBtn" onclick="doLogin()">Sign In</button>
+    <p style="font-size:11px;color:var(--txt3);text-align:center;margin-top:16px;">
+      Taytay Doctors Multispecialty Hospital · IT Department
+    </p>
+  </div>
+</div>
+
+<!-- NO ACCESS SCREEN -->
+<div id="noAccessScreen">
+  <div style="font-size:48px;">🚫</div>
+  <h2 style="font-family:'Bricolage Grotesque',sans-serif;">No Access</h2>
+  <p style="color:var(--txt2);max-width:320px;">Your account does not have access to the CSR system. Please contact IT for assistance.</p>
+  <button class="btn btn-ghost" onclick="doLogout()" style="margin-top:12px;">Sign Out</button>
+</div>
+
+<!-- APP SHELL -->
+<div id="appShell">
+  <div class="shell">
+
+    <!-- SIDEBAR -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-mark">📦</div>
+        <div class="sidebar-logo-text">
+          <h2>TDMH CSR</h2>
+          <p>Supply Request</p>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" id="sidebarNav">
+        <!-- Rendered by JS based on role -->
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-chip" onclick="toggleUserMenu()">
+          <div class="user-avatar" id="userAvatar">--</div>
+          <div class="user-info">
+            <div class="user-name" id="userName">Loading...</div>
+            <div class="user-role" id="userRoleLabel">--</div>
+          </div>
+          <span style="font-size:10px;color:var(--txt3);">⚙</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
+    <!-- MAIN -->
+    <div class="main">
+      <div class="topbar">
+        <button class="hamburger" id="hamburger" onclick="toggleSidebar()">☰</button>
+        <div class="topbar-title" id="topbarTitle">Dashboard</div>
+        <div class="topbar-actions">
+          <div class="icon-btn" onclick="toggleTheme()" title="Toggle theme">🌙</div>
+          <div class="icon-btn" id="notifBtn" onclick="showPage('notifications')" title="Notifications">
+            🔔<span class="notif-dot" id="notifDot" style="display:none"></span>
+          </div>
+        </div>
+      </div>
+      <div class="content" id="mainContent">
+        <!-- Page content rendered here -->
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODALS -->
+<!-- New Request Modal -->
+<div class="modal-overlay" id="newRequestModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 id="newRequestTitle">New Supply Request</h3>
+      <button class="modal-close" onclick="closeModal('newRequestModal')">✕</button>
+    </div>
+    <div class="modal-body" id="newRequestBody">
+      <!-- Rendered by JS -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('newRequestModal')">Cancel</button>
+      <button class="btn btn-secondary" onclick="saveRequest('draft')">Save Draft</button>
+      <button class="btn btn-primary" onclick="saveRequest('submit')">Submit Request</button>
+    </div>
+  </div>
+</div>
+
+<!-- Request Detail Modal -->
+<div class="modal-overlay" id="requestDetailModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 id="detailModalTitle">Request Detail</h3>
+      <button class="modal-close" onclick="closeModal('requestDetailModal')">✕</button>
+    </div>
+    <div class="modal-body" id="requestDetailBody">
+      <!-- Rendered by JS -->
+    </div>
+    <div class="modal-footer" id="requestDetailFooter"></div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h3 id="confirmTitle">Confirm Action</h3>
+      <button class="modal-close" onclick="closeModal('confirmModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirmMsg" style="color:var(--txt2);font-size:14px;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="btn btn-primary" id="confirmOkBtn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Approval Modal -->
+<div class="modal-overlay" id="approvalModal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <h3 id="approvalModalTitle">Approve Request</h3>
+      <button class="modal-close" onclick="closeModal('approvalModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="approvalModalDesc" style="color:var(--txt2);font-size:13px;margin-bottom:16px;"></p>
+      <div class="field">
+        <label>Remarks <span id="remarksReq" style="color:var(--red);">*</span></label>
+        <textarea id="approvalRemarks" placeholder="Enter remarks..." rows="3"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer" id="approvalModalFooter"></div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// SUPABASE INIT
+// ═══════════════════════════════════════════
+const SUPA_URL = 'https://zcyhwdulizorgngayxya.supabase.co'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjeWh3ZHVsaXpvcmduZ2F5eHlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNjU0NTgsImV4cCI6MjA5NDg0MTQ1OH0.xLdKGNqjNZNRfjAf5NmXGI1GyTbQZAmbZiKokpgAhUo'
+const SB = supabase.createClient(SUPA_URL, SUPA_KEY)
+
+const SMS_URL = SUPA_URL + '/functions/v1/send-sms'
+const EMAIL_URL = SUPA_URL + '/functions/v1/send-email'
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let state = {
+  user: null,
+  page: 'dashboard',
+  requests: [],
+  departments: [],
+  users: [],
+  notifications: [],
+  stats: {},
+  // Source params (if opened from another system)
+  sourceSystem: null,
+  sourceRefId: null,
+  sourceItem: null,
+  sourceUrgency: null,
+  sourceType: null,
+  // Editing
+  editingRequest: null,
+  itemRows: [],
+  activeChannels: []
+}
+
+// ═══════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════
+function getSession() {
+  try { return JSON.parse(localStorage.getItem('tdmh_session')) } catch { return null }
+}
+function setSession(data) {
+  localStorage.setItem('tdmh_session', JSON.stringify(data))
+}
+function clearSession() {
+  localStorage.removeItem('tdmh_session')
+}
+
+async function doLogin() {
+  const empNo = document.getElementById('loginEmpNo').value.trim()
+  const pass = document.getElementById('loginPass').value.trim()
+  const errEl = document.getElementById('loginErr')
+  const btn = document.getElementById('loginBtn')
+  errEl.style.display = 'none'
+  if (!empNo || !pass) { showLoginErr('Please enter your Employee No. and Password.'); return }
+  btn.disabled = true; btn.textContent = 'Signing in...'
+  try {
+    // Step 1: Sign in via Supabase Auth (bcrypt-hashed internally)
+    const loginEmail = empNo.toLowerCase().replace(/[^a-z0-9]/g, '-') + '@tdmh.local'
+    const { data: authData, error: authError } = await SB.auth.signInWithPassword({
+      email: loginEmail,
+      password: pass
+    })
+    if (authError || !authData.user) {
+      showLoginErr('Invalid Employee No. or Password.')
+      return
+    }
+    // Step 2: Fetch profile from shared.users using auth_id
+    const { data: profile, error: profileError } = await SB
+      .schema('shared')
+      .from('users')
+      .select('*')
+      .eq('auth_id', authData.user.id)
+      .eq('is_active', true)
+      .single()
+    if (profileError || !profile) {
+      showLoginErr('Account not found or inactive. Contact IT.')
+      await SB.auth.signOut()
+      return
+    }
+    // Step 3: Check CSR access
+    if (!profile.csr_role) {
+      // Still boot app — no-access screen will show
+    }
+    const session = {
+      id: profile.id,
+      auth_id: authData.user.id,
+      employee_no: profile.employee_no,
+      full_name: profile.full_name,
+      dept_id: profile.dept_id,
+      phone: profile.phone,
+      email: profile.email,
+      csr_role: profile.csr_role,
+      maintenance_role: profile.maintenance_role,
+      it_role: profile.it_role,
+      inventory_role: profile.inventory_role
+    }
+    setSession(session)
+    await bootApp(session)
+  } catch(e) {
+    showLoginErr('Connection error. Please try again.')
+    console.error(e)
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign In'
+  }
+}
+
+function showLoginErr(msg) {
+  const el = document.getElementById('loginErr')
+  el.textContent = msg; el.style.display = 'block'
+  document.getElementById('loginBtn').disabled = false
+  document.getElementById('loginBtn').textContent = 'Sign In'
+}
+
+function doLogout() {
+  confirm2('Sign out of all TDMH systems?', async () => {
+    await SB.auth.signOut()
+    clearSession()
+    state = { user: null, page: 'dashboard', requests: [], departments: [], users: [],
+      notifications: [], stats: {}, sourceSystem: null, sourceRefId: null,
+      sourceItem: null, sourceUrgency: null, sourceType: null,
+      editingRequest: null, itemRows: [], activeChannels: [] }
+    SB.removeAllChannels()
+    document.getElementById('appShell').style.display = 'none'
+    document.getElementById('loginScreen').style.display = 'flex'
+    document.getElementById('noAccessScreen').style.display = 'none'
+    document.getElementById('loginEmpNo').value = ''
+    document.getElementById('loginPass').value = ''
+  })
+}
+
+// ═══════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════
+async function bootApp(session) {
+  state.user = session
+  document.getElementById('loginScreen').style.display = 'none'
+  if (!session.csr_role) {
+    document.getElementById('noAccessScreen').style.display = 'flex'
+    return
+  }
+  document.getElementById('appShell').style.display = 'block'
+  // Check URL params for cross-system integration
+  checkSourceParams()
+  // Render user info
+  renderUserInfo()
+  // Build sidebar nav
+  renderSidebarNav()
+  // Load base data
+  await Promise.all([loadDepartments(), loadUsers()])
+  // Subscribe realtime
+  subscribeNotifications()
+  // Show page
+  const startPage = state.sourceSystem ? 'new_request' : 'dashboard'
+  showPage(startPage)
+}
+
+function checkSourceParams() {
+  const p = new URLSearchParams(window.location.search)
+  if (p.get('source')) {
+    state.sourceSystem = p.get('source')
+    state.sourceRefId = p.get('ref')
+    state.sourceItem = p.get('item') ? decodeURIComponent(p.get('item')) : null
+    state.sourceUrgency = p.get('urgency') || 'routine'
+    state.sourceType = p.get('type') || 'supply'
+  }
+}
+
+function renderUserInfo() {
+  const u = state.user
+  const initials = u.full_name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+  document.getElementById('userAvatar').textContent = initials
+  document.getElementById('userName').textContent = u.full_name
+  document.getElementById('userRoleLabel').textContent = formatRole(u.csr_role)
+}
+
+function formatRole(r) {
+  const map = { requester:'Requester', dept_head:'Dept. Head', supply_officer:'Supply Officer',
+    finance:'Finance', admin:'Admin', viewer:'Viewer' }
+  return map[r] || r || '—'
+}
+
+// ═══════════════════════════════════════════
+// SIDEBAR NAV
+// ═══════════════════════════════════════════
+function renderSidebarNav() {
+  const role = state.user.csr_role
+  const nav = document.getElementById('sidebarNav')
+  const items = [
+    { id:'dashboard', icon:'📊', label:'Dashboard', roles:['requester','dept_head','supply_officer','finance','admin','viewer'] },
+    { id:'my_requests', icon:'📋', label:'My Requests', roles:['requester','dept_head','supply_officer','finance','admin'] },
+    { id:'approval_queue', icon:'✅', label:'Approval Queue', roles:['dept_head','supply_officer','finance','admin'], badge:'approval_count' },
+    { id:'all_requests', icon:'🗂', label:'All Requests', roles:['supply_officer','admin'] },
+    { id:'purchase_orders', icon:'🛒', label:'Purchase Orders', roles:['supply_officer','admin'] },
+    { id:'issuance', icon:'📤', label:'Issuance', roles:['supply_officer','admin'] },
+    { id:'stock_inventory', icon:'🏪', label:'Stock Inventory', roles:['supply_officer','admin'] },
+    { id:'derp', icon:'♻️', label:'DERP', roles:['requester','dept_head','supply_officer','finance','admin'] },
+    { id:'reports', icon:'📈', label:'Reports', roles:['supply_officer','finance','admin'] },
+    { id:'settings', icon:'⚙️', label:'Settings', roles:['admin'] },
+  ]
+  let html = ''
+  html += '<div class="nav-section">'
+  html += '<div class="nav-label">Main</div>'
+  for (const item of items) {
+    if (!item.roles.includes(role)) continue
+    const active = state.page === item.id ? ' active' : ''
+    html += '<div class="nav-item' + active + '" onclick="showPage(\'' + item.id + '\')" id="nav_' + item.id + '">'
+    html += '<span class="nav-icon">' + item.icon + '</span>'
+    html += '<span>' + item.label + '</span>'
+    if (item.id === 'approval_queue' && state.stats.approval_count > 0) {
+      html += '<span class="nav-badge">' + state.stats.approval_count + '</span>'
+    }
+    html += '</div>'
+  }
+  html += '</div>'
+  nav.innerHTML = html
+}
+
+// ═══════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════
+const PAGE_TITLES = {
+  dashboard:'Dashboard', my_requests:'My Requests', approval_queue:'Approval Queue',
+  all_requests:'All Requests', purchase_orders:'Purchase Orders',
+  issuance:'Issuance', stock_inventory:'Stock Inventory', derp:'DERP',
+  reports:'Reports', settings:'Settings', notifications:'Notifications', new_request:'New Request'
+}
+
+function showPage(page) {
+  state.page = page
+  document.getElementById('topbarTitle').textContent = PAGE_TITLES[page] || page
+  // Update nav active
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
+  const navEl = document.getElementById('nav_' + page)
+  if (navEl) navEl.classList.add('active')
+  closeSidebar()
+  const content = document.getElementById('mainContent')
+  content.innerHTML = '<div class="empty-state"><div class="skeleton" style="width:200px;height:20px;margin:0 auto 10px;"></div><div class="skeleton" style="width:300px;height:14px;margin:0 auto;"></div></div>'
+  const pages = {
+    dashboard: renderDashboard, my_requests: renderMyRequests,
+    approval_queue: renderApprovalQueue, all_requests: renderAllRequests,
+    purchase_orders: renderPurchaseOrders, issuance: renderIssuance,
+    stock_inventory: renderStockInventory, derp: renderDerp,
+    reports: renderReports, settings: renderSettings,
+    notifications: renderNotifications, new_request: openNewRequestModal
+  }
+  if (pages[page]) pages[page]()
+  else content.innerHTML = '<div class="empty-state"><div class="empty-icon">🚧</div><h3>Coming Soon</h3><p>This section is under construction.</p></div>'
+}
+
+// ═══════════════════════════════════════════
+// DATA LOADERS
+// ═══════════════════════════════════════════
+async function loadDepartments() {
+  try {
+    const { data } = await SB.from('departments').select('*').eq('is_active', true).order('dept_name')
+    state.departments = data || []
+  } catch(e) { console.error('loadDepartments', e) }
+}
+
+async function loadUsers() {
+  try {
+    const { data } = await SB.from('users').select('id,full_name,dept_id,csr_role,maintenance_role,it_role,phone,email').eq('is_active', true)
+    state.users = data || []
+  } catch(e) { console.error('loadUsers', e) }
+}
+
+async function loadRequests(filters = {}) {
+  try {
+    let q = SB.from('requests').select('*').order('created_at', { ascending: false })
+    if (filters.requested_by) q = q.eq('requested_by', filters.requested_by)
+    if (filters.status) q = q.eq('status', filters.status)
+    if (filters.request_type) q = q.eq('request_type', filters.request_type)
+    if (filters.dept_id) q = q.eq('dept_id', filters.dept_id)
+    const { data, error } = await q
+    if (error) throw error
+    return data || []
+  } catch(e) { console.error('loadRequests', e); return [] }
+}
+
+async function loadRequestItems(requestId) {
+  const { data } = await SB.from('request_items').select('*').eq('request_id', requestId)
+  return data || []
+}
+
+async function loadApprovals(requestId) {
+  const { data } = await SB.from('approvals').select('*').eq('request_id', requestId).order('level')
+  return data || []
+}
+
+async function loadStats() {
+  try {
+    const uid = state.user.id
+    const role = state.user.csr_role
+    const [myPending, approvalQueue, allPending, lowStock] = await Promise.all([
+      SB.from('requests').select('id', { count: 'exact', head: true }).eq('requested_by', uid).in('status', ['draft','pending_approval']),
+      (role === 'dept_head' || role === 'supply_officer' || role === 'finance' || role === 'admin')
+        ? SB.from('requests').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval').eq('current_approval_level', roleApprovalLevel(role))
+        : { count: 0 },
+      SB.from('requests').select('id', { count: 'exact', head: true }).in('status', ['pending_approval','approved','for_po','ordered']),
+      SB.from('stock_items').select('id', { count: 'exact', head: true }).filter('quantity_on_hand', 'lte', 'reorder_level')
+    ])
+    state.stats = {
+      my_pending: myPending.count || 0,
+      approval_count: approvalQueue.count || 0,
+      all_pending: allPending.count || 0,
+      low_stock: lowStock.count || 0
+    }
+    renderSidebarNav()
+  } catch(e) { console.error('loadStats', e) }
+}
+
+function roleApprovalLevel(role) {
+  const map = { dept_head: 1, supply_officer: 2, finance: 3 }
+  return map[role] || 1
+}
+
+// ═══════════════════════════════════════════
+// REALTIME
+// ═══════════════════════════════════════════
+function subscribeNotifications() {
+  const ch = SB.channel('csr-notifs-' + state.user.id)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'shared', table: 'system_notifications',
+      filter: 'recipient_id=eq.' + state.user.id
+    }, (payload) => {
+      state.notifications.unshift(payload.new)
+      document.getElementById('notifDot').style.display = 'block'
+      showToast('info', 'Notification', payload.new.message)
+    }).subscribe()
+  state.activeChannels.push(ch)
+}
+
+function subscribeRequests(onUpdate) {
+  SB.removeAllChannels()
+  const ch = SB.channel('csr-requests-live')
+    .on('postgres_changes', { event: '*', schema: 'csr', table: 'requests' }, (payload) => {
+      if (payload.eventType === 'UPDATE') {
+        state.requests = state.requests.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r)
+      } else if (payload.eventType === 'INSERT') {
+        state.requests.unshift(payload.new)
+      }
+      if (onUpdate) onUpdate()
+    }).subscribe()
+  state.activeChannels.push(ch)
+}
+
+// ═══════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════
+async function renderDashboard() {
+  const content = document.getElementById('mainContent')
+  await loadStats()
+  const role = state.user.csr_role
+  const requests = await loadRequests(role === 'admin' || role === 'supply_officer' ? {} : { requested_by: state.user.id })
+  state.requests = requests
+
+  // Recent requests (last 5)
+  const recent = requests.slice(0, 5)
+
+  // Dept distribution
+  const deptCounts = {}
+  requests.forEach(r => {
+    const dept = state.departments.find(d => d.id === r.dept_id)
+    const name = dept ? dept.dept_name : 'Unknown'
+    deptCounts[name] = (deptCounts[name] || 0) + 1
+  })
+  const topDepts = Object.entries(deptCounts).sort((a,b) => b[1]-a[1]).slice(0,5)
+  const maxDept = topDepts[0] ? topDepts[0][1] : 1
+
+  // Status distribution
+  const statusCounts = { draft:0, pending_approval:0, approved:0, for_po:0, ordered:0, delivered:0, issued:0, cancelled:0 }
+  requests.forEach(r => { statusCounts[r.status] = (statusCounts[r.status] || 0) + 1 })
+
+  let html = ''
+  html += '<div class="page-header">'
+  html += '<h2>👋 Good day, ' + state.user.full_name.split(' ')[0] + '</h2>'
+  html += '<div class="page-header-actions">'
+  if (['requester','dept_head','supply_officer','admin'].includes(role)) {
+    html += '<button class="btn btn-primary" onclick="openNewRequestModal()">＋ New Request</button>'
+  }
+  html += '</div></div>'
+
+  // Stat cards
+  html += '<div class="stat-grid">'
+  html += statCard('📋', 'My Pending', state.stats.my_pending, 'Requests awaiting action', 'stat-accent')
+  if (['dept_head','supply_officer','finance','admin'].includes(role)) {
+    html += statCard('✅', 'Needs Approval', state.stats.approval_count, 'Pending your approval', 'stat-amber')
+  }
+  if (['supply_officer','admin'].includes(role)) {
+    html += statCard('🔄', 'Active Requests', state.stats.all_pending, 'In pipeline', 'stat-blue')
+    html += statCard('⚠️', 'Low Stock', state.stats.low_stock, 'Below reorder level', 'stat-red')
+  }
+  html += '</div>'
+
+  // Charts row
+  html += '<div class="chart-grid">'
+  // Requests by status donut (simplified bar)
+  html += '<div class="chart-card">'
+  html += '<div class="chart-title">Requests by Status</div>'
+  html += '<div class="bar-chart">'
+  const statusColors = { pending_approval:'var(--amber)', approved:'var(--green)', for_po:'var(--violet)', ordered:'var(--violet)', delivered:'var(--blue)', issued:'var(--blue)', draft:'var(--txt3)', cancelled:'var(--txt3)' }
+  const totalReqs = requests.length || 1
+  for (const [s, c] of Object.entries(statusCounts)) {
+    if (!c) continue
+    const pct = Math.round((c / totalReqs) * 100)
+    html += '<div class="bar-row">'
+    html += '<div class="bar-label">' + formatStatus(s) + '</div>'
+    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:' + (statusColors[s]||'var(--accent)') + '"></div></div>'
+    html += '<div class="bar-val">' + c + '</div>'
+    html += '</div>'
+  }
+  html += '</div></div>'
+
+  // Top departments
+  html += '<div class="chart-card">'
+  html += '<div class="chart-title">Top Requesting Depts</div>'
+  html += '<div class="bar-chart">'
+  if (topDepts.length === 0) {
+    html += '<p style="color:var(--txt2);font-size:12px;">No data yet</p>'
+  }
+  for (const [name, count] of topDepts) {
+    const pct = Math.round((count / maxDept) * 100)
+    html += '<div class="bar-row">'
+    html += '<div class="bar-label" title="' + name + '">' + name + '</div>'
+    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--accent)"></div></div>'
+    html += '<div class="bar-val">' + count + '</div>'
+    html += '</div>'
+  }
+  html += '</div></div>'
+  html += '</div>'
+
+  // Recent requests
+  html += '<div style="margin-top:24px;">'
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
+  html += '<h3 style="font-size:14px;font-weight:600;">Recent Requests</h3>'
+  html += '<button class="btn btn-ghost btn-sm" onclick="showPage(\'my_requests\')">View All →</button>'
+  html += '</div>'
+  if (recent.length === 0) {
+    html += '<div class="empty-state" style="padding:30px;"><div class="empty-icon">📭</div><h3>No requests yet</h3><p>Submit your first CSR request using the button above.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Request No.</th><th>Type</th><th>Purpose</th><th>Urgency</th><th>Status</th><th>Date</th>'
+    html += '</tr></thead><tbody>'
+    for (const r of recent) {
+      html += '<tr onclick="viewRequest(\'' + r.id + '\')" style="cursor:pointer;">'
+      html += '<td class="td-mono">' + r.request_no + '</td>'
+      html += '<td><span class="badge badge-' + r.request_type + '">' + r.request_type.toUpperCase() + '</span></td>'
+      html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.purpose || '—') + '</td>'
+      html += '<td><span class="badge badge-' + r.urgency + '">' + r.urgency.toUpperCase() + '</span></td>'
+      html += '<td>' + statusBadge(r.status) + '</td>'
+      html += '<td style="color:var(--txt2);">' + formatDate(r.created_at) + '</td>'
+      html += '</tr>'
+    }
+    html += '</tbody></table></div>'
+  }
+  html += '</div>'
+
+  content.innerHTML = html
+  subscribeRequests(() => { if (state.page === 'dashboard') renderDashboard() })
+}
+
+function statCard(icon, label, value, sub, valClass) {
+  return '<div class="stat-card"><div class="stat-label">' + label + '</div>' +
+    '<div class="stat-value ' + valClass + '">' + value + '</div>' +
+    '<div class="stat-sub">' + sub + '</div></div>'
+}
+
+// ═══════════════════════════════════════════
+// MY REQUESTS
+// ═══════════════════════════════════════════
+async function renderMyRequests() {
+  const content = document.getElementById('mainContent')
+  const role = state.user.csr_role
+  const filter = ['admin','supply_officer'].includes(role) ? {} : { requested_by: state.user.id }
+  const requests = await loadRequests(filter)
+  state.requests = requests
+  renderRequestsTable(content, requests, 'My Requests',
+    ['admin','supply_officer'].includes(role) ? 'All requests in the system' : 'Your submitted requests')
+}
+
+async function renderAllRequests() {
+  const content = document.getElementById('mainContent')
+  const requests = await loadRequests({})
+  state.requests = requests
+  renderRequestsTable(content, requests, 'All Requests', 'Complete request registry')
+}
+
+function renderRequestsTable(content, requests, title, subtitle) {
+  let html = ''
+  html += '<div class="page-header">'
+  html += '<div><h2>' + title + '</h2><p style="font-size:13px;color:var(--txt2);">' + subtitle + '</p></div>'
+  html += '<div class="page-header-actions">'
+  if (['requester','dept_head','supply_officer','admin'].includes(state.user.csr_role)) {
+    html += '<button class="btn btn-primary" onclick="openNewRequestModal()">＋ New Request</button>'
+  }
+  html += '</div></div>'
+
+  // Filters
+  html += '<div class="filter-bar">'
+  html += '<select onchange="filterRequests(this.value,\'status\')" id="filterStatus"><option value="">All Status</option>'
+  const statuses = ['draft','pending_approval','approved','for_po','ordered','delivered','issued','cancelled']
+  statuses.forEach(s => { html += '<option value="' + s + '">' + formatStatus(s) + '</option>' })
+  html += '</select>'
+  html += '<select onchange="filterRequests(this.value,\'type\')" id="filterType"><option value="">All Types</option>'
+  ;['supply','purchase','issuance','derp'].forEach(t => { html += '<option value="' + t + '">' + t.toUpperCase() + '</option>' })
+  html += '</select>'
+  html += '<select onchange="filterRequests(this.value,\'urgency\')" id="filterUrgency"><option value="">All Urgency</option>'
+  ;['routine','urgent','emergency'].forEach(u => { html += '<option value="' + u + '">' + u.charAt(0).toUpperCase()+u.slice(1) + '</option>' })
+  html += '</select>'
+  html += '</div>'
+
+  if (requests.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">📭</div><h3>No requests found</h3><p>No requests match your current filters.</p></div>'
+  } else {
+    html += '<div class="table-wrap" id="requestsTableWrap"><table><thead><tr>'
+    html += '<th>Request No.</th><th>Type</th><th>Dept</th><th>Purpose</th><th>Urgency</th><th>Status</th><th>Date</th><th></th>'
+    html += '</tr></thead><tbody id="requestsTableBody">'
+    html += buildRequestRows(requests)
+    html += '</tbody></table></div>'
+  }
+  content.innerHTML = html
+}
+
+function buildRequestRows(requests) {
+  let rows = ''
+  for (const r of requests) {
+    const dept = state.departments.find(d => d.id === r.dept_id)
+    rows += '<tr onclick="viewRequest(\'' + r.id + '\')" style="cursor:pointer;">'
+    rows += '<td class="td-mono">' + r.request_no + '</td>'
+    rows += '<td><span class="badge badge-' + r.request_type + '">' + r.request_type.toUpperCase() + '</span></td>'
+    rows += '<td style="color:var(--txt2);">' + (dept ? dept.dept_name : '—') + '</td>'
+    rows += '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.purpose || '—') + '</td>'
+    rows += '<td><span class="badge badge-' + r.urgency + '">' + r.urgency.toUpperCase() + '</span></td>'
+    rows += '<td>' + statusBadge(r.status) + '</td>'
+    rows += '<td style="color:var(--txt2);white-space:nowrap;">' + formatDate(r.created_at) + '</td>'
+    rows += '<td><button class="btn btn-ghost btn-sm no-print" onclick="event.stopPropagation();viewRequest(\'' + r.id + '\')">View</button></td>'
+    rows += '</tr>'
+  }
+  return rows
+}
+
+function filterRequests(val, field) {
+  let filtered = state.requests
+  const status = document.getElementById('filterStatus') ? document.getElementById('filterStatus').value : ''
+  const type = document.getElementById('filterType') ? document.getElementById('filterType').value : ''
+  const urgency = document.getElementById('filterUrgency') ? document.getElementById('filterUrgency').value : ''
+  if (status) filtered = filtered.filter(r => r.status === status)
+  if (type) filtered = filtered.filter(r => r.request_type === type)
+  if (urgency) filtered = filtered.filter(r => r.urgency === urgency)
+  const tbody = document.getElementById('requestsTableBody')
+  if (tbody) tbody.innerHTML = buildRequestRows(filtered)
+}
+
+// ═══════════════════════════════════════════
+// APPROVAL QUEUE
+// ═══════════════════════════════════════════
+async function renderApprovalQueue() {
+  const content = document.getElementById('mainContent')
+  const role = state.user.csr_role
+  const level = roleApprovalLevel(role)
+  const requests = await loadRequests({ status: 'pending_approval' })
+  const myQueue = role === 'admin' ? requests : requests.filter(r => r.current_approval_level === level)
+  state.requests = myQueue
+
+  let html = '<div class="page-header"><div><h2>Approval Queue</h2>'
+  html += '<p style="font-size:13px;color:var(--txt2);">' + myQueue.length + ' request(s) pending your action</p></div></div>'
+
+  if (myQueue.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">✅</div><h3>All clear!</h3><p>No requests pending your approval right now.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Request No.</th><th>Type</th><th>Dept</th><th>Purpose</th><th>Urgency</th><th>Est. Total</th><th>Date</th><th>Action</th>'
+    html += '</tr></thead><tbody>'
+    for (const r of myQueue) {
+      const dept = state.departments.find(d => d.id === r.dept_id)
+      html += '<tr>'
+      html += '<td class="td-mono" onclick="viewRequest(\'' + r.id + '\')" style="cursor:pointer;">' + r.request_no + '</td>'
+      html += '<td><span class="badge badge-' + r.request_type + '">' + r.request_type.toUpperCase() + '</span></td>'
+      html += '<td style="color:var(--txt2);">' + (dept ? dept.dept_name : '—') + '</td>'
+      html += '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.purpose || '—') + '</td>'
+      html += '<td><span class="badge badge-' + r.urgency + '">' + r.urgency.toUpperCase() + '</span></td>'
+      html += '<td style="color:var(--txt2);">₱—</td>'
+      html += '<td style="color:var(--txt2);">' + formatDate(r.created_at) + '</td>'
+      html += '<td><div style="display:flex;gap:6px;">'
+      html += '<button class="btn btn-success btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'approve\')">Approve</button>'
+      html += '<button class="btn btn-ghost btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'return\')">Return</button>'
+      html += '<button class="btn btn-danger btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'reject\')">Reject</button>'
+      html += '</div></td>'
+      html += '</tr>'
+    }
+    html += '</tbody></table></div>'
+  }
+  content.innerHTML = html
+}
+
+// ═══════════════════════════════════════════
+// REQUEST DETAIL
+// ═══════════════════════════════════════════
+async function viewRequest(id) {
+  const req = state.requests.find(r => r.id === id) || (await SB.from('requests').select('*').eq('id', id).single()).data
+  if (!req) { showToast('error', 'Error', 'Request not found'); return }
+  const [items, approvals] = await Promise.all([loadRequestItems(id), loadApprovals(id)])
+  const dept = state.departments.find(d => d.id === req.dept_id)
+  const requester = state.users.find(u => u.id === req.requested_by)
+  const role = state.user.csr_role
+
+  document.getElementById('detailModalTitle').textContent = req.request_no
+  let body = ''
+
+  // Source badge
+  if (req.source_system && req.source_system !== 'manual') {
+    body += '<div style="margin-bottom:16px;">'
+    body += '<span class="source-badge">🔗 Linked from ' + req.source_system.charAt(0).toUpperCase() + req.source_system.slice(1) + ' Ticket</span>'
+    body += '</div>'
+  }
+
+  // Info row
+  body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">'
+  body += infoField('Type', '<span class="badge badge-' + req.request_type + '">' + req.request_type.toUpperCase() + '</span>')
+  body += infoField('Status', statusBadge(req.status))
+  body += infoField('Urgency', '<span class="badge badge-' + req.urgency + '">' + req.urgency.toUpperCase() + '</span>')
+  body += infoField('Department', dept ? dept.dept_name : '—')
+  body += infoField('Requested By', requester ? requester.full_name : '—')
+  body += infoField('Date Filed', formatDate(req.created_at))
+  body += '</div>'
+
+  if (req.purpose) {
+    body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Purpose</div>'
+    body += '<div style="background:var(--surf2);padding:10px 14px;border-radius:9px;font-size:13px;border:1px solid var(--bdr);">' + req.purpose + '</div></div>'
+  }
+
+  // Items table
+  body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Requested Items</div>'
+  if (items.length === 0) {
+    body += '<p style="color:var(--txt2);font-size:13px;">No items listed.</p>'
+  } else {
+    body += '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Unit</th><th>Est. Cost</th><th>Category</th></tr></thead><tbody>'
+    items.forEach((item, i) => {
+      body += '<tr><td style="color:var(--txt2);">' + (i+1) + '</td><td><strong>' + item.item_name + '</strong>'
+      if (item.item_description) body += '<br><span style="font-size:11px;color:var(--txt2);">' + item.item_description + '</span>'
+      body += '</td><td>' + item.quantity + '</td><td>' + (item.unit || '—') + '</td>'
+      body += '<td>₱' + (item.estimated_cost ? Number(item.estimated_cost).toLocaleString() : '—') + '</td>'
+      body += '<td>' + (item.category ? item.category : '—') + '</td></tr>'
+    })
+    const total = items.reduce((s, i) => s + (Number(i.estimated_cost) * Number(i.quantity)), 0)
+    body += '<tr><td colspan="4" style="text-align:right;font-weight:600;">Total Est.</td><td colspan="2"><strong>₱' + total.toLocaleString() + '</strong></td></tr>'
+    body += '</tbody></table></div>'
+  }
+  body += '</div>'
+
+  // Approval stepper
+  body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">Approval Status</div>'
+  body += buildApprovalStepper(req, approvals)
+  body += '</div>'
+
+  // DERP fields
+  if (req.request_type === 'derp') {
+    body += '<div style="margin-bottom:16px;background:var(--violet-a);border:1px solid var(--violet);border-radius:10px;padding:14px;">'
+    body += '<div style="font-size:12px;font-weight:600;color:var(--violet);margin-bottom:8px;">♻️ DERP Details</div>'
+    body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+    body += infoField('Asset Condition', req.asset_condition || '—')
+    body += infoField('Disposal Action', req.disposal_action || '—')
+    body += '</div>'
+    if (req.asset_condition_notes) {
+      body += '<div style="margin-top:8px;font-size:12px;color:var(--txt2);">' + req.asset_condition_notes + '</div>'
+    }
+    body += '</div>'
+  }
+
+  document.getElementById('requestDetailBody').innerHTML = body
+
+  // Footer actions
+  let footer = '<button class="btn btn-ghost" onclick="closeModal(\'requestDetailModal\')">Close</button>'
+  if (req.status === 'draft' && req.requested_by === state.user.id) {
+    footer += '<button class="btn btn-secondary" onclick="editRequest(\'' + req.id + '\')">Edit</button>'
+    footer += '<button class="btn btn-primary" onclick="submitRequest(\'' + req.id + '\')">Submit for Approval</button>'
+  }
+  if (req.status === 'pending_approval' && canApprove(req, role)) {
+    footer += '<button class="btn btn-success" onclick="openApprovalModal(\'' + req.id + '\',\'approve\')">Approve</button>'
+    footer += '<button class="btn btn-ghost" onclick="openApprovalModal(\'' + req.id + '\',\'return\')">Return</button>'
+    footer += '<button class="btn btn-danger" onclick="openApprovalModal(\'' + req.id + '\',\'reject\')">Reject</button>'
+  }
+  if (req.status === 'approved' && ['supply_officer','admin'].includes(role)) {
+    footer += '<button class="btn btn-primary" onclick="markForPO(\'' + req.id + '\')">Create PO →</button>'
+  }
+  document.getElementById('requestDetailFooter').innerHTML = footer
+  openModal('requestDetailModal')
+}
+
+function canApprove(req, role) {
+  if (role === 'admin') return true
+  const level = roleApprovalLevel(role)
+  return req.current_approval_level === level
+}
+
+function buildApprovalStepper(req, approvals) {
+  const steps = [
+    { level: 1, label: 'Dept Head', role: 'dept_head' },
+    { level: 2, label: 'Supply Officer', role: 'supply_officer' },
+    { level: 3, label: 'Finance', role: 'finance' },
+  ]
+  let html = '<div class="stepper">'
+  steps.forEach((step, i) => {
+    const appr = approvals.find(a => a.level === step.level)
+    let dotClass = ''
+    let icon = step.level.toString()
+    if (appr) {
+      if (appr.decision === 'approved') { dotClass = 'done'; icon = '✓' }
+      else if (appr.decision === 'rejected') { dotClass = 'rejected'; icon = '✕' }
+      else { dotClass = ''; icon = '↩' }
+    } else if (req.current_approval_level === step.level && req.status === 'pending_approval') {
+      dotClass = 'active'; icon = '⏳'
+    }
+    html += '<div class="step">'
+    html += '<div class="step-dot ' + dotClass + '">' + icon + '</div>'
+    html += '<div class="step-label">' + step.label + '</div>'
+    html += '</div>'
+    if (i < steps.length - 1) {
+      const lineClass = appr && appr.decision === 'approved' ? 'done' : ''
+      html += '<div class="step-line ' + lineClass + '"></div>'
+    }
+  })
+  html += '</div>'
+  return html
+}
+
+function infoField(label, value) {
+  return '<div><div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">' + label + '</div>'
+    + '<div style="font-size:13px;">' + value + '</div></div>'
+}
+
+// ═══════════════════════════════════════════
+// NEW REQUEST FORM
+// ═══════════════════════════════════════════
+function openNewRequestModal(type) {
+  // If page called as a nav page
+  if (state.page === 'new_request' && !type) {
+    showPage('dashboard')
+    setTimeout(() => openNewRequestModal(state.sourceType || 'supply'), 100)
+    return
+  }
+  state.editingRequest = null
+  state.itemRows = [{ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'consumable' }]
+  const reqType = type || state.sourceType || 'supply'
+  renderNewRequestForm(reqType)
+  openModal('newRequestModal')
+}
+
+function renderNewRequestForm(reqType) {
+  document.getElementById('newRequestTitle').textContent = reqType === 'derp' ? '♻️ DERP Request' : '＋ New ' + reqType.charAt(0).toUpperCase() + reqType.slice(1) + ' Request'
+  let html = ''
+  // Type selector
+  html += '<div class="field"><label>Request Type</label>'
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+  ;['supply','purchase','issuance','derp'].forEach(t => {
+    const active = t === reqType ? 'border-color:var(--accent);background:var(--accent-a);' : ''
+    html += '<button onclick="switchReqType(\'' + t + '\')" style="' + active + 'padding:7px 14px;border-radius:9px;border:1px solid var(--bdr2);background:var(--surf2);color:var(--txt);font-family:inherit;font-size:13px;cursor:pointer;font-weight:' + (t===reqType?'600':'400') + ';">' + t.toUpperCase() + '</button>'
+  })
+  html += '</div></div>'
+
+  // Source badge if from another system
+  if (state.sourceSystem) {
+    html += '<div style="margin-bottom:14px;">'
+    html += '<span class="source-badge">🔗 Linked from ' + state.sourceSystem.charAt(0).toUpperCase() + state.sourceSystem.slice(1) + ' — Ref: ' + (state.sourceRefId || 'N/A') + '</span>'
+    html += '</div>'
+  }
+
+  html += '<div class="field-row">'
+  // Department
+  html += '<div class="field"><label>Department</label><select id="f_dept" ' + (state.user.csr_role !== 'admin' ? 'disabled' : '') + '>'
+  const myDept = state.user.dept_id
+  state.departments.forEach(d => {
+    const sel = d.id === myDept ? ' selected' : ''
+    html += '<option value="' + d.id + '"' + sel + '>' + d.dept_name + '</option>'
+  })
+  html += '</select></div>'
+  // Urgency
+  html += '<div class="field"><label>Urgency</label><select id="f_urgency">'
+  ;['routine','urgent','emergency'].forEach(u => {
+    const sel = u === (state.sourceUrgency || 'routine') ? ' selected' : ''
+    html += '<option value="' + u + '"' + sel + '>' + u.charAt(0).toUpperCase()+u.slice(1) + '</option>'
+  })
+  html += '</select></div>'
+  html += '</div>'
+
+  // Purpose
+  html += '<div class="field"><label>Purpose / Justification</label>'
+  html += '<textarea id="f_purpose" placeholder="Describe why this request is needed..." rows="3"></textarea></div>'
+
+  // DERP-specific fields
+  if (reqType === 'derp') {
+    html += '<div style="background:var(--violet-a);border:1px solid var(--violet);border-radius:10px;padding:14px;margin-bottom:14px;">'
+    html += '<div style="font-size:12px;font-weight:600;color:var(--violet);margin-bottom:10px;">♻️ DERP Assessment</div>'
+    html += '<div class="field-row">'
+    html += '<div class="field"><label>Asset Condition</label><select id="f_condition">'
+    ;['poor','beyond_repair','obsolete','end_of_life'].forEach(c => {
+      html += '<option value="' + c + '">' + c.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase()) + '</option>'
+    })
+    html += '</select></div>'
+    html += '<div class="field"><label>Disposal Action</label><select id="f_disposal">'
+    ;['archive','donate','condemn'].forEach(c => {
+      html += '<option value="' + c + '">' + c.charAt(0).toUpperCase()+c.slice(1) + '</option>'
+    })
+    html += '</select></div>'
+    html += '</div>'
+    html += '<div class="field"><label>Condition Notes</label><textarea id="f_condition_notes" placeholder="Describe the asset\'s condition in detail..." rows="2"></textarea></div>'
+    html += '</div>'
+  }
+
+  // Items table
+  html += '<div class="field"><label>Items Requested</label>'
+  html += '<div class="items-table-wrap">'
+  html += '<table class="items-table"><thead><tr>'
+  html += '<th style="width:30%">Item Name</th><th style="width:20%">Description</th><th style="width:8%">Qty</th><th style="width:8%">Unit</th><th style="width:10%">Est. Cost</th><th style="width:15%">Category</th><th style="width:5%"></th>'
+  html += '</tr></thead><tbody id="itemsBody">'
+  html += buildItemRows()
+  html += '</tbody></table></div>'
+  html += '<button class="btn btn-ghost btn-sm" onclick="addItemRow()" style="margin-top:8px;">＋ Add Item</button>'
+  html += '</div>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+}
+
+function switchReqType(t) {
+  state.sourceType = t
+  renderNewRequestForm(t)
+}
+
+function buildItemRows() {
+  let html = ''
+  state.itemRows.forEach((row, i) => {
+    html += '<tr id="row_' + row.id + '">'
+    html += '<td><input type="text" placeholder="Item name" value="' + (row.item_name||'') + '" oninput="updateItemRow(' + row.id + ',\'item_name\',this.value)"></td>'
+    html += '<td><input type="text" placeholder="Description" value="' + (row.item_description||'') + '" oninput="updateItemRow(' + row.id + ',\'item_description\',this.value)"></td>'
+    html += '<td><input type="number" min="1" value="' + (row.quantity||1) + '" oninput="updateItemRow(' + row.id + ',\'quantity\',this.value)"></td>'
+    html += '<td><select onchange="updateItemRow(' + row.id + ',\'unit\',this.value)">'
+    ;['pcs','box','ream','liters','sets','kg','meters','rolls','packs'].forEach(u => {
+      html += '<option value="' + u + '"' + (row.unit===u?' selected':'') + '>' + u + '</option>'
+    })
+    html += '</select></td>'
+    html += '<td><input type="number" min="0" placeholder="0" value="' + (row.estimated_cost||'') + '" oninput="updateItemRow(' + row.id + ',\'estimated_cost\',this.value)"></td>'
+    html += '<td><select onchange="updateItemRow(' + row.id + ',\'category\',this.value)">'
+    ;['consumable','equipment','it_hardware','medical','office','maintenance_material'].forEach(c => {
+      html += '<option value="' + c + '"' + (row.category===c?' selected':'') + '>' + c + '</option>'
+    })
+    html += '</select></td>'
+    html += '<td><button class="remove-row" onclick="removeItemRow(' + row.id + ')" ' + (state.itemRows.length<=1?'disabled':'') + '>✕</button></td>'
+    html += '</tr>'
+  })
+  return html
+}
+
+function addItemRow() {
+  state.itemRows.push({ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'consumable' })
+  document.getElementById('itemsBody').innerHTML = buildItemRows()
+}
+
+function removeItemRow(id) {
+  if (state.itemRows.length <= 1) return
+  state.itemRows = state.itemRows.filter(r => r.id !== id)
+  document.getElementById('itemsBody').innerHTML = buildItemRows()
+}
+
+function updateItemRow(id, field, value) {
+  const row = state.itemRows.find(r => r.id === id)
+  if (row) row[field] = value
+}
+
+async function saveRequest(action) {
+  const dept = document.getElementById('f_dept') ? document.getElementById('f_dept').value : state.user.dept_id
+  const urgency = document.getElementById('f_urgency') ? document.getElementById('f_urgency').value : 'routine'
+  const purpose = document.getElementById('f_purpose') ? document.getElementById('f_purpose').value.trim() : ''
+  const reqType = state.sourceType || 'supply'
+  // Validate items
+  const validItems = state.itemRows.filter(r => r.item_name && r.item_name.trim())
+  if (validItems.length === 0) { showToast('error', 'Validation', 'Please add at least one item.'); return }
+  if (action === 'submit' && !purpose) { showToast('error', 'Validation', 'Please enter a purpose/justification.'); return }
+
+  try {
+    // Generate request number
+    const { data: numData } = await SB.rpc('generate_request_no', {}, { schema: 'csr' })
+    const requestNo = numData || ('CSR-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
+
+    const payload = {
+      request_no: requestNo,
+      request_type: reqType,
+      dept_id: dept,
+      requested_by: state.user.id,
+      urgency,
+      purpose,
+      status: action === 'submit' ? 'pending_approval' : 'draft',
+      current_approval_level: 1,
+      source_system: state.sourceSystem || 'manual',
+      source_ref_id: state.sourceRefId || null,
+    }
+
+    // DERP fields
+    if (reqType === 'derp') {
+      payload.asset_condition = document.getElementById('f_condition') ? document.getElementById('f_condition').value : null
+      payload.disposal_action = document.getElementById('f_disposal') ? document.getElementById('f_disposal').value : null
+      payload.asset_condition_notes = document.getElementById('f_condition_notes') ? document.getElementById('f_condition_notes').value : null
+    }
+
+    const { data: req, error } = await SB.from('requests').insert(payload).select().single()
+    if (error) throw error
+
+    // Insert items
+    const itemsPayload = validItems.map(item => ({
+      request_id: req.id,
+      item_name: item.item_name,
+      item_description: item.item_description || null,
+      quantity: Number(item.quantity) || 1,
+      unit: item.unit,
+      estimated_cost: Number(item.estimated_cost) || 0,
+      category: item.category
+    }))
+    await SB.from('request_items').insert(itemsPayload)
+
+    // Cross-reference if from another system
+    if (state.sourceSystem && state.sourceRefId) {
+      await SB.from('cross_references').insert({
+        source_system: state.sourceSystem,
+        source_id: state.sourceRefId,
+        target_system: 'csr',
+        target_id: req.id,
+        relationship: 'triggered_by'
+      })
+    }
+
+    closeModal('newRequestModal')
+    showToast('success', action === 'submit' ? 'Request Submitted' : 'Draft Saved', req.request_no + ' has been ' + (action === 'submit' ? 'submitted for approval.' : 'saved as draft.'))
+
+    // Notify approver if submitted
+    if (action === 'submit') {
+      notifyApprovers(req, 1)
+    }
+
+    // Reset source params
+    state.sourceSystem = null; state.sourceRefId = null; state.sourceItem = null
+    state.sourceUrgency = null; state.sourceType = null
+
+    // Refresh current page
+    if (state.page === 'dashboard') renderDashboard()
+    else if (state.page === 'my_requests') renderMyRequests()
+
+  } catch(e) {
+    showToast('error', 'Error', e.message || 'Failed to save request.')
+    console.error(e)
+  }
+}
+
+async function submitRequest(id) {
+  confirm2('Submit this request for approval?', async () => {
+    const { error } = await SB.from('requests').update({ status: 'pending_approval', current_approval_level: 1 }).eq('id', id)
+    if (error) { showToast('error', 'Error', error.message); return }
+    closeModal('requestDetailModal')
+    showToast('success', 'Submitted', 'Request submitted for approval.')
+    if (state.page === 'my_requests') renderMyRequests()
+    else if (state.page === 'dashboard') renderDashboard()
+  })
+}
+
+async function markForPO(id) {
+  confirm2('Mark this request as For PO (Purchase Order)?', async () => {
+    const { error } = await SB.from('requests').update({ status: 'for_po' }).eq('id', id)
+    if (error) { showToast('error', 'Error', error.message); return }
+    closeModal('requestDetailModal')
+    showToast('success', 'Updated', 'Request moved to PO queue.')
+    if (state.page === 'all_requests') renderAllRequests()
+  })
+}
+
+// ═══════════════════════════════════════════
+// APPROVAL
+// ═══════════════════════════════════════════
+let approvalAction = null
+let approvalRequestId = null
+
+function openApprovalModal(reqId, action) {
+  approvalAction = action
+  approvalRequestId = reqId
+  const titles = { approve: 'Approve Request', reject: 'Reject Request', return: 'Return for Revision' }
+  const descs = {
+    approve: 'You are approving this request. It will proceed to the next approval level or be fully approved.',
+    reject: 'You are rejecting this request. The requester will be notified. This action cannot be undone.',
+    return: 'You are returning this request to the requester for revision. Please provide remarks.'
+  }
+  document.getElementById('approvalModalTitle').textContent = titles[action]
+  document.getElementById('approvalModalDesc').textContent = descs[action]
+  document.getElementById('remarksReq').style.display = action === 'approve' ? 'none' : 'inline'
+  document.getElementById('approvalRemarks').value = ''
+
+  const footer = document.getElementById('approvalModalFooter')
+  const btnClass = action === 'approve' ? 'btn-success' : action === 'reject' ? 'btn-danger' : 'btn-secondary'
+  footer.innerHTML = '<button class="btn btn-ghost" onclick="closeModal(\'approvalModal\')">Cancel</button>'
+    + '<button class="btn ' + btnClass + '" onclick="processApproval()">Confirm ' + titles[action] + '</button>'
+
+  closeModal('requestDetailModal')
+  openModal('approvalModal')
+}
+
+async function processApproval() {
+  const remarks = document.getElementById('approvalRemarks').value.trim()
+  if ((approvalAction === 'reject' || approvalAction === 'return') && !remarks) {
+    showToast('error', 'Required', 'Please enter remarks for this action.')
+    return
+  }
+  try {
+    const req = (await SB.from('requests').select('*').eq('id', approvalRequestId).single()).data
+    const role = state.user.csr_role
+    const level = role === 'admin' ? req.current_approval_level : roleApprovalLevel(role)
+
+    // Insert approval record
+    await SB.from('approvals').insert({
+      request_id: approvalRequestId,
+      approver_id: state.user.id,
+      approver_role: role,
+      level,
+      decision: approvalAction === 'approve' ? 'approved' : approvalAction === 'reject' ? 'rejected' : 'returned',
+      remarks,
+      decided_at: new Date().toISOString()
+    })
+
+    // Update request status
+    let newStatus = req.status
+    let newLevel = req.current_approval_level
+    if (approvalAction === 'approve') {
+      if (level >= 3 || (level >= 2)) { // simplified: 2 levels for now unless finance needed
+        newStatus = 'approved'; newLevel = level
+      } else {
+        newLevel = level + 1
+      }
+    } else if (approvalAction === 'reject') {
+      newStatus = 'cancelled'
+    } else {
+      newStatus = 'draft'; newLevel = 1
+    }
+
+    await SB.from('requests').update({ status: newStatus, current_approval_level: newLevel }).eq('id', approvalRequestId)
+
+    closeModal('approvalModal')
+    showToast('success', 'Done', 'Request has been ' + (approvalAction === 'approve' ? 'approved.' : approvalAction === 'reject' ? 'rejected.' : 'returned.'))
+
+    // Notify requester
+    if (req.requested_by) {
+      await SB.from('system_notifications').insert({
+        recipient_id: req.requested_by,
+        target_system: 'csr',
+        target_ref_id: req.id,
+        source_system: 'csr',
+        message: 'Your request ' + req.request_no + ' has been ' + (approvalAction === 'approve' ? 'approved' : approvalAction === 'reject' ? 'rejected' : 'returned for revision') + (remarks ? ': ' + remarks : '.'),
+        type: approvalAction === 'approve' ? 'approved' : 'rejected'
+      })
+    }
+
+    if (state.page === 'approval_queue') renderApprovalQueue()
+    else if (state.page === 'all_requests') renderAllRequests()
+    else if (state.page === 'dashboard') renderDashboard()
+
+  } catch(e) {
+    showToast('error', 'Error', e.message)
+    console.error(e)
+  }
+}
+
+async function notifyApprovers(req, level) {
+  try {
+    const roleMap = { 1: 'dept_head', 2: 'supply_officer', 3: 'finance' }
+    const approverRole = roleMap[level]
+    const approvers = state.users.filter(u => u.csr_role === approverRole || u.csr_role === 'admin')
+    for (const approver of approvers) {
+      await SB.from('system_notifications').insert({
+        recipient_id: approver.id,
+        target_system: 'csr',
+        target_ref_id: req.id,
+        source_system: 'csr',
+        message: 'New CSR request ' + req.request_no + ' requires your approval.',
+        type: 'approval_needed'
+      })
+    }
+  } catch(e) { console.warn('notifyApprovers', e) }
+}
+
+// ═══════════════════════════════════════════
+// PLACEHOLDER PAGES
+// ═══════════════════════════════════════════
+function renderPurchaseOrders() {
+  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">🛒</div><h3>Purchase Orders</h3><p>PO management coming in next build phase.</p></div>'
+}
+function renderIssuance() {
+  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📤</div><h3>Issuance</h3><p>Issuance module coming in next build phase.</p></div>'
+}
+function renderStockInventory() {
+  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">🏪</div><h3>Stock Inventory</h3><p>Stock management coming in next build phase.</p></div>'
+}
+function renderDerp() {
+  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">♻️</div><h3>DERP</h3><p>Department Equipment Replacement Program module coming in next build phase.</p></div>'
+}
+function renderReports() {
+  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📈</div><h3>Reports</h3><p>Reports module coming in next build phase.</p></div>'
+}
+function renderSettings() {
+  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">⚙️</div><h3>Settings</h3><p>Settings module coming in next build phase.</p></div>'
+}
+function renderNotifications() {
+  const notifs = state.notifications
+  let html = '<div class="page-header"><h2>Notifications</h2></div>'
+  if (notifs.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">🔔</div><h3>No notifications</h3><p>You\'re all caught up.</p></div>'
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:10px;">'
+    notifs.forEach(n => {
+      html += '<div class="card card-sm"><div style="font-size:13px;">' + n.message + '</div>'
+      html += '<div style="font-size:11px;color:var(--txt2);margin-top:4px;">' + formatDate(n.created_at) + '</div></div>'
+    })
+    html += '</div>'
+  }
+  document.getElementById('mainContent').innerHTML = html
+  document.getElementById('notifDot').style.display = 'none'
+}
+
+// ═══════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════
+function formatStatus(s) {
+  const map = { draft:'Draft', pending_approval:'Pending Approval', approved:'Approved',
+    for_po:'For PO', ordered:'Ordered', delivered:'Delivered', issued:'Issued', cancelled:'Cancelled' }
+  return map[s] || s
+}
+
+function statusBadge(s) {
+  const classes = {
+    draft:'badge-draft', pending_approval:'badge-pending', approved:'badge-approved',
+    for_po:'badge-for_po', ordered:'badge-ordered', delivered:'badge-delivered',
+    issued:'badge-issued', cancelled:'badge-cancelled'
+  }
+  return '<span class="badge ' + (classes[s]||'badge-draft') + '">' + formatStatus(s) + '</span>'
+}
+
+function formatDate(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-PH', { month:'short', day:'numeric', year:'numeric' })
+}
+
+function toggleTheme() {
+  const html = document.documentElement
+  const theme = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+  html.setAttribute('data-theme', theme)
+  localStorage.setItem('tdmh_theme', theme)
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open') }
+function closeModal(id) { document.getElementById(id).classList.remove('open') }
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open')
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open')
+}
+
+function toggleUserMenu() {
+  confirm2('Sign out of all TDMH systems?', doLogout)
+}
+
+function showToast(type, title, body) {
+  const c = document.getElementById('toastContainer')
+  const id = 'toast_' + Date.now()
+  const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' }
+  const el = document.createElement('div')
+  el.className = 'toast'; el.id = id
+  el.innerHTML = '<div class="toast-icon">' + (icons[type]||'ℹ️') + '</div>'
+    + '<div><div class="toast-title">' + title + '</div><div class="toast-body">' + body + '</div></div>'
+  c.appendChild(el)
+  setTimeout(() => {
+    el.style.opacity = '0'; el.style.transform = 'translateX(20px)'
+    el.style.transition = 'all .3s'
+    setTimeout(() => el.remove(), 300)
+  }, 3500)
+}
+
+function confirm2(msg, onOk) {
+  document.getElementById('confirmMsg').textContent = msg
+  document.getElementById('confirmOkBtn').onclick = () => { closeModal('confirmModal'); onOk() }
+  openModal('confirmModal')
+}
+
+async function sendSMS(phones, message) {
+  if (!phones || phones.filter(Boolean).length === 0) return
+  try {
+    await fetch(SMS_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phones, message })
+    })
+  } catch(e) { console.warn('[SMS]', e.message) }
+}
+
+async function sendEmail(to, subject, body) {
+  try {
+    await fetch(EMAIL_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, subject, body })
+    })
+  } catch(e) { console.warn('[Email]', e.message) }
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open') })
+})
+
+// Enter key on login
+document.getElementById('loginPass').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin()
+})
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+;(async function init() {
+  // Restore theme
+  const savedTheme = localStorage.getItem('tdmh_theme') || 'dark'
+  document.documentElement.setAttribute('data-theme', savedTheme)
+
+  // Check for existing Supabase Auth session first
+  const { data: { session: authSession } } = await SB.auth.getSession()
+  if (authSession) {
+    // Auth session exists — fetch profile and restore app
+    const { data: profile } = await SB
+      .schema('shared')
+      .from('users')
+      .select('*')
+      .eq('auth_id', authSession.user.id)
+      .eq('is_active', true)
+      .single()
+    if (profile) {
+      const session = {
+        id: profile.id,
+        auth_id: authSession.user.id,
+        employee_no: profile.employee_no,
+        full_name: profile.full_name,
+        dept_id: profile.dept_id,
+        phone: profile.phone,
+        email: profile.email,
+        csr_role: profile.csr_role,
+        maintenance_role: profile.maintenance_role,
+        it_role: profile.it_role,
+        inventory_role: profile.inventory_role
+      }
+      setSession(session)
+      await bootApp(session)
+      return
+    }
+  }
+
+  // Fallback to localStorage session (cross-system share)
+  const session = getSession()
+  if (session) {
+    await bootApp(session)
+    return
+  }
+
+  // No session — show login
+})()
+</script>
+</body>
+</html>
