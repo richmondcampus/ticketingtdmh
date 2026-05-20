@@ -4836,11 +4836,763 @@ async function notifyDerpEvaluators(req, category) {
     }
   } catch(e) { console.warn('notifyDerpEvaluators', e) }
 }
-function renderReports() {
-  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📈</div><h3>Reports</h3><p>Reports module coming in next build phase.</p></div>'
+// ═══════════════════════════════════════════
+// REPORTS MODULE
+// ═══════════════════════════════════════════
+async function renderReports() {
+  const content = document.getElementById('mainContent')
+
+  // Load all data for reports
+  const [reqRes, issRes, poRes, stockRes] = await Promise.all([
+    SB.from('requests').select('*').order('created_at', { ascending: false }),
+    SB.from('issuances').select('*').order('issued_at', { ascending: false }),
+    SB.from('purchase_orders').select('*').order('created_at', { ascending: false }),
+    SB.from('stock_items').select('*').eq('is_active', true)
+  ])
+
+  const requests = reqRes.data || []
+  const issuances = issRes.data || []
+  const pos = poRes.data || []
+  const stockItems = stockRes.data || []
+
+  // Date range filter — default: current year
+  const now = new Date()
+  const yearStart = new Date(now.getFullYear(), 0, 1).toISOString()
+
+  const thisYear = requests.filter(r => r.created_at >= yearStart)
+  const thisYearPOs = pos.filter(p => p.created_at >= yearStart)
+
+  // Summary stats
+  const totalRequests = thisYear.length
+  const approvedRequests = thisYear.filter(r => ['approved','for_po','ordered','delivered','issued','closed'].includes(r.status)).length
+  const totalSpend = thisYearPOs.filter(p => p.status === 'delivered').reduce((s,p) => s + Number(p.total_amount||0), 0)
+  const pendingApproval = requests.filter(r => r.status === 'pending_approval').length
+  const lowStock = stockItems.filter(i => Number(i.quantity_on_hand) <= Number(i.reorder_level) && i.reorder_level > 0).length
+
+  // By department
+  const deptMap = {}
+  thisYear.forEach(r => {
+    const dept = state.departments.find(d => d.id === r.dept_id)
+    const name = dept ? dept.dept_name : 'Unknown'
+    deptMap[name] = (deptMap[name] || 0) + 1
+  })
+  const topDepts = Object.entries(deptMap).sort((a,b) => b[1]-a[1]).slice(0,8)
+  const maxDept = topDepts[0] ? topDepts[0][1] : 1
+
+  // By type
+  const typeMap = { supply:0, purchase:0, issuance:0, derp:0 }
+  thisYear.forEach(r => { typeMap[r.request_type] = (typeMap[r.request_type]||0)+1 })
+
+  // By month (last 6 months)
+  const monthlyData = []
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date()
+    d.setMonth(d.getMonth() - i)
+    const month = d.toLocaleString('default', { month: 'short' })
+    const year = d.getFullYear()
+    const monthStr = d.toISOString().substring(0, 7)
+    const count = requests.filter(r => r.created_at && r.created_at.startsWith(monthStr)).length
+    const spend = pos.filter(p => p.po_date && p.po_date.startsWith(monthStr) && p.status === 'delivered')
+      .reduce((s,p) => s + Number(p.total_amount||0), 0)
+    monthlyData.push({ month: month + ' ' + year, count, spend })
+  }
+  const maxCount = Math.max(...monthlyData.map(m => m.count), 1)
+  const maxSpend = Math.max(...monthlyData.map(m => m.spend), 1)
+
+  // By status
+  const statusMap = {}
+  requests.forEach(r => { statusMap[r.status] = (statusMap[r.status]||0)+1 })
+
+  // DERP breakdown
+  const derpRequests = requests.filter(r => r.request_type === 'derp')
+  const derpByCategory = { it:0, gsd:0, maintenance:0 }
+  derpRequests.forEach(r => { if (r.derp_category) derpByCategory[r.derp_category]++ })
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>📈 Reports</h2><p style="font-size:13px;color:var(--txt2);">Year-to-date analytics — ' + now.getFullYear() + '</p></div>'
+  html += '<div class="page-header-actions">'
+  html += '<button class="btn btn-secondary" onclick="exportReportsCSV()">⬇️ Export CSV</button>'
+  html += '</div></div>'
+
+  // KPI Cards
+  html += '<div class="stat-grid" style="margin-bottom:24px;">'
+  html += statCard('📋', 'Total Requests (YTD)', totalRequests, 'All request types', 'stat-accent')
+  html += statCard('✅', 'Approved/Fulfilled', approvedRequests, Math.round(totalRequests > 0 ? (approvedRequests/totalRequests)*100 : 0) + '% approval rate', 'stat-green')
+  html += statCard('💰', 'Total Spend (YTD)', '₱' + totalSpend.toLocaleString(), 'Delivered POs', 'stat-blue')
+  html += statCard('⏳', 'Pending Approval', pendingApproval, 'Awaiting action', 'stat-amber')
+  html += statCard('⚠️', 'Low Stock Items', lowStock, 'Below reorder level', 'stat-red')
+  html += statCard('♻️', 'DERP Requests', derpRequests.length, 'IT: ' + derpByCategory.it + ' · GSD: ' + derpByCategory.gsd + ' · Maint: ' + derpByCategory.maintenance, 'stat-accent')
+  html += '</div>'
+
+  // Charts row 1
+  html += '<div class="chart-grid" style="margin-bottom:20px;">'
+
+  // Monthly requests trend
+  html += '<div class="chart-card">'
+  html += '<div class="chart-title">Monthly Requests (Last 6 Months)</div>'
+  html += '<div class="bar-chart">'
+  monthlyData.forEach(m => {
+    const pct = Math.round((m.count / maxCount) * 100)
+    html += '<div class="bar-row"><div class="bar-label" title="' + m.month + '">' + m.month + '</div>'
+    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--accent);"></div></div>'
+    html += '<div class="bar-val">' + m.count + '</div></div>'
+  })
+  html += '</div></div>'
+
+  // Monthly spend trend
+  html += '<div class="chart-card">'
+  html += '<div class="chart-title">Monthly Spend — Delivered POs (₱)</div>'
+  html += '<div class="bar-chart">'
+  monthlyData.forEach(m => {
+    const pct = Math.round((m.spend / maxSpend) * 100)
+    html += '<div class="bar-row"><div class="bar-label" title="' + m.month + '">' + m.month + '</div>'
+    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--green);"></div></div>'
+    html += '<div class="bar-val" style="width:70px;">₱' + (m.spend >= 1000 ? Math.round(m.spend/1000) + 'k' : m.spend) + '</div></div>'
+  })
+  html += '</div></div>'
+
+  html += '</div>'
+
+  // Charts row 2
+  html += '<div class="chart-grid" style="margin-bottom:20px;">'
+
+  // Requests by department
+  html += '<div class="chart-card">'
+  html += '<div class="chart-title">Top Requesting Departments (YTD)</div>'
+  html += '<div class="bar-chart">'
+  if (topDepts.length === 0) {
+    html += '<p style="color:var(--txt2);font-size:12px;">No data yet</p>'
+  }
+  topDepts.forEach(([name, count]) => {
+    const pct = Math.round((count / maxDept) * 100)
+    html += '<div class="bar-row"><div class="bar-label" title="' + name + '">' + name + '</div>'
+    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--blue);"></div></div>'
+    html += '<div class="bar-val">' + count + '</div></div>'
+  })
+  html += '</div></div>'
+
+  // Requests by type
+  html += '<div class="chart-card">'
+  html += '<div class="chart-title">Requests by Type (YTD)</div>'
+  html += '<div class="bar-chart">'
+  const typeColors = { supply:'var(--green)', purchase:'var(--blue)', issuance:'var(--violet)', derp:'var(--amber)' }
+  const typeLabels = { supply:'Supply', purchase:'Purchase', issuance:'Issuance', derp:'DERP' }
+  const maxType = Math.max(...Object.values(typeMap), 1)
+  Object.entries(typeMap).forEach(([type, count]) => {
+    const pct = Math.round((count / maxType) * 100)
+    html += '<div class="bar-row"><div class="bar-label">' + (typeLabels[type]||type) + '</div>'
+    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:' + (typeColors[type]||'var(--accent)') + ';"></div></div>'
+    html += '<div class="bar-val">' + count + '</div></div>'
+  })
+  html += '</div></div>'
+
+  html += '</div>'
+
+  // Pending approvals aging
+  const pendingReqs = requests.filter(r => r.status === 'pending_approval')
+  if (pendingReqs.length > 0) {
+    html += '<div class="card" style="margin-bottom:20px;">'
+    html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">⏳ Pending Approvals Aging</div>'
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Request No.</th><th>Type</th><th>Dept</th><th>Urgency</th><th>Days Waiting</th><th>Level</th>'
+    html += '</tr></thead><tbody>'
+    pendingReqs.forEach(r => {
+      const dept = state.departments.find(d => d.id === r.dept_id)
+      const days = Math.floor((Date.now() - new Date(r.created_at)) / 86400000)
+      const agingColor = days >= 7 ? 'var(--red)' : days >= 3 ? 'var(--amber)' : 'var(--green)'
+      const levelLabels = { 1:'Dept Head', 2:'Supply Officer', 3:'Finance' }
+      html += '<tr>'
+      html += '<td class="td-mono">' + r.request_no + '</td>'
+      html += '<td><span class="badge badge-' + r.request_type + '">' + r.request_type.toUpperCase() + '</span></td>'
+      html += '<td style="color:var(--txt2);">' + (dept ? dept.dept_name : '—') + '</td>'
+      html += '<td><span class="badge badge-' + r.urgency + '">' + r.urgency.toUpperCase() + '</span></td>'
+      html += '<td style="font-weight:700;color:' + agingColor + ';">' + days + ' days</td>'
+      html += '<td style="color:var(--txt2);">' + (levelLabels[r.current_approval_level] || '—') + '</td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div></div>'
+  }
+
+  // Low stock report
+  const lowStockItems = stockItems.filter(i => Number(i.quantity_on_hand) <= Number(i.reorder_level) && Number(i.reorder_level) > 0)
+  if (lowStockItems.length > 0) {
+    html += '<div class="card" style="margin-bottom:20px;">'
+    html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">⚠️ Low Stock Items</div>'
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Item</th><th>Category</th><th>On Hand</th><th>Reorder Level</th><th>Deficit</th>'
+    html += '</tr></thead><tbody>'
+    lowStockItems.sort((a,b) => Number(a.quantity_on_hand) - Number(b.quantity_on_hand)).forEach(item => {
+      const cat = STOCK_CATEGORIES[item.category] || STOCK_CATEGORIES.other
+      const deficit = Number(item.reorder_level) - Number(item.quantity_on_hand)
+      const isOut = Number(item.quantity_on_hand) <= 0
+      html += '<tr>'
+      html += '<td><strong>' + item.item_name + '</strong></td>'
+      html += '<td>' + cat.icon + ' ' + cat.label + '</td>'
+      html += '<td style="color:' + (isOut ? 'var(--red)' : 'var(--amber)') + ';font-weight:700;">' + item.quantity_on_hand + ' ' + (item.unit||'') + '</td>'
+      html += '<td style="color:var(--txt2);">' + item.reorder_level + '</td>'
+      html += '<td style="color:var(--red);font-weight:600;">-' + deficit + '</td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div></div>'
+  }
+
+  // DERP pipeline
+  const activeDerps = requests.filter(r => r.request_type === 'derp' && r.status !== 'closed' && r.status !== 'cancelled')
+  if (activeDerps.length > 0) {
+    html += '<div class="card" style="margin-bottom:20px;">'
+    html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">♻️ Active DERP Pipeline</div>'
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Request No.</th><th>Category</th><th>Status</th><th>Decision</th><th>SLA</th><th>Days Open</th>'
+    html += '</tr></thead><tbody>'
+    activeDerps.forEach(r => {
+      const cat = DERP_CATEGORIES[r.derp_category] || {}
+      const days = Math.floor((Date.now() - new Date(r.created_at)) / 86400000)
+      const slaHours = r.derp_sla_hours || 48
+      const hoursElapsed = days * 24
+      const slaBreach = hoursElapsed > slaHours
+      html += '<tr>'
+      html += '<td class="td-mono">' + r.request_no + '</td>'
+      html += '<td>' + (cat.icon||'♻️') + ' ' + (cat.label||r.derp_category||'—') + '</td>'
+      html += '<td>' + derpStatusBadge(r.status) + '</td>'
+      html += '<td>' + (r.derp_decision ? '<span class="badge badge-' + (r.derp_decision==='for_repair'?'approved':'derp') + '">' + r.derp_decision.replace(/_/g,' ') + '</span>' : '<span style="color:var(--txt3);font-size:12px;">Pending</span>') + '</td>'
+      html += '<td style="color:' + (slaBreach?'var(--red)':'var(--green)') + ';font-size:12px;">' + (slaBreach ? '⚠️ Breached' : '✓ OK') + '</td>'
+      html += '<td style="color:' + (days >= 7 ? 'var(--red)' : 'var(--txt2)') + ';">' + days + 'd</td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div></div>'
+  }
+
+  // Recent issuances
+  const recentIss = issuances.slice(0, 10)
+  if (recentIss.length > 0) {
+    html += '<div class="card">'
+    html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">📤 Recent Issuances</div>'
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Issuance No.</th><th>Receiver</th><th>Scenario</th><th>Confirmed</th><th>Date</th>'
+    html += '</tr></thead><tbody>'
+    recentIss.forEach(iss => {
+      const receiver = state.users.find(u => u.id === iss.received_by)
+      html += '<tr>'
+      html += '<td class="td-mono">' + iss.issuance_no + '</td>'
+      html += '<td>' + (receiver ? receiver.full_name : (iss.confirmed_by_name||'—')) + '</td>'
+      html += '<td><span class="badge ' + (iss.scenario==='from_stock'?'badge-approved':'badge-issued') + '">' + (iss.scenario==='from_stock'?'From Stock':'After PO') + '</span></td>'
+      html += '<td>' + (iss.confirmed_at ? '<span style="color:var(--green);font-size:12px;">✅ ' + formatDate(iss.confirmed_at) + '</span>' : '<span style="color:var(--amber);font-size:12px;">⏳ Pending</span>') + '</td>'
+      html += '<td style="color:var(--txt2);">' + formatDate(iss.issued_at) + '</td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div></div>'
+  }
+
+  content.innerHTML = html
 }
+
+async function exportReportsCSV() {
+  const { data: requests } = await SB.from('requests').select('*').order('created_at', { ascending: false })
+  if (!requests || requests.length === 0) { showToast('info','No Data','No requests to export.'); return }
+
+  const rows = [['Request No.','Type','Department','Purpose','Urgency','Status','Date Filed','DERP Category','DERP Decision']]
+  requests.forEach(r => {
+    const dept = state.departments.find(d => d.id === r.dept_id)
+    rows.push([
+      r.request_no, r.request_type,
+      dept ? dept.dept_name : '',
+      (r.purpose||'').replace(/,/g,' '),
+      r.urgency, r.status,
+      r.created_at ? r.created_at.split('T')[0] : '',
+      r.derp_category || '',
+      r.derp_decision || ''
+    ])
+  })
+
+  const csv = rows.map(r => r.map(v => '"' + String(v||'').replace(/"/g,'""') + '"').join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'TDMH_CSR_Report_' + new Date().toISOString().split('T')[0] + '.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+  showToast('success','Exported','CSV downloaded successfully.')
+}
+
+// ═══════════════════════════════════════════
+// SETTINGS MODULE
+// ═══════════════════════════════════════════
+let settingsState = { tab: 'users' }
+
 function renderSettings() {
-  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">⚙️</div><h3>Settings</h3><p>Settings module coming in next build phase.</p></div>'
+  const content = document.getElementById('mainContent')
+
+  let html = '<div class="page-header">'
+  html += '<h2>⚙️ Settings</h2>'
+  html += '</div>'
+
+  // Tabs
+  const tabs = [
+    { id:'users', icon:'👥', label:'Users' },
+    { id:'departments', icon:'🏢', label:'Departments' },
+    { id:'locations', icon:'📍', label:'Stock Locations' },
+    { id:'thresholds', icon:'💰', label:'Approval Thresholds' },
+    { id:'preferences', icon:'🔔', label:'Preferences' },
+  ]
+
+  html += '<div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--bdr);padding-bottom:0;flex-wrap:wrap;">'
+  tabs.forEach(t => {
+    const active = settingsState.tab === t.id
+    html += '<button onclick="switchSettingsTab(\'' + t.id + '\')" style="padding:8px 16px;border:none;background:transparent;color:' + (active ? 'var(--accent)' : 'var(--txt2)') + ';border-bottom:2px solid ' + (active ? 'var(--accent)' : 'transparent') + ';cursor:pointer;font-family:inherit;font-size:13px;font-weight:' + (active ? '600' : '400') + ';">'
+    html += t.icon + ' ' + t.label + '</button>'
+  })
+  html += '</div>'
+
+  html += '<div id="settings_tab_content"></div>'
+  content.innerHTML = html
+  renderSettingsTab(settingsState.tab)
+}
+
+function switchSettingsTab(tab) {
+  settingsState.tab = tab
+  renderSettings()
+}
+
+async function renderSettingsTab(tab) {
+  const el = document.getElementById('settings_tab_content')
+  if (!el) return
+
+  if (tab === 'users') await renderUsersSettings(el)
+  else if (tab === 'departments') await renderDeptSettings(el)
+  else if (tab === 'locations') await renderLocationsSettings(el)
+  else if (tab === 'thresholds') await renderThresholdsSettings(el)
+  else if (tab === 'preferences') await renderPreferencesSettings(el)
+}
+
+// ─────────────────────────────
+// USERS SETTINGS
+// ─────────────────────────────
+async function renderUsersSettings(el) {
+  const { data: users } = await SB.from('users').select('*').order('full_name')
+  const allUsers = users || []
+
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+  html += '<div><strong>' + allUsers.length + ' users</strong> <span style="color:var(--txt2);font-size:13px;">· ' + allUsers.filter(u=>u.is_active).length + ' active</span></div>'
+  html += '<button class="btn btn-primary" onclick="openAddUserModal()">＋ Add User</button>'
+  html += '</div>'
+
+  html += '<div class="table-wrap"><table><thead><tr>'
+  html += '<th>Name</th><th>Employee No.</th><th>Dept</th><th>CSR Role</th><th>IT Role</th><th>Maintenance</th><th>Inventory</th><th>Status</th><th></th>'
+  html += '</tr></thead><tbody>'
+
+  allUsers.forEach(u => {
+    const dept = state.departments.find(d => d.id === u.dept_id)
+    const roleBadge = (role, color) => role
+      ? '<span style="font-size:11px;padding:2px 7px;border-radius:10px;background:' + color + '18;color:' + color + ';">' + role + '</span>'
+      : '<span style="color:var(--txt3);font-size:11px;">—</span>'
+
+    html += '<tr>'
+    html += '<td><strong>' + u.full_name + '</strong>'
+    if (u.email) html += '<br><span style="font-size:11px;color:var(--txt2);">' + u.email + '</span>'
+    html += '</td>'
+    html += '<td class="td-mono" style="font-size:11px;">' + u.employee_no + '</td>'
+    html += '<td style="font-size:12px;color:var(--txt2);">' + (dept ? dept.dept_name : '—') + '</td>'
+    html += '<td>' + roleBadge(u.csr_role, 'var(--accent)') + '</td>'
+    html += '<td>' + roleBadge(u.it_role, 'var(--blue)') + '</td>'
+    html += '<td>' + roleBadge(u.maintenance_role, 'var(--amber)') + '</td>'
+    html += '<td>' + roleBadge(u.inventory_role, 'var(--green)') + '</td>'
+    html += '<td>' + (u.is_active
+      ? '<span class="badge badge-approved">Active</span>'
+      : '<span class="badge badge-cancelled">Inactive</span>') + '</td>'
+    html += '<td><div style="display:flex;gap:4px;">'
+    html += '<button class="btn btn-ghost btn-sm" onclick="openEditUserModal(\'' + u.id + '\')">Edit</button>'
+    if (u.id !== state.user.id) {
+      html += '<button class="btn btn-ghost btn-sm" onclick="toggleUserActive(\'' + u.id + '\',' + u.is_active + ')">' + (u.is_active ? 'Deactivate' : 'Activate') + '</button>'
+    }
+    html += '</div></td>'
+    html += '</tr>'
+  })
+  html += '</tbody></table></div>'
+  el.innerHTML = html
+}
+
+function openAddUserModal() {
+  document.getElementById('newRequestTitle').textContent = '👤 Add New User'
+  renderUserForm(null)
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveUser()">Create User</button>'
+  openModal('newRequestModal')
+}
+
+function openEditUserModal(userId) {
+  const user = (window._settingsUsers || []).find ? null : null
+  document.getElementById('newRequestTitle').textContent = '✎ Edit User'
+  document.getElementById('newRequestBody').dataset.userId = userId
+
+  SB.from('users').select('*').eq('id', userId).single().then(({ data }) => {
+    if (data) renderUserForm(data)
+  })
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveUser()">Update User</button>'
+  openModal('newRequestModal')
+}
+
+function renderUserForm(u) {
+  let html = '<div class="field-row">'
+  html += '<div class="field"><label>Full Name <span style="color:var(--red);">*</span></label>'
+  html += '<input type="text" id="u_name" value="' + (u?u.full_name:'') + '" placeholder="Juan dela Cruz"></div>'
+  html += '<div class="field"><label>Employee No. <span style="color:var(--red);">*</span></label>'
+  html += '<input type="text" id="u_empno" value="' + (u?u.employee_no:'') + '" placeholder="EMP-001"></div>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Department</label><select id="u_dept">'
+  html += '<option value="">— Select —</option>'
+  state.departments.forEach(d => {
+    const sel = u && u.dept_id === d.id ? ' selected' : ''
+    html += '<option value="' + d.id + '"' + sel + '>' + d.dept_name + '</option>'
+  })
+  html += '</select></div>'
+  html += '<div class="field"><label>Phone</label>'
+  html += '<input type="text" id="u_phone" value="' + (u?(u.phone||''):'') + '" placeholder="09xx-xxx-xxxx"></div>'
+  html += '</div>'
+
+  html += '<div class="field"><label>Email</label>'
+  html += '<input type="email" id="u_email" value="' + (u?(u.email||''):'') + '" placeholder="user@tdmh.com"></div>'
+
+  if (!u) {
+    html += '<div class="field"><label>Password <span style="color:var(--red);">*</span></label>'
+    html += '<input type="password" id="u_password" placeholder="Minimum 8 characters"></div>'
+  }
+
+  html += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-top:4px;">'
+  html += '<div style="font-size:12px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">System Access & Roles</div>'
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+
+  const roleOptions = {
+    csr_role: { label:'CSR Role', opts:['requester','dept_head','supply_officer','finance','admin','viewer'] },
+    it_role: { label:'IT Role', opts:['requester','technician','supervisor','admin'] },
+    maintenance_role: { label:'Maintenance Role', opts:['requester','technician','supervisor','admin'] },
+    inventory_role: { label:'Inventory Role', opts:['viewer','encoder','admin'] }
+  }
+
+  Object.entries(roleOptions).forEach(([key, cfg]) => {
+    html += '<div class="field"><label>' + cfg.label + '</label><select id="u_' + key + '">'
+    html += '<option value="">— No Access —</option>'
+    cfg.opts.forEach(opt => {
+      const sel = u && u[key] === opt ? ' selected' : ''
+      html += '<option value="' + opt + '"' + sel + '>' + opt.charAt(0).toUpperCase() + opt.slice(1).replace(/_/g,' ') + '</option>'
+    })
+    html += '</select></div>'
+  })
+  html += '</div></div>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+}
+
+async function saveUser() {
+  const name = document.getElementById('u_name').value.trim()
+  const empNo = document.getElementById('u_empno').value.trim()
+  const dept = document.getElementById('u_dept').value
+  const phone = document.getElementById('u_phone').value.trim()
+  const email = document.getElementById('u_email').value.trim()
+  const password = document.getElementById('u_password')?.value
+  const userId = document.getElementById('newRequestBody').dataset.userId
+
+  if (!name) { showToast('error','Validation','Full name is required.'); return }
+  if (!empNo) { showToast('error','Validation','Employee No. is required.'); return }
+  if (!userId && !password) { showToast('error','Validation','Password is required for new users.'); return }
+  if (!userId && password && password.length < 8) { showToast('error','Validation','Password must be at least 8 characters.'); return }
+
+  const payload = {
+    full_name: name,
+    employee_no: empNo,
+    dept_id: dept || null,
+    phone: phone || null,
+    email: email || null,
+    csr_role: document.getElementById('u_csr_role').value || null,
+    it_role: document.getElementById('u_u_it_role') ? document.getElementById('u_u_it_role').value || null : document.getElementById('u_it_role')?.value || null,
+    maintenance_role: document.getElementById('u_maintenance_role')?.value || null,
+    inventory_role: document.getElementById('u_inventory_role')?.value || null,
+    updated_at: new Date().toISOString()
+  }
+
+  try {
+    if (userId) {
+      await SB.from('users').update(payload).eq('id', userId)
+      showToast('success','Updated', name + ' updated.')
+    } else {
+      // Create via edge function (handles auth creation)
+      const adminKey = prompt('Enter admin provision key:')
+      if (!adminKey) return
+
+      const res = await fetch(SUPA_URL + '/functions/v1/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, password, admin_key: adminKey, employee_no: empNo, full_name: name })
+      })
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || 'Failed to create user')
+      showToast('success','User Created', name + ' added. Login: ' + empNo.toLowerCase().replace(/[^a-z0-9]/g,'-') + '@tdmh.local')
+    }
+    closeModal('newRequestModal')
+    renderSettings()
+  } catch(e) { showToast('error','Error', e.message) }
+}
+
+async function toggleUserActive(userId, currentStatus) {
+  const action = currentStatus ? 'deactivate' : 'activate'
+  confirm2('Are you sure you want to ' + action + ' this user?', async () => {
+    await SB.from('users').update({ is_active: !currentStatus }).eq('id', userId)
+    showToast('success','Updated', 'User ' + action + 'd.')
+    renderSettings()
+  })
+}
+
+// ─────────────────────────────
+// DEPARTMENTS SETTINGS
+// ─────────────────────────────
+async function renderDeptSettings(el) {
+  const { data: depts } = await SB.from('departments').select('*').order('dept_name')
+  const allDepts = depts || []
+
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+  html += '<strong>' + allDepts.length + ' departments</strong>'
+  html += '<button class="btn btn-primary" onclick="openAddDeptModal()">＋ Add Department</button>'
+  html += '</div>'
+
+  html += '<div class="table-wrap"><table><thead><tr>'
+  html += '<th>Department Name</th><th>Email</th><th>Status</th><th></th>'
+  html += '</tr></thead><tbody>'
+  allDepts.forEach(d => {
+    html += '<tr>'
+    html += '<td><strong>' + d.dept_name + '</strong></td>'
+    html += '<td style="color:var(--txt2);">' + (d.email||'—') + '</td>'
+    html += '<td>' + (d.is_active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-cancelled">Inactive</span>') + '</td>'
+    html += '<td><button class="btn btn-ghost btn-sm" onclick="openEditDeptModal(\'' + d.id + '\',\'' + d.dept_name.replace(/'/g,"\\'") + '\',\'' + (d.email||'') + '\')">Edit</button></td>'
+    html += '</tr>'
+  })
+  html += '</tbody></table></div>'
+  el.innerHTML = html
+}
+
+function openAddDeptModal() {
+  document.getElementById('newRequestTitle').textContent = '🏢 Add Department'
+  document.getElementById('newRequestBody').innerHTML =
+    '<div class="field"><label>Department Name <span style="color:var(--red);">*</span></label><input type="text" id="dept_name" placeholder="e.g. Radiology"></div>' +
+    '<div class="field"><label>Email</label><input type="email" id="dept_email" placeholder="dept@tdmh.com"></div>'
+  document.getElementById('newRequestBody').dataset.deptId = ''
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveDept()">Save</button>'
+  openModal('newRequestModal')
+}
+
+function openEditDeptModal(id, name, email) {
+  document.getElementById('newRequestTitle').textContent = '✎ Edit Department'
+  document.getElementById('newRequestBody').innerHTML =
+    '<div class="field"><label>Department Name <span style="color:var(--red);">*</span></label><input type="text" id="dept_name" value="' + name + '"></div>' +
+    '<div class="field"><label>Email</label><input type="email" id="dept_email" value="' + email + '"></div>'
+  document.getElementById('newRequestBody').dataset.deptId = id
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveDept()">Update</button>'
+  openModal('newRequestModal')
+}
+
+async function saveDept() {
+  const name = document.getElementById('dept_name').value.trim()
+  const email = document.getElementById('dept_email').value.trim()
+  const deptId = document.getElementById('newRequestBody').dataset.deptId
+  if (!name) { showToast('error','Validation','Department name required.'); return }
+  try {
+    if (deptId) {
+      await SB.from('departments').update({ dept_name: name, email: email||null }).eq('id', deptId)
+    } else {
+      await SB.from('departments').insert({ dept_name: name, email: email||null })
+    }
+    closeModal('newRequestModal')
+    showToast('success','Saved', name + (deptId ? ' updated.' : ' added.'))
+    await loadDepartments()
+    renderSettings()
+  } catch(e) { showToast('error','Error', e.message) }
+}
+
+// ─────────────────────────────
+// LOCATIONS SETTINGS
+// ─────────────────────────────
+async function renderLocationsSettings(el) {
+  const { data: locs } = await SB.from('stock_locations').select('*').order('name')
+  const allLocs = locs || []
+
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+  html += '<strong>' + allLocs.length + ' locations</strong>'
+  html += '<button class="btn btn-primary" onclick="openAddLocModal()">＋ Add Location</button>'
+  html += '</div>'
+
+  html += '<div class="table-wrap"><table><thead><tr>'
+  html += '<th>Location Name</th><th>Description</th><th>Status</th><th></th>'
+  html += '</tr></thead><tbody>'
+  allLocs.forEach(l => {
+    html += '<tr>'
+    html += '<td><strong>' + l.name + '</strong></td>'
+    html += '<td style="color:var(--txt2);">' + (l.description||'—') + '</td>'
+    html += '<td>' + (l.is_active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-cancelled">Inactive</span>') + '</td>'
+    html += '<td><button class="btn btn-ghost btn-sm" onclick="openEditLocModal(\'' + l.id + '\',\'' + l.name.replace(/'/g,"\\'") + '\',\'' + (l.description||'').replace(/'/g,"\\'") + '\')">Edit</button></td>'
+    html += '</tr>'
+  })
+  html += '</tbody></table></div>'
+  el.innerHTML = html
+}
+
+function openAddLocModal() {
+  document.getElementById('newRequestTitle').textContent = '📍 Add Stock Location'
+  document.getElementById('newRequestBody').innerHTML =
+    '<div class="field"><label>Location Name <span style="color:var(--red);">*</span></label><input type="text" id="loc_name" placeholder="e.g. 2nd Floor Storage"></div>' +
+    '<div class="field"><label>Description</label><input type="text" id="loc_desc" placeholder="Brief description"></div>'
+  document.getElementById('newRequestBody').dataset.locId = ''
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveLoc()">Save</button>'
+  openModal('newRequestModal')
+}
+
+function openEditLocModal(id, name, desc) {
+  document.getElementById('newRequestTitle').textContent = '✎ Edit Location'
+  document.getElementById('newRequestBody').innerHTML =
+    '<div class="field"><label>Location Name <span style="color:var(--red);">*</span></label><input type="text" id="loc_name" value="' + name + '"></div>' +
+    '<div class="field"><label>Description</label><input type="text" id="loc_desc" value="' + desc + '"></div>'
+  document.getElementById('newRequestBody').dataset.locId = id
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveLoc()">Update</button>'
+  openModal('newRequestModal')
+}
+
+async function saveLoc() {
+  const name = document.getElementById('loc_name').value.trim()
+  const desc = document.getElementById('loc_desc').value.trim()
+  const locId = document.getElementById('newRequestBody').dataset.locId
+  if (!name) { showToast('error','Validation','Location name required.'); return }
+  try {
+    if (locId) {
+      await SB.from('stock_locations').update({ name, description: desc||null }).eq('id', locId)
+    } else {
+      await SB.from('stock_locations').insert({ name, description: desc||null })
+    }
+    closeModal('newRequestModal')
+    showToast('success','Saved', name + (locId ? ' updated.' : ' added.'))
+    renderSettings()
+  } catch(e) { showToast('error','Error', e.message) }
+}
+
+// ─────────────────────────────
+// THRESHOLDS SETTINGS
+// ─────────────────────────────
+async function renderThresholdsSettings(el) {
+  const { data: settings } = await SB.from('settings').select('*')
+  const settingsMap = {}
+  ;(settings||[]).forEach(s => { settingsMap[s.key] = s.value })
+
+  let html = '<div style="max-width:500px;">'
+  html += '<div class="card" style="margin-bottom:16px;">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:16px;">💰 Finance Approval Threshold</div>'
+  html += '<p style="font-size:13px;color:var(--txt2);margin-bottom:16px;">Requests with estimated total equal to or above this amount will require Finance approval (Level 3) in addition to Dept Head and Supply Officer.</p>'
+  html += '<div class="field"><label>Threshold Amount (₱)</label>'
+  html += '<input type="number" id="thresh_finance" value="' + (settingsMap['finance_threshold']||10000) + '" min="0" step="1000"></div>'
+  html += '<button class="btn btn-primary" onclick="saveThreshold()">Save Threshold</button>'
+  html += '</div>'
+
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:16px;">🏥 Hospital Information</div>'
+  html += '<div class="field"><label>Hospital Name</label>'
+  html += '<input type="text" id="thresh_hospital" value="' + (settingsMap['hospital_name']||'Taytay Doctors Multispecialty Hospital') + '"></div>'
+  html += '<button class="btn btn-primary" onclick="saveHospitalName()">Save</button>'
+  html += '</div>'
+  html += '</div>'
+  el.innerHTML = html
+}
+
+async function saveThreshold() {
+  const val = document.getElementById('thresh_finance').value
+  try {
+    await SB.from('settings').upsert({ key: 'finance_threshold', value: val, updated_by: state.user.id, updated_at: new Date().toISOString() })
+    showToast('success','Saved','Finance threshold updated to ₱' + Number(val).toLocaleString())
+  } catch(e) { showToast('error','Error', e.message) }
+}
+
+async function saveHospitalName() {
+  const val = document.getElementById('thresh_hospital').value.trim()
+  if (!val) return
+  try {
+    await SB.from('settings').upsert({ key: 'hospital_name', value: val, updated_by: state.user.id, updated_at: new Date().toISOString() })
+    showToast('success','Saved','Hospital name updated.')
+  } catch(e) { showToast('error','Error', e.message) }
+}
+
+// ─────────────────────────────
+// PREFERENCES SETTINGS
+// ─────────────────────────────
+async function renderPreferencesSettings(el) {
+  const { data: settings } = await SB.from('settings').select('*')
+  const settingsMap = {}
+  ;(settings||[]).forEach(s => { settingsMap[s.key] = s.value })
+
+  let html = '<div style="max-width:500px;display:flex;flex-direction:column;gap:14px;">'
+
+  // Theme
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:12px;">🎨 Display</div>'
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;">'
+  html += '<span style="font-size:13px;">Dark Mode</span>'
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+  html += '<button onclick="toggleTheme()" style="width:48px;height:26px;border-radius:13px;border:none;cursor:pointer;background:' + (isDark?'var(--accent)':'var(--surf3)') + ';position:relative;transition:background .2s;">'
+  html += '<div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;' + (isDark?'right:3px;':'left:3px;') + 'transition:all .2s;"></div>'
+  html += '</button></div></div>'
+
+  // Notification settings
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:12px;">🔔 Notifications</div>'
+  const notifSettings = [
+    { key:'notif_sms_approval', label:'SMS on approval required', default:'true' },
+    { key:'notif_sms_approved', label:'SMS on request approved', default:'true' },
+    { key:'notif_sms_low_stock', label:'SMS on low stock alert', default:'true' },
+    { key:'notif_inapp', label:'In-app notifications', default:'true' },
+  ]
+  notifSettings.forEach(ns => {
+    const val = settingsMap[ns.key] !== undefined ? settingsMap[ns.key] : ns.default
+    const isOn = val === 'true'
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+    html += '<span style="font-size:13px;">' + ns.label + '</span>'
+    html += '<button onclick="toggleNotifSetting(\'' + ns.key + '\',this)" data-val="' + val + '" style="width:44px;height:24px;border-radius:12px;border:none;cursor:pointer;background:' + (isOn?'var(--accent)':'var(--surf3)') + ';position:relative;transition:background .2s;">'
+    html += '<div style="width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:3px;' + (isOn?'right:3px;':'left:3px;') + 'transition:all .2s;"></div>'
+    html += '</button></div>'
+  })
+  html += '</div>'
+
+  // System info
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:12px;">ℹ️ System Info</div>'
+  html += '<div style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--txt2);">'
+  html += '<div>System: TDMH Central Supply Request (CSR)</div>'
+  html += '<div>Version: ' + (settingsMap['system_version']||'1.0.0') + '</div>'
+  html += '<div>Supabase Project: zcyhwdulizorgngayxya</div>'
+  html += '<div>Logged in as: ' + state.user.full_name + ' (' + state.user.csr_role + ')</div>'
+  html += '<div style="margin-top:8px;">'
+  html += '<button class="btn btn-danger btn-sm" onclick="doLogout()">Sign Out of All Systems</button>'
+  html += '</div></div></div>'
+
+  html += '</div>'
+  el.innerHTML = html
+}
+
+async function toggleNotifSetting(key, btn) {
+  const current = btn.getAttribute('data-val') === 'true'
+  const newVal = !current
+  btn.setAttribute('data-val', String(newVal))
+  btn.style.background = newVal ? 'var(--accent)' : 'var(--surf3)'
+  btn.querySelector('div').style.cssText = 'width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:3px;' + (newVal?'right:3px;':'left:3px;') + 'transition:all .2s;'
+  try {
+    await SB.from('settings').upsert({ key, value: String(newVal), updated_by: state.user.id, updated_at: new Date().toISOString() })
+  } catch(e) { console.warn('toggleNotifSetting', e) }
 }
 function renderNotifications() {
   const notifs = state.notifications
