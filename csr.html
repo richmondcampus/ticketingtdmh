@@ -973,7 +973,7 @@ async function loadStats() {
         ? SB.from('requests').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval').eq('current_approval_level', roleApprovalLevel(role))
         : { count: 0 },
       SB.from('requests').select('id', { count: 'exact', head: true }).in('status', ['pending_approval','approved','for_po','ordered']),
-      SB.from('stock_items').select('id', { count: 'exact', head: true }).filter('quantity_on_hand', 'lte', 'reorder_level')
+      SB.from('stock_items').select('id', { count: 'exact', head: true }).lte('quantity_on_hand', 0)
     ])
     state.stats = {
       my_pending: myPending.count || 0,
