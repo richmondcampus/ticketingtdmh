@@ -994,30 +994,41 @@ function roleApprovalLevel(role) {
 // REALTIME
 // ═══════════════════════════════════════════
 function subscribeNotifications() {
-  const ch = SB.channel('csr-notifs-' + state.user.id)
-    .on('postgres_changes', {
-      event: 'INSERT', schema: 'shared', table: 'system_notifications',
-      filter: 'recipient_id=eq.' + state.user.id
-    }, (payload) => {
-      state.notifications.unshift(payload.new)
-      document.getElementById('notifDot').style.display = 'block'
-      showToast('info', 'Notification', payload.new.message)
-    }).subscribe()
-  state.activeChannels.push(ch)
+  try {
+    const ch = SB.channel('csr-notifs-' + state.user.id)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'system_notifications',
+        filter: 'recipient_id=eq.' + state.user.id
+      }, (payload) => {
+        state.notifications.unshift(payload.new)
+        const dot = document.getElementById('notifDot')
+        if (dot) dot.style.display = 'block'
+        showToast('info', 'Notification', payload.new.message)
+      })
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') console.warn('[Realtime] notifications channel error')
+      })
+    state.activeChannels.push(ch)
+  } catch(e) { console.warn('[Realtime] subscribeNotifications failed:', e.message) }
 }
 
 function subscribeRequests(onUpdate) {
-  SB.removeAllChannels()
-  const ch = SB.channel('csr-requests-live')
-    .on('postgres_changes', { event: '*', schema: 'csr', table: 'requests' }, (payload) => {
-      if (payload.eventType === 'UPDATE') {
-        state.requests = state.requests.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r)
-      } else if (payload.eventType === 'INSERT') {
-        state.requests.unshift(payload.new)
-      }
-      if (onUpdate) onUpdate()
-    }).subscribe()
-  state.activeChannels.push(ch)
+  try {
+    SB.removeAllChannels()
+    const ch = SB.channel('csr-requests-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
+        if (payload.eventType === 'UPDATE') {
+          state.requests = state.requests.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r)
+        } else if (payload.eventType === 'INSERT') {
+          state.requests.unshift(payload.new)
+        }
+        if (onUpdate) onUpdate()
+      })
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') console.warn('[Realtime] requests channel error')
+      })
+    state.activeChannels.push(ch)
+  } catch(e) { console.warn('[Realtime] subscribeRequests failed:', e.message) }
 }
 
 // ═══════════════════════════════════════════
@@ -1554,7 +1565,7 @@ async function saveRequest(action) {
 
   try {
     // Generate request number
-    const { data: numData } = await SB.rpc('generate_request_no', {}, { schema: 'csr' })
+    const { data: numData } = await SB.rpc('generate_request_no')
     const requestNo = numData || ('CSR-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
 
     const payload = {
