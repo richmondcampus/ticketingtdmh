@@ -1784,8 +1784,540 @@ function renderPurchaseOrders() {
 function renderIssuance() {
   document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📤</div><h3>Issuance</h3><p>Issuance module coming in next build phase.</p></div>'
 }
-function renderStockInventory() {
-  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">🏪</div><h3>Stock Inventory</h3><p>Stock management coming in next build phase.</p></div>'
+// ═══════════════════════════════════════════
+// STOCK INVENTORY MODULE
+// ═══════════════════════════════════════════
+const STOCK_CATEGORIES = {
+  office_supplies:       { label: 'Office Supplies',       icon: '📎', color: 'var(--blue)' },
+  medical_clinical:      { label: 'Medical/Clinical',      icon: '🩺', color: 'var(--red)' },
+  maintenance_materials: { label: 'Maintenance Materials', icon: '🔧', color: 'var(--amber)' },
+  it_consumables:        { label: 'IT Consumables',        icon: '💻', color: 'var(--violet)' },
+  janitorial:            { label: 'Janitorial',            icon: '🧹', color: 'var(--green)' },
+  equipment:             { label: 'Equipment',             icon: '⚙️', color: 'var(--accent)' },
+  other:                 { label: 'Other',                 icon: '📦', color: 'var(--txt2)' }
+}
+
+let stockState = {
+  items: [],
+  locations: [],
+  movements: [],
+  filterCat: '',
+  filterLoc: '',
+  filterSearch: '',
+  view: 'items'  // 'items' | 'movements'
+}
+
+async function renderStockInventory() {
+  const content = document.getElementById('mainContent')
+  const role = state.user.csr_role
+
+  // Load data
+  const [itemsRes, locsRes] = await Promise.all([
+    SB.from('stock_items').select('*').eq('is_active', true).order('item_name'),
+    SB.from('stock_locations').select('*').eq('is_active', true).order('name')
+  ])
+  stockState.items = itemsRes.data || []
+  stockState.locations = locsRes.data || []
+
+  // Stats
+  const totalItems = stockState.items.length
+  const lowStock = stockState.items.filter(i => Number(i.quantity_on_hand) <= Number(i.reorder_level) && i.reorder_level > 0).length
+  const outOfStock = stockState.items.filter(i => Number(i.quantity_on_hand) <= 0).length
+  const totalValue = stockState.items.reduce((s, i) => s + (Number(i.quantity_on_hand) * Number(i.unit_cost || 0)), 0)
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>🏪 Stock Inventory</h2><p style="font-size:13px;color:var(--txt2);">Supply room stock management — ' + stockState.locations.map(l => l.name).join(', ') + '</p></div>'
+  html += '<div class="page-header-actions">'
+  if (['supply_officer','admin'].includes(role)) {
+    html += '<button class="btn btn-ghost btn-sm" onclick="showStockView(\'movements\')">📋 Movement Log</button>'
+    html += '<button class="btn btn-secondary" onclick="openReceiveStockModal()">📥 Receive Stock</button>'
+    html += '<button class="btn btn-primary" onclick="openAddItemModal()">＋ Add Item</button>'
+  }
+  html += '</div></div>'
+
+  // Stat cards
+  html += '<div class="stat-grid" style="margin-bottom:20px;">'
+  html += statCard('📦', 'Total Items', totalItems, 'Active stock items', 'stat-accent')
+  html += statCard('⚠️', 'Low Stock', lowStock, 'At or below reorder level', 'stat-red')
+  html += statCard('❌', 'Out of Stock', outOfStock, 'Zero quantity on hand', 'stat-red')
+  html += statCard('💰', 'Total Value', '₱' + totalValue.toLocaleString(), 'Est. stock value', 'stat-green')
+  html += '</div>'
+
+  // Category quick filters
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">'
+  html += '<button class="btn btn-sm ' + (stockState.filterCat === '' ? 'btn-primary' : 'btn-ghost') + '" onclick="filterStock(\'\',\'cat\')">All</button>'
+  for (const [k, v] of Object.entries(STOCK_CATEGORIES)) {
+    const count = stockState.items.filter(i => i.category === k).length
+    if (count === 0) continue
+    html += '<button class="btn btn-sm ' + (stockState.filterCat === k ? 'btn-primary' : 'btn-ghost') + '" onclick="filterStock(\'' + k + '\',\'cat\')">' + v.icon + ' ' + v.label + ' <span style="opacity:.6;">(' + count + ')</span></button>'
+  }
+  html += '</div>'
+
+  // Filter bar
+  html += '<div class="filter-bar" style="margin-bottom:16px;">'
+  html += '<input type="text" placeholder="🔍 Search item name or code..." id="stockSearch" oninput="filterStock(this.value,\'search\')" style="min-width:220px;">'
+  html += '<select id="stockLocFilter" onchange="filterStock(this.value,\'loc\')">'
+  html += '<option value="">All Locations</option>'
+  stockState.locations.forEach(l => {
+    html += '<option value="' + l.id + '">' + l.name + '</option>'
+  })
+  html += '</select>'
+  html += '<select onchange="filterStock(this.value,\'status\')" id="stockStatusFilter">'
+  html += '<option value="">All Status</option>'
+  html += '<option value="low">Low Stock</option>'
+  html += '<option value="out">Out of Stock</option>'
+  html += '<option value="ok">In Stock</option>'
+  html += '</select>'
+  html += '</div>'
+
+  // Items table
+  const filtered = getFilteredStockItems()
+  if (filtered.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">📦</div><h3>No items found</h3><p>Add stock items using the button above, or adjust your filters.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Item</th><th>Code</th><th>Category</th><th>Location</th><th>On Hand</th><th>Reorder Lvl</th><th>Unit Cost</th><th>Status</th>'
+    if (['supply_officer','admin'].includes(role)) html += '<th>Actions</th>'
+    html += '</tr></thead><tbody id="stockTableBody">'
+    html += buildStockRows(filtered, role)
+    html += '</tbody></table></div>'
+  }
+
+  content.innerHTML = html
+  content._stockRole = role
+}
+
+function getFilteredStockItems() {
+  let items = stockState.items
+  if (stockState.filterCat) items = items.filter(i => i.category === stockState.filterCat)
+  if (stockState.filterLoc) items = items.filter(i => i.location_id === stockState.filterLoc)
+  if (stockState.filterSearch) {
+    const q = stockState.filterSearch.toLowerCase()
+    items = items.filter(i =>
+      (i.item_name || '').toLowerCase().includes(q) ||
+      (i.item_code || '').toLowerCase().includes(q)
+    )
+  }
+  const statusFilter = document.getElementById('stockStatusFilter')
+  if (statusFilter && statusFilter.value) {
+    const sv = statusFilter.value
+    if (sv === 'low') items = items.filter(i => Number(i.quantity_on_hand) <= Number(i.reorder_level) && Number(i.reorder_level) > 0 && Number(i.quantity_on_hand) > 0)
+    if (sv === 'out') items = items.filter(i => Number(i.quantity_on_hand) <= 0)
+    if (sv === 'ok') items = items.filter(i => Number(i.quantity_on_hand) > Number(i.reorder_level))
+  }
+  return items
+}
+
+function buildStockRows(items, role) {
+  let rows = ''
+  for (const item of items) {
+    const cat = STOCK_CATEGORIES[item.category] || STOCK_CATEGORIES.other
+    const loc = stockState.locations.find(l => l.id === item.location_id)
+    const qty = Number(item.quantity_on_hand)
+    const reorder = Number(item.reorder_level)
+    const isOut = qty <= 0
+    const isLow = !isOut && reorder > 0 && qty <= reorder
+    const statusBadge = isOut
+      ? '<span class="badge badge-rejected">Out of Stock</span>'
+      : isLow
+        ? '<span class="badge badge-pending">Low Stock</span>'
+        : '<span class="badge badge-approved">In Stock</span>'
+    const qtyColor = isOut ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--green)'
+
+    rows += '<tr>'
+    rows += '<td><strong>' + item.item_name + '</strong>'
+    if (item.brand) rows += '<br><span style="font-size:11px;color:var(--txt2);">' + item.brand + '</span>'
+    rows += '</td>'
+    rows += '<td class="td-mono" style="font-size:11px;">' + (item.item_code || '—') + '</td>'
+    rows += '<td>' + cat.icon + ' <span style="font-size:12px;">' + cat.label + '</span></td>'
+    rows += '<td style="font-size:12px;color:var(--txt2);">' + (loc ? loc.name : '—') + '</td>'
+    rows += '<td style="font-weight:700;color:' + qtyColor + ';">' + qty.toLocaleString() + ' <span style="font-size:11px;font-weight:400;color:var(--txt2);">' + (item.unit || '') + '</span></td>'
+    rows += '<td style="color:var(--txt2);">' + (reorder > 0 ? reorder.toLocaleString() : '—') + '</td>'
+    rows += '<td style="color:var(--txt2);">₱' + (item.unit_cost ? Number(item.unit_cost).toLocaleString() : '—') + '</td>'
+    rows += '<td>' + statusBadge + '</td>'
+    if (['supply_officer','admin'].includes(role)) {
+      rows += '<td><div style="display:flex;gap:4px;">'
+      rows += '<button class="btn btn-ghost btn-sm" onclick="openReceiveStockModal(\'' + item.id + '\')">＋</button>'
+      rows += '<button class="btn btn-ghost btn-sm" onclick="openAdjustModal(\'' + item.id + '\')">✎</button>'
+      rows += '<button class="btn btn-ghost btn-sm" onclick="viewStockMovements(\'' + item.id + '\')">📋</button>'
+      rows += '</div></td>'
+    }
+    rows += '</tr>'
+  }
+  return rows
+}
+
+function filterStock(val, type) {
+  if (type === 'cat') stockState.filterCat = val
+  if (type === 'loc') stockState.filterLoc = val
+  if (type === 'search') stockState.filterSearch = val
+  const tbody = document.getElementById('stockTableBody')
+  const role = document.getElementById('mainContent')._stockRole || 'viewer'
+  if (tbody) tbody.innerHTML = buildStockRows(getFilteredStockItems(), role)
+}
+
+function showStockView(view) {
+  stockState.view = view
+  if (view === 'movements') renderStockMovements()
+  else renderStockInventory()
+}
+
+// ─────────────────────────────
+// ADD ITEM MODAL
+// ─────────────────────────────
+function openAddItemModal(itemId) {
+  const isEdit = !!itemId
+  const item = isEdit ? stockState.items.find(i => i.id === itemId) : null
+  document.getElementById('newRequestTitle').textContent = isEdit ? '✎ Edit Stock Item' : '＋ Add Stock Item'
+
+  let html = '<div class="field-row">'
+  html += '<div class="field"><label>Item Name <span style="color:var(--red);">*</span></label>'
+  html += '<input type="text" id="si_name" placeholder="e.g. Surgical Gloves (Medium)" value="' + (item ? item.item_name : '') + '"></div>'
+  html += '<div class="field"><label>Item Code</label>'
+  html += '<input type="text" id="si_code" placeholder="e.g. MED-001" value="' + (item ? (item.item_code || '') : '') + '"></div>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Category <span style="color:var(--red);">*</span></label><select id="si_cat">'
+  for (const [k, v] of Object.entries(STOCK_CATEGORIES)) {
+    const sel = item && item.category === k ? ' selected' : ''
+    html += '<option value="' + k + '"' + sel + '>' + v.icon + ' ' + v.label + '</option>'
+  }
+  html += '</select></div>'
+  html += '<div class="field"><label>Storage Location</label><select id="si_loc">'
+  html += '<option value="">— Select Location —</option>'
+  stockState.locations.forEach(l => {
+    const sel = item && item.location_id === l.id ? ' selected' : ''
+    html += '<option value="' + l.id + '"' + sel + '>' + l.name + '</option>'
+  })
+  html += '</select></div>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Unit</label>'
+  html += '<input type="text" id="si_unit" placeholder="pcs / box / ream / liters" value="' + (item ? (item.unit || '') : '') + '"></div>'
+  html += '<div class="field"><label>Brand / Supplier</label>'
+  html += '<input type="text" id="si_brand" placeholder="e.g. 3M / Generic" value="' + (item ? (item.brand || '') : '') + '"></div>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Initial Qty on Hand</label>'
+  html += '<input type="number" id="si_qty" min="0" placeholder="0" value="' + (item ? item.quantity_on_hand : '0') + '"></div>'
+  html += '<div class="field"><label>Reorder Level</label>'
+  html += '<input type="number" id="si_reorder" min="0" placeholder="0" value="' + (item ? (item.reorder_level || '0') : '0') + '"></div>'
+  html += '</div>'
+
+  html += '<div class="field"><label>Unit Cost (₱)</label>'
+  html += '<input type="number" id="si_cost" min="0" step="0.01" placeholder="0.00" value="' + (item ? (item.unit_cost || '0') : '0') + '"></div>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+  document.getElementById('newRequestBody').dataset.editId = itemId || ''
+
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveStockItem()">Save Item</button>'
+
+  openModal('newRequestModal')
+}
+
+async function saveStockItem() {
+  const name = document.getElementById('si_name').value.trim()
+  const code = document.getElementById('si_code').value.trim()
+  const cat = document.getElementById('si_cat').value
+  const loc = document.getElementById('si_loc').value
+  const unit = document.getElementById('si_unit').value.trim()
+  const brand = document.getElementById('si_brand').value.trim()
+  const qty = Number(document.getElementById('si_qty').value) || 0
+  const reorder = Number(document.getElementById('si_reorder').value) || 0
+  const cost = Number(document.getElementById('si_cost').value) || 0
+  const editId = document.getElementById('newRequestBody').dataset.editId
+
+  if (!name) { showToast('error', 'Validation', 'Item name is required.'); return }
+
+  try {
+    const payload = {
+      item_name: name,
+      item_code: code || null,
+      category: cat,
+      location_id: loc || null,
+      unit: unit || null,
+      brand: brand || null,
+      quantity_on_hand: qty,
+      reorder_level: reorder,
+      unit_cost: cost,
+      last_updated: new Date().toISOString()
+    }
+
+    if (editId) {
+      await SB.from('stock_items').update(payload).eq('id', editId)
+      showToast('success', 'Updated', name + ' updated successfully.')
+    } else {
+      const { data: newItem, error } = await SB.from('stock_items').insert({
+        ...payload,
+        is_active: true,
+        created_by: state.user.id
+      }).select().single()
+      if (error) throw error
+
+      // Log initial stock as receive movement
+      if (qty > 0) {
+        await SB.from('stock_movements').insert({
+          stock_item_id: newItem.id,
+          movement_type: 'receive',
+          quantity: qty,
+          quantity_before: 0,
+          quantity_after: qty,
+          location_id: loc || null,
+          performed_by: state.user.id,
+          remarks: 'Initial stock entry',
+          reference_type: 'manual'
+        })
+      }
+      showToast('success', 'Item Added', name + ' added to stock inventory.')
+    }
+
+    closeModal('newRequestModal')
+    renderStockInventory()
+  } catch(e) { showToast('error', 'Error', e.message) }
+}
+
+// ─────────────────────────────
+// RECEIVE STOCK MODAL
+// ─────────────────────────────
+function openReceiveStockModal(itemId) {
+  document.getElementById('newRequestTitle').textContent = '📥 Receive Stock'
+
+  let html = ''
+  if (!itemId) {
+    html += '<div class="field"><label>Item <span style="color:var(--red);">*</span></label><select id="rs_item">'
+    html += '<option value="">— Select Item —</option>'
+    stockState.items.forEach(i => {
+      html += '<option value="' + i.id + '">' + i.item_name + (i.item_code ? ' (' + i.item_code + ')' : '') + '</option>'
+    })
+    html += '</select></div>'
+  } else {
+    const item = stockState.items.find(i => i.id === itemId)
+    html += '<div style="padding:10px 14px;background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;margin-bottom:14px;">'
+    html += '<strong>' + (item ? item.item_name : itemId) + '</strong>'
+    if (item) html += '<span style="color:var(--txt2);font-size:12px;"> · Current stock: ' + item.quantity_on_hand + ' ' + (item.unit || '') + '</span>'
+    html += '</div>'
+    html += '<input type="hidden" id="rs_item" value="' + itemId + '">'
+  }
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Quantity Received <span style="color:var(--red);">*</span></label>'
+  html += '<input type="number" id="rs_qty" min="1" placeholder="0"></div>'
+  html += '<div class="field"><label>Unit Cost (₱)</label>'
+  html += '<input type="number" id="rs_cost" min="0" step="0.01" placeholder="0.00"></div>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Location</label><select id="rs_loc">'
+  html += '<option value="">— Select —</option>'
+  stockState.locations.forEach(l => {
+    html += '<option value="' + l.id + '">' + l.name + '</option>'
+  })
+  html += '</select></div>'
+  html += '<div class="field"><label>Supplier</label>'
+  html += '<input type="text" id="rs_supplier" placeholder="Supplier name"></div>'
+  html += '</div>'
+
+  html += '<div class="field"><label>Remarks</label>'
+  html += '<input type="text" id="rs_remarks" placeholder="e.g. PO-2026-0001, delivery note, etc."></div>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveReceiveStock()">Confirm Receipt</button>'
+
+  openModal('newRequestModal')
+}
+
+async function saveReceiveStock() {
+  const itemId = document.getElementById('rs_item').value
+  const qty = Number(document.getElementById('rs_qty').value)
+  const cost = Number(document.getElementById('rs_cost').value) || 0
+  const loc = document.getElementById('rs_loc').value
+  const remarks = document.getElementById('rs_remarks').value.trim()
+
+  if (!itemId) { showToast('error', 'Validation', 'Please select an item.'); return }
+  if (!qty || qty <= 0) { showToast('error', 'Validation', 'Quantity must be greater than zero.'); return }
+
+  try {
+    const item = stockState.items.find(i => i.id === itemId)
+    const qtyBefore = Number(item ? item.quantity_on_hand : 0)
+    const qtyAfter = qtyBefore + qty
+
+    // Update stock quantity
+    const updatePayload = { quantity_on_hand: qtyAfter, last_updated: new Date().toISOString() }
+    if (cost > 0) updatePayload.unit_cost = cost
+    if (loc) updatePayload.location_id = loc
+    await SB.from('stock_items').update(updatePayload).eq('id', itemId)
+
+    // Log movement
+    await SB.from('stock_movements').insert({
+      stock_item_id: itemId,
+      movement_type: 'receive',
+      quantity: qty,
+      quantity_before: qtyBefore,
+      quantity_after: qtyAfter,
+      location_id: loc || null,
+      performed_by: state.user.id,
+      remarks: remarks || null,
+      reference_type: 'manual'
+    })
+
+    closeModal('newRequestModal')
+    showToast('success', 'Stock Received', qty + ' ' + (item ? item.unit || 'units' : 'units') + ' received for ' + (item ? item.item_name : ''))
+    renderStockInventory()
+  } catch(e) { showToast('error', 'Error', e.message) }
+}
+
+// ─────────────────────────────
+// MANUAL ADJUSTMENT
+// ─────────────────────────────
+function openAdjustModal(itemId) {
+  const item = stockState.items.find(i => i.id === itemId)
+  if (!item) return
+  document.getElementById('newRequestTitle').textContent = '✎ Adjust Stock — ' + item.item_name
+
+  let html = '<div style="padding:10px 14px;background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;margin-bottom:14px;display:flex;gap:20px;">'
+  html += '<div><div style="font-size:11px;color:var(--txt2);">Current Qty</div><div style="font-size:20px;font-weight:700;color:var(--accent);">' + item.quantity_on_hand + ' ' + (item.unit || '') + '</div></div>'
+  html += '<div><div style="font-size:11px;color:var(--txt2);">Reorder Level</div><div style="font-size:20px;font-weight:700;color:var(--txt2);">' + (item.reorder_level || 0) + '</div></div>'
+  html += '</div>'
+
+  html += '<div class="field"><label>Adjustment Type</label>'
+  html += '<select id="adj_type" onchange="updateAdjLabel()">'
+  html += '<option value="add">➕ Add (received / found)</option>'
+  html += '<option value="deduct">➖ Deduct (damaged / lost / expired)</option>'
+  html += '<option value="set">🔄 Set exact count (physical count result)</option>'
+  html += '</select></div>'
+
+  html += '<div class="field"><label id="adj_qty_label">Quantity to Add</label>'
+  html += '<input type="number" id="adj_qty" min="0" placeholder="0"></div>'
+
+  html += '<div class="field"><label>Reason <span style="color:var(--red);">*</span></label>'
+  html += '<select id="adj_reason">'
+  ;['Physical count adjustment','Damaged/Expired','Lost/Missing','Found/Returned','Error correction','Other'].forEach(r => {
+    html += '<option>' + r + '</option>'
+  })
+  html += '</select></div>'
+
+  html += '<div class="field"><label>Remarks</label>'
+  html += '<input type="text" id="adj_remarks" placeholder="Additional notes..."></div>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+  document.getElementById('newRequestBody').dataset.itemId = itemId
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveAdjustment()">Apply Adjustment</button>'
+
+  openModal('newRequestModal')
+}
+
+function updateAdjLabel() {
+  const type = document.getElementById('adj_type').value
+  const label = document.getElementById('adj_qty_label')
+  if (label) {
+    if (type === 'add') label.textContent = 'Quantity to Add'
+    else if (type === 'deduct') label.textContent = 'Quantity to Deduct'
+    else label.textContent = 'New Exact Count'
+  }
+}
+
+async function saveAdjustment() {
+  const itemId = document.getElementById('newRequestBody').dataset.itemId
+  const type = document.getElementById('adj_type').value
+  const adjQty = Number(document.getElementById('adj_qty').value)
+  const reason = document.getElementById('adj_reason').value
+  const remarks = document.getElementById('adj_remarks').value.trim()
+
+  if (!adjQty && adjQty !== 0) { showToast('error', 'Validation', 'Please enter a quantity.'); return }
+
+  const item = stockState.items.find(i => i.id === itemId)
+  const qtyBefore = Number(item.quantity_on_hand)
+  let qtyAfter
+
+  if (type === 'add') qtyAfter = qtyBefore + adjQty
+  else if (type === 'deduct') qtyAfter = Math.max(0, qtyBefore - adjQty)
+  else qtyAfter = adjQty // set exact
+
+  if (qtyAfter < 0) { showToast('error', 'Validation', 'Resulting quantity cannot be negative.'); return }
+
+  try {
+    await SB.from('stock_items').update({
+      quantity_on_hand: qtyAfter,
+      last_updated: new Date().toISOString()
+    }).eq('id', itemId)
+
+    await SB.from('stock_movements').insert({
+      stock_item_id: itemId,
+      movement_type: 'adjustment',
+      quantity: qtyAfter - qtyBefore,
+      quantity_before: qtyBefore,
+      quantity_after: qtyAfter,
+      performed_by: state.user.id,
+      remarks: reason + (remarks ? ' — ' + remarks : ''),
+      reference_type: 'manual'
+    })
+
+    closeModal('newRequestModal')
+    showToast('success', 'Adjusted', item.item_name + ': ' + qtyBefore + ' → ' + qtyAfter + ' ' + (item.unit || ''))
+    renderStockInventory()
+  } catch(e) { showToast('error', 'Error', e.message) }
+}
+
+// ─────────────────────────────
+// MOVEMENT LOG VIEW
+// ─────────────────────────────
+async function renderStockMovements(itemId) {
+  const content = document.getElementById('mainContent')
+  let q = SB.from('stock_movements').select('*').order('created_at', { ascending: false }).limit(100)
+  if (itemId) q = q.eq('stock_item_id', itemId)
+
+  const { data: movements } = await q
+  stockState.movements = movements || []
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>📋 Stock Movement Log</h2><p style="font-size:13px;color:var(--txt2);">All stock ins, outs, and adjustments</p></div>'
+  html += '<div class="page-header-actions"><button class="btn btn-ghost btn-sm" onclick="renderStockInventory()">← Back to Inventory</button></div>'
+  html += '</div>'
+
+  if (stockState.movements.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">📋</div><h3>No movements yet</h3><p>Stock movements will appear here after receiving or issuing items.</p></div>'
+  } else {
+    const typeColors = { receive:'var(--green)', issue:'var(--red)', adjustment:'var(--amber)', transfer:'var(--blue)', return:'var(--violet)' }
+    const typeIcons = { receive:'📥', issue:'📤', adjustment:'✎', transfer:'↔', return:'↩' }
+
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Date</th><th>Type</th><th>Item</th><th>Before</th><th>Change</th><th>After</th><th>By</th><th>Remarks</th>'
+    html += '</tr></thead><tbody>'
+
+    for (const m of stockState.movements) {
+      const item = stockState.items.find(i => i.id === m.stock_item_id)
+      const performer = state.users.find(u => u.id === m.performed_by)
+      const color = typeColors[m.movement_type] || 'var(--txt2)'
+      const change = Number(m.quantity)
+
+      html += '<tr>'
+      html += '<td style="color:var(--txt2);white-space:nowrap;font-size:12px;">' + formatDate(m.created_at) + '</td>'
+      html += '<td><span style="color:' + color + ';font-size:13px;">' + (typeIcons[m.movement_type] || '·') + ' ' + m.movement_type.charAt(0).toUpperCase() + m.movement_type.slice(1) + '</span></td>'
+      html += '<td style="font-size:13px;">' + (item ? item.item_name : '—') + '</td>'
+      html += '<td style="color:var(--txt2);">' + (m.quantity_before !== null ? m.quantity_before : '—') + '</td>'
+      html += '<td style="font-weight:700;color:' + (change >= 0 ? 'var(--green)' : 'var(--red)') + ';">' + (change >= 0 ? '+' : '') + change + '</td>'
+      html += '<td style="font-weight:600;">' + (m.quantity_after !== null ? m.quantity_after : '—') + '</td>'
+      html += '<td style="font-size:12px;color:var(--txt2);">' + (performer ? performer.full_name : '—') + '</td>'
+      html += '<td style="font-size:12px;color:var(--txt2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (m.remarks || '—') + '</td>'
+      html += '</tr>'
+    }
+    html += '</tbody></table></div>'
+  }
+
+  content.innerHTML = html
+}
+
+async function viewStockMovements(itemId) {
+  await renderStockMovements(itemId)
 }
 // ═══════════════════════════════════════════
 // DERP MODULE
