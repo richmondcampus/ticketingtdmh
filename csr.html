@@ -503,8 +503,8 @@ tr:hover td{background:var(--surf2);}
     <p class="sub">Sign in with your employee credentials</p>
     <div class="login-err" id="loginErr"></div>
     <div class="form-group">
-      <label>Employee No.</label>
-      <input type="text" id="loginEmpNo" placeholder="e.g. ADMIN-001" autocomplete="username">
+      <label>Employee No. or Email</label>
+      <input type="text" id="loginEmpNo" placeholder="e.g. ADMIN-001 or you@tdmh.com" autocomplete="username">
     </div>
     <div class="form-group">
       <label>Password</label>
@@ -700,24 +700,57 @@ async function doLogin() {
   if (!empNo || !pass) { showLoginErr('Please enter your Employee No. and Password.'); return }
   btn.disabled = true; btn.textContent = 'Signing in...'
   try {
-    // Step 1: Sign in via Supabase Auth (bcrypt-hashed internally)
-    const loginEmail = empNo.toLowerCase().replace(/[^a-z0-9]/g, '-') + '@tdmh.local'
+    // Step 1: Detect if input is email or employee_no
+    const isEmail = empNo.includes('@')
+    let loginEmail
+    if (isEmail) {
+      // Direct email login
+      loginEmail = empNo.toLowerCase().trim()
+    } else {
+      // Employee No. login — convert to @tdmh.local format
+      loginEmail = empNo.toLowerCase().replace(/[^a-z0-9]/g, '-') + '@tdmh.local'
+    }
+    // Sign in via Supabase Auth (bcrypt-hashed internally)
     const { data: authData, error: authError } = await SB.auth.signInWithPassword({
       email: loginEmail,
       password: pass
     })
     if (authError || !authData.user) {
-      showLoginErr('Invalid Employee No. or Password.')
+      showLoginErr('Invalid credentials. Check your Employee No./Email and Password.')
       return
     }
-    // Step 2: Fetch profile from shared.users using auth_id
-    const { data: profile, error: profileError } = await SB
+    // Step 2: Fetch profile from shared.users
+    // First try direct auth_id match (employee_no login)
+    let profile = null
+    const { data: directProfile } = await SB
       .schema('shared')
       .from('users')
       .select('*')
       .eq('auth_id', authData.user.id)
       .eq('is_active', true)
       .single()
+
+    if (directProfile) {
+      profile = directProfile
+    } else {
+      // Try alias lookup (email login) — find profile via user_auth_aliases
+      const { data: alias } = await SB
+        .schema('shared')
+        .from('user_auth_aliases')
+        .select('primary_user_id')
+        .eq('alias_auth_id', authData.user.id)
+        .single()
+      if (alias) {
+        const { data: aliasProfile } = await SB
+          .schema('shared')
+          .from('users')
+          .select('*')
+          .eq('id', alias.primary_user_id)
+          .eq('is_active', true)
+          .single()
+        profile = aliasProfile
+      }
+    }
     if (profileError || !profile) {
       showLoginErr('Account not found or inactive. Contact IT.')
       await SB.auth.signOut()
