@@ -1014,7 +1014,9 @@ function subscribeNotifications() {
 
 function subscribeRequests(onUpdate) {
   try {
-    SB.removeAllChannels()
+    // Remove only the requests channel if it exists — not all channels
+    const existing = state.activeChannels.find(c => c.topic === 'realtime:csr-requests-live')
+    if (existing) SB.removeChannel(existing)
     const ch = SB.channel('csr-requests-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
         if (payload.eventType === 'UPDATE') {
