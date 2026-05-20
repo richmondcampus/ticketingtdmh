@@ -1012,11 +1012,14 @@ function subscribeNotifications() {
   } catch(e) { console.warn('[Realtime] subscribeNotifications failed:', e.message) }
 }
 
-function subscribeRequests(onUpdate) {
+async function subscribeRequests(onUpdate) {
   try {
-    // Remove only the requests channel if it exists — not all channels
+    // Remove existing requests channel and wait for it to close
     const existing = state.activeChannels.find(c => c.topic === 'realtime:csr-requests-live')
-    if (existing) SB.removeChannel(existing)
+    if (existing) {
+      await SB.removeChannel(existing)
+      state.activeChannels = state.activeChannels.filter(c => c.topic !== 'realtime:csr-requests-live')
+    }
     const ch = SB.channel('csr-requests-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
         if (payload.eventType === 'UPDATE') {
@@ -1145,7 +1148,9 @@ async function renderDashboard() {
   html += '</div>'
 
   content.innerHTML = html
-  subscribeRequests(() => { if (state.page === 'dashboard') renderDashboard() })
+  if (state.page === 'dashboard') {
+    subscribeRequests(() => { if (state.page === 'dashboard') renderDashboard() })
+  }
 }
 
 function statCard(icon, label, value, sub, valClass) {
