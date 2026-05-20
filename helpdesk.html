@@ -3241,7 +3241,7 @@ async function loadReports() {
 let usersData = [];
 
 async function loadUsers() {
-  const { data } = await sb.from('profiles_with_email').select('*, departments(name)').order('full_name');
+  const { data } = await sb.from('profiles').select('*, departments(name)').order('full_name');
   usersData = data || [];
   renderUsersTable();
 }
