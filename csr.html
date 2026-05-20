@@ -1787,8 +1787,840 @@ function renderIssuance() {
 function renderStockInventory() {
   document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">🏪</div><h3>Stock Inventory</h3><p>Stock management coming in next build phase.</p></div>'
 }
-function renderDerp() {
-  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">♻️</div><h3>DERP</h3><p>Department Equipment Replacement Program module coming in next build phase.</p></div>'
+// ═══════════════════════════════════════════
+// DERP MODULE
+// ═══════════════════════════════════════════
+const DERP_CATEGORIES = {
+  it: { label: 'IT-DERP', icon: '💻', dept: 'Information Technology', sla: 48,
+    evaluator_roles: ['admin'], color: 'var(--blue)' },
+  gsd: { label: 'GSD-DERP', icon: '🏥', dept: 'General Services / Biomedical', sla: 24,
+    evaluator_roles: ['admin'], color: 'var(--green)' },
+  maintenance: { label: 'Maintenance-DERP', icon: '🔧', dept: 'Maintenance', sla: 72,
+    evaluator_roles: ['admin'], color: 'var(--amber)' }
+}
+
+const DERP_STATUS_LABELS = {
+  draft: 'Draft', submitted: 'Submitted', under_evaluation: 'Under Evaluation',
+  for_repair: 'For Repair', repair_in_progress: 'Repair In Progress',
+  repair_completed: 'Repair Completed', for_replacement: 'For Replacement',
+  csr_triggered: 'CSR Triggered', csr_approved: 'CSR Approved',
+  ordered: 'Ordered', delivered: 'Delivered', asset_swapped: 'Asset Swapped', closed: 'Closed'
+}
+
+const DERP_CHECKLISTS = {
+  it: [
+    'Hardware specs assessed (RAM/Storage/CPU)',
+    'Data backup completed',
+    'Virus/malware scan done',
+    'Repair cost vs replacement cost compared',
+    'Spare parts availability checked'
+  ],
+  gsd: [
+    'Last PM date recorded',
+    'Biomedical calibration status checked',
+    'Safety risk level assessed',
+    'Patient safety implication evaluated',
+    'DOH/FDA compliance status checked',
+    'Repair cost vs replacement cost compared'
+  ],
+  maintenance: [
+    'Load capacity assessed',
+    'Safety risk level evaluated',
+    'Building code compliance checked',
+    'Operational impact assessed',
+    'Repair cost vs replacement cost compared'
+  ]
+}
+
+async function renderDerp() {
+  const content = document.getElementById('mainContent')
+  const role = state.user.csr_role
+
+  // Load DERP requests
+  const { data: derpRequests } = await SB.from('requests')
+    .select('*').eq('request_type', 'derp').order('created_at', { ascending: false })
+  const requests = derpRequests || []
+
+  // Stats per category
+  const stats = { it: 0, gsd: 0, maintenance: 0, open: 0, closed: 0 }
+  requests.forEach(r => {
+    if (r.derp_category) stats[r.derp_category] = (stats[r.derp_category] || 0) + 1
+    if (r.status === 'closed') stats.closed++
+    else stats.open++
+  })
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>♻️ DERP</h2><p style="font-size:13px;color:var(--txt2);">Department Equipment Replacement Program</p></div>'
+  html += '<div class="page-header-actions">'
+  if (['requester','dept_head','supply_officer','admin'].includes(role)) {
+    html += '<button class="btn btn-ghost btn-sm" onclick="openDerpModal(\'it\')">💻 IT-DERP</button>'
+    html += '<button class="btn btn-ghost btn-sm" onclick="openDerpModal(\'gsd\')">🏥 GSD-DERP</button>'
+    html += '<button class="btn btn-ghost btn-sm" onclick="openDerpModal(\'maintenance\')">🔧 Maintenance-DERP</button>'
+  }
+  html += '</div></div>'
+
+  // Category stat cards
+  html += '<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:24px;">'
+  for (const [key, cat] of Object.entries(DERP_CATEGORIES)) {
+    html += '<div class="stat-card" style="border-color:' + cat.color + '22;cursor:pointer;" onclick="filterDerpTable(\'' + key + '\')">'
+    html += '<div class="stat-label">' + cat.icon + ' ' + cat.label + '</div>'
+    html += '<div class="stat-value" style="color:' + cat.color + ';font-size:22px;">' + (stats[key] || 0) + '</div>'
+    html += '<div class="stat-sub">SLA: ' + cat.sla + 'hrs</div>'
+    html += '</div>'
+  }
+  html += '<div class="stat-card"><div class="stat-label">🔄 Open</div>'
+  html += '<div class="stat-value stat-accent">' + stats.open + '</div><div class="stat-sub">Active DERPs</div></div>'
+  html += '<div class="stat-card"><div class="stat-label">✅ Closed</div>'
+  html += '<div class="stat-value stat-green">' + stats.closed + '</div><div class="stat-sub">Resolved</div></div>'
+  html += '</div>'
+
+  // Filter bar
+  html += '<div class="filter-bar">'
+  html += '<select id="derpFilterCat" onchange="filterDerpTable(this.value)">'
+  html += '<option value="">All Categories</option>'
+  for (const [k, v] of Object.entries(DERP_CATEGORIES)) {
+    html += '<option value="' + k + '">' + v.icon + ' ' + v.label + '</option>'
+  }
+  html += '</select>'
+  html += '<select id="derpFilterStatus" onchange="filterDerpTable()">'
+  html += '<option value="">All Status</option>'
+  for (const [k, v] of Object.entries(DERP_STATUS_LABELS)) {
+    html += '<option value="' + k + '">' + v + '</option>'
+  }
+  html += '</select>'
+  html += '</div>'
+
+  // Table
+  if (requests.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">♻️</div><h3>No DERP requests yet</h3><p>Submit a DERP request when equipment needs repair or replacement evaluation.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Request No.</th><th>Category</th><th>Asset</th><th>Decision</th><th>Status</th><th>SLA</th><th>Date</th><th></th>'
+    html += '</tr></thead><tbody id="derpTableBody">'
+    html += buildDerpRows(requests)
+    html += '</tbody></table></div>'
+  }
+
+  content.innerHTML = html
+  // Store for filtering
+  content._derpRequests = requests
+}
+
+function buildDerpRows(requests) {
+  let rows = ''
+  for (const r of requests) {
+    const cat = DERP_CATEGORIES[r.derp_category] || {}
+    const slaHours = r.derp_sla_hours || 48
+    const created = new Date(r.created_at)
+    const hoursElapsed = Math.floor((Date.now() - created) / 3600000)
+    const slaStatus = r.status === 'closed' ? 'closed' : hoursElapsed > slaHours ? 'breached' : hoursElapsed > slaHours * 0.75 ? 'warning' : 'ok'
+    const slaColors = { ok: 'var(--green)', warning: 'var(--amber)', breached: 'var(--red)', closed: 'var(--txt3)' }
+    const slaLabel = r.status === 'closed' ? '—' : hoursElapsed + 'h / ' + slaHours + 'h'
+
+    rows += '<tr onclick="viewDerp(\'' + r.id + '\')" style="cursor:pointer;">'
+    rows += '<td class="td-mono">' + r.request_no + '</td>'
+    rows += '<td>' + (cat.icon || '♻️') + ' <span style="font-size:12px;">' + (cat.label || r.derp_category || '—') + '</span></td>'
+    rows += '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.asset_condition_notes || r.purpose || '—') + '</td>'
+    rows += '<td>'
+    if (r.derp_decision === 'for_repair') rows += '<span class="badge badge-approved">For Repair</span>'
+    else if (r.derp_decision === 'for_replacement') rows += '<span class="badge badge-derp">For Replacement</span>'
+    else rows += '<span style="color:var(--txt3);font-size:12px;">Pending</span>'
+    rows += '</td>'
+    rows += '<td>' + derpStatusBadge(r.status) + '</td>'
+    rows += '<td style="color:' + slaColors[slaStatus] + ';font-size:12px;white-space:nowrap;font-family:\'JetBrains Mono\',monospace;">' + slaLabel + '</td>'
+    rows += '<td style="color:var(--txt2);">' + formatDate(r.created_at) + '</td>'
+    rows += '<td><button class="btn btn-ghost btn-sm no-print" onclick="event.stopPropagation();viewDerp(\'' + r.id + '\')">View</button></td>'
+    rows += '</tr>'
+  }
+  return rows
+}
+
+function filterDerpTable(catVal) {
+  const content = document.getElementById('mainContent')
+  const requests = content._derpRequests || []
+  const cat = catVal !== undefined ? catVal : (document.getElementById('derpFilterCat') ? document.getElementById('derpFilterCat').value : '')
+  const status = document.getElementById('derpFilterStatus') ? document.getElementById('derpFilterStatus').value : ''
+  if (catVal !== undefined && document.getElementById('derpFilterCat')) document.getElementById('derpFilterCat').value = catVal
+  let filtered = requests
+  if (cat) filtered = filtered.filter(r => r.derp_category === cat)
+  if (status) filtered = filtered.filter(r => r.status === status)
+  const tbody = document.getElementById('derpTableBody')
+  if (tbody) tbody.innerHTML = buildDerpRows(filtered)
+}
+
+function derpStatusBadge(status) {
+  const map = {
+    draft: 'badge-draft', submitted: 'badge-pending', under_evaluation: 'badge-pending',
+    for_repair: 'badge-approved', repair_in_progress: 'badge-issued',
+    repair_completed: 'badge-approved', for_replacement: 'badge-derp',
+    csr_triggered: 'badge-derp', csr_approved: 'badge-approved',
+    ordered: 'badge-ordered', delivered: 'badge-delivered',
+    asset_swapped: 'badge-approved', closed: 'badge-cancelled'
+  }
+  return '<span class="badge ' + (map[status] || 'badge-draft') + '">' + (DERP_STATUS_LABELS[status] || status) + '</span>'
+}
+
+// ─────────────────────────────
+// NEW DERP FORM
+// ─────────────────────────────
+function openDerpModal(category) {
+  const cat = DERP_CATEGORIES[category]
+  state.sourceType = 'derp'
+  state.itemRows = [{ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'equipment' }]
+
+  document.getElementById('newRequestTitle').textContent = cat.icon + ' New ' + cat.label + ' Request'
+  const checklist = DERP_CHECKLISTS[category] || []
+
+  let html = ''
+  // Category badge
+  html += '<div style="margin-bottom:16px;padding:10px 14px;background:' + cat.color + '18;border:1px solid ' + cat.color + '44;border-radius:10px;font-size:13px;">'
+  html += '<strong style="color:' + cat.color + ';">' + cat.icon + ' ' + cat.label + '</strong>'
+  html += ' <span style="color:var(--txt2);">· SLA: ' + cat.sla + ' hours evaluation target</span>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  // Department
+  html += '<div class="field"><label>Requesting Department</label><select id="f_dept">'
+  state.departments.forEach(d => {
+    const sel = d.id === state.user.dept_id ? ' selected' : ''
+    html += '<option value="' + d.id + '"' + sel + '>' + d.dept_name + '</option>'
+  })
+  html += '</select></div>'
+  // Urgency
+  html += '<div class="field"><label>Urgency</label><select id="f_urgency">'
+  ;['routine','urgent','emergency'].forEach(u => {
+    html += '<option value="' + u + '">' + u.charAt(0).toUpperCase() + u.slice(1) + '</option>'
+  })
+  html += '</select></div>'
+  html += '</div>'
+
+  // Asset description
+  html += '<div class="field"><label>Equipment / Asset Description</label>'
+  html += '<input type="text" id="f_asset_desc" placeholder="e.g. Dell Latitude 5420 — IT Dept, 3rd Floor"></div>'
+
+  // Asset condition
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Asset Condition</label><select id="f_condition">'
+  ;['poor','beyond_repair','obsolete','end_of_life'].forEach(c => {
+    html += '<option value="' + c + '">' + c.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase()) + '</option>'
+  })
+  html += '</select></div>'
+  html += '<div class="field"><label>Warranty Status</label><select id="f_warranty">'
+  ;['unknown','in_warranty','out_of_warranty'].forEach(w => {
+    html += '<option value="' + w + '">' + w.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase()) + '</option>'
+  })
+  html += '</select></div>'
+  html += '</div>'
+
+  html += '<div class="field"><label>Problem Description / Justification</label>'
+  html += '<textarea id="f_purpose" placeholder="Describe the problem in detail, how it affects operations..." rows="3"></textarea></div>'
+
+  html += '<div class="field"><label>Condition Notes</label>'
+  html += '<textarea id="f_condition_notes" placeholder="Additional observations, history of repairs, etc." rows="2"></textarea></div>'
+
+  // Loaner needed?
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 14px;background:var(--surf3);border-radius:9px;">'
+  html += '<input type="checkbox" id="f_loaner" style="width:16px;height:16px;">'
+  html += '<label for="f_loaner" style="font-size:13px;cursor:pointer;">Loaner equipment needed while awaiting resolution</label>'
+  html += '</div>'
+
+  // Preliminary recommendation
+  html += '<div class="field"><label>Initial Recommendation</label>'
+  html += '<div style="display:flex;gap:10px;">'
+  html += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;">'
+  html += '<input type="radio" name="f_recommendation" value="for_repair" checked> For Repair</label>'
+  html += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;">'
+  html += '<input type="radio" name="f_recommendation" value="for_replacement"> For Replacement</label>'
+  html += '</div></div>'
+
+  // Evaluation checklist preview
+  html += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-bottom:16px;">'
+  html += '<div style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Evaluation Checklist (completed by evaluator)</div>'
+  checklist.forEach((item, i) => {
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--txt2);">'
+    html += '<span style="width:18px;height:18px;border:1px solid var(--bdr2);border-radius:4px;flex-shrink:0;"></span>'
+    html += item + '</div>'
+  })
+  html += '</div>'
+
+  // Items (replacement parts or new unit)
+  html += '<div class="field"><label>Items (if requesting specific parts or replacement unit)</label>'
+  html += '<div class="items-table-wrap"><table class="items-table"><thead><tr>'
+  html += '<th style="width:35%">Item</th><th style="width:20%">Description</th><th style="width:8%">Qty</th><th style="width:8%">Unit</th><th style="width:12%">Est. Cost</th><th style="width:5%"></th>'
+  html += '</tr></thead><tbody id="itemsBody">'
+  html += buildItemRows()
+  html += '</tbody></table></div>'
+  html += '<button class="btn btn-ghost btn-sm" onclick="addItemRow()" style="margin-top:8px;">＋ Add Item</button></div>'
+
+  // Store category for save
+  document.getElementById('newRequestBody').innerHTML = html
+  document.getElementById('newRequestBody').dataset.derpCategory = category
+  document.getElementById('newRequestBody').dataset.derpSla = cat.sla
+
+  // Update footer buttons
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-secondary" onclick="saveDerpRequest(\'draft\')">Save Draft</button>' +
+    '<button class="btn btn-primary" onclick="saveDerpRequest(\'submit\')">Submit DERP</button>'
+
+  openModal('newRequestModal')
+}
+
+async function saveDerpRequest(action) {
+  const body = document.getElementById('newRequestBody')
+  const category = body.dataset.derpCategory
+  const slaHours = parseInt(body.dataset.derpSla) || 48
+  const dept = document.getElementById('f_dept').value
+  const urgency = document.getElementById('f_urgency').value
+  const purpose = document.getElementById('f_purpose').value.trim()
+  const assetDesc = document.getElementById('f_asset_desc').value.trim()
+  const condition = document.getElementById('f_condition').value
+  const conditionNotes = document.getElementById('f_condition_notes').value.trim()
+  const warranty = document.getElementById('f_warranty').value
+  const loanerNeeded = document.getElementById('f_loaner').checked
+  const recommendation = document.querySelector('input[name="f_recommendation"]:checked')
+  const recValue = recommendation ? recommendation.value : 'for_repair'
+
+  if (!assetDesc) { showToast('error', 'Validation', 'Please describe the equipment.'); return }
+  if (action === 'submit' && !purpose) { showToast('error', 'Validation', 'Please describe the problem.'); return }
+
+  try {
+    const { data: numData } = await SB.rpc('generate_request_no')
+    const requestNo = numData || ('CSR-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
+
+    // Check for repeat offender — same asset description DERP'd 2x in 12 months
+    const oneYearAgo = new Date(Date.now() - 365 * 24 * 3600000).toISOString()
+    const { count: repeatCount } = await SB.from('requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('request_type', 'derp')
+      .eq('derp_category', category)
+      .ilike('asset_condition_notes', '%' + assetDesc.substring(0, 20) + '%')
+      .gte('created_at', oneYearAgo)
+
+    const repeatFlag = (repeatCount || 0) >= 1
+
+    const payload = {
+      request_no: requestNo,
+      request_type: 'derp',
+      dept_id: dept,
+      requested_by: state.user.id,
+      urgency,
+      purpose,
+      status: action === 'submit' ? 'submitted' : 'draft',
+      current_approval_level: 1,
+      source_system: 'manual',
+      derp_category: category,
+      asset_condition: condition,
+      asset_condition_notes: assetDesc + (conditionNotes ? ' — ' + conditionNotes : ''),
+      derp_warranty_status: warranty,
+      derp_loaner_needed: loanerNeeded,
+      derp_repeat_flag: repeatFlag,
+      derp_sla_hours: slaHours,
+      disposal_action: null
+    }
+
+    const { data: req, error } = await SB.from('requests').insert(payload).select().single()
+    if (error) throw error
+
+    // Insert items if any
+    const validItems = state.itemRows.filter(r => r.item_name && r.item_name.trim())
+    if (validItems.length > 0) {
+      await SB.from('request_items').insert(validItems.map(item => ({
+        request_id: req.id,
+        item_name: item.item_name,
+        item_description: item.item_description || null,
+        quantity: Number(item.quantity) || 1,
+        unit: item.unit,
+        estimated_cost: Number(item.estimated_cost) || 0,
+        category: 'equipment'
+      })))
+    }
+
+    closeModal('newRequestModal')
+
+    let msg = req.request_no + ' submitted for evaluation.'
+    if (repeatFlag) msg += ' ⚠️ Repeat offender flagged — same asset previously reported.'
+    showToast('success', 'DERP Submitted', msg)
+
+    // Notify evaluator
+    if (action === 'submit') notifyDerpEvaluators(req, category)
+
+    if (state.page === 'derp') renderDerp()
+    else if (state.page === 'dashboard') renderDashboard()
+
+  } catch(e) {
+    showToast('error', 'Error', e.message)
+    console.error(e)
+  }
+}
+
+// ─────────────────────────────
+// DERP DETAIL VIEW
+// ─────────────────────────────
+async function viewDerp(id) {
+  const { data: req } = await SB.from('requests').select('*').eq('id', id).single()
+  if (!req) { showToast('error', 'Error', 'DERP request not found'); return }
+
+  const cat = DERP_CATEGORIES[req.derp_category] || {}
+  const dept = state.departments.find(d => d.id === req.dept_id)
+  const requester = state.users.find(u => u.id === req.requested_by)
+  const evaluator = state.users.find(u => u.id === req.derp_evaluator_id)
+  const items = await loadRequestItems(id)
+  const role = state.user.csr_role
+
+  document.getElementById('detailModalTitle').textContent = req.request_no + ' — ' + (cat.label || 'DERP')
+
+  let body = ''
+
+  // Category + SLA bar
+  const slaHours = req.derp_sla_hours || 48
+  const created = new Date(req.created_at)
+  const hoursElapsed = Math.floor((Date.now() - created) / 3600000)
+  const slaPct = Math.min(100, Math.round((hoursElapsed / slaHours) * 100))
+  const slaColor = slaPct >= 100 ? 'var(--red)' : slaPct >= 75 ? 'var(--amber)' : 'var(--green)'
+
+  body += '<div style="padding:12px 14px;background:' + (cat.color || 'var(--accent)') + '14;border:1px solid ' + (cat.color || 'var(--accent)') + '33;border-radius:10px;margin-bottom:16px;">'
+  body += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+  body += '<strong style="color:' + (cat.color || 'var(--accent)') + ';">' + (cat.icon || '♻️') + ' ' + (cat.label || 'DERP') + '</strong>'
+  body += '<span style="font-size:11px;color:var(--txt2);">SLA: ' + hoursElapsed + 'h elapsed / ' + slaHours + 'h target</span>'
+  body += '</div>'
+  body += '<div style="height:6px;background:var(--surf3);border-radius:3px;overflow:hidden;">'
+  body += '<div style="height:100%;width:' + slaPct + '%;background:' + slaColor + ';border-radius:3px;transition:width .5s;"></div>'
+  body += '</div></div>'
+
+  // Info grid
+  body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">'
+  body += infoField('Status', derpStatusBadge(req.status))
+  body += infoField('Urgency', '<span class="badge badge-' + req.urgency + '">' + req.urgency.toUpperCase() + '</span>')
+  body += infoField('Department', dept ? dept.dept_name : '—')
+  body += infoField('Requested By', requester ? requester.full_name : '—')
+  body += infoField('Evaluator', evaluator ? evaluator.full_name : '<span style="color:var(--txt3);">Not assigned</span>')
+  body += infoField('Date Filed', formatDate(req.created_at))
+  body += '</div>'
+
+  // Asset info
+  body += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-bottom:16px;">'
+  body += '<div style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Equipment Details</div>'
+  body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+  body += infoField('Asset Description', req.asset_condition_notes || '—')
+  body += infoField('Condition', req.asset_condition ? req.asset_condition.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase()) : '—')
+  body += infoField('Warranty', req.derp_warranty_status ? req.derp_warranty_status.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase()) : '—')
+  body += infoField('Loaner Needed', req.derp_loaner_needed ? '✅ Yes' : 'No')
+  body += '</div>'
+  if (req.derp_repeat_flag) {
+    body += '<div style="margin-top:10px;padding:8px;background:var(--amber-a);border:1px solid var(--amber);border-radius:7px;font-size:12px;color:var(--amber);">⚠️ Repeat Offender — same asset previously reported within 12 months</div>'
+  }
+  body += '</div>'
+
+  // Problem description
+  if (req.purpose) {
+    body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Problem Description</div>'
+    body += '<div style="background:var(--surf2);padding:10px 14px;border-radius:9px;font-size:13px;border:1px solid var(--bdr);">' + req.purpose + '</div></div>'
+  }
+
+  // Decision section
+  body += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-bottom:16px;">'
+  body += '<div style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">Evaluation Decision</div>'
+  if (req.derp_decision) {
+    body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+    body += infoField('Decision', req.derp_decision === 'for_repair'
+      ? '<span class="badge badge-approved">✅ For Repair</span>'
+      : '<span class="badge badge-derp">🔄 For Replacement</span>')
+    body += infoField('Evaluation Date', formatDate(req.derp_evaluation_date))
+    body += '</div>'
+    if (req.derp_evaluation_notes) {
+      body += '<div style="margin-top:10px;font-size:13px;color:var(--txt2);">' + req.derp_evaluation_notes + '</div>'
+    }
+    if (req.derp_csr_request_id) {
+      body += '<div style="margin-top:10px;padding:8px 12px;background:var(--accent-a);border:1px solid var(--accent-b);border-radius:8px;font-size:12px;">'
+      body += '📦 CSR Request generated — click to view'
+      body += '</div>'
+    }
+  } else {
+    body += '<div style="color:var(--txt2);font-size:13px;">Pending evaluation by ' + (cat.dept || 'assigned department') + '</div>'
+    // Evaluation form for evaluator
+    if (['admin','supply_officer'].includes(role) ||
+       (role === 'dept_head' && req.derp_evaluator_id === state.user.id)) {
+      body += '<div style="margin-top:14px;border-top:1px solid var(--bdr);padding-top:14px;">'
+      body += '<div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:10px;">Complete Evaluation</div>'
+      // Checklist
+      const checklist = DERP_CHECKLISTS[req.derp_category] || []
+      body += '<div style="margin-bottom:12px;">'
+      checklist.forEach((item, i) => {
+        body += '<label style="display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12px;cursor:pointer;">'
+        body += '<input type="checkbox" id="chk_' + i + '" style="width:15px;height:15px;"> ' + item
+        body += '</label>'
+      })
+      body += '</div>'
+      body += '<div class="field"><label>Evaluation Notes</label>'
+      body += '<textarea id="eval_notes" placeholder="Technical findings, cost comparison, recommendation basis..." rows="3"></textarea></div>'
+      body += '<div class="field"><label>Decision</label>'
+      body += '<div style="display:flex;gap:10px;">'
+      body += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf3);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;">'
+      body += '<input type="radio" name="eval_decision" value="for_repair" checked> For Repair</label>'
+      body += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf3);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;">'
+      body += '<input type="radio" name="eval_decision" value="for_replacement"> For Replacement</label>'
+      body += '</div></div>'
+      body += '</div>'
+    }
+  }
+  body += '</div>'
+
+  // Items
+  if (items.length > 0) {
+    body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Items / Parts</div>'
+    body += '<div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Est. Cost</th></tr></thead><tbody>'
+    items.forEach(item => {
+      body += '<tr><td>' + item.item_name + (item.item_description ? '<br><span style="font-size:11px;color:var(--txt2);">' + item.item_description + '</span>' : '') + '</td>'
+      body += '<td>' + item.quantity + '</td><td>' + (item.unit || '—') + '</td>'
+      body += '<td>₱' + (item.estimated_cost ? Number(item.estimated_cost).toLocaleString() : '—') + '</td></tr>'
+    })
+    body += '</tbody></table></div></div>'
+  }
+
+  // Activity log
+  const { data: logs } = await SB.from('derp_activity_log')
+    .select('*').eq('request_id', id).order('created_at', { ascending: true })
+  if (logs && logs.length > 0) {
+    body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Activity Log</div>'
+    body += '<div class="timeline">'
+    const actionIcons = { transferred:'↪', returned:'↩', status_change:'🔄', evaluated:'✅', submitted:'📤', closed:'🔒' }
+    const actionColors = { transferred:'var(--blue)', returned:'var(--amber)', status_change:'var(--txt2)', evaluated:'var(--green)', submitted:'var(--accent)', closed:'var(--txt3)' }
+    logs.forEach(log => {
+      const performer = state.users.find(u => u.id === log.performed_by)
+      const color = actionColors[log.action] || 'var(--txt2)'
+      body += '<div class="timeline-item">'
+      body += '<div class="tl-dot" style="background:' + color + '18;border-color:' + color + ';color:' + color + ';">' + (actionIcons[log.action] || '·') + '</div>'
+      body += '<div class="tl-content">'
+      body += '<div class="tl-title" style="color:' + color + ';">'
+      if (log.action === 'transferred') {
+        const fromCat = DERP_CATEGORIES[log.from_value]
+        const toCat = DERP_CATEGORIES[log.to_value]
+        body += 'Transferred from ' + (fromCat ? fromCat.label : log.from_value) + ' → ' + (toCat ? toCat.label : log.to_value)
+      } else if (log.action === 'returned') {
+        body += 'Returned to requester for revision'
+      } else {
+        body += log.action.charAt(0).toUpperCase() + log.action.slice(1).replace(/_/g,' ')
+      }
+      body += '</div>'
+      body += '<div class="tl-sub">' + (performer ? performer.full_name : 'System') + ' · ' + formatDate(log.created_at) + '</div>'
+      if (log.remarks) body += '<div style="font-size:12px;color:var(--txt2);margin-top:4px;font-style:italic;">"' + log.remarks + '"</div>'
+      body += '</div></div>'
+    })
+    body += '</div></div>'
+  }
+
+  document.getElementById('requestDetailBody').innerHTML = body
+
+  // Footer actions
+  let footer = '<button class="btn btn-ghost" onclick="closeModal(\'requestDetailModal\')">Close</button>'
+
+  // Transfer + Return available for evaluators on active DERPs
+  const activeStatuses = ['submitted','under_evaluation','for_repair','repair_in_progress']
+  if (activeStatuses.includes(req.status) && ['admin','supply_officer','dept_head'].includes(role)) {
+    footer += '<button class="btn btn-ghost btn-sm" onclick="openDerpTransfer(\'' + req.id + '\',\'' + req.derp_category + '\')" title="Wrong department? Transfer to correct one.">↪ Transfer</button>'
+    footer += '<button class="btn btn-ghost btn-sm" onclick="openDerpReturn(\'' + req.id + '\')" title="Return to requester for revision">↩ Return</button>'
+  }
+
+  if (req.status === 'submitted' && ['admin','supply_officer'].includes(role)) {
+    footer += '<button class="btn btn-secondary" onclick="assignDerpEvaluator(\'' + req.id + '\')">Assign Evaluator</button>'
+    footer += '<button class="btn btn-primary" onclick="startDerpEvaluation(\'' + req.id + '\')">Start Evaluation</button>'
+  }
+  if (req.status === 'under_evaluation' && !req.derp_decision) {
+    footer += '<button class="btn btn-primary" onclick="submitDerpEvaluation(\'' + req.id + '\')">Submit Evaluation</button>'
+  }
+  if (req.status === 'for_repair' && ['admin','supply_officer'].includes(role)) {
+    footer += '<button class="btn btn-success" onclick="updateDerpStatus(\'' + req.id + '\',\'repair_in_progress\')">Start Repair</button>'
+  }
+  if (req.status === 'repair_in_progress' && ['admin','supply_officer'].includes(role)) {
+    footer += '<button class="btn btn-success" onclick="updateDerpStatus(\'' + req.id + '\',\'repair_completed\')">Mark Repair Done</button>'
+  }
+  if (req.status === 'repair_completed' && ['admin','supply_officer'].includes(role)) {
+    footer += '<button class="btn btn-primary" onclick="closeDerp(\'' + req.id + '\')">Close DERP</button>'
+  }
+  if (req.status === 'for_replacement' && ['admin','supply_officer'].includes(role)) {
+    footer += '<button class="btn btn-primary" onclick="triggerDerpCSR(\'' + req.id + '\')">Generate CSR Request →</button>'
+  }
+
+  document.getElementById('requestDetailFooter').innerHTML = footer
+  openModal('requestDetailModal')
+}
+
+// ─────────────────────────────
+// DERP ACTIONS
+// ─────────────────────────────
+async function startDerpEvaluation(id) {
+  confirm2('Mark this DERP as Under Evaluation?', async () => {
+    await SB.from('requests').update({
+      status: 'under_evaluation',
+      derp_evaluator_id: state.user.id
+    }).eq('id', id)
+    closeModal('requestDetailModal')
+    showToast('success', 'Updated', 'DERP marked as under evaluation.')
+    if (state.page === 'derp') renderDerp()
+  })
+}
+
+async function submitDerpEvaluation(id) {
+  const notes = document.getElementById('eval_notes') ? document.getElementById('eval_notes').value.trim() : ''
+  const decisionEl = document.querySelector('input[name="eval_decision"]:checked')
+  const decision = decisionEl ? decisionEl.value : 'for_repair'
+  if (!notes) { showToast('error', 'Required', 'Please enter evaluation notes.'); return }
+
+  try {
+    await SB.from('requests').update({
+      status: decision,
+      derp_decision: decision,
+      derp_evaluation_notes: notes,
+      derp_evaluation_date: new Date().toISOString(),
+      derp_evaluator_id: state.user.id
+    }).eq('id', id)
+
+    closeModal('requestDetailModal')
+    showToast('success', 'Evaluation Submitted',
+      decision === 'for_repair' ? 'Equipment tagged for repair.' : 'Equipment tagged for replacement — generate CSR to proceed.')
+    if (state.page === 'derp') renderDerp()
+  } catch(e) { showToast('error', 'Error', e.message) }
+}
+
+async function updateDerpStatus(id, newStatus) {
+  const labels = { repair_in_progress: 'Repair In Progress', repair_completed: 'Repair Completed' }
+  confirm2('Update status to "' + (labels[newStatus] || newStatus) + '"?', async () => {
+    await SB.from('requests').update({ status: newStatus }).eq('id', id)
+    closeModal('requestDetailModal')
+    showToast('success', 'Updated', 'DERP status updated.')
+    if (state.page === 'derp') renderDerp()
+  })
+}
+
+async function closeDerp(id) {
+  confirm2('Close this DERP request?', async () => {
+    await SB.from('requests').update({ status: 'closed' }).eq('id', id)
+    // Notify requester
+    const { data: req } = await SB.from('requests').select('requested_by,request_no').eq('id', id).single()
+    if (req) {
+      await SB.from('system_notifications').insert({
+        recipient_id: req.requested_by,
+        target_system: 'csr', target_ref_id: id,
+        source_system: 'csr',
+        message: 'DERP request ' + req.request_no + ' has been closed. Equipment is repaired and ready for use.',
+        type: 'derp_closed'
+      })
+    }
+    closeModal('requestDetailModal')
+    showToast('success', 'DERP Closed', 'Request closed and requestor notified.')
+    if (state.page === 'derp') renderDerp()
+  })
+}
+
+async function triggerDerpCSR(derpId) {
+  confirm2('Generate a CSR Purchase Request for this equipment replacement?', async () => {
+    try {
+      const { data: derp } = await SB.from('requests').select('*').eq('id', derpId).single()
+      if (!derp) return
+
+      const { data: numData } = await SB.rpc('generate_request_no')
+      const requestNo = numData || ('CSR-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
+
+      // Create linked CSR request
+      const { data: csr, error } = await SB.from('requests').insert({
+        request_no: requestNo,
+        request_type: 'purchase',
+        dept_id: derp.dept_id,
+        requested_by: state.user.id,
+        urgency: derp.urgency,
+        purpose: 'Replacement for DERP ' + derp.request_no + ' — ' + (derp.asset_condition_notes || ''),
+        status: 'pending_approval',
+        current_approval_level: 1,
+        source_system: 'csr',
+        source_ref_id: derpId,
+        disposal_action: 'archive'
+      }).select().single()
+
+      if (error) throw error
+
+      // Link DERP to CSR
+      await SB.from('requests').update({
+        status: 'csr_triggered',
+        derp_csr_request_id: csr.id
+      }).eq('id', derpId)
+
+      // Cross reference
+      await SB.from('cross_references').insert({
+        source_system: 'csr', source_id: derpId,
+        target_system: 'csr', target_id: csr.id,
+        relationship: 'triggered_by'
+      })
+
+      closeModal('requestDetailModal')
+      showToast('success', 'CSR Generated', csr.request_no + ' created and submitted for approval.')
+      if (state.page === 'derp') renderDerp()
+    } catch(e) { showToast('error', 'Error', e.message) }
+  })
+}
+
+// ─────────────────────────────
+// DERP TRANSFER (Option C)
+// ─────────────────────────────
+function openDerpTransfer(reqId, currentCategory) {
+  const cats = Object.entries(DERP_CATEGORIES).filter(([k]) => k !== currentCategory)
+  let html = '<p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">Transfer this DERP to the correct department evaluator.</p>'
+  html += '<div class="field"><label>Transfer To</label><select id="transferCat">'
+  cats.forEach(([k, v]) => {
+    html += '<option value="' + k + '">' + v.icon + ' ' + v.label + '</option>'
+  })
+  html += '</select></div>'
+  html += '<div class="field"><label>Reason for Transfer <span style="color:var(--red);">*</span></label>'
+  html += '<textarea id="transferRemarks" placeholder="e.g. This is IT equipment — should be handled by IT department." rows="3"></textarea></div>'
+
+  document.getElementById('approvalModalTitle').textContent = '↪ Transfer DERP'
+  document.getElementById('approvalModalDesc').textContent = ''
+  document.getElementById('approvalRemarks').style.display = 'none'
+  document.getElementById('remarksReq').style.display = 'none'
+  document.getElementById('approvalModalFooter').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'approvalModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="processDerpTransfer(\'' + reqId + '\',\'' + currentCategory + '\')">Confirm Transfer</button>'
+
+  // Inject custom fields into approval modal body
+  document.getElementById('approvalModalDesc').innerHTML = html
+  openModal('approvalModal')
+}
+
+async function processDerpTransfer(reqId, fromCategory) {
+  const toCat = document.getElementById('transferCat') ? document.getElementById('transferCat').value : null
+  const remarks = document.getElementById('transferRemarks') ? document.getElementById('transferRemarks').value.trim() : ''
+  if (!toCat) { showToast('error', 'Required', 'Please select destination department.'); return }
+  if (!remarks) { showToast('error', 'Required', 'Please enter reason for transfer.'); return }
+
+  try {
+    const { data: req } = await SB.from('requests').select('request_no,requested_by,derp_sla_hours').eq('id', reqId).single()
+    const toCatInfo = DERP_CATEGORIES[toCat]
+
+    // Update category + reset evaluator + update SLA
+    await SB.from('requests').update({
+      derp_category: toCat,
+      derp_evaluator_id: null,
+      derp_sla_hours: toCatInfo.sla,
+      status: 'submitted'
+    }).eq('id', reqId)
+
+    // Log transfer
+    await SB.from('derp_activity_log').insert({
+      request_id: reqId,
+      action: 'transferred',
+      from_value: fromCategory,
+      to_value: toCat,
+      performed_by: state.user.id,
+      remarks
+    })
+
+    // Notify new evaluators
+    const admins = state.users.filter(u => u.csr_role === 'admin')
+    for (const admin of admins) {
+      await SB.from('system_notifications').insert({
+        recipient_id: admin.id,
+        target_system: 'csr', target_ref_id: reqId,
+        source_system: 'csr',
+        message: toCatInfo.icon + ' DERP ' + req.request_no + ' transferred to ' + toCatInfo.label + '. Reason: ' + remarks,
+        type: 'derp_transferred'
+      })
+    }
+
+    // Notify requester
+    if (req.requested_by) {
+      await SB.from('system_notifications').insert({
+        recipient_id: req.requested_by,
+        target_system: 'csr', target_ref_id: reqId,
+        source_system: 'csr',
+        message: 'Your DERP request ' + req.request_no + ' has been transferred to ' + toCatInfo.label + ' for evaluation.',
+        type: 'derp_transferred'
+      })
+    }
+
+    closeModal('approvalModal')
+    closeModal('requestDetailModal')
+    showToast('success', 'Transferred', 'DERP transferred to ' + toCatInfo.icon + ' ' + toCatInfo.label)
+    if (state.page === 'derp') renderDerp()
+
+  } catch(e) { showToast('error', 'Error', e.message) }
+}
+
+// ─────────────────────────────
+// DERP RETURN (Option C)
+// ─────────────────────────────
+function openDerpReturn(reqId) {
+  document.getElementById('approvalModalTitle').textContent = '↩ Return for Revision'
+  document.getElementById('approvalModalDesc').innerHTML =
+    '<p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">Return this DERP to the requester for correction. Please provide a clear reason so they know what to fix.</p>'
+  document.getElementById('approvalRemarks').style.display = 'block'
+  document.getElementById('approvalRemarks').placeholder = 'e.g. Wrong DERP category — this is IT equipment. Please re-submit as IT-DERP.'
+  document.getElementById('approvalRemarks').value = ''
+  document.getElementById('remarksReq').style.display = 'inline'
+  document.getElementById('approvalModalFooter').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'approvalModal\')">Cancel</button>' +
+    '<button class="btn btn-danger" onclick="processDerpReturn(\'' + reqId + '\')">Return to Requester</button>'
+  openModal('approvalModal')
+}
+
+async function processDerpReturn(reqId) {
+  const remarks = document.getElementById('approvalRemarks').value.trim()
+  if (!remarks) { showToast('error', 'Required', 'Please enter reason for return.'); return }
+
+  try {
+    const { data: req } = await SB.from('requests').select('request_no,requested_by,derp_category').eq('id', reqId).single()
+
+    // Reset to draft
+    await SB.from('requests').update({
+      status: 'draft',
+      derp_evaluator_id: null,
+      derp_decision: null,
+      derp_evaluation_notes: null,
+      derp_evaluation_date: null
+    }).eq('id', reqId)
+
+    // Log return
+    await SB.from('derp_activity_log').insert({
+      request_id: reqId,
+      action: 'returned',
+      from_value: 'under_evaluation',
+      to_value: 'draft',
+      performed_by: state.user.id,
+      remarks
+    })
+
+    // Notify requester
+    if (req.requested_by) {
+      await SB.from('system_notifications').insert({
+        recipient_id: req.requested_by,
+        target_system: 'csr', target_ref_id: reqId,
+        source_system: 'csr',
+        message: 'Your DERP request ' + req.request_no + ' was returned for revision. Reason: ' + remarks,
+        type: 'derp_returned'
+      })
+    }
+
+    closeModal('approvalModal')
+    closeModal('requestDetailModal')
+    showToast('success', 'Returned', 'DERP returned to requester for revision.')
+    if (state.page === 'derp') renderDerp()
+
+  } catch(e) { showToast('error', 'Error', e.message) }
+}
+
+async function notifyDerpEvaluators(req, category) {
+  try {
+    const cat = DERP_CATEGORIES[category]
+    const admins = state.users.filter(u => u.csr_role === 'admin')
+    for (const admin of admins) {
+      await SB.from('system_notifications').insert({
+        recipient_id: admin.id,
+        target_system: 'csr', target_ref_id: req.id,
+        source_system: 'csr',
+        message: cat.icon + ' New ' + cat.label + ' request ' + req.request_no + ' submitted for evaluation.',
+        type: 'derp_submitted'
+      })
+    }
+  } catch(e) { console.warn('notifyDerpEvaluators', e) }
 }
 function renderReports() {
   document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📈</div><h3>Reports</h3><p>Reports module coming in next build phase.</p></div>'
