@@ -724,7 +724,7 @@ async function doLogin() {
 
     // Try 1: direct auth_id match via shared schema
     try {
-      const { data } = await SB.schema('shared').from('users')
+      const { data } = await SB.from('users')
         .select('*').eq('auth_id', authData.user.id).eq('is_active', true).single()
       if (data) profile = data
     } catch(e) {}
@@ -732,7 +732,7 @@ async function doLogin() {
     // Try 2: fallback to public view (works before schema exposure is configured)
     if (!profile) {
       try {
-        const { data } = await SB.from('shared_users')
+        const { data } = await SB.from('users')
           .select('*').eq('auth_id', authData.user.id).eq('is_active', true).single()
         if (data) profile = data
       } catch(e) {}
@@ -741,10 +741,10 @@ async function doLogin() {
     // Try 3: alias lookup via shared schema (email login)
     if (!profile) {
       try {
-        const { data: alias } = await SB.schema('shared').from('user_auth_aliases')
+        const { data: alias } = await SB.from('user_auth_aliases')
           .select('primary_user_id').eq('alias_auth_id', authData.user.id).single()
         if (alias) {
-          const { data } = await SB.schema('shared').from('users')
+          const { data } = await SB.from('users')
             .select('*').eq('id', alias.primary_user_id).eq('is_active', true).single()
           if (data) profile = data
         }
@@ -754,10 +754,10 @@ async function doLogin() {
     // Try 4: alias lookup via public view (fallback)
     if (!profile) {
       try {
-        const { data: alias } = await SB.from('shared_user_auth_aliases')
+        const { data: alias } = await SB.from('user_auth_aliases')
           .select('primary_user_id').eq('alias_auth_id', authData.user.id).single()
         if (alias) {
-          const { data } = await SB.from('shared_users')
+          const { data } = await SB.from('users')
             .select('*').eq('id', alias.primary_user_id).eq('is_active', true).single()
           if (data) profile = data
         }
@@ -1920,13 +1920,13 @@ document.getElementById('loginPass').addEventListener('keydown', e => {
     // Auth session exists — fetch profile and restore app
     let profile = null
     try {
-      const { data } = await SB.schema('shared').from('users')
+      const { data } = await SB.from('users')
         .select('*').eq('auth_id', authSession.user.id).eq('is_active', true).single()
       if (data) profile = data
     } catch(e) {}
     if (!profile) {
       try {
-        const { data } = await SB.from('shared_users')
+        const { data } = await SB.from('users')
           .select('*').eq('auth_id', authSession.user.id).eq('is_active', true).single()
         if (data) profile = data
       } catch(e) {}
