@@ -1778,8 +1778,950 @@ async function notifyApprovers(req, level) {
 // ═══════════════════════════════════════════
 // PLACEHOLDER PAGES
 // ═══════════════════════════════════════════
-function renderPurchaseOrders() {
-  document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">🛒</div><h3>Purchase Orders</h3><p>PO management coming in next build phase.</p></div>'
+// ═══════════════════════════════════════════
+// PURCHASE ORDERS MODULE
+// ═══════════════════════════════════════════
+let poState = {
+  pos: [], suppliers: [], canvasses: [],
+  view: 'po_list' // 'po_list' | 'canvass_list' | 'suppliers'
+}
+
+const PO_STATUS_LABELS = {
+  draft: 'Draft', sent: 'Sent to Supplier', acknowledged: 'Acknowledged',
+  partial: 'Partial Delivery', delivered: 'Fully Delivered'
+}
+
+async function renderPurchaseOrders() {
+  const content = document.getElementById('mainContent')
+  const role = state.user.csr_role
+
+  const [posRes, suppRes] = await Promise.all([
+    SB.from('purchase_orders').select('*').order('created_at', { ascending: false }),
+    SB.from('suppliers').select('*').eq('is_active', true).order('name')
+  ])
+  poState.pos = posRes.data || []
+  poState.suppliers = suppRes.data || []
+
+  // Stats
+  const draft = poState.pos.filter(p => p.status === 'draft').length
+  const sent = poState.pos.filter(p => p.status === 'sent' || p.status === 'acknowledged').length
+  const pending = poState.pos.filter(p => p.status === 'partial').length
+  const totalSpend = poState.pos.filter(p => p.status === 'delivered')
+    .reduce((s, p) => s + Number(p.total_amount || 0), 0)
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>🛒 Purchase Orders</h2><p style="font-size:13px;color:var(--txt2);">PO management, canvassing, and delivery tracking</p></div>'
+  html += '<div class="page-header-actions">'
+  if (['supply_officer','admin'].includes(role)) {
+    html += '<button class="btn btn-ghost btn-sm" onclick="showPOView(\'canvass_list\')">📋 Canvass Sheets</button>'
+    html += '<button class="btn btn-ghost btn-sm" onclick="showPOView(\'suppliers\')">🏢 Suppliers</button>'
+    html += '<button class="btn btn-primary" onclick="openNewPOModal()">＋ New PO</button>'
+  }
+  html += '</div></div>'
+
+  // Stats
+  html += '<div class="stat-grid" style="margin-bottom:20px;">'
+  html += statCard('📝', 'Draft POs', draft, 'Not yet sent', 'stat-accent')
+  html += statCard('📤', 'Sent / Active', sent, 'Awaiting delivery', 'stat-blue')
+  html += statCard('🚚', 'Partial Delivery', pending, 'Awaiting completion', 'stat-amber')
+  html += statCard('💰', 'Total Spend (YTD)', '₱' + totalSpend.toLocaleString(), 'Fully delivered POs', 'stat-green')
+  html += '</div>'
+
+  // Filter bar
+  html += '<div class="filter-bar" style="margin-bottom:16px;">'
+  html += '<select id="poStatusFilter" onchange="filterPOTable()">'
+  html += '<option value="">All Status</option>'
+  Object.entries(PO_STATUS_LABELS).forEach(([k,v]) => {
+    html += '<option value="' + k + '">' + v + '</option>'
+  })
+  html += '</select>'
+  html += '<input type="text" id="poSearch" placeholder="🔍 Search PO number or supplier..." oninput="filterPOTable()" style="min-width:240px;">'
+  html += '</div>'
+
+  if (poState.pos.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">🛒</div><h3>No Purchase Orders yet</h3><p>Create a PO from an approved CSR request or manually.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>PO Number</th><th>Supplier</th><th>Linked CSR</th><th>Amount</th><th>Expected Delivery</th><th>Status</th><th>Date</th><th></th>'
+    html += '</tr></thead><tbody id="poTableBody">'
+    html += buildPORows(poState.pos)
+    html += '</tbody></table></div>'
+  }
+
+  content.innerHTML = html
+}
+
+function buildPORows(pos) {
+  let rows = ''
+  for (const po of pos) {
+    const supplier = poState.suppliers.find(s => s.id === po.supplier_id)
+    const statusBadgeClass = {
+      draft:'badge-draft', sent:'badge-pending', acknowledged:'badge-approved',
+      partial:'badge-pending', delivered:'badge-issued'
+    }[po.status] || 'badge-draft'
+
+    rows += '<tr onclick="viewPO(\'' + po.id + '\')" style="cursor:pointer;">'
+    rows += '<td class="td-mono">' + po.po_number + '</td>'
+    rows += '<td>' + (supplier ? supplier.name : po.supplier_name || '—') + '</td>'
+    rows += '<td class="td-mono" style="font-size:11px;">' + (po.request_id ? 'Linked' : '—') + '</td>'
+    rows += '<td style="font-weight:600;">₱' + Number(po.total_amount || 0).toLocaleString() + '</td>'
+    rows += '<td style="color:var(--txt2);">' + (po.expected_delivery ? formatDate(po.expected_delivery) : '—') + '</td>'
+    rows += '<td><span class="badge ' + statusBadgeClass + '">' + (PO_STATUS_LABELS[po.status] || po.status) + '</span></td>'
+    rows += '<td style="color:var(--txt2);">' + formatDate(po.created_at) + '</td>'
+    rows += '<td><button class="btn btn-ghost btn-sm no-print" onclick="event.stopPropagation();viewPO(\'' + po.id + '\')">View</button></td>'
+    rows += '</tr>'
+  }
+  return rows
+}
+
+function filterPOTable() {
+  const status = document.getElementById('poStatusFilter').value
+  const search = document.getElementById('poSearch').value.toLowerCase()
+  let filtered = poState.pos
+  if (status) filtered = filtered.filter(p => p.status === status)
+  if (search) filtered = filtered.filter(p =>
+    (p.po_number || '').toLowerCase().includes(search) ||
+    (p.supplier_name || '').toLowerCase().includes(search)
+  )
+  const tbody = document.getElementById('poTableBody')
+  if (tbody) tbody.innerHTML = buildPORows(filtered)
+}
+
+function showPOView(view) {
+  poState.view = view
+  if (view === 'canvass_list') renderCanvassList()
+  else if (view === 'suppliers') renderSupplierDirectory()
+  else renderPurchaseOrders()
+}
+
+// ─────────────────────────────
+// NEW PO MODAL
+// ─────────────────────────────
+async function openNewPOModal(requestId) {
+  document.getElementById('newRequestTitle').textContent = '🛒 New Purchase Order'
+
+  // Load approved requests without PO
+  const { data: approvedReqs } = await SB.from('requests')
+    .select('id,request_no,purpose,dept_id')
+    .eq('status', 'approved')
+    .eq('request_type', 'purchase')
+    .order('created_at', { ascending: false })
+
+  let html = ''
+
+  // Link to CSR
+  html += '<div class="field"><label>Linked CSR Request (optional)</label>'
+  html += '<select id="po_csr" onchange="loadCSRItemsForPO(this.value)">'
+  html += '<option value="">— Standalone PO (no linked request) —</option>'
+  ;(approvedReqs || []).forEach(r => {
+    const sel = r.id === requestId ? ' selected' : ''
+    html += '<option value="' + r.id + '"' + sel + '>' + r.request_no + ' — ' + (r.purpose || '') + '</option>'
+  })
+  html += '</select></div>'
+
+  // Supplier
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Supplier <span style="color:var(--red);">*</span></label>'
+  html += '<select id="po_supplier" onchange="fillSupplierDetails(this.value)">'
+  html += '<option value="">— Select Supplier —</option>'
+  poState.suppliers.forEach(s => {
+    html += '<option value="' + s.id + '">' + s.name + (s.is_accredited ? ' ✓' : '') + '</option>'
+  })
+  html += '<option value="new">＋ Add New Supplier</option>'
+  html += '</select></div>'
+  html += '<div class="field"><label>Payment Terms</label>'
+  html += '<select id="po_terms">'
+  ;['COD','Net 7','Net 15','Net 30','50% DP / 50% upon delivery'].forEach(t => {
+    html += '<option>' + t + '</option>'
+  })
+  html += '</select></div>'
+  html += '</div>'
+
+  html += '<div id="supplier_details" style="display:none;background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--txt2);"></div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Expected Delivery Date</label>'
+  html += '<input type="date" id="po_delivery"></div>'
+  html += '<div class="field"><label>Delivery Address</label>'
+  html += '<input type="text" id="po_address" placeholder="TDMH — Supply Room, Ground Floor" value="TDMH — Supply Room, Ground Floor"></div>'
+  html += '</div>'
+
+  // PO Items
+  html += '<div class="field"><label>Items <span style="color:var(--red);">*</span></label>'
+  html += '<div class="items-table-wrap"><table class="items-table"><thead><tr>'
+  html += '<th style="width:30%">Item</th><th style="width:20%">Description</th><th style="width:8%">Qty</th><th style="width:8%">Unit</th><th style="width:12%">Unit Price</th><th style="width:12%">Total</th><th style="width:5%"></th>'
+  html += '</tr></thead><tbody id="poItemsBody">'
+  state.itemRows = [{ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', unit_price:0 }]
+  html += buildPOItemRows()
+  html += '</tbody></table></div>'
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">'
+  html += '<button class="btn btn-ghost btn-sm" onclick="addPOItemRow()">＋ Add Item</button>'
+  html += '<div style="font-size:13px;font-weight:600;" id="po_total_display">Total: ₱0</div>'
+  html += '</div></div>'
+
+  html += '<div class="field"><label>Notes / Special Instructions</label>'
+  html += '<textarea id="po_notes" placeholder="Delivery instructions, specifications, etc." rows="2"></textarea></div>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-secondary" onclick="savePO(\'draft\')">Save Draft</button>' +
+    '<button class="btn btn-primary" onclick="savePO(\'send\')">Save & Send PO</button>'
+
+  if (requestId) loadCSRItemsForPO(requestId)
+  openModal('newRequestModal')
+}
+
+function buildPOItemRows() {
+  let rows = ''
+  state.itemRows.forEach((row, i) => {
+    const total = (Number(row.quantity) * Number(row.unit_price || 0)).toLocaleString()
+    rows += '<tr id="po_row_' + row.id + '">'
+    rows += '<td><input type="text" placeholder="Item name" value="' + (row.item_name||'') + '" oninput="updatePOItem(' + row.id + ',\'item_name\',this.value)"></td>'
+    rows += '<td><input type="text" placeholder="Description" value="' + (row.item_description||'') + '" oninput="updatePOItem(' + row.id + ',\'item_description\',this.value)"></td>'
+    rows += '<td><input type="number" min="1" value="' + (row.quantity||1) + '" oninput="updatePOItem(' + row.id + ',\'quantity\',this.value);updatePOTotal()"></td>'
+    rows += '<td><input type="text" placeholder="pcs" value="' + (row.unit||'pcs') + '" oninput="updatePOItem(' + row.id + ',\'unit\',this.value)"></td>'
+    rows += '<td><input type="number" min="0" step="0.01" placeholder="0.00" value="' + (row.unit_price||'') + '" oninput="updatePOItem(' + row.id + ',\'unit_price\',this.value);updatePOTotal()"></td>'
+    rows += '<td style="font-size:12px;font-weight:600;color:var(--txt2);">₱' + total + '</td>'
+    rows += '<td><button class="remove-row" onclick="removePOItem(' + row.id + ')" ' + (state.itemRows.length<=1?'disabled':'') + '>✕</button></td>'
+    rows += '</tr>'
+  })
+  return rows
+}
+
+function addPOItemRow() {
+  state.itemRows.push({ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', unit_price:0 })
+  document.getElementById('poItemsBody').innerHTML = buildPOItemRows()
+}
+
+function removePOItem(id) {
+  if (state.itemRows.length <= 1) return
+  state.itemRows = state.itemRows.filter(r => r.id !== id)
+  document.getElementById('poItemsBody').innerHTML = buildPOItemRows()
+  updatePOTotal()
+}
+
+function updatePOItem(id, field, value) {
+  const row = state.itemRows.find(r => r.id === id)
+  if (row) row[field] = value
+}
+
+function updatePOTotal() {
+  const total = state.itemRows.reduce((s, r) => s + (Number(r.quantity) * Number(r.unit_price || 0)), 0)
+  const el = document.getElementById('po_total_display')
+  if (el) el.textContent = 'Total: ₱' + total.toLocaleString()
+  document.getElementById('poItemsBody').innerHTML = buildPOItemRows()
+}
+
+async function loadCSRItemsForPO(requestId) {
+  if (!requestId) return
+  const items = await loadRequestItems(requestId)
+  if (items.length > 0) {
+    state.itemRows = items.map(item => ({
+      id: Date.now() + Math.random(),
+      item_name: item.item_name,
+      item_description: item.item_description || '',
+      quantity: item.quantity,
+      unit: item.unit || 'pcs',
+      unit_price: item.estimated_cost || 0
+    }))
+    document.getElementById('poItemsBody').innerHTML = buildPOItemRows()
+    updatePOTotal()
+  }
+}
+
+function fillSupplierDetails(suppId) {
+  const el = document.getElementById('supplier_details')
+  if (!el) return
+  if (suppId === 'new') {
+    el.style.display = 'none'
+    openAddSupplierInline()
+    return
+  }
+  const s = poState.suppliers.find(sup => sup.id === suppId)
+  if (s) {
+    el.style.display = 'block'
+    el.innerHTML = '📞 ' + (s.phone || '—') + ' &nbsp;|&nbsp; ✉️ ' + (s.email || '—') +
+      (s.contact_person ? ' &nbsp;|&nbsp; 👤 ' + s.contact_person : '') +
+      (s.is_accredited ? ' &nbsp;|&nbsp; <span style="color:var(--green);">✓ Accredited</span>' : '')
+  } else {
+    el.style.display = 'none'
+  }
+}
+
+async function savePO(action) {
+  const suppId = document.getElementById('po_supplier').value
+  const terms = document.getElementById('po_terms').value
+  const delivery = document.getElementById('po_delivery').value
+  const address = document.getElementById('po_address').value.trim()
+  const notes = document.getElementById('po_notes').value.trim()
+  const csrId = document.getElementById('po_csr').value
+  const validItems = state.itemRows.filter(r => r.item_name && r.item_name.trim())
+
+  if (!suppId || suppId === 'new') { showToast('error', 'Validation', 'Please select a supplier.'); return }
+  if (validItems.length === 0) { showToast('error', 'Validation', 'Please add at least one item.'); return }
+
+  const supplier = poState.suppliers.find(s => s.id === suppId)
+  const total = validItems.reduce((s, r) => s + (Number(r.quantity) * Number(r.unit_price || 0)), 0)
+
+  try {
+    const { data: numData } = await SB.rpc('generate_po_number')
+    const poNumber = numData || ('PO-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
+
+    const { data: po, error } = await SB.from('purchase_orders').insert({
+      po_number: poNumber,
+      request_id: csrId || null,
+      supplier_id: suppId,
+      supplier_name: supplier ? supplier.name : '',
+      supplier_contact: supplier ? (supplier.phone || '') : '',
+      total_amount: total,
+      po_date: new Date().toISOString().split('T')[0],
+      expected_delivery: delivery || null,
+      delivery_address: address || null,
+      payment_terms: terms,
+      notes: notes || null,
+      status: action === 'send' ? 'sent' : 'draft',
+      sent_at: action === 'send' ? new Date().toISOString() : null,
+      sent_by: action === 'send' ? state.user.id : null,
+      created_by: state.user.id
+    }).select().single()
+
+    if (error) throw error
+
+    // Insert PO items
+    await SB.from('po_items').insert(validItems.map(item => ({
+      po_id: po.id,
+      item_name: item.item_name,
+      description: item.item_description || null,
+      quantity: Number(item.quantity),
+      unit: item.unit || 'pcs',
+      unit_price: Number(item.unit_price || 0),
+      quantity_received: 0
+    })))
+
+    // Update CSR request status if linked
+    if (csrId) {
+      await SB.from('requests').update({ status: 'for_po' }).eq('id', csrId)
+    }
+
+    closeModal('newRequestModal')
+    showToast('success', 'PO Created', poNumber + (action === 'send' ? ' — sent to supplier.' : ' saved as draft.'))
+
+    // If send — open print/email options
+    if (action === 'send') {
+      setTimeout(() => openPOSendOptions(po.id), 500)
+    }
+
+    renderPurchaseOrders()
+  } catch(e) { showToast('error', 'Error', e.message) }
+}
+
+// ─────────────────────────────
+// PO DETAIL VIEW
+// ─────────────────────────────
+async function viewPO(id) {
+  const { data: po } = await SB.from('purchase_orders').select('*').eq('id', id).single()
+  if (!po) return
+  const { data: items } = await SB.from('po_items').select('*').eq('po_id', id)
+  const supplier = poState.suppliers.find(s => s.id === po.supplier_id)
+  const role = state.user.csr_role
+
+  document.getElementById('detailModalTitle').textContent = po.po_number
+
+  let body = ''
+  // Status bar
+  const statusColors = { draft:'var(--txt2)', sent:'var(--blue)', acknowledged:'var(--green)', partial:'var(--amber)', delivered:'var(--green)' }
+  body += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">'
+  body += '<span class="badge ' + ({draft:'badge-draft',sent:'badge-pending',acknowledged:'badge-approved',partial:'badge-pending',delivered:'badge-issued'}[po.status]||'badge-draft') + '" style="font-size:13px;padding:5px 12px;">'
+  body += (PO_STATUS_LABELS[po.status] || po.status) + '</span>'
+  if (po.sent_at) body += '<span style="font-size:12px;color:var(--txt2);">Sent: ' + formatDate(po.sent_at) + '</span>'
+  body += '</div>'
+
+  // Info grid
+  body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">'
+  body += infoField('Supplier', supplier ? supplier.name : (po.supplier_name || '—'))
+  body += infoField('Payment Terms', po.payment_terms || '—')
+  body += infoField('PO Date', formatDate(po.po_date))
+  body += infoField('Expected Delivery', po.expected_delivery ? formatDate(po.expected_delivery) : '—')
+  body += infoField('Delivery Address', po.delivery_address || '—')
+  body += infoField('Total Amount', '<strong style="color:var(--accent);">₱' + Number(po.total_amount || 0).toLocaleString() + '</strong>')
+  body += '</div>'
+
+  if (supplier) {
+    body += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--txt2);">'
+    body += '📞 ' + (supplier.phone || '—') + ' &nbsp;·&nbsp; ✉️ ' + (supplier.email || '—')
+    if (supplier.contact_person) body += ' &nbsp;·&nbsp; 👤 ' + supplier.contact_person
+    body += '</div>'
+  }
+
+  // Items table
+  body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">PO Items</div>'
+  body += '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Unit</th><th>Unit Price</th><th>Total</th><th>Received</th></tr></thead><tbody>'
+  ;(items || []).forEach((item, i) => {
+    const remaining = Number(item.quantity) - Number(item.quantity_received || 0)
+    body += '<tr>'
+    body += '<td style="color:var(--txt2);">' + (i+1) + '</td>'
+    body += '<td><strong>' + item.item_name + '</strong>'
+    if (item.description) body += '<br><span style="font-size:11px;color:var(--txt2);">' + item.description + '</span>'
+    body += '</td>'
+    body += '<td>' + item.quantity + '</td><td>' + (item.unit||'—') + '</td>'
+    body += '<td>₱' + Number(item.unit_price||0).toLocaleString() + '</td>'
+    body += '<td><strong>₱' + Number(item.total_price||0).toLocaleString() + '</strong></td>'
+    body += '<td style="color:' + (remaining > 0 ? 'var(--amber)' : 'var(--green)') + ';">' + Number(item.quantity_received||0) + ' / ' + item.quantity + '</td>'
+    body += '</tr>'
+  })
+  const grandTotal = (items||[]).reduce((s,i) => s + Number(i.total_price||0), 0)
+  body += '<tr><td colspan="5" style="text-align:right;font-weight:600;">Grand Total</td><td colspan="2"><strong style="color:var(--accent);">₱' + grandTotal.toLocaleString() + '</strong></td></tr>'
+  body += '</tbody></table></div></div>'
+
+  if (po.notes) {
+    body += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;padding:10px 14px;font-size:13px;color:var(--txt2);">'
+    body += '📝 ' + po.notes + '</div>'
+  }
+
+  document.getElementById('requestDetailBody').innerHTML = body
+
+  // Footer
+  let footer = '<button class="btn btn-ghost" onclick="closeModal(\'requestDetailModal\')">Close</button>'
+  if (['supply_officer','admin'].includes(role)) {
+    if (po.status === 'draft') {
+      footer += '<button class="btn btn-secondary" onclick="openPOSendOptions(\'' + po.id + '\')">📤 Send PO</button>'
+    }
+    if (['sent','acknowledged','partial'].includes(po.status)) {
+      footer += '<button class="btn btn-success" onclick="openReceiveDelivery(\'' + po.id + '\')">📦 Receive Delivery</button>'
+    }
+    footer += '<button class="btn btn-primary" onclick="printPO(\'' + po.id + '\')">🖨️ Print</button>'
+  }
+  document.getElementById('requestDetailFooter').innerHTML = footer
+  openModal('requestDetailModal')
+}
+
+// ─────────────────────────────
+// SEND PO OPTIONS
+// ─────────────────────────────
+function openPOSendOptions(poId) {
+  document.getElementById('approvalModalTitle').textContent = '📤 Send Purchase Order'
+  document.getElementById('approvalModalDesc').innerHTML =
+    '<p style="color:var(--txt2);font-size:13px;margin-bottom:12px;">Choose how to send this PO to the supplier.</p>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;">' +
+    '<button class="btn btn-secondary" onclick="printPO(\'' + poId + '\');closeModal(\'approvalModal\')">🖨️ Print PO Slip (A4)</button>' +
+    '<button class="btn btn-secondary" onclick="emailPO(\'' + poId + '\');closeModal(\'approvalModal\')">✉️ Email to Supplier</button>' +
+    '<button class="btn btn-primary" onclick="printPO(\'' + poId + '\');emailPO(\'' + poId + '\');closeModal(\'approvalModal\')">🖨️ + ✉️ Both</button>' +
+    '</div>'
+  document.getElementById('approvalRemarks').style.display = 'none'
+  document.getElementById('remarksReq').style.display = 'none'
+  document.getElementById('approvalModalFooter').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'approvalModal\')">Close</button>'
+  openModal('approvalModal')
+}
+
+async function printPO(poId) {
+  const { data: po } = await SB.from('purchase_orders').select('*').eq('id', poId).single()
+  const { data: items } = await SB.from('po_items').select('*').eq('po_id', poId)
+  const supplier = poState.suppliers.find(s => s.id === po.supplier_id)
+
+  const printWin = window.open('', '_blank', 'width=800,height=600')
+  const theme = document.documentElement.getAttribute('data-theme')
+  printWin.document.write('<html><head><title>' + po.po_number + '</title>')
+  printWin.document.write('<style>body{font-family:Arial,sans-serif;font-size:13px;color:#000;margin:30px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ccc;padding:7px 10px;} th{background:#f5f5f5;} .header{display:flex;justify-content:space-between;margin-bottom:20px;} h2{margin:0;} .total{text-align:right;font-weight:bold;font-size:15px;margin-top:10px;} .sig{display:flex;gap:40px;margin-top:40px;} .sig-line{border-top:1px solid #000;width:180px;padding-top:4px;font-size:12px;}</style>')
+  printWin.document.write('</head><body>')
+  printWin.document.write('<div class="header"><div><h2>PURCHASE ORDER</h2><div>Taytay Doctors Multispecialty Hospital</div><div style="color:#666;font-size:12px;">Taytay, Rizal</div></div>')
+  printWin.document.write('<div style="text-align:right;"><div style="font-size:18px;font-weight:bold;color:#c07800;">' + po.po_number + '</div>')
+  printWin.document.write('<div>Date: ' + formatDate(po.po_date) + '</div>')
+  printWin.document.write('<div>Expected: ' + (po.expected_delivery ? formatDate(po.expected_delivery) : '—') + '</div></div></div>')
+
+  printWin.document.write('<div style="margin-bottom:16px;padding:10px;background:#f9f9f9;border:1px solid #ddd;">')
+  printWin.document.write('<strong>Supplier:</strong> ' + (supplier ? supplier.name : (po.supplier_name||'—')) + '<br>')
+  if (supplier && supplier.address) printWin.document.write('<strong>Address:</strong> ' + supplier.address + '<br>')
+  if (supplier && supplier.phone) printWin.document.write('<strong>Tel:</strong> ' + supplier.phone + '<br>')
+  printWin.document.write('<strong>Payment Terms:</strong> ' + (po.payment_terms||'COD') + '</div>')
+
+  printWin.document.write('<table><thead><tr><th>#</th><th>Item Description</th><th>Qty</th><th>Unit</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>')
+  ;(items||[]).forEach((item,i) => {
+    printWin.document.write('<tr><td>' + (i+1) + '</td><td>' + item.item_name + (item.description?'<br><small>'+item.description+'</small>':'') + '</td>')
+    printWin.document.write('<td style="text-align:center;">' + item.quantity + '</td><td>' + (item.unit||'') + '</td>')
+    printWin.document.write('<td style="text-align:right;">₱' + Number(item.unit_price||0).toLocaleString() + '</td>')
+    printWin.document.write('<td style="text-align:right;">₱' + Number(item.total_price||0).toLocaleString() + '</td></tr>')
+  })
+  const grandTotal = (items||[]).reduce((s,i)=>s+Number(i.total_price||0),0)
+  printWin.document.write('<tr><td colspan="5" style="text-align:right;font-weight:bold;">GRAND TOTAL</td><td style="text-align:right;font-weight:bold;">₱' + grandTotal.toLocaleString() + '</td></tr>')
+  printWin.document.write('</tbody></table>')
+
+  if (po.notes) printWin.document.write('<div style="margin-top:10px;font-size:12px;"><strong>Notes:</strong> ' + po.notes + '</div>')
+
+  printWin.document.write('<div class="sig"><div><div class="sig-line">Prepared by</div></div><div><div class="sig-line">Approved by</div></div><div><div class="sig-line">Received by</div></div></div>')
+  printWin.document.write('</body></html>')
+  printWin.document.close()
+  printWin.print()
+
+  // Update status to sent if still draft
+  if (po.status === 'draft') {
+    await SB.from('purchase_orders').update({ status: 'sent', sent_at: new Date().toISOString(), sent_by: state.user.id }).eq('id', poId)
+    renderPurchaseOrders()
+  }
+}
+
+async function emailPO(poId) {
+  const { data: po } = await SB.from('purchase_orders').select('*').eq('id', poId).single()
+  const supplier = poState.suppliers.find(s => s.id === po.supplier_id)
+  if (!supplier || !supplier.email) {
+    showToast('warning', 'No Email', 'Supplier has no email on file. Update supplier details first.')
+    return
+  }
+  try {
+    await sendEmail(
+      supplier.email,
+      'Purchase Order ' + po.po_number + ' — TDMH',
+      'Dear ' + (supplier.contact_person || supplier.name) + ',\n\nPlease find attached Purchase Order ' + po.po_number + ' from Taytay Doctors Multispecialty Hospital.\n\nAmount: ₱' + Number(po.total_amount||0).toLocaleString() + '\nExpected Delivery: ' + (po.expected_delivery ? formatDate(po.expected_delivery) : 'TBD') + '\nPayment Terms: ' + (po.payment_terms||'COD') + '\n\nFor inquiries, please contact our Supply Office.\n\nThank you.'
+    )
+    await SB.from('purchase_orders').update({ status: 'sent', sent_at: new Date().toISOString(), sent_by: state.user.id }).eq('id', poId)
+    showToast('success', 'Email Sent', 'PO emailed to ' + supplier.email)
+    renderPurchaseOrders()
+  } catch(e) { showToast('error', 'Email Error', e.message) }
+}
+
+// ─────────────────────────────
+// RECEIVE DELIVERY
+// ─────────────────────────────
+async function openReceiveDelivery(poId) {
+  const { data: po } = await SB.from('purchase_orders').select('*').eq('id', poId).single()
+  const { data: items } = await SB.from('po_items').select('*').eq('po_id', poId)
+
+  document.getElementById('newRequestTitle').textContent = '📦 Receive Delivery — ' + po.po_number
+
+  let html = '<div style="margin-bottom:14px;font-size:13px;color:var(--txt2);">Enter quantities received per item. Leave 0 if not yet received.</div>'
+  html += '<div class="table-wrap" style="margin-bottom:14px;"><table><thead><tr>'
+  html += '<th>Item</th><th>Ordered</th><th>Previously Received</th><th>Receiving Now</th><th>Add to Stock?</th>'
+  html += '</tr></thead><tbody>'
+
+  ;(items||[]).forEach(item => {
+    const remaining = Number(item.quantity) - Number(item.quantity_received||0)
+    html += '<tr>'
+    html += '<td><strong>' + item.item_name + '</strong><br><span style="font-size:11px;color:var(--txt2);">' + (item.unit||'') + '</span></td>'
+    html += '<td>' + item.quantity + '</td>'
+    html += '<td>' + Number(item.quantity_received||0) + '</td>'
+    html += '<td><input type="number" id="rcv_' + item.id + '" min="0" max="' + remaining + '" value="' + remaining + '" style="width:70px;padding:5px 8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:6px;color:var(--txt);"></td>'
+    html += '<td><input type="checkbox" id="stock_' + item.id + '" checked style="width:16px;height:16px;"></td>'
+    html += '</tr>'
+  })
+  html += '</tbody></table></div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Delivery Note / DR Number</label>'
+  html += '<input type="text" id="rcv_dr" placeholder="DR-XXXX"></div>'
+  html += '<div class="field"><label>Remarks</label>'
+  html += '<input type="text" id="rcv_remarks" placeholder="Condition, missing items, etc."></div>'
+  html += '</div>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+  document.getElementById('newRequestBody').dataset.poId = poId
+  document.getElementById('newRequestBody').dataset.items = JSON.stringify(items||[])
+
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="confirmReceiveDelivery()">Confirm Receipt</button>'
+
+  closeModal('requestDetailModal')
+  openModal('newRequestModal')
+}
+
+async function confirmReceiveDelivery() {
+  const poId = document.getElementById('newRequestBody').dataset.poId
+  const items = JSON.parse(document.getElementById('newRequestBody').dataset.items || '[]')
+  const dr = document.getElementById('rcv_dr').value.trim()
+  const remarks = document.getElementById('rcv_remarks').value.trim()
+
+  try {
+    let allDelivered = true
+    let anyReceived = false
+
+    for (const item of items) {
+      const rcvQty = Number(document.getElementById('rcv_' + item.id)?.value || 0)
+      const addToStock = document.getElementById('stock_' + item.id)?.checked
+
+      if (rcvQty <= 0) continue
+      anyReceived = true
+
+      const newReceived = Number(item.quantity_received||0) + rcvQty
+      await SB.from('po_items').update({ quantity_received: newReceived }).eq('id', item.id)
+
+      if (newReceived < Number(item.quantity)) allDelivered = false
+
+      // Auto-update stock if checked
+      if (addToStock && item.stock_item_id) {
+        const { data: stockItem } = await SB.from('stock_items').select('quantity_on_hand').eq('id', item.stock_item_id).single()
+        if (stockItem) {
+          const newQty = Number(stockItem.quantity_on_hand) + rcvQty
+          await SB.from('stock_items').update({ quantity_on_hand: newQty, last_updated: new Date().toISOString() }).eq('id', item.stock_item_id)
+          await SB.from('stock_movements').insert({
+            stock_item_id: item.stock_item_id,
+            movement_type: 'receive',
+            quantity: rcvQty,
+            quantity_before: Number(stockItem.quantity_on_hand),
+            quantity_after: newQty,
+            performed_by: state.user.id,
+            remarks: 'PO Delivery — ' + (dr || poId),
+            reference_type: 'po',
+            reference_id: poId
+          })
+        }
+      }
+    }
+
+    if (!anyReceived) { showToast('error', 'Validation', 'Please enter at least one quantity received.'); return }
+
+    // Update PO status
+    const newStatus = allDelivered ? 'delivered' : 'partial'
+    await SB.from('purchase_orders').update({
+      status: newStatus,
+      actual_delivery: new Date().toISOString().split('T')[0],
+      received_by: state.user.id
+    }).eq('id', poId)
+
+    // If linked to CSR — update CSR status
+    const { data: po } = await SB.from('purchase_orders').select('request_id').eq('id', poId).single()
+    if (po.request_id && allDelivered) {
+      await SB.from('requests').update({ status: 'delivered' }).eq('id', po.request_id)
+    }
+
+    closeModal('newRequestModal')
+    showToast('success', 'Delivery Confirmed', allDelivered ? 'Full delivery received — PO complete.' : 'Partial delivery recorded.')
+    renderPurchaseOrders()
+  } catch(e) { showToast('error', 'Error', e.message) }
+}
+
+// ─────────────────────────────
+// CANVASS SHEETS
+// ─────────────────────────────
+async function renderCanvassList() {
+  const content = document.getElementById('mainContent')
+  const { data: canvasses } = await SB.from('canvass_sheets').select('*').order('created_at', { ascending: false })
+  poState.canvasses = canvasses || []
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>📋 Canvass Sheets</h2><p style="font-size:13px;color:var(--txt2);">Price comparison before purchasing</p></div>'
+  html += '<div class="page-header-actions">'
+  html += '<button class="btn btn-ghost btn-sm" onclick="showPOView(\'po_list\')">← Back to POs</button>'
+  html += '<button class="btn btn-primary" onclick="openNewCanvassModal()">＋ New Canvass</button>'
+  html += '</div></div>'
+
+  if (poState.canvasses.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">📋</div><h3>No canvass sheets yet</h3><p>Create a canvass sheet to compare supplier prices before purchasing.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Canvass No.</th><th>Title</th><th>Linked CSR</th><th>Status</th><th>Date</th><th></th>'
+    html += '</tr></thead><tbody>'
+    poState.canvasses.forEach(c => {
+      const statusClass = { draft:'badge-draft', completed:'badge-approved', approved:'badge-issued', cancelled:'badge-cancelled' }[c.status] || 'badge-draft'
+      html += '<tr onclick="viewCanvass(\'' + c.id + '\')" style="cursor:pointer;">'
+      html += '<td class="td-mono">' + c.canvass_no + '</td>'
+      html += '<td>' + (c.title || '—') + '</td>'
+      html += '<td style="color:var(--txt2);font-size:12px;">' + (c.request_id ? 'Linked' : '—') + '</td>'
+      html += '<td><span class="badge ' + statusClass + '">' + c.status + '</span></td>'
+      html += '<td style="color:var(--txt2);">' + formatDate(c.created_at) + '</td>'
+      html += '<td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewCanvass(\'' + c.id + '\')">View</button></td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div>'
+  }
+  content.innerHTML = html
+}
+
+async function openNewCanvassModal() {
+  document.getElementById('newRequestTitle').textContent = '📋 New Canvass Sheet'
+
+  const { data: approvedReqs } = await SB.from('requests')
+    .select('id,request_no,purpose').eq('status','approved').order('created_at',{ascending:false})
+
+  let html = '<div class="field"><label>Title / Description</label>'
+  html += '<input type="text" id="cvs_title" placeholder="e.g. Office Supplies Q2 2026"></div>'
+
+  html += '<div class="field"><label>Linked CSR Request (optional)</label><select id="cvs_csr">'
+  html += '<option value="">— None —</option>'
+  ;(approvedReqs||[]).forEach(r => {
+    html += '<option value="' + r.id + '">' + r.request_no + ' — ' + (r.purpose||'') + '</option>'
+  })
+  html += '</select></div>'
+
+  html += '<div style="font-size:12px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Items to Canvass</div>'
+  html += '<div class="items-table-wrap"><table class="items-table"><thead><tr>'
+  html += '<th>Item</th><th>Qty</th><th>Unit</th>'
+  html += '<th>Supplier 1</th><th>Price 1</th>'
+  html += '<th>Supplier 2</th><th>Price 2</th>'
+  html += '<th>Supplier 3</th><th>Price 3</th>'
+  html += '<th></th>'
+  html += '</tr></thead><tbody id="cvs_items">'
+  state.itemRows = [{ id: Date.now(), item_name:'', quantity:1, unit:'pcs' }]
+  html += buildCanvassItemRows()
+  html += '</tbody></table></div>'
+  html += '<button class="btn btn-ghost btn-sm" onclick="addCanvassItem()" style="margin-top:8px;">＋ Add Item</button>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveCanvass()">Save Canvass Sheet</button>'
+  openModal('newRequestModal')
+}
+
+function buildCanvassItemRows() {
+  let rows = ''
+  state.itemRows.forEach(row => {
+    rows += '<tr id="cvs_row_' + row.id + '">'
+    rows += '<td><input type="text" placeholder="Item name" value="' + (row.item_name||'') + '" oninput="updateItemRow(' + row.id + ',\'item_name\',this.value)" style="min-width:100px;"></td>'
+    rows += '<td><input type="number" value="' + (row.quantity||1) + '" min="1" style="width:50px;" oninput="updateItemRow(' + row.id + ',\'quantity\',this.value)"></td>'
+    rows += '<td><input type="text" placeholder="pcs" value="' + (row.unit||'pcs') + '" style="width:50px;" oninput="updateItemRow(' + row.id + ',\'unit\',this.value)"></td>'
+    for (let s = 1; s <= 3; s++) {
+      rows += '<td><select style="min-width:90px;" id="cvs_s' + s + '_' + row.id + '"><option value="">—</option>'
+      poState.suppliers.forEach(sup => {
+        rows += '<option value="' + sup.id + '">' + sup.name + '</option>'
+      })
+      rows += '</select></td>'
+      rows += '<td><input type="number" min="0" step="0.01" placeholder="0.00" id="cvs_p' + s + '_' + row.id + '" style="width:70px;"></td>'
+    }
+    rows += '<td><button class="remove-row" onclick="removeCanvassItem(' + row.id + ')">✕</button></td>'
+    rows += '</tr>'
+  })
+  return rows
+}
+
+function addCanvassItem() {
+  state.itemRows.push({ id: Date.now(), item_name:'', quantity:1, unit:'pcs' })
+  document.getElementById('cvs_items').innerHTML = buildCanvassItemRows()
+}
+
+function removeCanvassItem(id) {
+  if (state.itemRows.length <= 1) return
+  state.itemRows = state.itemRows.filter(r => r.id !== id)
+  document.getElementById('cvs_items').innerHTML = buildCanvassItemRows()
+}
+
+async function saveCanvass() {
+  const title = document.getElementById('cvs_title').value.trim()
+  const csrId = document.getElementById('cvs_csr').value
+  const validItems = state.itemRows.filter(r => r.item_name && r.item_name.trim())
+
+  if (!title) { showToast('error','Validation','Please enter a title.'); return }
+  if (validItems.length === 0) { showToast('error','Validation','Please add at least one item.'); return }
+
+  try {
+    const { data: numData } = await SB.rpc('generate_canvass_no')
+    const canvassNo = numData || ('CVS-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
+
+    const { data: cvs, error } = await SB.from('canvass_sheets').insert({
+      canvass_no: canvassNo, title, request_id: csrId || null,
+      status: 'draft', prepared_by: state.user.id
+    }).select().single()
+    if (error) throw error
+
+    // Insert canvass items
+    const itemsPayload = validItems.map(row => ({
+      canvass_id: cvs.id,
+      item_name: row.item_name,
+      unit: row.unit || 'pcs',
+      quantity: Number(row.quantity) || 1,
+      supplier1_id: document.getElementById('cvs_s1_' + row.id)?.value || null,
+      supplier1_price: Number(document.getElementById('cvs_p1_' + row.id)?.value || 0) || null,
+      supplier2_id: document.getElementById('cvs_s2_' + row.id)?.value || null,
+      supplier2_price: Number(document.getElementById('cvs_p2_' + row.id)?.value || 0) || null,
+      supplier3_id: document.getElementById('cvs_s3_' + row.id)?.value || null,
+      supplier3_price: Number(document.getElementById('cvs_p3_' + row.id)?.value || 0) || null,
+    }))
+    await SB.from('canvass_items').insert(itemsPayload)
+
+    closeModal('newRequestModal')
+    showToast('success','Canvass Saved', canvassNo + ' created.')
+    renderCanvassList()
+  } catch(e) { showToast('error','Error', e.message) }
+}
+
+async function viewCanvass(id) {
+  const { data: cvs } = await SB.from('canvass_sheets').select('*').eq('id',id).single()
+  const { data: items } = await SB.from('canvass_items').select('*').eq('canvass_id',id)
+  if (!cvs) return
+
+  document.getElementById('detailModalTitle').textContent = cvs.canvass_no + ' — Canvass Sheet'
+  let body = ''
+  body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">'
+  body += infoField('Title', cvs.title || '—')
+  body += infoField('Status', '<span class="badge badge-' + (cvs.status==='draft'?'draft':'approved') + '">' + cvs.status + '</span>')
+  body += infoField('Date', formatDate(cvs.created_at))
+  body += infoField('Linked CSR', cvs.request_id ? 'Yes' : '—')
+  body += '</div>'
+
+  body += '<div class="table-wrap"><table><thead><tr>'
+  body += '<th>Item</th><th>Qty</th><th>Supplier 1</th><th>Price 1</th><th>Supplier 2</th><th>Price 2</th><th>Supplier 3</th><th>Price 3</th><th>Lowest</th>'
+  body += '</tr></thead><tbody>'
+  ;(items||[]).forEach(item => {
+    const s1 = poState.suppliers.find(s=>s.id===item.supplier1_id)
+    const s2 = poState.suppliers.find(s=>s.id===item.supplier2_id)
+    const s3 = poState.suppliers.find(s=>s.id===item.supplier3_id)
+    const prices = [item.supplier1_price, item.supplier2_price, item.supplier3_price].filter(p=>p>0)
+    const lowest = prices.length > 0 ? Math.min(...prices) : null
+
+    body += '<tr>'
+    body += '<td><strong>' + item.item_name + '</strong></td>'
+    body += '<td>' + item.quantity + ' ' + (item.unit||'') + '</td>'
+    body += '<td style="font-size:12px;">' + (s1?s1.name:'—') + '</td>'
+    body += '<td' + (item.supplier1_price===lowest?' style="color:var(--green);font-weight:700;"':'') + '>₱' + (item.supplier1_price||'—') + '</td>'
+    body += '<td style="font-size:12px;">' + (s2?s2.name:'—') + '</td>'
+    body += '<td' + (item.supplier2_price===lowest?' style="color:var(--green);font-weight:700;"':'') + '>₱' + (item.supplier2_price||'—') + '</td>'
+    body += '<td style="font-size:12px;">' + (s3?s3.name:'—') + '</td>'
+    body += '<td' + (item.supplier3_price===lowest?' style="color:var(--green);font-weight:700;"':'') + '>₱' + (item.supplier3_price||'—') + '</td>'
+    body += '<td style="color:var(--green);font-weight:700;">' + (lowest ? '₱' + lowest : '—') + '</td>'
+    body += '</tr>'
+  })
+  body += '</tbody></table></div>'
+
+  document.getElementById('requestDetailBody').innerHTML = body
+  document.getElementById('requestDetailFooter').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'requestDetailModal\')">Close</button>' +
+    '<button class="btn btn-primary" onclick="createPOFromCanvass(\'' + id + '\')">Create PO from Canvass →</button>'
+  openModal('requestDetailModal')
+}
+
+async function createPOFromCanvass(canvassId) {
+  const { data: cvs } = await SB.from('canvass_sheets').select('*').eq('id',canvassId).single()
+  const { data: items } = await SB.from('canvass_items').select('*').eq('canvass_id',canvassId)
+  closeModal('requestDetailModal')
+
+  // Pre-fill PO with lowest prices
+  state.itemRows = (items||[]).map(item => {
+    const prices = [
+      {price:item.supplier1_price,sup:item.supplier1_id},
+      {price:item.supplier2_price,sup:item.supplier2_id},
+      {price:item.supplier3_price,sup:item.supplier3_id}
+    ].filter(p=>p.price>0).sort((a,b)=>a.price-b.price)
+    return {
+      id: Date.now() + Math.random(),
+      item_name: item.item_name,
+      item_description: '',
+      quantity: item.quantity,
+      unit: item.unit||'pcs',
+      unit_price: prices[0]?.price || 0
+    }
+  })
+  await openNewPOModal(cvs.request_id)
+}
+
+// ─────────────────────────────
+// SUPPLIER DIRECTORY
+// ─────────────────────────────
+async function renderSupplierDirectory() {
+  const content = document.getElementById('mainContent')
+  const role = state.user.csr_role
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>🏢 Supplier Directory</h2><p style="font-size:13px;color:var(--txt2);">' + poState.suppliers.length + ' suppliers on record</p></div>'
+  html += '<div class="page-header-actions">'
+  html += '<button class="btn btn-ghost btn-sm" onclick="showPOView(\'po_list\')">← Back to POs</button>'
+  if (['supply_officer','admin'].includes(role)) {
+    html += '<button class="btn btn-primary" onclick="openAddSupplierModal()">＋ Add Supplier</button>'
+  }
+  html += '</div></div>'
+
+  if (poState.suppliers.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">🏢</div><h3>No suppliers yet</h3><p>Add your regular suppliers to use them in POs and canvass sheets.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Supplier Name</th><th>Contact Person</th><th>Phone</th><th>Email</th><th>Accredited</th><th></th>'
+    html += '</tr></thead><tbody>'
+    poState.suppliers.forEach(s => {
+      html += '<tr>'
+      html += '<td><strong>' + s.name + '</strong>' + (s.tin ? '<br><span style="font-size:11px;color:var(--txt2);">TIN: ' + s.tin + '</span>' : '') + '</td>'
+      html += '<td style="color:var(--txt2);">' + (s.contact_person||'—') + '</td>'
+      html += '<td style="color:var(--txt2);">' + (s.phone||'—') + '</td>'
+      html += '<td style="color:var(--txt2);">' + (s.email||'—') + '</td>'
+      html += '<td>' + (s.is_accredited ? '<span class="badge badge-approved">✓ Accredited</span>' : '<span style="color:var(--txt3);font-size:12px;">—</span>') + '</td>'
+      html += '<td><button class="btn btn-ghost btn-sm" onclick="openEditSupplier(\'' + s.id + '\')">Edit</button></td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div>'
+  }
+  content.innerHTML = html
+}
+
+function openAddSupplierModal() {
+  document.getElementById('newRequestTitle').textContent = '🏢 Add Supplier'
+  renderSupplierForm(null)
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveSupplier()">Save Supplier</button>'
+  openModal('newRequestModal')
+}
+
+function openEditSupplier(id) {
+  const s = poState.suppliers.find(sup => sup.id === id)
+  document.getElementById('newRequestTitle').textContent = '✎ Edit Supplier'
+  renderSupplierForm(s)
+  document.getElementById('newRequestBody').dataset.suppId = id
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="saveSupplier()">Update Supplier</button>'
+  openModal('newRequestModal')
+}
+
+function renderSupplierForm(s) {
+  let html = '<div class="field-row">'
+  html += '<div class="field"><label>Supplier Name <span style="color:var(--red);">*</span></label>'
+  html += '<input type="text" id="sup_name" value="' + (s?s.name:'') + '" placeholder="e.g. ABC Medical Supplies"></div>'
+  html += '<div class="field"><label>Contact Person</label>'
+  html += '<input type="text" id="sup_contact" value="' + (s?(s.contact_person||''):'') + '" placeholder="Juan dela Cruz"></div>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Phone</label>'
+  html += '<input type="text" id="sup_phone" value="' + (s?(s.phone||''):'') + '" placeholder="09xx-xxx-xxxx"></div>'
+  html += '<div class="field"><label>Email</label>'
+  html += '<input type="email" id="sup_email" value="' + (s?(s.email||''):'') + '" placeholder="supplier@email.com"></div>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>TIN</label>'
+  html += '<input type="text" id="sup_tin" value="' + (s?(s.tin||''):'') + '" placeholder="000-000-000"></div>'
+  html += '<div class="field" style="display:flex;align-items:flex-end;padding-bottom:2px;">'
+  html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">'
+  html += '<input type="checkbox" id="sup_accredited" ' + (s&&s.is_accredited?'checked':'') + ' style="width:16px;height:16px;"> Accredited Supplier</label>'
+  html += '</div></div>'
+
+  html += '<div class="field"><label>Address</label>'
+  html += '<input type="text" id="sup_address" value="' + (s?(s.address||''):'') + '" placeholder="Full business address"></div>'
+
+  html += '<div class="field"><label>Notes</label>'
+  html += '<textarea id="sup_notes" rows="2" placeholder="Product specialization, payment terms preference, etc.">' + (s?(s.notes||''):'') + '</textarea></div>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+}
+
+async function saveSupplier() {
+  const name = document.getElementById('sup_name').value.trim()
+  if (!name) { showToast('error','Validation','Supplier name is required.'); return }
+
+  const payload = {
+    name,
+    contact_person: document.getElementById('sup_contact').value.trim() || null,
+    phone: document.getElementById('sup_phone').value.trim() || null,
+    email: document.getElementById('sup_email').value.trim() || null,
+    tin: document.getElementById('sup_tin').value.trim() || null,
+    address: document.getElementById('sup_address').value.trim() || null,
+    notes: document.getElementById('sup_notes').value.trim() || null,
+    is_accredited: document.getElementById('sup_accredited').checked,
+    updated_at: new Date().toISOString()
+  }
+
+  const suppId = document.getElementById('newRequestBody').dataset.suppId
+  try {
+    if (suppId) {
+      await SB.from('suppliers').update(payload).eq('id', suppId)
+      showToast('success','Updated', name + ' updated.')
+    } else {
+      await SB.from('suppliers').insert({ ...payload, created_by: state.user.id })
+      showToast('success','Supplier Added', name + ' added to directory.')
+    }
+    closeModal('newRequestModal')
+    const suppRes = await SB.from('suppliers').select('*').eq('is_active',true).order('name')
+    poState.suppliers = suppRes.data || []
+    renderSupplierDirectory()
+  } catch(e) { showToast('error','Error', e.message) }
 }
 function renderIssuance() {
   document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📤</div><h3>Issuance</h3><p>Issuance module coming in next build phase.</p></div>'
