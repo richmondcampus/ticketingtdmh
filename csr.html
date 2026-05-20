@@ -719,51 +719,36 @@ async function doLogin() {
       showLoginErr('Invalid credentials. Check your Employee No./Email and Password.')
       return
     }
-    // Step 2: Fetch profile — try shared schema first, fallback to public views
+    // Step 2: Fetch profile — IT Helpdesk pattern
+    // users.id = auth.uid() directly (same UUID as auth.users)
     let profile = null
+    const { data: directProfile } = await SB
+      .from('users')
+      .select('*')
+      .eq('id', authData.user.id)
+      .eq('is_active', true)
+      .single()
 
-    // Try 1: direct auth_id match via shared schema
-    try {
-      const { data } = await SB.from('users')
-        .select('*').eq('auth_id', authData.user.id).eq('is_active', true).single()
-      if (data) profile = data
-    } catch(e) {}
-
-    // Try 2: fallback to public view (works before schema exposure is configured)
-    if (!profile) {
-      try {
-        const { data } = await SB.from('users')
-          .select('*').eq('auth_id', authData.user.id).eq('is_active', true).single()
-        if (data) profile = data
-      } catch(e) {}
+    if (directProfile) {
+      profile = directProfile
+    } else {
+      // Email alias login — find primary user via alias table
+      const { data: alias } = await SB
+        .from('user_auth_aliases')
+        .select('primary_user_id')
+        .eq('alias_auth_id', authData.user.id)
+        .single()
+      if (alias) {
+        const { data: aliasProfile } = await SB
+          .from('users')
+          .select('*')
+          .eq('id', alias.primary_user_id)
+          .eq('is_active', true)
+          .single()
+        if (aliasProfile) profile = aliasProfile
+      }
     }
-
-    // Try 3: alias lookup via shared schema (email login)
     if (!profile) {
-      try {
-        const { data: alias } = await SB.from('user_auth_aliases')
-          .select('primary_user_id').eq('alias_auth_id', authData.user.id).single()
-        if (alias) {
-          const { data } = await SB.from('users')
-            .select('*').eq('id', alias.primary_user_id).eq('is_active', true).single()
-          if (data) profile = data
-        }
-      } catch(e) {}
-    }
-
-    // Try 4: alias lookup via public view (fallback)
-    if (!profile) {
-      try {
-        const { data: alias } = await SB.from('user_auth_aliases')
-          .select('primary_user_id').eq('alias_auth_id', authData.user.id).single()
-        if (alias) {
-          const { data } = await SB.from('users')
-            .select('*').eq('id', alias.primary_user_id).eq('is_active', true).single()
-          if (data) profile = data
-        }
-      } catch(e) {}
-    }
-    if (profileError || !profile) {
       showLoginErr('Account not found or inactive. Contact IT.')
       await SB.auth.signOut()
       return
@@ -1917,20 +1902,10 @@ document.getElementById('loginPass').addEventListener('keydown', e => {
   // Check for existing Supabase Auth session first
   const { data: { session: authSession } } = await SB.auth.getSession()
   if (authSession) {
-    // Auth session exists — fetch profile and restore app
-    let profile = null
-    try {
-      const { data } = await SB.from('users')
-        .select('*').eq('auth_id', authSession.user.id).eq('is_active', true).single()
-      if (data) profile = data
-    } catch(e) {}
-    if (!profile) {
-      try {
-        const { data } = await SB.from('users')
-          .select('*').eq('auth_id', authSession.user.id).eq('is_active', true).single()
-        if (data) profile = data
-      } catch(e) {}
-    }
+    // Auth session — IT Helpdesk pattern: users.id = auth.uid()
+    const { data: profile } = await SB
+      .from('users').select('*')
+      .eq('id', authSession.user.id).eq('is_active', true).single()
     if (profile) {
       const session = {
         id: profile.id,
