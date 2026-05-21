@@ -1304,7 +1304,8 @@ async function viewRequest(id) {
   // Source badge
   if (req.source_system && req.source_system !== 'manual') {
     body += '<div style="margin-bottom:16px;">'
-    body += '<span class="source-badge">🔗 Linked from ' + req.source_system.charAt(0).toUpperCase() + req.source_system.slice(1) + ' Ticket</span>'
+    const refLabel = req.source_ref_text || (req.source_ref_id ? req.source_ref_id.substring(0,8) + '...' : '')
+    body += '<span class="source-badge">🔗 Linked from ' + req.source_system.charAt(0).toUpperCase() + req.source_system.slice(1) + ' — ' + (refLabel ? 'Ref: ' + refLabel : '') + '</span>'
     body += '</div>'
   }
 
