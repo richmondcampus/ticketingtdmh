@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TDMH — Maintenance Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+[data-theme="dark"]{
+  --bg:#080e14;--surf1:#0d1520;--surf2:#111d2b;--surf3:#162235;--surf4:#1b2940;
+  --bdr:rgba(255,255,255,0.06);--bdr2:rgba(255,255,255,0.11);--bdr3:rgba(255,255,255,0.18);
+  --txt:#e2edf8;--txt2:#5f8099;--txt3:#324f66;
+  --shadow:0 2px 20px rgba(0,0,0,0.55);--shadow2:0 8px 32px rgba(0,0,0,0.6);
+  --accent:#22c55e;--accent2:#16a34a;--accent-a:rgba(34,197,94,0.12);--accent-b:rgba(34,197,94,0.22);
+  --red:#f04060;--red-a:rgba(240,64,96,0.12);
+  --amber:#f0a500;--amber-a:rgba(240,165,0,0.12);
+  --blue:#4d9fff;--blue-a:rgba(77,159,255,0.12);
+  --violet:#a070ff;--violet-a:rgba(160,112,255,0.12);
+  --sidebar-w:240px;
+}
+[data-theme="light"]{
+  --bg:#f0f5fb;--surf1:#fff;--surf2:#f7fafd;--surf3:#edf3fa;--surf4:#e3ecf5;
+  --bdr:rgba(0,0,0,0.07);--bdr2:rgba(0,0,0,0.13);--bdr3:rgba(0,0,0,0.20);
+  --txt:#0c1e2e;--txt2:#4a6a80;--txt3:#9ab8cc;
+  --shadow:0 2px 16px rgba(0,0,0,0.08);--shadow2:0 8px 28px rgba(0,0,0,0.12);
+  --accent:#16a34a;--accent2:#15803d;--accent-a:rgba(22,163,74,0.10);--accent-b:rgba(22,163,74,0.18);
+  --red:#d03050;--red-a:rgba(208,48,80,0.09);
+  --amber:#c07800;--amber-a:rgba(192,120,0,0.10);
+  --blue:#2070d0;--blue-a:rgba(32,112,208,0.09);
+  --violet:#7040d0;--violet-a:rgba(112,64,208,0.09);
+  --sidebar-w:240px;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+*{transition:background-color .2s,border-color .2s,color .15s;}
+.btn,.badge,.toast{transition:none!important;}
+html,body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;font-size:14px;line-height:1.55;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:var(--surf4);border-radius:2px;}
+h1,h2,h3,h4{font-family:'Bricolage Grotesque',sans-serif;}
+code,.mono{font-family:'JetBrains Mono',monospace;}
+
+/* LOGIN */
+#loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);
+  background-image:radial-gradient(ellipse at 20% 50%,rgba(34,197,94,0.04) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(77,159,255,0.04) 0%,transparent 50%);}
+.login-card{width:100%;max-width:400px;background:var(--surf1);border:1px solid var(--bdr2);border-radius:20px;padding:40px;box-shadow:var(--shadow2);}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:32px;}
+.login-logo-mark{width:44px;height:44px;background:var(--accent-a);border:1px solid var(--accent-b);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;}
+.login-logo-text h1{font-size:18px;font-weight:700;}
+.login-logo-text p{font-size:12px;color:var(--txt2);margin-top:1px;}
+.login-card h2{font-size:22px;font-weight:700;margin-bottom:6px;}
+.login-card .sub{color:var(--txt2);font-size:13px;margin-bottom:28px;}
+.form-group{margin-bottom:16px;}
+.form-group label{display:block;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;}
+.form-group input,.form-group select{width:100%;padding:10px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;color:var(--txt);font-family:'Instrument Sans',sans-serif;font-size:14px;outline:none;}
+.form-group input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-a);}
+.login-err{background:var(--red-a);border:1px solid var(--red);color:var(--red);padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:16px;display:none;}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:10px;font-family:'Instrument Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:transform .1s,opacity .15s!important;}
+.btn:active{transform:scale(.97);}
+.btn-primary{background:var(--accent);color:#fff;}.btn-primary:hover{opacity:.88;}
+.btn-secondary{background:var(--surf3);color:var(--txt);border:1px solid var(--bdr2);}.btn-secondary:hover{background:var(--surf4);}
+.btn-ghost{background:transparent;color:var(--txt2);border:1px solid var(--bdr2);}.btn-ghost:hover{background:var(--surf3);color:var(--txt);}
+.btn-danger{background:var(--red-a);color:var(--red);border:1px solid var(--red);}.btn-danger:hover{background:var(--red);color:#fff;}
+.btn-full{width:100%;}.btn-sm{padding:6px 12px;font-size:12px;border-radius:8px;}.btn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* APP SHELL */
+#appShell{display:none;height:100vh;overflow:hidden;}
+.shell{display:flex;height:100vh;}
+
+/* SIDEBAR */
+.sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);background:var(--surf1);border-right:1px solid var(--bdr);display:flex;flex-direction:column;height:100vh;position:relative;z-index:10;flex-shrink:0;}
+.sidebar-logo{padding:20px 18px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--bdr);}
+.sidebar-logo-mark{width:34px;height:34px;background:var(--accent-a);border:1px solid var(--accent-b);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.sidebar-logo-text h2{font-size:13px;font-weight:700;white-space:nowrap;}
+.sidebar-logo-text p{font-size:11px;color:var(--txt2);}
+.sidebar-nav{flex:1;overflow-y:auto;padding:10px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;color:var(--txt2);font-size:13px;font-weight:500;margin-bottom:2px;}
+.nav-item:hover{background:var(--surf3);color:var(--txt);}
+.nav-item.active{background:var(--accent-a);color:var(--accent);border:1px solid var(--accent-b);}
+.nav-icon{font-size:15px;width:18px;text-align:center;flex-shrink:0;}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;border-radius:20px;padding:1px 6px;font-size:10px;font-weight:700;}
+.sidebar-footer{padding:12px;border-top:1px solid var(--bdr);}
+.user-chip{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surf2);border-radius:10px;border:1px solid var(--bdr);cursor:pointer;}
+.user-chip:hover{background:var(--surf3);}
+.user-avatar{width:30px;height:30px;border-radius:8px;background:var(--accent-a);border:1px solid var(--accent-b);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0;}
+.user-info{overflow:hidden;flex:1;}
+.user-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.user-role{font-size:10px;color:var(--txt2);}
+
+/* TOPBAR */
+.topbar{height:56px;background:var(--surf1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;}
+.topbar-title{font-family:'Bricolage Grotesque',sans-serif;font-size:16px;font-weight:700;flex:1;}
+.icon-btn{width:34px;height:34px;border-radius:9px;background:var(--surf2);border:1px solid var(--bdr2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:var(--txt2);}
+.icon-btn:hover{background:var(--surf3);color:var(--txt);}
+
+/* MAIN */
+.main{display:flex;flex-direction:column;flex:1;overflow:hidden;}
+.content{flex:1;overflow-y:auto;padding:24px;}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.badge-open{background:var(--blue-a);color:var(--blue);}.badge-open::before{background:var(--blue);}
+.badge-claimed{background:var(--amber-a);color:var(--amber);}.badge-claimed::before{background:var(--amber);}
+.badge-in_progress{background:var(--violet-a);color:var(--violet);}.badge-in_progress::before{background:var(--violet);}
+.badge-for_parts{background:var(--amber-a);color:var(--amber);}.badge-for_parts::before{background:var(--amber);}
+.badge-resolved{background:var(--accent-a);color:var(--accent);}.badge-resolved::before{background:var(--accent);}
+.badge-closed{background:var(--surf3);color:var(--txt3);}.badge-closed::before{background:var(--txt3);}
+.badge-reopened{background:var(--red-a);color:var(--red);}.badge-reopened::before{background:var(--red);}
+.badge-low{background:var(--surf3);color:var(--txt2);}
+.badge-normal{background:var(--blue-a);color:var(--blue);}
+.badge-high{background:var(--amber-a);color:var(--amber);}
+.badge-urgent{background:var(--red-a);color:var(--red);}
+.badge-emergency{background:var(--red-a);color:var(--red);animation:pulse-red 1s infinite;}
+@keyframes pulse-red{0%,100%{opacity:1;}50%{opacity:.6;}}
+
+/* CARDS */
+.card{background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;padding:20px;}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px;}
+.stat-card{background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:6px;}
+.stat-label{font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;}
+.stat-value{font-family:'Bricolage Grotesque',sans-serif;font-size:28px;font-weight:700;}
+.stat-sub{font-size:11px;color:var(--txt2);}
+
+/* TICKETS */
+.ticket-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;}
+.ticket-card{background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .15s,box-shadow .15s!important;}
+.ticket-card:hover{border-color:var(--bdr2);box-shadow:var(--shadow);}
+.ticket-card.priority-emergency{border-left:3px solid var(--red);}
+.ticket-card.priority-urgent{border-left:3px solid var(--amber);}
+.ticket-card.priority-high{border-left:3px solid var(--blue);}
+.ticket-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:8px;}
+.ticket-id{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);font-weight:500;}
+.ticket-title{font-size:14px;font-weight:600;margin-bottom:6px;line-height:1.4;}
+.ticket-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:var(--txt2);}
+.ticket-meta span{display:flex;align-items:center;gap:4px;}
+.ticket-footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--bdr);}
+
+/* MODALS */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;opacity:0;pointer-events:none;transition:opacity .2s!important;}
+.modal-overlay.open{opacity:1;pointer-events:all;}
+.modal{background:var(--surf1);border:1px solid var(--bdr2);border-radius:18px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow2);transform:translateY(12px);transition:transform .2s!important;}
+.modal-overlay.open .modal{transform:translateY(0);}
+.modal-lg{max-width:800px;}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px 0;}
+.modal-header h3{font-size:17px;font-weight:700;}
+.modal-close{width:28px;height:28px;border-radius:7px;background:var(--surf3);border:none;cursor:pointer;font-size:16px;color:var(--txt2);display:flex;align-items:center;justify-content:center;}
+.modal-close:hover{background:var(--surf4);}
+.modal-body{padding:20px 24px;}
+.modal-footer{display:flex;justify-content:flex-end;gap:10px;padding:16px 24px;border-top:1px solid var(--bdr);}
+
+/* FORMS */
+.field{margin-bottom:16px;}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;}
+.field input,.field select,.field textarea{width:100%;padding:9px 13px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;color:var(--txt);font-family:'Instrument Sans',sans-serif;font-size:13px;outline:none;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-a);}
+.field textarea{resize:vertical;min-height:80px;}
+.field select option{background:var(--surf1);}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+
+/* NOTES TIMELINE */
+.notes-wrap{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px;}
+.note-item{display:flex;gap:10px;}
+.note-avatar{width:28px;height:28px;border-radius:7px;background:var(--surf3);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+.note-content{flex:1;}
+.note-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;}
+.note-author{font-size:12px;font-weight:600;}
+.note-time{font-size:11px;color:var(--txt3);}
+.note-text{font-size:13px;color:var(--txt2);}
+.note-system{background:var(--surf2);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--txt3);font-style:italic;}
+
+/* TEAM AVATARS */
+.team-avatars{display:flex;gap:4px;flex-wrap:wrap;}
+.team-avatar{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid var(--surf1);}
+
+/* ANALYTICS */
+.bar-chart{display:flex;flex-direction:column;gap:8px;}
+.bar-row{display:flex;align-items:center;gap:10px;}
+.bar-label{font-size:12px;color:var(--txt2);width:120px;text-align:right;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bar-track{flex:1;height:8px;background:var(--surf3);border-radius:4px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:4px;}
+.bar-val{font-size:11px;color:var(--txt2);width:30px;text-align:right;}
+
+/* TOAST */
+#toastContainer{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
+.toast{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:12px;background:var(--surf1);border:1px solid var(--bdr2);box-shadow:var(--shadow2);min-width:260px;max-width:340px;animation:toastIn .25s ease;}
+@keyframes toastIn{from{transform:translateX(20px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+.toast-icon{font-size:16px;flex-shrink:0;margin-top:1px;}
+.toast-title{font-size:13px;font-weight:600;margin-bottom:2px;}
+.toast-body{font-size:12px;color:var(--txt2);}
+
+/* TABLE */
+.table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--bdr);}
+table{width:100%;border-collapse:collapse;background:var(--surf1);}
+th{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);padding:10px 14px;text-align:left;background:var(--surf2);border-bottom:1px solid var(--bdr);white-space:nowrap;}
+td{padding:12px 14px;border-bottom:1px solid var(--bdr);font-size:13px;vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--surf2);}
+.td-mono{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);}
+
+/* PAGE */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;}
+.page-header h2{font-size:20px;font-weight:700;}
+.filter-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+.filter-bar select,.filter-bar input{padding:7px 12px;background:var(--surf1);border:1px solid var(--bdr2);border-radius:9px;color:var(--txt);font-family:'Instrument Sans',sans-serif;font-size:13px;outline:none;}
+.empty-state{text-align:center;padding:60px 20px;color:var(--txt2);}
+.empty-state .empty-icon{font-size:40px;margin-bottom:12px;}
+.empty-state h3{font-size:16px;font-weight:600;color:var(--txt);margin-bottom:6px;}
+
+/* MOBILE */
+@media(max-width:768px){
+  .sidebar{position:fixed;left:-100%;top:0;bottom:0;z-index:100;transition:left .25s ease!important;}
+  .sidebar.open{left:0;}
+  .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99;}
+  .sidebar.open~.sidebar-overlay{display:block;}
+  .field-row{grid-template-columns:1fr;}
+  .ticket-grid{grid-template-columns:1fr;}
+  .content{padding:16px;}
+  .hamburger{display:flex!important;}
+}
+.hamburger{display:none;width:34px;height:34px;border-radius:9px;background:var(--surf2);border:1px solid var(--bdr2);align-items:center;justify-content:center;cursor:pointer;font-size:16px;}
+</style>
+</head>
+<body>
+
+<div id="toastContainer"></div>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-mark">🔧</div>
+      <div class="login-logo-text">
+        <h1>TDMH — Maintenance</h1>
+        <p>Maintenance Ticketing Hub v2</p>
+      </div>
+    </div>
+    <h2>Welcome back</h2>
+    <p class="sub">Sign in with your employee credentials</p>
+    <div class="login-err" id="loginErr"></div>
+    <div class="form-group">
+      <label>Employee No. or Email</label>
+      <input type="text" id="loginEmpNo" placeholder="EMP-001 or you@tdmh.com" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-full" id="loginBtn" onclick="doLogin()">Sign In</button>
+    <p style="font-size:11px;color:var(--txt3);text-align:center;margin-top:16px;">Taytay Doctors Multispecialty Hospital · Maintenance Dept</p>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="appShell">
+  <div class="shell">
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-mark">🔧</div>
+        <div class="sidebar-logo-text">
+          <h2>Maintenance Hub</h2>
+          <p>v2 · tdmh-core</p>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="sidebarNav"></nav>
+      <div class="sidebar-footer">
+        <div class="user-chip" onclick="confirm2(\'Sign out?\',doLogout)">
+          <div class="user-avatar" id="userAvatar">--</div>
+          <div class="user-info">
+            <div class="user-name" id="userName">Loading...</div>
+            <div class="user-role" id="userRoleLabel">--</div>
+          </div>
+          <span style="font-size:10px;color:var(--txt3);">⏻</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+    <div class="main">
+      <div class="topbar">
+        <button class="hamburger" onclick="toggleSidebar()">☰</button>
+        <div class="topbar-title" id="topbarTitle">Dashboard</div>
+        <div style="display:flex;gap:8px;">
+          <div class="icon-btn" onclick="toggleTheme()">🌙</div>
+          <div class="icon-btn" id="notifBtn">🔔</div>
+        </div>
+      </div>
+      <div class="content" id="mainContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW TICKET MODAL -->
+<div class="modal-overlay" id="newTicketModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>🔧 New Maintenance Ticket</h3>
+      <button class="modal-close" onclick="closeModal('newTicketModal')">✕</button>
+    </div>
+    <div class="modal-body" id="newTicketBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('newTicketModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitTicket()">Submit Ticket</button>
+    </div>
+  </div>
+</div>
+
+<!-- TICKET DETAIL MODAL -->
+<div class="modal-overlay" id="ticketDetailModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 id="ticketDetailTitle">Ticket Detail</h3>
+      <button class="modal-close" onclick="closeModal('ticketDetailModal')">✕</button>
+    </div>
+    <div class="modal-body" id="ticketDetailBody"></div>
+    <div class="modal-footer" id="ticketDetailFooter"></div>
+  </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h3 id="confirmTitle">Confirm</h3>
+      <button class="modal-close" onclick="closeModal('confirmModal')">✕</button>
+    </div>
+    <div class="modal-body"><p id="confirmMsg" style="color:var(--txt2);font-size:14px;"></p></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="btn btn-primary" id="confirmOkBtn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════
+// SUPABASE — tdmh-core
+// ═══════════════════════════════════
+const SUPA_URL = 'https://zcyhwdulizorgngayxya.supabase.co'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjeWh3ZHVsaXpvcmduZ2F5eHlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNjU0NTgsImV4cCI6MjA5NDg0MTQ1OH0.xLdKGNqjNZNRfjAf5NmXGI1GyTbQZAmbZiKokpgAhUo'
+const SMS_URL = SUPA_URL + '/functions/v1/send-sms'
+const SB = supabase.createClient(SUPA_URL, SUPA_KEY)
+
+// ═══════════════════════════════════
+// STATE
+// ═══════════════════════════════════
+let S = {
+  user: null, page: 'dashboard',
+  tickets: [], users: [], departments: [],
+  activeChannels: []
+}
+
+// ═══════════════════════════════════
+// AUTH — same pattern as CSR
+// ═══════════════════════════════════
+function getSession() { try { return JSON.parse(localStorage.getItem('tdmh_session')) } catch { return null } }
+function setSession(d) { localStorage.setItem('tdmh_session', JSON.stringify(d)) }
+function clearSession() { localStorage.removeItem('tdmh_session') }
+
+async function doLogin() {
+  const empNo = document.getElementById('loginEmpNo').value.trim()
+  const pass = document.getElementById('loginPass').value.trim()
+  const btn = document.getElementById('loginBtn')
+  document.getElementById('loginErr').style.display = 'none'
+  if (!empNo || !pass) { showLoginErr('Please enter credentials.'); return }
+  btn.disabled = true; btn.textContent = 'Signing in...'
+  try {
+    const isEmail = empNo.includes('@')
+    const loginEmail = isEmail ? empNo.toLowerCase() : empNo.toLowerCase().replace(/[^a-z0-9]/g,'-') + '@tdmh.local'
+    const { data: authData, error: authError } = await SB.auth.signInWithPassword({ email: loginEmail, password: pass })
+    if (authError || !authData.user) { showLoginErr('Invalid credentials.'); return }
+
+    let profile = null
+    const { data: dp } = await SB.from('users').select('*').eq('id', authData.user.id).eq('is_active', true).single()
+    if (dp) { profile = dp }
+    else {
+      const { data: alias } = await SB.from('user_auth_aliases').select('primary_user_id').eq('alias_auth_id', authData.user.id).single()
+      if (alias) {
+        const { data: ap } = await SB.from('users').select('*').eq('id', alias.primary_user_id).eq('is_active', true).single()
+        if (ap) profile = ap
+      }
+    }
+    if (!profile) { showLoginErr('Account not found. Contact IT.'); await SB.auth.signOut(); return }
+    if (!profile.maintenance_role) { showLoginErr('No access to Maintenance system. Contact IT.'); await SB.auth.signOut(); return }
+
+    const session = {
+      id: profile.id, auth_id: authData.user.id,
+      employee_no: profile.employee_no, full_name: profile.full_name,
+      dept_id: profile.dept_id, phone: profile.phone, email: profile.email,
+      csr_role: profile.csr_role, maintenance_role: profile.maintenance_role,
+      it_role: profile.it_role, inventory_role: profile.inventory_role,
+      spec: profile.spec, color: profile.color
+    }
+    setSession(session)
+    await bootApp(session)
+  } catch(e) { showLoginErr('Connection error. Try again.'); console.error(e) }
+  finally { btn.disabled = false; btn.textContent = 'Sign In' }
+}
+
+function showLoginErr(msg) {
+  const el = document.getElementById('loginErr')
+  el.textContent = msg; el.style.display = 'block'
+}
+
+async function doLogout() {
+  await SB.auth.signOut()
+  clearSession()
+  S = { user: null, page: 'dashboard', tickets: [], users: [], departments: [], activeChannels: [] }
+  SB.removeAllChannels()
+  document.getElementById('appShell').style.display = 'none'
+  document.getElementById('loginScreen').style.display = 'flex'
+}
+
+// ═══════════════════════════════════
+// BOOT
+// ═══════════════════════════════════
+async function bootApp(session) {
+  S.user = session
+  document.getElementById('loginScreen').style.display = 'none'
+  document.getElementById('appShell').style.display = 'block'
+  const initials = session.full_name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()
+  document.getElementById('userAvatar').textContent = initials
+  document.getElementById('userName').textContent = session.full_name
+  document.getElementById('userRoleLabel').textContent = formatMaintRole(session.maintenance_role)
+  renderSidebarNav()
+  await Promise.all([loadUsers(), loadDepartments()])
+  subscribeTickets()
+  showPage('dashboard')
+}
+
+function formatMaintRole(r) {
+  const m = { requester:'Requester', technician:'Technician', supervisor:'Supervisor', admin:'Admin' }
+  return m[r] || r || '—'
+}
+
+// ═══════════════════════════════════
+// SIDEBAR NAV
+// ═══════════════════════════════════
+function renderSidebarNav() {
+  const role = S.user.maintenance_role
+  const items = [
+    { id:'dashboard', icon:'📊', label:'Dashboard', roles:['requester','technician','supervisor','admin'] },
+    { id:'my_tickets', icon:'🎫', label:'My Tickets', roles:['requester','technician','supervisor','admin'] },
+    { id:'all_tickets', icon:'🗂', label:'All Tickets', roles:['technician','supervisor','admin'] },
+    { id:'open_tickets', icon:'🔓', label:'Open Tickets', roles:['technician','supervisor','admin'] },
+    { id:'analytics', icon:'📈', label:'Analytics', roles:['supervisor','admin'] },
+    { id:'team', icon:'👥', label:'Team', roles:['supervisor','admin'] },
+  ]
+  let html = ''
+  items.forEach(item => {
+    if (!item.roles.includes(role)) return
+    const active = S.page === item.id ? ' active' : ''
+    html += '<div class="nav-item' + active + '" onclick="showPage(\'' + item.id + '\')" id="nav_' + item.id + '">'
+    html += '<span class="nav-icon">' + item.icon + '</span><span>' + item.label + '</span>'
+    html += '</div>'
+  })
+  document.getElementById('sidebarNav').innerHTML = html
+}
+
+// ═══════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════
+const PAGE_TITLES = {
+  dashboard:'Dashboard', my_tickets:'My Tickets', all_tickets:'All Tickets',
+  open_tickets:'Open Tickets', analytics:'Analytics', team:'Team'
+}
+
+function showPage(page) {
+  S.page = page
+  document.getElementById('topbarTitle').textContent = PAGE_TITLES[page] || page
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'))
+  const navEl = document.getElementById('nav_' + page)
+  if (navEl) navEl.classList.add('active')
+  closeSidebar()
+  const content = document.getElementById('mainContent')
+  content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
+  const pages = { dashboard:renderDashboard, my_tickets:renderMyTickets,
+    all_tickets:renderAllTickets, open_tickets:renderOpenTickets,
+    analytics:renderAnalytics, team:renderTeam }
+  if (pages[page]) pages[page]()
+}
+
+// ═══════════════════════════════════
+// DATA
+// ═══════════════════════════════════
+async function loadUsers() {
+  const { data } = await SB.from('users').select('id,full_name,employee_no,maintenance_role,phone,email,dept_id,spec,color').eq('is_active', true)
+  S.users = data || []
+}
+async function loadDepartments() {
+  const { data } = await SB.from('departments').select('*').eq('is_active', true).order('dept_name')
+  S.departments = data || []
+}
+async function loadTickets(filter = {}) {
+  let q = SB.from('maint_tickets').select('*').order('created_at', { ascending: false })
+  if (filter.submitted_by) q = q.eq('submitted_by', filter.submitted_by)
+  if (filter.status) q = q.eq('status', filter.status)
+  if (filter.claimed_by) q = q.eq('claimed_by', filter.claimed_by)
+  const { data } = await q
+  return data || []
+}
+async function loadTicketNotes(ticketId) {
+  const { data } = await SB.from('maint_ticket_notes').select('*').eq('ticket_id', ticketId).order('created_at')
+  return data || []
+}
+async function loadTicketTeam(ticketId) {
+  const { data } = await SB.from('maint_ticket_team').select('*').eq('ticket_id', ticketId)
+  return data || []
+}
+
+function subscribeTickets() {
+  const ch = SB.channel('maint-tickets-live')
+    .on('postgres_changes', { event:'*', schema:'public', table:'maint_tickets' }, (payload) => {
+      if (payload.eventType === 'INSERT') S.tickets.unshift(payload.new)
+      if (payload.eventType === 'UPDATE') S.tickets = S.tickets.map(t => t.id === payload.new.id ? { ...t, ...payload.new } : t)
+      if (['dashboard','all_tickets','open_tickets','my_tickets'].includes(S.page)) showPage(S.page)
+    }).subscribe()
+  S.activeChannels.push(ch)
+}
+
+// ═══════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════
+async function renderDashboard() {
+  const content = document.getElementById('mainContent')
+  const tickets = await loadTickets()
+  S.tickets = tickets
+  const role = S.user.maintenance_role
+
+  const open = tickets.filter(t => t.status === 'open').length
+  const claimed = tickets.filter(t => ['claimed','in_progress'].includes(t.status)).length
+  const resolved = tickets.filter(t => t.status === 'resolved').length
+  const emergency = tickets.filter(t => t.priority === 'emergency' && !['closed','resolved'].includes(t.status)).length
+
+  let html = '<div class="page-header">'
+  html += '<h2>👋 Kamusta, ' + S.user.full_name.split(' ')[0] + '</h2>'
+  html += '<div style="display:flex;gap:8px;">'
+  if (['requester','supervisor','admin'].includes(role)) {
+    html += '<button class="btn btn-primary" onclick="openNewTicketModal()">🔧 New Ticket</button>'
+  }
+  html += '</div></div>'
+
+  if (emergency > 0) {
+    html += '<div style="background:var(--red-a);border:1px solid var(--red);border-radius:10px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;">'
+    html += '<span style="font-size:20px;">🚨</span><div><strong style="color:var(--red);">' + emergency + ' EMERGENCY ticket(s) require immediate attention!</strong></div>'
+    html += '<button class="btn btn-danger btn-sm" style="margin-left:auto;" onclick="showPage(\'open_tickets\')">View Now</button>'
+    html += '</div>'
+  }
+
+  html += '<div class="stat-grid">'
+  html += statC('🔓','Open',open,'Awaiting action','var(--blue)')
+  html += statC('🔄','In Progress',claimed,'Being handled','var(--amber)')
+  html += statC('✅','Resolved Today',tickets.filter(t=>t.resolved_at && new Date(t.resolved_at).toDateString()===new Date().toDateString()).length,'Resolved today','var(--accent)')
+  html += statC('📋','Total (All Time)',tickets.length,'All tickets','var(--txt2)')
+  html += '</div>'
+
+  // Recent tickets
+  const recent = tickets.slice(0,6)
+  html += '<h3 style="font-size:14px;font-weight:600;margin-bottom:14px;">Recent Tickets</h3>'
+  if (recent.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">🎉</div><h3>No tickets yet</h3><p>Submit a ticket when equipment needs maintenance.</p></div>'
+  } else {
+    html += '<div class="ticket-grid">'
+    recent.forEach(t => { html += ticketCard(t) })
+    html += '</div>'
+  }
+
+  content.innerHTML = html
+}
+
+function statC(icon, label, val, sub, color) {
+  return '<div class="stat-card"><div class="stat-label">' + icon + ' ' + label + '</div>' +
+    '<div class="stat-value" style="color:' + color + ';">' + val + '</div>' +
+    '<div class="stat-sub">' + sub + '</div></div>'
+}
+
+// ═══════════════════════════════════
+// TICKET CARD
+// ═══════════════════════════════════
+function ticketCard(t) {
+  const claimedBy = S.users.find(u => u.id === t.claimed_by)
+  const dept = S.departments.find(d => d.id === t.dept_id)
+  const age = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
+  return '<div class="ticket-card priority-' + t.priority + '" onclick="viewTicket(\'' + t.id + '\')">' +
+    '<div class="ticket-header">' +
+    '<span class="ticket-id">' + t.id + '</span>' +
+    '<span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span>' +
+    '</div>' +
+    '<div class="ticket-title">' + t.title + '</div>' +
+    '<div class="ticket-meta">' +
+    '<span>🏢 ' + (dept ? dept.dept_name : t.dept_name || '—') + '</span>' +
+    '<span>📍 ' + (t.location || '—') + '</span>' +
+    '<span>🔧 ' + (t.category || '—') + '</span>' +
+    '</div>' +
+    '<div class="ticket-footer">' +
+    '<span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span>' +
+    '<div style="display:flex;align-items:center;gap:8px;">' +
+    (claimedBy ? '<span style="font-size:11px;color:var(--txt2);">👤 ' + claimedBy.full_name.split(' ')[0] + '</span>' : '') +
+    '<span style="font-size:11px;color:var(--txt3);">' + age + 'h ago</span>' +
+    '</div></div></div>'
+}
+
+function formatStatus(s) {
+  const m = { open:'Open', claimed:'Claimed', in_progress:'In Progress', for_parts:'For Parts',
+    resolved:'Resolved', closed:'Closed', reopened:'Reopened' }
+  return m[s] || s
+}
+
+// ═══════════════════════════════════
+// TICKETS LIST PAGES
+// ═══════════════════════════════════
+async function renderMyTickets() {
+  const role = S.user.maintenance_role
+  let filter = {}
+  if (['technician','supervisor'].includes(role)) filter.claimed_by = S.user.id
+  else filter.submitted_by = S.user.id
+  const tickets = await loadTickets(filter)
+  S.tickets = tickets
+  renderTicketsList(tickets, 'My Tickets')
+}
+
+async function renderAllTickets() {
+  const tickets = await loadTickets()
+  S.tickets = tickets
+  renderTicketsList(tickets, 'All Tickets')
+}
+
+async function renderOpenTickets() {
+  const { data } = await SB.from('maint_tickets').select('*')
+    .in('status', ['open','claimed','in_progress','for_parts','reopened'])
+    .order('priority', { ascending: false })
+    .order('created_at')
+  S.tickets = data || []
+  renderTicketsList(S.tickets, 'Open Tickets')
+}
+
+function renderTicketsList(tickets, title) {
+  const content = document.getElementById('mainContent')
+  const role = S.user.maintenance_role
+
+  let html = '<div class="page-header"><h2>' + title + '</h2>'
+  html += '<div style="display:flex;gap:8px;">'
+  if (['requester','supervisor','admin'].includes(role)) {
+    html += '<button class="btn btn-primary" onclick="openNewTicketModal()">🔧 New Ticket</button>'
+  }
+  html += '</div></div>'
+
+  html += '<div class="filter-bar">'
+  html += '<select id="fStatus" onchange="filterTickets()">'
+  html += '<option value="">All Status</option>'
+  ;['open','claimed','in_progress','for_parts','resolved','closed','reopened'].forEach(s => {
+    html += '<option value="' + s + '">' + formatStatus(s) + '</option>'
+  })
+  html += '</select>'
+  html += '<select id="fPriority" onchange="filterTickets()">'
+  html += '<option value="">All Priority</option>'
+  ;['emergency','urgent','high','normal','low'].forEach(p => {
+    html += '<option value="' + p + '">' + p.charAt(0).toUpperCase()+p.slice(1) + '</option>'
+  })
+  html += '</select>'
+  html += '<select id="fCat" onchange="filterTickets()">'
+  html += '<option value="">All Categories</option>'
+  ;['electrical','plumbing','hvac','civil','equipment','it_infra','general'].forEach(c => {
+    html += '<option value="' + c + '">' + c.charAt(0).toUpperCase()+c.slice(1).replace('_',' ') + '</option>'
+  })
+  html += '</select>'
+  html += '<input type="text" id="fSearch" placeholder="🔍 Search..." oninput="filterTickets()" style="min-width:180px;">'
+  html += '</div>'
+
+  html += '<div class="table-wrap"><table><thead><tr>'
+  html += '<th>Ticket No.</th><th>Title</th><th>Dept</th><th>Category</th><th>Priority</th><th>Status</th><th>Claimed By</th><th>Age</th><th></th>'
+  html += '</tr></thead><tbody id="ticketsBody">'
+  html += buildTicketRows(tickets)
+  html += '</tbody></table></div>'
+  content.innerHTML = html
+  content._tickets = tickets
+}
+
+function buildTicketRows(tickets) {
+  let rows = ''
+  tickets.forEach(t => {
+    const dept = S.departments.find(d => d.id === t.dept_id)
+    const claimed = S.users.find(u => u.id === t.claimed_by)
+    const age = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
+    rows += '<tr onclick="viewTicket(\'' + t.id + '\')" style="cursor:pointer;">'
+    rows += '<td class="td-mono">' + t.id + '</td>'
+    rows += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>' + t.title + '</strong></td>'
+    rows += '<td style="font-size:12px;color:var(--txt2);">' + (dept ? dept.dept_name : t.dept_name||'—') + '</td>'
+    rows += '<td style="font-size:12px;color:var(--txt2);">' + (t.category||'—') + '</td>'
+    rows += '<td><span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span></td>'
+    rows += '<td><span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span></td>'
+    rows += '<td style="font-size:12px;color:var(--txt2);">' + (claimed ? claimed.full_name.split(' ')[0] : '—') + '</td>'
+    rows += '<td style="font-size:12px;color:' + (age > 48 ? 'var(--red)' : 'var(--txt2)') + ';">' + age + 'h</td>'
+    rows += '<td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewTicket(\'' + t.id + '\')">View</button></td>'
+    rows += '</tr>'
+  })
+  return rows || '<tr><td colspan="9" style="text-align:center;color:var(--txt2);padding:30px;">No tickets found</td></tr>'
+}
+
+function filterTickets() {
+  const content = document.getElementById('mainContent')
+  const all = content._tickets || []
+  const status = document.getElementById('fStatus')?.value
+  const priority = document.getElementById('fPriority')?.value
+  const cat = document.getElementById('fCat')?.value
+  const search = document.getElementById('fSearch')?.value.toLowerCase()
+  let filtered = all
+  if (status) filtered = filtered.filter(t => t.status === status)
+  if (priority) filtered = filtered.filter(t => t.priority === priority)
+  if (cat) filtered = filtered.filter(t => t.category === cat)
+  if (search) filtered = filtered.filter(t =>
+    t.id.toLowerCase().includes(search) ||
+    t.title.toLowerCase().includes(search) ||
+    (t.dept_name||'').toLowerCase().includes(search)
+  )
+  const tbody = document.getElementById('ticketsBody')
+  if (tbody) tbody.innerHTML = buildTicketRows(filtered)
+}
+
+// ═══════════════════════════════════
+// TICKET DETAIL
+// ═══════════════════════════════════
+async function viewTicket(ticketId) {
+  const t = S.tickets.find(tk => tk.id === ticketId) ||
+    (await SB.from('maint_tickets').select('*').eq('id', ticketId).single()).data
+  if (!t) return
+
+  const [notes, team] = await Promise.all([loadTicketNotes(ticketId), loadTicketTeam(ticketId)])
+  const role = S.user.maintenance_role
+  const dept = S.departments.find(d => d.id === t.dept_id)
+  const submittedBy = S.users.find(u => u.id === t.submitted_by)
+  const claimedBy = S.users.find(u => u.id === t.claimed_by)
+  const teamMembers = team.map(tm => S.users.find(u => u.id === tm.user_id)).filter(Boolean)
+
+  document.getElementById('ticketDetailTitle').textContent = t.id + ' — ' + t.title
+
+  let body = ''
+  // Priority banner for emergency/urgent
+  if (['emergency','urgent'].includes(t.priority)) {
+    body += '<div style="background:var(--red-a);border:1px solid var(--red);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--red);font-weight:600;">🚨 ' + t.priority.toUpperCase() + ' PRIORITY — Immediate attention required</div>'
+  }
+
+  // Info grid
+  body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">'
+  body += iF('Status', '<span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span>')
+  body += iF('Priority', '<span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span>')
+  body += iF('Department', dept ? dept.dept_name : (t.dept_name||'—'))
+  body += iF('Location', t.location || '—')
+  body += iF('Category', t.category ? t.category.replace('_',' ').replace(/\b\w/g,l=>l.toUpperCase()) : '—')
+  body += iF('Submitted By', submittedBy ? submittedBy.full_name : '—')
+  body += iF('Claimed By', claimedBy ? claimedBy.full_name : '<span style="color:var(--txt3);">Unclaimed</span>')
+  body += iF('Date Filed', formatDate(t.created_at))
+  if (t.resolved_at) body += iF('Resolved At', formatDate(t.resolved_at))
+  body += '</div>'
+
+  // Description
+  if (t.description) {
+    body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Problem Description</div>'
+    body += '<div style="background:var(--surf2);padding:10px 14px;border-radius:9px;font-size:13px;border:1px solid var(--bdr);">' + t.description + '</div></div>'
+  }
+
+  // Team
+  if (teamMembers.length > 0) {
+    body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Team Assigned</div>'
+    body += '<div class="team-avatars">'
+    teamMembers.forEach(m => {
+      const initials = m.full_name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()
+      body += '<div class="team-avatar" style="background:var(--accent-a);color:var(--accent);" title="' + m.full_name + '">' + initials + '</div>'
+    })
+    body += '</div></div>'
+  }
+
+  // Add note field
+  if (!['closed'].includes(t.status)) {
+    body += '<div style="margin-bottom:16px;">'
+    body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Add Note</div>'
+    body += '<div style="display:flex;gap:8px;">'
+    body += '<textarea id="noteInput" placeholder="Type a note..." rows="2" style="flex:1;padding:8px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;color:var(--txt);font-family:\'Instrument Sans\',sans-serif;font-size:13px;outline:none;resize:none;"></textarea>'
+    body += '<button class="btn btn-primary btn-sm" onclick="addNote(\'' + t.id + '\')" style="align-self:flex-end;">Send</button>'
+    body += '</div></div>'
+  }
+
+  // Notes timeline
+  body += '<div style="margin-bottom:4px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Activity Log</div>'
+  if (notes.length === 0) {
+    body += '<div style="color:var(--txt3);font-size:13px;text-align:center;padding:20px;">No activity yet</div>'
+  } else {
+    body += '<div class="notes-wrap">'
+    notes.reverse().forEach(note => {
+      const author = S.users.find(u => u.id === note.user_id)
+      if (note.note_type === 'system') {
+        body += '<div class="note-system">⚙️ ' + note.note + ' · ' + formatDate(note.created_at) + '</div>'
+      } else {
+        const initials = author ? author.full_name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase() : '?'
+        body += '<div class="note-item">'
+        body += '<div class="note-avatar" style="background:var(--accent-a);color:var(--accent);">' + initials + '</div>'
+        body += '<div class="note-content">'
+        body += '<div class="note-header"><span class="note-author">' + (author ? author.full_name : '—') + '</span><span class="note-time">' + formatDate(note.created_at) + '</span></div>'
+        body += '<div class="note-text">' + note.note + '</div>'
+        body += '</div></div>'
+      }
+    })
+    body += '</div>'
+  }
+  body += '</div>'
+
+  document.getElementById('ticketDetailBody').innerHTML = body
+
+  // Footer actions
+  let footer = '<button class="btn btn-ghost" onclick="closeModal(\'ticketDetailModal\')">Close</button>'
+
+  if (t.status === 'open' && ['technician','supervisor','admin'].includes(role)) {
+    footer += '<button class="btn btn-primary" onclick="claimTicket(\'' + t.id + '\')">🙋 Claim Ticket</button>'
+  }
+  if (t.status === 'claimed' && (t.claimed_by === S.user.id || ['supervisor','admin'].includes(role))) {
+    footer += '<button class="btn btn-secondary" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">▶ Start Work</button>'
+    footer += '<button class="btn btn-ghost" onclick="openTeamModal(\'' + t.id + '\')">👥 Add Team</button>'
+  }
+  if (t.status === 'in_progress' && (t.claimed_by === S.user.id || ['supervisor','admin'].includes(role))) {
+    footer += '<button class="btn btn-ghost" onclick="updateStatus(\'' + t.id + '\',\'for_parts\')">🔩 Needs Parts</button>'
+    footer += '<button class="btn btn-ghost" onclick="openTeamModal(\'' + t.id + '\')">👥 Add Team</button>'
+    footer += '<button class="btn btn-success" onclick="resolveTicket(\'' + t.id + '\')">✅ Mark Resolved</button>'
+  }
+  if (t.status === 'for_parts') {
+    footer += '<button class="btn btn-secondary" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">▶ Parts Received, Continue</button>'
+  }
+  if (t.status === 'resolved' && ['supervisor','admin'].includes(role)) {
+    footer += '<button class="btn btn-primary" onclick="closeTicket(\'' + t.id + '\')">🔒 Close Ticket</button>'
+  }
+  if (['closed','resolved'].includes(t.status) && ['requester','supervisor','admin'].includes(role)) {
+    footer += '<button class="btn btn-danger" onclick="reopenTicket(\'' + t.id + '\')">↩ Reopen</button>'
+  }
+
+  document.getElementById('ticketDetailFooter').innerHTML = footer
+  openModal('ticketDetailModal')
+}
+
+function iF(label, value) {
+  return '<div><div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">' + label + '</div><div style="font-size:13px;">' + value + '</div></div>'
+}
+
+// ═══════════════════════════════════
+// TICKET ACTIONS
+// ═══════════════════════════════════
+async function addNote(ticketId) {
+  const note = document.getElementById('noteInput')?.value.trim()
+  if (!note) return
+  await SB.from('maint_ticket_notes').insert({
+    ticket_id: ticketId, user_id: S.user.id, note, note_type: 'comment'
+  })
+  document.getElementById('noteInput').value = ''
+  viewTicket(ticketId)
+}
+
+async function claimTicket(ticketId) {
+  confirm2('Claim this ticket?', async () => {
+    const { data: t } = await SB.from('maint_tickets').select('*').eq('id', ticketId).single()
+    await SB.from('maint_tickets').update({ status: 'claimed', claimed_by: S.user.id, updated_at: new Date().toISOString() }).eq('id', ticketId)
+    await SB.from('maint_ticket_notes').insert({ ticket_id: ticketId, user_id: S.user.id, note: S.user.full_name + ' claimed this ticket.', note_type: 'system' })
+    closeModal('ticketDetailModal')
+    showToast('success','Claimed', ticketId + ' is now assigned to you.')
+    // SMS to submitter
+    if (t) {
+      const submitter = S.users.find(u => u.id === t.submitted_by)
+      if (submitter && submitter.phone) {
+        sendSMS([submitter.phone], '[TDMH Maintenance] ' + ticketId + ' has been claimed by ' + S.user.full_name + '. We will address your concern shortly.')
+      }
+    }
+    if (['all_tickets','open_tickets','my_tickets','dashboard'].includes(S.page)) showPage(S.page)
+  })
+}
+
+async function updateStatus(ticketId, newStatus) {
+  const labels = { in_progress:'In Progress', for_parts:'For Parts — Awaiting Materials' }
+  confirm2('Update status to "' + (labels[newStatus]||newStatus) + '"?', async () => {
+    await SB.from('maint_tickets').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', ticketId)
+    await SB.from('maint_ticket_notes').insert({ ticket_id: ticketId, user_id: S.user.id, note: 'Status updated to: ' + (labels[newStatus]||newStatus), note_type: 'system' })
+    closeModal('ticketDetailModal')
+    showToast('success','Updated', 'Ticket status updated.')
+    if (['all_tickets','open_tickets','my_tickets','dashboard'].includes(S.page)) showPage(S.page)
+  })
+}
+
+async function resolveTicket(ticketId) {
+  confirm2('Mark this ticket as Resolved?', async () => {
+    const { data: t } = await SB.from('maint_tickets').select('*').eq('id', ticketId).single()
+    await SB.from('maint_tickets').update({ status: 'resolved', resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', ticketId)
+    await SB.from('maint_ticket_notes').insert({ ticket_id: ticketId, user_id: S.user.id, note: 'Ticket resolved by ' + S.user.full_name, note_type: 'system' })
+    closeModal('ticketDetailModal')
+    showToast('success','Resolved ✅', ticketId + ' marked as resolved.')
+    // Notify submitter
+    if (t) {
+      const submitter = S.users.find(u => u.id === t.submitted_by)
+      if (submitter && submitter.phone) {
+        sendSMS([submitter.phone], '[TDMH Maintenance] ' + ticketId + ' — "' + t.title + '" has been RESOLVED by ' + S.user.full_name + '. Please verify if the issue is fixed.')
+      }
+    }
+    if (['all_tickets','open_tickets','my_tickets','dashboard'].includes(S.page)) showPage(S.page)
+  })
+}
+
+async function closeTicket(ticketId) {
+  confirm2('Close this ticket permanently?', async () => {
+    await SB.from('maint_tickets').update({ status: 'closed', closed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', ticketId)
+    await SB.from('maint_ticket_notes').insert({ ticket_id: ticketId, user_id: S.user.id, note: 'Ticket closed by ' + S.user.full_name, note_type: 'system' })
+    closeModal('ticketDetailModal')
+    showToast('success','Closed 🔒', ticketId + ' has been closed.')
+    if (['all_tickets','open_tickets','my_tickets','dashboard'].includes(S.page)) showPage(S.page)
+  })
+}
+
+async function reopenTicket(ticketId) {
+  confirm2('Reopen this ticket?', async () => {
+    const { data: t } = await SB.from('maint_tickets').select('*').eq('id', ticketId).single()
+    await SB.from('maint_tickets').update({ status: 'reopened', resolved_at: null, closed_at: null, updated_at: new Date().toISOString() }).eq('id', ticketId)
+    await SB.from('maint_ticket_notes').insert({ ticket_id: ticketId, user_id: S.user.id, note: 'Ticket reopened by ' + S.user.full_name, note_type: 'system' })
+    closeModal('ticketDetailModal')
+    showToast('warning','Reopened ↩', ticketId + ' has been reopened.')
+    // Blast SMS to maintenance team
+    const maintStaff = S.users.filter(u => ['technician','supervisor','admin'].includes(u.maintenance_role) && u.phone)
+    sendSMS(maintStaff.map(u=>u.phone), '[TDMH Maintenance] ⚠️ REOPENED: ' + ticketId + ' — "' + (t?t.title:'') + '" needs attention again.')
+    if (['all_tickets','open_tickets','my_tickets','dashboard'].includes(S.page)) showPage(S.page)
+  })
+}
+
+// ═══════════════════════════════════
+// NEW TICKET FORM
+// ═══════════════════════════════════
+function openNewTicketModal() {
+  let html = ''
+  html += '<div class="field"><label>Issue Title <span style="color:var(--red);">*</span></label>'
+  html += '<input type="text" id="tk_title" placeholder="Brief description of the problem"></div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Department</label><select id="tk_dept">'
+  html += '<option value="">— Select Dept —</option>'
+  S.departments.forEach(d => {
+    const sel = d.id === S.user.dept_id ? ' selected' : ''
+    html += '<option value="' + d.id + '" data-name="' + d.dept_name + '"' + sel + '>' + d.dept_name + '</option>'
+  })
+  html += '</select></div>'
+  html += '<div class="field"><label>Location <span style="color:var(--red);">*</span></label>'
+  html += '<input type="text" id="tk_location" placeholder="Room/Floor/Area"></div>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Category</label><select id="tk_cat">'
+  ;['electrical','plumbing','hvac','civil','equipment','it_infra','general'].forEach(c => {
+    html += '<option value="' + c + '">' + c.charAt(0).toUpperCase()+c.slice(1).replace('_',' ') + '</option>'
+  })
+  html += '</select></div>'
+  html += '<div class="field"><label>Priority</label><select id="tk_priority">'
+  ;[['low','Low'],['normal','Normal'],['high','High'],['urgent','Urgent'],['emergency','🚨 EMERGENCY']].forEach(([v,l]) => {
+    html += '<option value="' + v + '"' + (v==='normal'?' selected':'') + '>' + l + '</option>'
+  })
+  html += '</select></div>'
+  html += '</div>'
+
+  html += '<div class="field"><label>Problem Description</label>'
+  html += '<textarea id="tk_desc" placeholder="Describe the issue in detail..." rows="3"></textarea></div>'
+
+  document.getElementById('newTicketBody').innerHTML = html
+  openModal('newTicketModal')
+}
+
+async function submitTicket() {
+  const title = document.getElementById('tk_title').value.trim()
+  const location = document.getElementById('tk_location').value.trim()
+  const deptEl = document.getElementById('tk_dept')
+  const deptId = deptEl.value
+  const deptName = deptEl.options[deptEl.selectedIndex]?.getAttribute('data-name') || ''
+  const cat = document.getElementById('tk_cat').value
+  const priority = document.getElementById('tk_priority').value
+  const desc = document.getElementById('tk_desc').value.trim()
+
+  if (!title) { showToast('error','Validation','Issue title is required.'); return }
+  if (!location) { showToast('error','Validation','Location is required.'); return }
+
+  try {
+    const { data: numData } = await SB.rpc('generate_ticket_no')
+    const ticketId = numData || ('TKT-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
+
+    const { data: t, error } = await SB.from('maint_tickets').insert({
+      id: ticketId, title,
+      dept_id: deptId || null,
+      dept_name: deptName,
+      location, category: cat, priority,
+      description: desc || null,
+      submitted_by: S.user.id,
+      status: 'open'
+    }).select().single()
+
+    if (error) throw error
+
+    // System note
+    await SB.from('maint_ticket_notes').insert({
+      ticket_id: ticketId, user_id: S.user.id,
+      note: 'Ticket submitted by ' + S.user.full_name + ' from ' + (deptName||'—'),
+      note_type: 'system'
+    })
+
+    closeModal('newTicketModal')
+    showToast('success','Ticket Submitted 🔧', ticketId + ' — Maintenance team notified.')
+
+    // SMS blast to all maintenance technicians
+    const maintStaff = S.users.filter(u => ['technician','supervisor','admin'].includes(u.maintenance_role) && u.phone)
+    const smsMsg = '[TDMH] NEW TICKET ' + ticketId + ' — ' + (priority === 'emergency' ? '🚨 EMERGENCY ' : priority === 'urgent' ? '⚠️ URGENT ' : '') + '"' + title + '" at ' + location + ' (' + (deptName||'—') + ')'
+    if (maintStaff.length > 0) sendSMS(maintStaff.map(u=>u.phone), smsMsg)
+
+    if (['dashboard','my_tickets'].includes(S.page)) showPage(S.page)
+  } catch(e) { showToast('error','Error', e.message) }
+}
+
+// ═══════════════════════════════════
+// TEAM MODAL
+// ═══════════════════════════════════
+async function openTeamModal(ticketId) {
+  const team = await loadTicketTeam(ticketId)
+  const teamIds = team.map(t => t.user_id)
+  const techStaff = S.users.filter(u => ['technician','supervisor','admin'].includes(u.maintenance_role))
+
+  let html = '<div style="margin-bottom:14px;font-size:13px;color:var(--txt2);">Select team members to work on this ticket:</div>'
+  html += '<div style="display:flex;flex-direction:column;gap:6px;">'
+  techStaff.forEach(u => {
+    const isIn = teamIds.includes(u.id)
+    html += '<label style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;cursor:pointer;">'
+    html += '<input type="checkbox" value="' + u.id + '" ' + (isIn?'checked':'') + ' style="width:16px;height:16px;">'
+    html += '<div><div style="font-size:13px;font-weight:600;">' + u.full_name + '</div>'
+    html += '<div style="font-size:11px;color:var(--txt2);">' + (u.spec||formatMaintRole(u.maintenance_role)) + '</div></div>'
+    html += '</label>'
+  })
+  html += '</div>'
+
+  document.getElementById('approvalRemarks') && (document.getElementById('approvalRemarks').style.display = 'none')
+
+  // Reuse confirm modal as team selector
+  document.getElementById('confirmTitle').textContent = '👥 Assign Team — ' + ticketId
+  document.getElementById('confirmMsg').innerHTML = html
+  document.getElementById('confirmOkBtn').textContent = 'Update Team'
+  document.getElementById('confirmOkBtn').onclick = async () => {
+    const selected = [...document.querySelectorAll('#confirmModal input[type=checkbox]:checked')].map(c => c.value)
+    // Remove all, re-insert selected
+    await SB.from('maint_ticket_team').delete().eq('ticket_id', ticketId)
+    if (selected.length > 0) {
+      await SB.from('maint_ticket_team').insert(selected.map(uid => ({ ticket_id: ticketId, user_id: uid })))
+    }
+    await SB.from('maint_ticket_notes').insert({
+      ticket_id: ticketId, user_id: S.user.id,
+      note: 'Team updated: ' + selected.map(uid => (S.users.find(u=>u.id===uid)?.full_name||uid)).join(', '),
+      note_type: 'system'
+    })
+    // SMS new team members
+    const newMembers = selected.filter(uid => !teamIds.includes(uid))
+    newMembers.forEach(uid => {
+      const u = S.users.find(u => u.id === uid)
+      if (u && u.phone) sendSMS([u.phone], '[TDMH Maintenance] You have been added to ticket ' + ticketId + '. Please check the Maintenance Hub.')
+    })
+    closeModal('confirmModal')
+    showToast('success','Team Updated','Team assignment saved.')
+  }
+  openModal('confirmModal')
+}
+
+// ═══════════════════════════════════
+// ANALYTICS
+// ═══════════════════════════════════
+async function renderAnalytics() {
+  const content = document.getElementById('mainContent')
+  const tickets = await loadTickets()
+
+  const total = tickets.length
+  const open = tickets.filter(t => t.status === 'open').length
+  const resolved = tickets.filter(t => ['resolved','closed'].includes(t.status)).length
+  const avgResolution = (() => {
+    const resolved_ts = tickets.filter(t => t.resolved_at && t.created_at)
+    if (!resolved_ts.length) return 0
+    const avg = resolved_ts.reduce((s,t) => s + (new Date(t.resolved_at) - new Date(t.created_at)), 0) / resolved_ts.length
+    return Math.round(avg / 3600000)
+  })()
+
+  // By technician
+  const techMap = {}
+  tickets.filter(t => t.claimed_by).forEach(t => {
+    const u = S.users.find(u => u.id === t.claimed_by)
+    const name = u ? u.full_name : t.claimed_by
+    if (!techMap[name]) techMap[name] = { claimed:0, resolved:0 }
+    techMap[name].claimed++
+    if (['resolved','closed'].includes(t.status)) techMap[name].resolved++
+  })
+
+  // By category
+  const catMap = {}
+  tickets.forEach(t => { catMap[t.category||'general'] = (catMap[t.category||'general']||0)+1 })
+
+  // By priority
+  const priMap = {}
+  tickets.forEach(t => { priMap[t.priority] = (priMap[t.priority]||0)+1 })
+
+  let html = '<div class="page-header"><h2>📈 Analytics</h2></div>'
+  html += '<div class="stat-grid" style="margin-bottom:24px;">'
+  html += statC('📋','Total Tickets',total,'All time','var(--txt2)')
+  html += statC('🔓','Currently Open',open,'Needs attention','var(--blue)')
+  html += statC('✅','Resolved/Closed',resolved,'Completed','var(--accent)')
+  html += statC('⏱','Avg Resolution',avgResolution + 'h','Hours to resolve','var(--amber)')
+  html += '</div>'
+
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
+
+  // Technician performance
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">👥 Technician Performance</div>'
+  html += '<div class="bar-chart">'
+  const maxClaimed = Math.max(...Object.values(techMap).map(v=>v.claimed), 1)
+  Object.entries(techMap).sort((a,b) => b[1].claimed-a[1].claimed).slice(0,8).forEach(([name, data]) => {
+    const pct = Math.round((data.claimed/maxClaimed)*100)
+    html += '<div class="bar-row">'
+    html += '<div class="bar-label" title="' + name + '">' + name.split(' ')[0] + '</div>'
+    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--accent);"></div></div>'
+    html += '<div class="bar-val">' + data.claimed + '</div>'
+    html += '</div>'
+  })
+  if (Object.keys(techMap).length === 0) html += '<div style="color:var(--txt3);font-size:13px;">No data yet</div>'
+  html += '</div></div>'
+
+  // By category
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">🔧 Tickets by Category</div>'
+  html += '<div class="bar-chart">'
+  const maxCat = Math.max(...Object.values(catMap), 1)
+  Object.entries(catMap).sort((a,b) => b[1]-a[1]).forEach(([cat, count]) => {
+    const pct = Math.round((count/maxCat)*100)
+    html += '<div class="bar-row">'
+    html += '<div class="bar-label">' + cat.replace('_',' ').replace(/\b\w/g,l=>l.toUpperCase()) + '</div>'
+    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--blue);"></div></div>'
+    html += '<div class="bar-val">' + count + '</div>'
+    html += '</div>'
+  })
+  html += '</div></div>'
+
+  // By priority
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">⚠️ Tickets by Priority</div>'
+  html += '<div class="bar-chart">'
+  const priColors = { emergency:'var(--red)', urgent:'var(--amber)', high:'var(--blue)', normal:'var(--accent)', low:'var(--txt2)' }
+  const maxPri = Math.max(...Object.values(priMap), 1)
+  ;['emergency','urgent','high','normal','low'].forEach(p => {
+    if (!priMap[p]) return
+    const pct = Math.round((priMap[p]/maxPri)*100)
+    html += '<div class="bar-row">'
+    html += '<div class="bar-label">' + p.charAt(0).toUpperCase()+p.slice(1) + '</div>'
+    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:' + (priColors[p]||'var(--accent)') + ';"></div></div>'
+    html += '<div class="bar-val">' + priMap[p] + '</div>'
+    html += '</div>'
+  })
+  html += '</div></div>'
+
+  // Recent resolved
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">✅ Recently Resolved</div>'
+  const recentResolved = tickets.filter(t => t.resolved_at).sort((a,b) => new Date(b.resolved_at)-new Date(a.resolved_at)).slice(0,6)
+  if (recentResolved.length === 0) {
+    html += '<div style="color:var(--txt3);font-size:13px;">No resolved tickets yet</div>'
+  } else {
+    recentResolved.forEach(t => {
+      const hrs = Math.round((new Date(t.resolved_at)-new Date(t.created_at))/3600000)
+      const tech = S.users.find(u => u.id === t.claimed_by)
+      html += '<div style="padding:8px 0;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between;align-items:center;">'
+      html += '<div><div style="font-size:12px;font-weight:600;">' + t.id + ' — ' + t.title + '</div>'
+      html += '<div style="font-size:11px;color:var(--txt2);">' + (tech?tech.full_name:'—') + '</div></div>'
+      html += '<div style="font-size:12px;color:var(--accent);font-weight:600;">' + hrs + 'h</div>'
+      html += '</div>'
+    })
+  }
+  html += '</div>'
+
+  html += '</div>'
+  content.innerHTML = html
+}
+
+// ═══════════════════════════════════
+// TEAM PAGE
+// ═══════════════════════════════════
+async function renderTeam() {
+  const content = document.getElementById('mainContent')
+  const tickets = await loadTickets()
+  const techStaff = S.users.filter(u => ['technician','supervisor','admin'].includes(u.maintenance_role))
+
+  let html = '<div class="page-header"><h2>👥 Team</h2>'
+  html += '<button class="btn btn-primary" onclick="openAddTeamMemberModal()">＋ Add Member</button>'
+  html += '</div>'
+
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;">'
+  techStaff.forEach(u => {
+    const myTickets = tickets.filter(t => t.claimed_by === u.id && !['closed','resolved'].includes(t.status))
+    const resolved = tickets.filter(t => t.claimed_by === u.id && ['resolved','closed'].includes(t.status)).length
+    const initials = u.full_name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()
+
+    html += '<div class="card">'
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">'
+    html += '<div style="width:44px;height:44px;border-radius:12px;background:var(--accent-a);border:1px solid var(--accent-b);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--accent);">' + initials + '</div>'
+    html += '<div><div style="font-size:14px;font-weight:700;">' + u.full_name + '</div>'
+    html += '<div style="font-size:12px;color:var(--txt2);">' + (u.spec || formatMaintRole(u.maintenance_role)) + '</div>'
+    if (u.phone) html += '<div style="font-size:11px;color:var(--txt3);">' + u.phone + '</div>'
+    html += '</div></div>'
+
+    html += '<div style="display:flex;gap:12px;">'
+    html += '<div style="flex:1;background:var(--surf2);border-radius:8px;padding:10px;text-align:center;">'
+    html += '<div style="font-size:20px;font-weight:700;color:var(--amber);">' + myTickets.length + '</div>'
+    html += '<div style="font-size:11px;color:var(--txt2);">Active</div></div>'
+    html += '<div style="flex:1;background:var(--surf2);border-radius:8px;padding:10px;text-align:center;">'
+    html += '<div style="font-size:20px;font-weight:700;color:var(--accent);">' + resolved + '</div>'
+    html += '<div style="font-size:11px;color:var(--txt2);">Resolved</div></div>'
+    html += '</div>'
+    html += '</div>'
+  })
+  html += '</div>'
+  content.innerHTML = html
+}
+
+function openAddTeamMemberModal() {
+  showToast('info','Settings','Add team members via Settings → Users.')
+}
+
+// ═══════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════
+function formatDate(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' })
+}
+
+async function sendSMS(phones, message) {
+  if (!phones || phones.filter(Boolean).length === 0) return
+  try {
+    await fetch(SMS_URL, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ phones, message })
+    })
+  } catch(e) { console.warn('[SMS]', e.message) }
+}
+
+function toggleTheme() {
+  const html = document.documentElement
+  const theme = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+  html.setAttribute('data-theme', theme)
+  localStorage.setItem('tdmh_theme', theme)
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open') }
+function closeModal(id) { document.getElementById(id).classList.remove('open') }
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open') }
+function closeSidebar() { document.getElementById('sidebar').classList.remove('open') }
+
+function showToast(type, title, body) {
+  const c = document.getElementById('toastContainer')
+  const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' }
+  const el = document.createElement('div')
+  el.className = 'toast'
+  el.innerHTML = '<div class="toast-icon">' + (icons[type]||'ℹ️') + '</div><div><div class="toast-title">' + title + '</div><div class="toast-body">' + body + '</div></div>'
+  c.appendChild(el)
+  setTimeout(() => { el.style.opacity='0'; el.style.transform='translateX(20px)'; el.style.transition='all .3s'; setTimeout(()=>el.remove(),300) }, 3500)
+}
+
+function confirm2(msg, onOk) {
+  document.getElementById('confirmMsg').textContent = msg
+  document.getElementById('confirmOkBtn').textContent = 'Confirm'
+  document.getElementById('confirmOkBtn').onclick = () => { closeModal('confirmModal'); onOk() }
+  openModal('confirmModal')
+}
+
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open') })
+})
+document.getElementById('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin() })
+
+// ═══════════════════════════════════
+// INIT
+// ═══════════════════════════════════
+;(async function init() {
+  const savedTheme = localStorage.getItem('tdmh_theme') || 'dark'
+  document.documentElement.setAttribute('data-theme', savedTheme)
+
+  const { data: { session: authSession } } = await SB.auth.getSession()
+  if (authSession) {
+    const { data: profile } = await SB.from('users').select('*').eq('id', authSession.user.id).eq('is_active', true).single()
+    if (profile && profile.maintenance_role) {
+      const session = {
+        id: profile.id, auth_id: authSession.user.id,
+        employee_no: profile.employee_no, full_name: profile.full_name,
+        dept_id: profile.dept_id, phone: profile.phone, email: profile.email,
+        csr_role: profile.csr_role, maintenance_role: profile.maintenance_role,
+        it_role: profile.it_role, inventory_role: profile.inventory_role,
+        spec: profile.spec, color: profile.color
+      }
+      setSession(session)
+      await bootApp(session)
+      return
+    }
+  }
+
+  const session = getSession()
+  if (session && session.maintenance_role) { await bootApp(session); return }
+})()
+</script>
+</body>
+</html>
