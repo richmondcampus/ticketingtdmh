@@ -817,13 +817,16 @@ async function viewTicket(ticketId) {
   if (t.status === 'claimed' && (t.claimed_by === S.user.id || ['supervisor','admin'].includes(role))) {
     footer += '<button class="btn btn-secondary" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">▶ Start Work</button>'
     footer += '<button class="btn btn-ghost" onclick="openTeamModal(\'' + t.id + '\')">👥 Add Team</button>'
+    footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts</button>'
   }
   if (t.status === 'in_progress' && (t.claimed_by === S.user.id || ['supervisor','admin'].includes(role))) {
-    footer += '<button class="btn btn-ghost" onclick="updateStatus(\'' + t.id + '\',\'for_parts\')">🔩 Needs Parts</button>'
+    footer += '<button class="btn btn-ghost" onclick="updateStatus(\'' + t.id + '\',\'for_parts\')">⏸ Needs Parts</button>'
     footer += '<button class="btn btn-ghost" onclick="openTeamModal(\'' + t.id + '\')">👥 Add Team</button>'
+    footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts</button>'
     footer += '<button class="btn btn-success" onclick="resolveTicket(\'' + t.id + '\')">✅ Mark Resolved</button>'
   }
   if (t.status === 'for_parts') {
+    footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts via CSR</button>'
     footer += '<button class="btn btn-secondary" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">▶ Parts Received, Continue</button>'
   }
   if (t.status === 'resolved' && ['supervisor','admin'].includes(role)) {
@@ -1217,6 +1220,138 @@ async function renderTeam() {
   })
   html += '</div>'
   content.innerHTML = html
+}
+
+// ═══════════════════════════════════
+// PARTS REQUEST → CSR INTEGRATION
+// ═══════════════════════════════════
+function openPartsRequestModal(ticketId, ticketTitle) {
+  // Reuse confirm modal as parts request form
+  document.getElementById('confirmTitle').textContent = '🔩 Request Parts via CSR'
+  document.getElementById('confirmMsg').innerHTML =
+    '<p style="color:var(--txt2);font-size:12px;margin-bottom:14px;">Linked to: <strong>' + ticketId + '</strong> — ' + ticketTitle + '</p>' +
+    '<div style="display:flex;flex-direction:column;gap:10px;" id="partsRows">' +
+    buildPartsRow(Date.now()) +
+    '</div>' +
+    '<button onclick="addPartsRow()" style="margin-top:8px;padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:transparent;color:var(--txt2);cursor:pointer;font-family:inherit;font-size:12px;">＋ Add Item</button>' +
+    '<div style="margin-top:14px;">' +
+    '<label style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">Urgency</label>' +
+    '<select id="parts_urgency" style="width:100%;padding:8px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;color:var(--txt);font-family:inherit;font-size:13px;">' +
+    '<option value="routine">Routine</option><option value="urgent">Urgent</option><option value="emergency">Emergency</option>' +
+    '</select></div>'
+
+  document.getElementById('confirmOkBtn').textContent = '📤 Submit to CSR'
+  document.getElementById('confirmOkBtn').onclick = () => submitPartsRequest(ticketId, ticketTitle)
+  openModal('confirmModal')
+}
+
+function buildPartsRow(id) {
+  return '<div id="prow_' + id + '" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;align-items:center;">' +
+    '<input type="text" placeholder="Part/item name" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-name">' +
+    '<input type="number" min="1" value="1" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-qty">' +
+    '<input type="text" placeholder="unit" value="pcs" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-unit">' +
+    '<button onclick="document.getElementById(\'prow_' + id + '\').remove()" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--bdr2);background:transparent;color:var(--txt3);cursor:pointer;font-size:14px;">✕</button>' +
+    '</div>'
+}
+
+function addPartsRow() {
+  const wrap = document.getElementById('partsRows')
+  const div = document.createElement('div')
+  div.innerHTML = buildPartsRow(Date.now())
+  wrap.appendChild(div.firstChild)
+}
+
+async function submitPartsRequest(ticketId, ticketTitle) {
+  // Collect items
+  const rows = document.querySelectorAll('#partsRows > div')
+  const items = []
+  rows.forEach(row => {
+    const name = row.querySelector('.parts-name')?.value.trim()
+    const qty = Number(row.querySelector('.parts-qty')?.value) || 1
+    const unit = row.querySelector('.parts-unit')?.value.trim() || 'pcs'
+    if (name) items.push({ item_name: name, quantity: qty, unit, estimated_cost: 0, category: 'maintenance_material' })
+  })
+  if (items.length === 0) { alert('Please add at least one item.'); return }
+
+  const urgency = document.getElementById('parts_urgency').value
+
+  try {
+    // Generate CSR request number
+    const { data: numData } = await SB.rpc('generate_request_no')
+    const requestNo = numData || ('CSR-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
+
+    // Create CSR request linked to this maintenance ticket
+    const { data: req, error } = await SB.from('requests').insert({
+      request_no: requestNo,
+      request_type: 'purchase',
+      dept_id: S.user.dept_id || null,
+      requested_by: S.user.id,
+      urgency,
+      purpose: 'Parts request for Maintenance Ticket ' + ticketId + ' — "' + ticketTitle + '"',
+      status: 'pending_approval',
+      current_approval_level: 1,
+      source_system: 'maintenance',
+      source_ref_id: null,           // uuid col — null for text ticket IDs
+      source_ref_text: ticketId      // store text ticket ID here
+    }).select().single()
+
+    if (error) throw error
+
+    // Insert items
+    await SB.from('request_items').insert(items.map(item => ({
+      request_id: req.id,
+      item_name: item.item_name,
+      quantity: item.quantity,
+      unit: item.unit,
+      estimated_cost: 0,
+      category: 'maintenance_material'
+    })))
+
+    // Log in maint_parts_requests table
+    for (const item of items) {
+      await SB.from('maint_parts_requests').insert({
+        ticket_id: ticketId,
+        csr_request_id: req.id,
+        item_name: item.item_name,
+        quantity: item.quantity,
+        unit: item.unit,
+        requested_by: S.user.id,
+        status: 'requested'
+      })
+    }
+
+    // Add note to maintenance ticket
+    await SB.from('maint_ticket_notes').insert({
+      ticket_id: ticketId,
+      user_id: S.user.id,
+      note: 'Parts request submitted to CSR (' + requestNo + '): ' + items.map(i => i.quantity + ' ' + i.unit + ' ' + i.item_name).join(', '),
+      note_type: 'system'
+    })
+
+    // Notify CSR supply officers via system_notifications
+    const supplyOfficers = S.users.filter(u => u.csr_role === 'supply_officer' || u.csr_role === 'admin')
+    for (const officer of supplyOfficers) {
+      await SB.from('system_notifications').insert({
+        recipient_id: officer.id,
+        target_system: 'csr',
+        target_ref_id: req.id,
+        source_system: 'maintenance',
+        message: '🔩 Parts request ' + requestNo + ' from Maintenance Ticket ' + ticketId + ' needs your approval.',
+        type: 'approval_needed'
+      })
+      // SMS to supply officer
+      if (officer.phone) {
+        sendSMS([officer.phone], '[TDMH] Parts request ' + requestNo + ' from Maintenance Ticket ' + ticketId + ' submitted for approval.')
+      }
+    }
+
+    closeModal('confirmModal')
+    showToast('success', 'Parts Requested ✅', requestNo + ' submitted to CSR for approval.')
+
+  } catch(e) {
+    alert('Error: ' + e.message)
+    console.error(e)
+  }
 }
 
 function openAddTeamMemberModal() {
