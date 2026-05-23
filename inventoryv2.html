@@ -1544,11 +1544,22 @@ async function openPrintLabelModal(assetId) {
   const optionsHTML =
     '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;">' +
       '<div style="font-size:12px;font-weight:600;margin-bottom:10px;">🖨️ Print Options</div>' +
+      '<div class="field" style="margin-bottom:10px;">' +
+        '<label style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">Label Size</label>' +
+        '<select id="labelSizeSelect" style="width:100%;padding:7px 10px;background:var(--surf1);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;">' +
+          '<option value="96,200">12×25mm (default D110_M)</option>' +
+          '<option value="96,240">12×30mm</option>' +
+          '<option value="96,320">12×40mm</option>' +
+          '<option value="120,240">15×30mm</option>' +
+          '<option value="120,320">15×40mm</option>' +
+          '<option value="120,400">15×50mm (max D110_M)</option>' +
+        '</select>' +
+      '</div>' +
       '<div style="display:flex;flex-direction:column;gap:8px;">' +
         '<button class="btn btn-primary" onclick="printViaBluetooth(\'' + a.id + '\')">📶 Print via Niimbot Bluetooth</button>' +
         '<button class="btn btn-secondary" onclick="printLabelBrowser(\'' + a.id + '\',\'' + encodeURIComponent(qrDataUrl) + '\')">🖨️ Print via Browser (A4)</button>' +
       '</div>' +
-      '<p style="font-size:11px;color:var(--txt3);margin-top:10px;">Niimbot BT: requires Chrome on Android. Pair printer via Bluetooth first.</p>' +
+      '<p style="font-size:11px;color:var(--txt3);margin-top:10px;">Tip: If label is too long/short, change Label Size above then print again.</p>' +
     '</div>'
 
   document.getElementById('printLabelBody').innerHTML = labelHTML + optionsHTML
@@ -1641,10 +1652,11 @@ async function printViaBluetooth(assetId) {
     showToast('info','Printing...','Preparing label...')
 
     // ─── Build label canvas ───
-    // D110_M label: 12mm × 40mm at 203dpi = 96 × 320 pixels
-    // Printable area is slightly narrower — use 96w × 320h
-    const W = 96
-    const H = 320
+    // Get label size from selector (W,H in pixels at 203dpi)
+    const sizeEl = document.getElementById('labelSizeSelect')
+    const [selW, selH] = sizeEl ? sizeEl.value.split(',').map(Number) : [96, 200]
+    const W = selW
+    const H = selH
 
     const canvas = document.createElement('canvas')
     canvas.width = W; canvas.height = H
@@ -1652,53 +1664,37 @@ async function printViaBluetooth(assetId) {
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0,0,W,H)
 
-    // QR code — 80×80px centered at top, leaving margin
+    // QR code — nearly full width, short margin
+    const qrSize = W - 8
     const qrCanvas = document.createElement('canvas')
     new QRious({
       element: qrCanvas,
       value: a.qr_code || a.asset_no,
-      size: 80,
+      size: qrSize,
       background: '#ffffff',
       foreground: '#000000',
-      level: 'M'
+      level: 'L'
     })
-    ctx.drawImage(qrCanvas, 8, 8, 80, 80)
+    ctx.drawImage(qrCanvas, 4, 4, qrSize, qrSize)
 
-    // Text below QR — compact
+    // Text below QR
+    const textStart = qrSize + 10
     ctx.textAlign = 'center'
     ctx.fillStyle = '#000000'
+    ctx.font = 'bold 7px Arial'
+    ctx.fillText(a.asset_no, W/2, textStart)
 
-    // Asset No — bold, small
-    ctx.font = 'bold 8px Arial'
-    ctx.fillText(a.asset_no, 48, 100)
-
-    // Asset Name — wrap at 90px max
-    ctx.font = '7px Arial'
-    const nameWords = a.asset_name.split(' ')
-    let line = '', ty = 112
-    nameWords.forEach(word => {
-      const test = line ? line+' '+word : word
-      if (ctx.measureText(test).width > 90 && line) {
-        ctx.fillText(line, 48, ty); line=word; ty+=10
-      } else line=test
-    })
-    if (line) { ctx.fillText(line, 48, ty); ty+=10 }
-
-    // Dept
-    const dept = S.departments.find(d=>d.id===a.dept_id)
     ctx.font = '6px Arial'
-    ctx.fillStyle = '#444444'
-    if (dept && ty < 290) {
-      ctx.fillText(dept.dept_name, 48, ty); ty+=9
-    }
-    if (a.location && ty < 290) {
-      ctx.fillText(a.location, 48, ty); ty+=9
-    }
+    const dept = S.departments.find(d=>d.id===a.dept_id)
+    const nameStr = a.asset_name.length > 18 ? a.asset_name.substring(0,18)+'...' : a.asset_name
+    ctx.fillText(nameStr, W/2, textStart + 11)
 
-    // Hospital footer
+    ctx.fillStyle = '#777777'
+    if (dept) ctx.fillText(dept.dept_name.substring(0,18), W/2, textStart + 21)
+
     ctx.font = '5px Arial'
-    ctx.fillStyle = '#aaaaaa'
-    ctx.fillText('TDMH Asset Inventory', 48, H-6)
+    ctx.fillStyle = '#bbbbbb'
+    ctx.fillText('TDMH', W/2, H-4)
 
     // ─── D110M_V4 PRINT SEQUENCE ───
     // Ref: printers.niim.blue/interfacing/print-tasks/#d110m_v4
