@@ -727,8 +727,8 @@ function sC(icon, label, val, sub, color) {
 function assetCard(a) {
   const cat = S.categories.find(c => c.id === a.category_id)
   const dept = S.departments.find(d => d.id === a.dept_id)
-  const assignedTo = S.users.find(u => u.id === a.assigned_to)
   return '<div class="asset-card" onclick="viewAsset(\'' + a.id + '\')">' +
+    (a.photo_url ? '<img src="' + a.photo_url + '" style="width:100%;height:80px;object-fit:cover;border-radius:8px;margin-bottom:10px;border:1px solid var(--bdr);">' : '') +
     '<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;">' +
     '<div class="asset-cat-icon" style="background:' + (cat?cat.color:'var(--accent)') + '18;border:1px solid ' + (cat?cat.color:'var(--accent)') + '33;">' + (cat?cat.icon:'📦') + '</div>' +
     '<div style="flex:1;min-width:0;">' +
@@ -1224,6 +1224,13 @@ async function viewAsset(id) {
 
   let body = ''
 
+  // Photo
+  if (a.photo_url) {
+    body += '<div style="margin-bottom:16px;">'
+    body += '<img src="' + a.photo_url + '" style="max-width:100%;max-height:220px;object-fit:cover;border-radius:10px;border:1px solid var(--bdr);">'
+    body += '</div>'
+  }
+
   // Status banner
   body += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">'
   body += '<span class="badge badge-' + a.status + '" style="font-size:13px;padding:5px 12px;">' + formatStatus(a.status) + '</span>'
@@ -1486,12 +1493,45 @@ async function openAssetForm(assetId) {
   html += '</div>'
   html += '</div>'
 
-  html += '<div class="field" style="margin-top:16px;"><label>Notes</label><textarea id="af_notes" rows="2">' + (a?a.notes||'':'') + '</textarea></div>'
+  html += '<div class="field" style="margin-top:16px;"><label>Asset Photo</label>'
+  html += '<div id="photo_preview" style="margin-bottom:8px;">'
+  if (a && a.photo_url) {
+    html += '<img src="' + a.photo_url + '" style="width:120px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--bdr2);">'
+  }
+  html += '</div>'
+  html += '<input type="file" id="af_photo" accept="image/*" style="font-size:13px;color:var(--txt2);" onchange="previewAssetPhoto(this)">'
+  html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">Max 5MB. JPG, PNG, WEBP accepted.</div>'
+  html += '</div>'
+
+  html += '<div class="field"><label>Notes</label><textarea id="af_notes" rows="2">' + (a?a.notes||'':'') + '</textarea></div>'
 
   document.getElementById('assetFormBody').innerHTML = html
   closeModal('assetDetailModal')
   checkDOHFields()
   openModal('assetFormModal')
+}
+
+function previewAssetPhoto(input) {
+  const file = input.files[0]
+  if (!file) return
+  const preview = document.getElementById('photo_preview')
+  if (!preview) return
+  const url = URL.createObjectURL(file)
+  preview.innerHTML = '<img src="' + url + '" style="width:120px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--bdr2);">'
+}
+
+async function uploadAssetPhoto(assetId) {
+  const input = document.getElementById('af_photo')
+  if (!input || !input.files[0]) return null
+  const file = input.files[0]
+  const ext = file.name.split('.').pop().toLowerCase()
+  const path = 'assets/' + assetId + '.' + ext
+  const { data, error } = await SB.storage.from('asset-photos').upload(path, file, {
+    upsert: true, contentType: file.type
+  })
+  if (error) { console.warn('Photo upload error:', error.message); return null }
+  const { data: urlData } = SB.storage.from('asset-photos').getPublicUrl(path)
+  return urlData.publicUrl
 }
 
 function checkDOHFields() {
@@ -1544,6 +1584,9 @@ async function saveAsset() {
 
   try {
     if (S.editingAssetId) {
+      // Upload photo if selected
+      const photoUrl = await uploadAssetPhoto(S.editingAssetId)
+      if (photoUrl) payload.photo_url = photoUrl
       await SB.from('assets').update(payload).eq('id', S.editingAssetId)
       showToast('success','Updated', name + ' updated.')
       closeModal('assetFormModal')
@@ -1552,10 +1595,15 @@ async function saveAsset() {
       // Generate asset number
       const { data: assetNo } = await SB.rpc('generate_asset_no', { cat_code: cat.code })
       payload.asset_no = assetNo || ('AST-' + cat.code + '-' + Date.now())
-      payload.qr_code = payload.asset_no  // QR = asset_no
+      payload.qr_code = payload.asset_no
       payload.created_by = S.user.id
       const { data: newAsset, error } = await SB.from('assets').insert(payload).select().single()
       if (error) throw error
+      // Upload photo after insert (need the ID)
+      const photoUrl = await uploadAssetPhoto(newAsset.id)
+      if (photoUrl) {
+        await SB.from('assets').update({ photo_url: photoUrl }).eq('id', newAsset.id)
+      }
       // Log creation
       await SB.from('asset_history').insert({
         asset_id: newAsset.id, action: 'created',
