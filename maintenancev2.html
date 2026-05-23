@@ -961,6 +961,11 @@ function openNewTicketModal() {
   html += '</select></div>'
   html += '</div>'
 
+  // Asset link — optional
+  html += '<div class="field"><label>Linked Asset (optional)</label>'
+  html += '<input type="text" id="tk_asset_no" placeholder="Asset No. e.g. AST-IT-2026-0001 — leave blank if not asset-related">'
+  html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">Linking an asset will auto-update its status to "Under Repair" when ticket is claimed.</div></div>'
+
   html += '<div class="field"><label>Problem Description</label>'
   html += '<textarea id="tk_desc" placeholder="Describe the issue in detail..." rows="3"></textarea></div>'
 
@@ -981,9 +986,20 @@ async function submitTicket() {
   if (!title) { showToast('error','Validation','Issue title is required.'); return }
   if (!location) { showToast('error','Validation','Location is required.'); return }
 
+  const assetNoInput = document.getElementById('tk_asset_no')?.value.trim()
+
   try {
     const { data: numData } = await SB.rpc('generate_ticket_no')
     const ticketId = numData || ('TKT-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
+
+    // Lookup asset if provided
+    let linkedAssetId = null
+    if (assetNoInput) {
+      const { data: foundAsset } = await SB.from('assets')
+        .select('id,asset_no').eq('asset_no', assetNoInput).single()
+      if (foundAsset) linkedAssetId = foundAsset.id
+      else showToast('warning','Asset Not Found', assetNoInput + ' not found in inventory — ticket submitted without asset link.')
+    }
 
     const { data: t, error } = await SB.from('maint_tickets').insert({
       id: ticketId, title,
@@ -992,7 +1008,9 @@ async function submitTicket() {
       location, category: cat, priority,
       description: desc || null,
       submitted_by: S.user.id,
-      status: 'open'
+      status: 'open',
+      asset_id: linkedAssetId,
+      asset_no: linkedAssetId ? assetNoInput : null
     }).select().single()
 
     if (error) throw error
