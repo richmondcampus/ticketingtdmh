@@ -207,10 +207,28 @@ tr:hover td{background:var(--surf2);}
   .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;}
   .sidebar.open~.sidebar-overlay{display:block;}
   .field-row{grid-template-columns:1fr;}
-  .content{padding:16px;}
+  .content{padding:12px;}
   .hamburger{display:flex!important;}
+  .page-header{flex-direction:column;align-items:flex-start;gap:8px;}
+  .table-wrap{display:none;}
+  .mobile-cards{display:flex!important;flex-direction:column;gap:10px;}
+  .stat-grid{grid-template-columns:1fr 1fr!important;}
+  .stat-value{font-size:22px!important;}
+  .filter-bar{gap:6px;}
+  .filter-bar select,.filter-bar input{font-size:12px;padding:6px 10px;}
+  .modal-overlay{padding:0;align-items:flex-end;}
+  .modal{border-radius:18px 18px 0 0;max-height:92vh;max-width:100%!important;}
+  .modal-lg{max-width:100%!important;}
+  .modal-header{padding:16px 18px 0;}
+  .modal-body{padding:14px 18px;}
+  .modal-footer{padding:12px 18px;gap:8px;flex-wrap:wrap;}
+  .modal-footer .btn{flex:1;min-width:120px;}
+  #toastContainer{left:12px;right:12px;top:auto;bottom:70px;}
+  .toast{min-width:unset;max-width:100%;}
+  .reply-thread{max-height:200px;}
 }
 .hamburger{display:none;width:34px;height:34px;border-radius:9px;background:var(--surf2);border:1px solid var(--bdr2);align-items:center;justify-content:center;cursor:pointer;font-size:16px;}
+.mobile-cards{display:none;}
 </style>
 </head>
 <body>
@@ -639,13 +657,58 @@ async function renderAssignedMe() {
   renderTicketList(tickets, 'Assigned to Me')
 }
 
+function buildTicketTable(tickets) {
+  if (tickets.length === 0) {
+    const empty = '<div class="empty-state"><div class="empty-icon">🎫</div><h3>No tickets found</h3></div>'
+    return { table: empty, cards: empty }
+  }
+  let tableHTML = '<div class="table-wrap"><table><thead><tr>'
+  tableHTML += '<th>ID</th><th>Subject</th><th>Category</th><th>Requester</th><th>Assigned</th><th>Priority</th><th>Status</th><th>SLA</th><th>Asset</th><th>Created</th>'
+  tableHTML += '</tr></thead><tbody>'
+  let cardsHTML = ''
+  tickets.forEach(t => {
+    const cat = S.categories.find(c => c.id === t.category_id)
+    const req = S.users.find(u => u.id === t.requester_id)
+    const asgn = S.users.find(u => u.id === t.assigned_to)
+    const slaDue = t.sla_resolution_due ? new Date(t.sla_resolution_due) : null
+    const slaBreached = slaDue && slaDue < new Date() && !['resolved','closed'].includes(t.status)
+    const age = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
+    tableHTML += '<tr onclick="viewTicket(\'' + t.id + '\')" style="cursor:pointer;">'
+    tableHTML += '<td class="td-mono">' + t.id + '</td>'
+    tableHTML += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>' + t.subject + '</strong></td>'
+    tableHTML += '<td>' + (cat ? cat.icon + ' ' + cat.name : '—') + '</td>'
+    tableHTML += '<td style="color:var(--txt2);">' + (req ? req.full_name.split(' ')[0] : '—') + '</td>'
+    tableHTML += '<td style="color:var(--txt2);">' + (asgn ? asgn.full_name.split(' ')[0] : '<span style="color:var(--txt3);">—</span>') + '</td>'
+    tableHTML += '<td><span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span></td>'
+    tableHTML += '<td><span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span></td>'
+    tableHTML += '<td style="color:' + (slaBreached?'var(--red)':'var(--txt2)') + ';font-size:11px;">' + (slaDue ? (slaBreached ? '⚠️ ' : '') + formatDate(slaDue) : '—') + '</td>'
+    tableHTML += '<td style="font-size:11px;color:var(--txt2);">' + (t.asset_no || '—') + '</td>'
+    tableHTML += '<td style="color:var(--txt2);">' + formatDate(t.created_at) + '</td>'
+    tableHTML += '</tr>'
+    cardsHTML += '<div class="ticket-card priority-' + t.priority + '" onclick="viewTicket(\'' + t.id + '\')">'
+    cardsHTML += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+    cardsHTML += '<span class="td-mono" style="font-size:11px;">' + t.id + '</span>'
+    cardsHTML += '<div style="display:flex;gap:5px;"><span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span>'
+    cardsHTML += '<span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span></div></div>'
+    cardsHTML += '<div style="font-size:14px;font-weight:600;margin-bottom:6px;">' + t.subject + '</div>'
+    cardsHTML += '<div style="font-size:12px;color:var(--txt2);display:flex;flex-wrap:wrap;gap:8px;">'
+    cardsHTML += (cat ? '<span>' + cat.icon + ' ' + cat.name + '</span>' : '')
+    cardsHTML += '<span>👤 ' + (req ? req.full_name.split(' ')[0] : '—') + '</span>'
+    if (asgn) cardsHTML += '<span>🔧 ' + asgn.full_name.split(' ')[0] + '</span>'
+    cardsHTML += '<span style="color:' + (slaBreached?'var(--red)':'var(--txt3)') + ';">' + age + 'h ago</span>'
+    if (t.asset_no) cardsHTML += '<span>🏷️ ' + t.asset_no + '</span>'
+    cardsHTML += '</div></div>'
+  })
+  tableHTML += '</tbody></table></div>'
+  return { table: tableHTML, cards: cardsHTML }
+}
+
 function renderTicketList(tickets, title) {
   const content = document.getElementById('mainContent')
   let html = '<div class="page-header"><h2>' + title + '</h2>'
   html += '<button class="btn btn-primary" onclick="openTicketForm()">🖥️ New Ticket</button></div>'
-
   html += '<div class="filter-bar">'
-  html += '<input type="text" id="tsearch" placeholder="🔍 Search ticket..." oninput="filterTicketList()" style="min-width:200px;">'
+  html += '<input type="text" id="tsearch" placeholder="🔍 Search..." oninput="filterTicketList()" style="min-width:160px;">'
   html += '<select id="tcat" onchange="filterTicketList()"><option value="">All Categories</option>'
   S.categories.forEach(c => { html += '<option value="' + c.id + '">' + c.icon + ' ' + c.name + '</option>' })
   html += '</select>'
@@ -657,38 +720,11 @@ function renderTicketList(tickets, title) {
     html += '<option value="' + s + '">' + formatStatus(s) + '</option>'
   })
   html += '</select></div>'
-
-  html += '<div id="ticketListWrap">' + buildTicketTable(tickets) + '</div>'
+  const built = buildTicketTable(tickets)
+  html += built.table
+  html += '<div class="mobile-cards" id="ticketsMobileCards">' + built.cards + '</div>'
   content.innerHTML = html
   content._tickets = tickets
-}
-
-function buildTicketTable(tickets) {
-  if (tickets.length === 0) return '<div class="empty-state"><div class="empty-icon">🎫</div><h3>No tickets found</h3></div>'
-  let html = '<div class="table-wrap"><table><thead><tr>'
-  html += '<th>ID</th><th>Subject</th><th>Category</th><th>Requester</th><th>Assigned</th><th>Priority</th><th>Status</th><th>SLA</th><th>Asset</th><th>Created</th>'
-  html += '</tr></thead><tbody>'
-  tickets.forEach(t => {
-    const cat = S.categories.find(c => c.id === t.category_id)
-    const req = S.users.find(u => u.id === t.requester_id)
-    const asgn = S.users.find(u => u.id === t.assigned_to)
-    const slaDue = t.sla_resolution_due ? new Date(t.sla_resolution_due) : null
-    const slaBreached = slaDue && slaDue < new Date() && !['resolved','closed'].includes(t.status)
-    html += '<tr onclick="viewTicket(\'' + t.id + '\')" style="cursor:pointer;">'
-    html += '<td class="td-mono">' + t.id + '</td>'
-    html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>' + t.subject + '</strong></td>'
-    html += '<td>' + (cat ? cat.icon + ' ' + cat.name : '—') + '</td>'
-    html += '<td style="color:var(--txt2);">' + (req ? req.full_name.split(' ')[0] : '—') + '</td>'
-    html += '<td style="color:var(--txt2);">' + (asgn ? asgn.full_name.split(' ')[0] : '<span style="color:var(--txt3);">Unassigned</span>') + '</td>'
-    html += '<td><span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span></td>'
-    html += '<td><span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span></td>'
-    html += '<td style="color:' + (slaBreached?'var(--red)':'var(--txt2)') + ';font-size:11px;">' + (slaDue ? (slaBreached ? '⚠️ ' : '') + formatDate(slaDue) : '—') + '</td>'
-    html += '<td style="font-size:11px;color:var(--txt2);">' + (t.asset_no || '—') + '</td>'
-    html += '<td style="color:var(--txt2);">' + formatDate(t.created_at) + '</td>'
-    html += '</tr>'
-  })
-  html += '</tbody></table></div>'
-  return html
 }
 
 function filterTicketList() {
@@ -703,8 +739,11 @@ function filterTicketList() {
   if (cat) filtered = filtered.filter(t => t.category_id === cat)
   if (pri) filtered = filtered.filter(t => t.priority === pri)
   if (stat) filtered = filtered.filter(t => t.status === stat)
+  const built = buildTicketTable(filtered)
   const wrap = document.getElementById('ticketListWrap')
-  if (wrap) wrap.innerHTML = buildTicketTable(filtered)
+  if (wrap) wrap.innerHTML = built.table + '<div class="mobile-cards">' + built.cards + '</div>'
+  const cards = document.getElementById('ticketsMobileCards')
+  if (cards) cards.innerHTML = built.cards
 }
 
 // ═══ NEW TICKET FORM ═══
