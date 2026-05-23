@@ -1545,7 +1545,7 @@ async function openPrintLabelModal(assetId) {
     '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;">' +
       '<div style="font-size:12px;font-weight:600;margin-bottom:10px;">🖨️ Print Options</div>' +
       '<div style="display:flex;flex-direction:column;gap:8px;">' +
-        '<button class="btn btn-primary" onclick="openNiimBlue(\'' + a.id + '\')">📶 Print via NiimBlue (Niimbot)</button>' +
+        '<button class="btn btn-primary" onclick="printViaBluetooth(\'' + a.id + '\')">📶 Print via Niimbot Bluetooth</button>' +
         '<button class="btn btn-secondary" onclick="printLabelBrowser(\'' + a.id + '\',\'' + encodeURIComponent(qrDataUrl) + '\')">🖨️ Print via Browser (A4)</button>' +
       '</div>' +
       '<p style="font-size:11px;color:var(--txt3);margin-top:10px;">Niimbot BT: requires Chrome on Android. Pair printer via Bluetooth first.</p>' +
@@ -1559,51 +1559,236 @@ async function openPrintLabelModal(assetId) {
 }
 
 // ═══════════════════════════════════
-// NIIMBLUE — open web app with asset QR
+// NIIMBOT PROTOCOL — D110M_V4
+// Source: printers.niim.blue/interfacing
 // ═══════════════════════════════════
-async function openNiimBlue(assetId) {
+
+// Packet: [0x55,0x55, CMD, LEN, DATA..., CHECKSUM(XOR), 0xAA,0xAA]
+function niimbotPacket(cmd, data) {
+  const len = data.length
+  let cs = cmd ^ len
+  for (let i = 0; i < len; i++) cs ^= data[i]
+  const p = new Uint8Array(2 + 1 + 1 + len + 1 + 2)
+  p[0]=0x55; p[1]=0x55; p[2]=cmd; p[3]=len
+  for (let i=0;i<len;i++) p[4+i]=data[i]
+  p[4+len]=cs; p[5+len]=0xAA; p[6+len]=0xAA
+  return p
+}
+
+// Send packet in ≤20 byte BLE chunks
+async function btSend(char, packet, waitMs) {
+  for (let i=0; i<packet.length; i+=20) {
+    await char.writeValueWithoutResponse(packet.slice(i, i+20))
+    await sleep(10)
+  }
+  if (waitMs) await sleep(waitMs)
+}
+
+function sleep(ms) { return new Promise(r=>setTimeout(r,ms)) }
+
+// u16 big-endian helper
+function u16(n) { return [(n>>8)&0xFF, n&0xFF] }
+
+// Convert canvas row to 1-bit bytes
+function canvasTo1Bit(ctx, w, h) {
+  const d = ctx.getImageData(0,0,w,h).data
+  const rows = []
+  for (let y=0;y<h;y++) {
+    const row=[]
+    for (let x=0;x<w;x+=8) {
+      let b=0
+      for (let bit=0;bit<8&&(x+bit)<w;bit++) {
+        const i=(y*w+x+bit)*4
+        const lum=d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114
+        if (lum<128) b|=(0x80>>bit)
+      }
+      row.push(b)
+    }
+    rows.push(row)
+  }
+  return rows
+}
+
+async function printViaBluetooth(assetId) {
   const { data: a } = await SB.from('assets').select('*').eq('id', assetId).single()
   if (!a) return
 
-  // Generate QR as data URL to pass to NiimBlue
-  const qrText = a.qr_code || a.asset_no
-  const dept = S.departments.find(d => d.id === a.dept_id)
-
-  // Show instructions modal first
-  document.getElementById('confirmTitle').textContent = '📶 Print via NiimBlue'
-  document.getElementById('confirmMsg').innerHTML =
-    '<div style="font-size:13px;color:var(--txt2);line-height:1.8;">' +
-    '<p style="margin-bottom:10px;">NiimBlue is an open-source web app that works directly with your Niimbot D110_M via Bluetooth.</p>' +
-    '<p style="margin-bottom:6px;"><strong>Steps:</strong></p>' +
-    '<ol style="padding-left:18px;margin-bottom:14px;">' +
-    '<li>Click <strong>Open NiimBlue</strong> below</li>' +
-    '<li>Connect your Niimbot D110_M via Bluetooth</li>' +
-    '<li>Create a label and insert this QR text:</li>' +
-    '</ol>' +
-    '<div style="background:var(--surf3);border-radius:8px;padding:10px 14px;font-family:\'JetBrains Mono\',monospace;font-size:13px;word-break:break-all;margin-bottom:10px;">' + qrText + '</div>' +
-    '<button onclick="navigator.clipboard.writeText(\'' + qrText + '\').then(()=>showToast(\'success\',\'Copied\',\'QR text copied to clipboard.\'))" style="padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:var(--surf3);color:var(--txt);font-family:inherit;font-size:12px;cursor:pointer;margin-bottom:10px;">📋 Copy QR Text</button>' +
-    '</div>'
-
-  document.getElementById('confirmOkBtn').textContent = '🌐 Open NiimBlue'
-  document.getElementById('confirmOkBtn').onclick = () => {
-    closeModal('confirmModal')
-    window.open('https://niim.blue', '_blank')
+  if (!navigator.bluetooth) {
+    showToast('error','Not Supported','Use Chrome on Android.')
+    return
   }
-  openModal('confirmModal')
+
+  let device, char
+  try {
+    showToast('info','Connecting...','Searching for Niimbot D110_M...')
+    device = await navigator.bluetooth.requestDevice({
+      filters: [
+        { namePrefix:'D110' },{ namePrefix:'D11' },
+        { namePrefix:'B21' },{ namePrefix:'B1-' },{ namePrefix:'B18' }
+      ],
+      optionalServices: ['e7810a71-73ae-499d-8c15-faa9aef0c3f2']
+    })
+
+    showToast('info','Connecting...','Connecting to ' + device.name + '...')
+    const server = await device.gatt.connect()
+    const svc = await server.getPrimaryService('e7810a71-73ae-499d-8c15-faa9aef0c3f2')
+    char = await svc.getCharacteristic('bef8d6c9-9c21-4c9e-b632-bd58c1009f9f')
+
+    // Enable notifications to receive printer responses
+    await char.startNotifications()
+    char.addEventListener('characteristicvaluechanged', () => {}) // drain responses
+
+    showToast('info','Printing...','Preparing label...')
+
+    // ─── Build label canvas ───
+    // D110_M label: 12mm wide = 12*8 = 96px wide at 203dpi
+    // Standard label 12x40mm → 96 x 320 pixels
+    const W = 96
+    const H = 320
+
+    const canvas = document.createElement('canvas')
+    canvas.width = W; canvas.height = H
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0,0,W,H)
+
+    // QR code — fit in top portion
+    const qrCanvas = document.createElement('canvas')
+    new QRious({ element:qrCanvas, value:a.qr_code||a.asset_no, size:96, background:'#ffffff', foreground:'#000000' })
+    ctx.drawImage(qrCanvas, 0, 0, 96, 96)
+
+    // Text below QR
+    ctx.fillStyle = '#000000'
+    ctx.font = 'bold 9px Arial'
+    ctx.textAlign = 'center'
+
+    // Asset No
+    ctx.fillText(a.asset_no, 48, 112)
+
+    // Name — wrap
+    ctx.font = '8px Arial'
+    const words = a.asset_name.split(' ')
+    let line = '', textY = 126
+    words.forEach(word => {
+      const test = line ? line+' '+word : word
+      if (ctx.measureText(test).width > 90 && line) {
+        ctx.fillText(line, 48, textY); line=word; textY+=11
+      } else line = test
+    })
+    if (line) { ctx.fillText(line, 48, textY); textY+=11 }
+
+    // Dept + Location
+    const dept = S.departments.find(d=>d.id===a.dept_id)
+    ctx.font = '7px Arial'
+    ctx.fillStyle = '#555555'
+    if (dept) { ctx.fillText(dept.dept_name, 48, textY); textY+=10 }
+    if (a.location) { ctx.fillText(a.location, 48, textY); textY+=10 }
+
+    ctx.font = '6px Arial'
+    ctx.fillStyle = '#aaaaaa'
+    ctx.fillText('TDMH', 48, H-8)
+
+    // ─── D110M_V4 PRINT SEQUENCE ───
+    // Ref: printers.niim.blue/interfacing/print-tasks/#d110m_v4
+
+    // INIT:
+    // SetDensity [1b]
+    await btSend(char, niimbotPacket(0x21, [0x03]), 150)
+    // SetLabelType [1b]
+    await btSend(char, niimbotPacket(0x23, [0x01]), 150)
+    // PrintStart [9b] — 9 bytes for D110M_V4
+    // [totalPages(u16), 0,0,0,0, pageColor(u8), 0, 0]
+    await btSend(char, niimbotPacket(0x01, [0x00,0x01, 0x00,0x00,0x00,0x00, 0x00, 0x00, 0x00]), 200)
+
+    // PAGE:
+    // SetPageSize [13b] for D110M_V4
+    // [rows(u16), cols(u16), copies(u16), 0,0,0,0,0,0,0]
+    const rows = canvasTo1Bit(ctx, W, H)
+    const ROWS = H, COLS = W
+    const pageSizeData = [
+      ...u16(ROWS), ...u16(COLS), ...u16(1),
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    ]
+    await btSend(char, niimbotPacket(0x13, pageSizeData), 150)
+
+    // PrintStatus (send, no wait) — D110M_V4 requires this after SetPageSize
+    await btSend(char, niimbotPacket(0xa3, [0x01]), 0)
+
+    // PrintBitmapRow per row (cmd 0x85)
+    // Format: [rowIndex(u16), rowCount(u8)=1, blackPixelCount(u8), data...]
+    let blankCount = 0
+    for (let y=0; y<rows.length; y++) {
+      const row = rows[y]
+      const isBlank = row.every(b=>b===0)
+
+      if (isBlank) {
+        // Use PrintEmptyRow (0x84) for blank rows: [rowIndex(u16), rowCount(u8)]
+        blankCount++
+        if (blankCount >= 8 || y === rows.length-1) {
+          const startRow = y - blankCount + 1
+          await btSend(char, niimbotPacket(0x84, [...u16(startRow), blankCount&0xFF]), 2)
+          blankCount = 0
+        }
+        continue
+      }
+
+      if (blankCount > 0) {
+        const startRow = y - blankCount
+        await btSend(char, niimbotPacket(0x84, [...u16(startRow), blankCount&0xFF]), 2)
+        blankCount = 0
+      }
+
+      // Count black pixels
+      let blackPx = 0
+      row.forEach(b => { for(let bit=0;bit<8;bit++) if(b&(0x80>>bit)) blackPx++ })
+
+      const rowData = [...u16(y), 0x01, blackPx&0xFF, ...row]
+      await btSend(char, niimbotPacket(0x85, rowData), 3)
+    }
+
+    // PageEnd (cmd 0xe3)
+    await btSend(char, niimbotPacket(0xe3, [0x01]), 200)
+
+    // Poll PrintStatus until done (max 10s)
+    let done = false
+    for (let i=0; i<50; i++) {
+      await btSend(char, niimbotPacket(0xa3, [0x01]), 200)
+      if (i > 5) { done = true; break }
+    }
+
+    // END:
+    // PrintEnd (cmd 0xf3)
+    await btSend(char, niimbotPacket(0xf3, [0x01]), 300)
+    // Heartbeat (cmd 0xdc) — no wait per spec
+    await btSend(char, niimbotPacket(0xdc, [0x01]), 0)
+
+    await char.stopNotifications()
+    device.gatt.disconnect()
+    showToast('success','Printed! 🖨️', 'Label sent to ' + device.name)
+
+  } catch(e) {
+    if (e.name==='NotFoundError'||e.name==='NotAllowedError') {
+      showToast('warning','Cancelled','No printer selected.')
+    } else {
+      showToast('error','Print Error', e.message)
+      console.error('[D110M]', e)
+    }
+    try { if(device&&device.gatt.connected) device.gatt.disconnect() } catch(e2){}
+  }
 }
 
-function wrapText(ctx, text, maxWidth, lineHeight) {
+function wrapText(ctx, text, maxWidth) {
   const words = text.split(' ')
   const lines = []
   let current = ''
   words.forEach(word => {
-    const test = current ? current + ' ' + word : word
+    const test = current ? current+' '+word : word
     if (ctx.measureText(test).width > maxWidth && current) {
-      lines.push(current); current = word
-    } else { current = test }
+      lines.push(current); current=word
+    } else current=test
   })
   if (current) lines.push(current)
-  return lines.slice(0, 3)
+  return lines.slice(0,3)
 }
 
 
