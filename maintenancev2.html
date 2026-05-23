@@ -219,10 +219,45 @@ tr:hover td{background:var(--surf2);}
   .sidebar.open~.sidebar-overlay{display:block;}
   .field-row{grid-template-columns:1fr;}
   .ticket-grid{grid-template-columns:1fr;}
-  .content{padding:16px;}
+  .content{padding:12px;}
   .hamburger{display:flex!important;}
+
+  /* Page header stacks on mobile */
+  .page-header{flex-direction:column;align-items:flex-start;gap:8px;}
+  .page-header-actions{width:100%;display:flex;flex-wrap:wrap;gap:6px;}
+  .page-header-actions .btn{flex:1;min-width:0;}
+
+  /* Table → hide on mobile, show cards instead */
+  .table-wrap{display:none;}
+  .mobile-cards{display:flex!important;flex-direction:column;gap:10px;}
+
+  /* Stat grid — 2 cols on mobile */
+  .stat-grid{grid-template-columns:1fr 1fr!important;}
+  .stat-value{font-size:22px!important;}
+
+  /* Filter bar — wrap */
+  .filter-bar{gap:6px;}
+  .filter-bar select,.filter-bar input{font-size:12px;padding:6px 10px;}
+
+  /* Modal — full screen on mobile */
+  .modal-overlay{padding:0;align-items:flex-end;}
+  .modal{border-radius:18px 18px 0 0;max-height:92vh;max-width:100%!important;}
+  .modal-lg{max-width:100%!important;}
+  .modal-header{padding:16px 18px 0;}
+  .modal-body{padding:14px 18px;}
+  .modal-footer{padding:12px 18px;gap:8px;}
+  .modal-footer .btn{flex:1;}
+
+  /* Ticket cards — mobile friendly */
+  .ticket-card{padding:12px;}
+
+  /* Toast — full width */
+  #toastContainer{left:12px;right:12px;top:auto;bottom:70px;}
+  .toast{min-width:unset;max-width:100%;}
 }
 .hamburger{display:none;width:34px;height:34px;border-radius:9px;background:var(--surf2);border:1px solid var(--bdr2);align-items:center;justify-content:center;cursor:pointer;font-size:16px;}
+/* Mobile cards hidden by default, shown only on mobile */
+.mobile-cards{display:none;}
 </style>
 </head>
 <body>
@@ -701,18 +736,23 @@ function renderTicketsList(tickets, title) {
   html += '<div class="table-wrap"><table><thead><tr>'
   html += '<th>Ticket No.</th><th>Title</th><th>Dept</th><th>Category</th><th>Priority</th><th>Status</th><th>Claimed By</th><th>Age</th><th></th>'
   html += '</tr></thead><tbody id="ticketsBody">'
-  html += buildTicketRows(tickets)
+  const built = buildTicketRows(tickets)
+  html += built.rows
   html += '</tbody></table></div>'
+  html += '<div class="mobile-cards" id="ticketsMobileCards">' + built.cards + '</div>'
   content.innerHTML = html
   content._tickets = tickets
 }
 
 function buildTicketRows(tickets) {
   let rows = ''
+  let cards = ''
   tickets.forEach(t => {
     const dept = S.departments.find(d => d.id === t.dept_id)
     const claimed = S.users.find(u => u.id === t.claimed_by)
     const age = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
+
+    // Table row
     rows += '<tr onclick="viewTicket(\'' + t.id + '\')" style="cursor:pointer;">'
     rows += '<td class="td-mono">' + t.id + '</td>'
     rows += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>' + t.title + '</strong></td>'
@@ -724,8 +764,29 @@ function buildTicketRows(tickets) {
     rows += '<td style="font-size:12px;color:' + (age > 48 ? 'var(--red)' : 'var(--txt2)') + ';">' + age + 'h</td>'
     rows += '<td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewTicket(\'' + t.id + '\')">View</button></td>'
     rows += '</tr>'
+
+    // Mobile card
+    cards += '<div class="ticket-card priority-' + t.priority + '" onclick="viewTicket(\'' + t.id + '\')">'
+    cards += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+    cards += '<span class="td-mono" style="font-size:11px;">' + t.id + '</span>'
+    cards += '<div style="display:flex;gap:5px;">'
+    cards += '<span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span>'
+    cards += '<span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span>'
+    cards += '</div></div>'
+    cards += '<div style="font-size:14px;font-weight:600;margin-bottom:6px;">' + t.title + '</div>'
+    cards += '<div style="font-size:12px;color:var(--txt2);display:flex;flex-wrap:wrap;gap:10px;">'
+    cards += '<span>🏢 ' + (dept ? dept.dept_name : t.dept_name||'—') + '</span>'
+    cards += '<span>🔧 ' + (t.category||'—') + '</span>'
+    if (claimed) cards += '<span>👤 ' + claimed.full_name.split(' ')[0] + '</span>'
+    cards += '<span style="color:' + (age > 48 ? 'var(--red)' : 'var(--txt3)') + ';">' + age + 'h ago</span>'
+    if (t.asset_no) cards += '<span>🏷️ ' + t.asset_no + '</span>'
+    cards += '</div></div>'
   })
-  return rows || '<tr><td colspan="9" style="text-align:center;color:var(--txt2);padding:30px;">No tickets found</td></tr>'
+  if (!tickets.length) {
+    const empty = '<tr><td colspan="9" style="text-align:center;color:var(--txt2);padding:30px;">No tickets found</td></tr>'
+    return { rows: empty, cards: '<div class="empty-state"><div class="empty-icon">🎫</div><h3>No tickets found</h3></div>' }
+  }
+  return { rows, cards }
 }
 
 function filterTickets() {
@@ -744,8 +805,11 @@ function filterTickets() {
     t.title.toLowerCase().includes(search) ||
     (t.dept_name||'').toLowerCase().includes(search)
   )
+  const built = buildTicketRows(filtered)
   const tbody = document.getElementById('ticketsBody')
-  if (tbody) tbody.innerHTML = buildTicketRows(filtered)
+  if (tbody) tbody.innerHTML = built.rows
+  const mobileCards = document.getElementById('ticketsMobileCards')
+  if (mobileCards) mobileCards.innerHTML = built.cards
 }
 
 // ═══════════════════════════════════
