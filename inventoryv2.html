@@ -758,6 +758,7 @@ async function renderAllAssets() {
   let html = '<div class="page-header"><h2>🏷️ All Assets</h2>'
   html += '<div style="display:flex;gap:8px;">'
   html += '<button class="btn btn-ghost btn-sm" onclick="openScannerModal()">📷 Scan</button>'
+  html += '<button class="btn btn-ghost btn-sm" onclick="openPrintAllModal()">🖨️ Print All</button>'
   if (['encoder','admin'].includes(role)) html += '<button class="btn btn-primary" onclick="openAssetForm()">＋ Add Asset</button>'
   html += '</div></div>'
 
@@ -1064,6 +1065,7 @@ async function renderReports() {
 
   let html = '<div class="page-header"><h2>📈 Reports</h2>'
   html += '<div style="display:flex;gap:8px;">'
+  html += '<button class="btn btn-ghost" onclick="openPrintAllModal()">🖨️ Print All Labels</button>'
   html += '<button class="btn btn-secondary" onclick="exportCSV()">⬇️ Export CSV</button>'
   html += '<button class="btn btn-ghost" onclick="openBulkImportModal()">📥 Bulk Import</button>'
   html += '</div></div>'
@@ -1124,6 +1126,7 @@ async function processImport() {
   const lines = csvData.split('\n').filter(l => l.trim())
   const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''))
   let imported = 0, errors = 0
+  const importedAssets = []
 
   for (let i = 1; i < lines.length; i++) {
     const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g,''))
@@ -1134,7 +1137,7 @@ async function processImport() {
       const cat = S.categories.find(c => c.code === (row.category_code||'OTH').toUpperCase()) || S.categories.find(c => c.code === 'OTH')
       const { data: num } = await SB.rpc('generate_asset_no', { cat_code: cat?.code || 'OTH' })
       const assetNo = num || ('AST-OTH-' + Date.now() + i)
-      await SB.from('assets').insert({
+      const { data: newAsset } = await SB.from('assets').insert({
         asset_no: assetNo, qr_code: assetNo,
         asset_name: row.asset_name,
         category_id: cat?.id || null,
@@ -1146,12 +1149,37 @@ async function processImport() {
         useful_life_years: Number(row.useful_life_years) || 5,
         condition: row.condition || 'good',
         status: 'active', created_by: S.user.id
-      })
+      }).select().single()
+      if (newAsset) importedAssets.push(newAsset)
       imported++
     } catch(e) { errors++; console.warn('Import row ' + i, e.message) }
   }
+
   closeModal('confirmModal')
   showToast('success','Import Done', imported + ' assets imported.' + (errors > 0 ? ' ' + errors + ' errors.' : ''))
+
+  if (importedAssets.length > 0) {
+    // Reload assets into state
+    S.assets = await loadAssets()
+    // Offer to print labels
+    document.getElementById('confirmTitle').textContent = '🖨️ Print Labels'
+    document.getElementById('confirmMsg').innerHTML =
+      '<p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">' + importedAssets.length + ' assets imported. Print labels now?</p>' +
+      '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:6px;">LAYOUT</label>' +
+      '<select id="print_layout" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+      '<option value="3x8">3×8 — 24 labels per A4 (Niimbot size ~50×32mm)</option>' +
+      '<option value="2x5">2×5 — 10 labels per A4 (medium ~90×50mm)</option>' +
+      '<option value="2x3">2×3 — 6 labels per A4 (large ~90×85mm)</option>' +
+      '<option value="1x1">1×1 — 1 label per page (full page)</option>' +
+      '</select></div>'
+    document.getElementById('confirmOkBtn').textContent = '🖨️ Print All Labels'
+    document.getElementById('confirmOkBtn').onclick = () => {
+      const layout = document.getElementById('print_layout').value
+      closeModal('confirmModal')
+      printAllLabels(importedAssets, layout)
+    }
+    openModal('confirmModal')
+  }
   renderReports()
 }
 
@@ -1296,13 +1324,22 @@ async function viewAsset(id) {
   // Maintenance tickets linked to this asset
   const { data: maintTickets } = await SB.from('maint_tickets')
     .select('id,title,status,priority,created_at,resolved_at')
-    .or('title.ilike.%' + (a.asset_no||'') + '%,description.ilike.%' + (a.asset_no||'') + '%')
+    .eq('asset_id', a.id)
     .order('created_at', { ascending: false }).limit(5)
 
-  if (maintTickets && maintTickets.length > 0) {
+  // Fallback: search by asset_no in title if no direct link
+  let allMaintTickets = maintTickets || []
+  if (allMaintTickets.length === 0 && a.asset_no) {
+    const { data: byTitle } = await SB.from('maint_tickets')
+      .select('id,title,status,priority,created_at,resolved_at')
+      .ilike('title', '%' + a.asset_no + '%')
+      .order('created_at', { ascending: false }).limit(5)
+    allMaintTickets = byTitle || []
+  }
+  if (allMaintTickets.length > 0) {
     body += '<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🔧 Linked Maintenance Tickets</div>'
     body += '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Title</th><th>Status</th><th>Date</th></tr></thead><tbody>'
-    maintTickets.forEach(t => {
+    allMaintTickets.forEach(t => {
       body += '<tr><td class="td-mono" style="font-size:11px;">' + t.id + '</td>'
       body += '<td style="font-size:12px;">' + t.title + '</td>'
       body += '<td><span class="badge badge-' + t.status + '">' + t.status + '</span></td>'
@@ -2336,6 +2373,116 @@ async function openPrintLabelModal(assetId) {
     '<button class="btn btn-ghost" onclick="closeModal(\'printLabelModal\')">Close</button>'
 
   openModal('printLabelModal')
+}
+
+// ═══════════════════════════════════
+// PRINT ALL LABELS
+// ═══════════════════════════════════
+async function openPrintAllModal() {
+  const assets = await loadAssets()
+  document.getElementById('confirmTitle').textContent = '🖨️ Print All Labels'
+  document.getElementById('confirmMsg').innerHTML =
+    '<p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">' + assets.length + ' assets total. Choose layout:</p>' +
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:6px;">LAYOUT</label>' +
+    '<select id="print_layout" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="3x8">3×8 — 24 labels/A4 (small ~62×32mm)</option>' +
+    '<option value="2x5">2×5 — 10 labels/A4 (medium ~90×52mm)</option>' +
+    '<option value="2x3">2×3 — 6 labels/A4 (large ~90×85mm)</option>' +
+    '<option value="1x1">1×1 — 1 label/page (full A4)</option>' +
+    '</select></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:6px;">FILTER (optional)</label>' +
+    '<select id="print_cat_filter" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="">All Assets (' + assets.length + ')</option>' +
+    S.categories.map(c => {
+      const count = assets.filter(a => a.category_id === c.id).length
+      return count > 0 ? '<option value="' + c.id + '">' + c.icon + ' ' + c.name + ' (' + count + ')</option>' : ''
+    }).join('') +
+    '</select></div>' +
+    '</div>'
+  document.getElementById('confirmOkBtn').textContent = '🖨️ Print Labels'
+  document.getElementById('confirmOkBtn').onclick = () => {
+    const layout = document.getElementById('print_layout').value
+    const catFilter = document.getElementById('print_cat_filter').value
+    const filtered = catFilter ? assets.filter(a => a.category_id === catFilter) : assets
+    closeModal('confirmModal')
+    printAllLabels(filtered, layout)
+  }
+  openModal('confirmModal')
+}
+
+async function printAllLabels(assets, layout) {
+  if (!assets || assets.length === 0) { showToast('warning','No Assets','No assets to print.'); return }
+
+  showToast('info','Generating...','Building label sheet, please wait...')
+
+  // Layout config: [cols, rows, labelW_mm, labelH_mm]
+  const layouts = {
+    '3x8': { cols:3, rows:8, wMM:62, hMM:32 },
+    '2x5': { cols:2, rows:5, wMM:90, hMM:52 },
+    '2x3': { cols:2, rows:3, wMM:90, hMM:85 },
+    '1x1': { cols:1, rows:1, wMM:180, hMM:257 }
+  }
+  const cfg = layouts[layout] || layouts['2x5']
+  const perPage = cfg.cols * cfg.rows
+
+  // Generate QR data URLs for all assets
+  const qrMap = {}
+  for (const asset of assets) {
+    try {
+      const c = document.createElement('canvas')
+      new QRious({ element:c, value:asset.qr_code||asset.asset_no, size:200, level:'L' })
+      qrMap[asset.id] = c.toDataURL()
+    } catch(e) { qrMap[asset.id] = '' }
+  }
+
+  const win = window.open('','_blank','width=900,height=700')
+  win.document.write('<html><head><title>Asset Labels</title>')
+  win.document.write('<style>')
+  win.document.write('* { margin:0; padding:0; box-sizing:border-box; }')
+  win.document.write('body { font-family:Arial,sans-serif; background:#fff; }')
+  win.document.write('.page { width:210mm; min-height:297mm; padding:8mm; display:grid; grid-template-columns:repeat(' + cfg.cols + ',1fr); grid-template-rows:repeat(' + cfg.rows + ',' + cfg.hMM + 'mm); gap:2mm; page-break-after:always; }')
+  win.document.write('.label { border:0.5px dashed #ccc; border-radius:4px; padding:3px; display:flex; align-items:center; gap:4px; overflow:hidden; }')
+  win.document.write('.label img { flex-shrink:0; }')
+  win.document.write('.label-text { flex:1; min-width:0; overflow:hidden; }')
+  win.document.write('.asset-no { font-size:' + (cfg.wMM > 80 ? '8' : '6') + 'px; font-weight:bold; font-family:monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }')
+  win.document.write('.asset-name { font-size:' + (cfg.wMM > 80 ? '7' : '5.5') + 'px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }')
+  win.document.write('.asset-meta { font-size:' + (cfg.wMM > 80 ? '6' : '5') + 'px; color:#666; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }')
+  win.document.write('.hosp { font-size:5px; color:#aaa; margin-top:2px; }')
+  win.document.write('@media print { body { margin:0; } .page { page-break-after:always; } }')
+  win.document.write('</style></head><body>')
+
+  // Chunk assets into pages
+  for (let p = 0; p < assets.length; p += perPage) {
+    const pageAssets = assets.slice(p, p + perPage)
+    win.document.write('<div class="page">')
+    for (const asset of pageAssets) {
+      const dept = S.departments.find(d => d.id === asset.dept_id)
+      const cat = S.categories.find(c => c.id === asset.category_id)
+      const qrSize = cfg.hMM > 60 ? 70 : cfg.hMM > 40 ? 48 : 30
+      win.document.write('<div class="label">')
+      if (qrMap[asset.id]) {
+        win.document.write('<img src="' + qrMap[asset.id] + '" width="' + qrSize + '" height="' + qrSize + '">')
+      }
+      win.document.write('<div class="label-text">')
+      win.document.write('<div class="asset-no">' + asset.asset_no + '</div>')
+      win.document.write('<div class="asset-name">' + asset.asset_name + '</div>')
+      if (asset.brand || asset.model) win.document.write('<div class="asset-meta">' + [asset.brand,asset.model].filter(Boolean).join('/') + '</div>')
+      if (dept) win.document.write('<div class="asset-meta">' + dept.dept_name + '</div>')
+      if (asset.location) win.document.write('<div class="asset-meta">📍' + asset.location + '</div>')
+      win.document.write('<div class="hosp">TDMH</div>')
+      win.document.write('</div></div>')
+    }
+    // Fill empty cells if last page
+    for (let fill = pageAssets.length; fill < perPage; fill++) {
+      win.document.write('<div class="label" style="border-color:transparent;"></div>')
+    }
+    win.document.write('</div>')
+  }
+
+  win.document.write('<script>window.onload=function(){window.print();}<\/script>')
+  win.document.write('</body></html>')
+  win.document.close()
 }
 
 // ═══════════════════════════════════
