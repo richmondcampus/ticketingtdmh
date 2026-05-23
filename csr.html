@@ -473,15 +473,49 @@ tr:hover td{background:var(--surf2);}
   .field-row,.field-row-3{grid-template-columns:1fr;}
   .stat-grid{grid-template-columns:1fr 1fr;}
   .chart-grid{grid-template-columns:1fr;}
-  .topbar{padding:0 14px;}
-  .content{padding:16px;}
+  .topbar{padding:0 12px;}
+  .content{padding:12px;}
   .hamburger{display:flex!important;}
+
+  /* Page header */
+  .page-header{flex-direction:column;align-items:flex-start;gap:8px;}
+  .page-header-actions{width:100%;display:flex;flex-wrap:wrap;gap:6px;}
+  .page-header-actions .btn{flex:1;min-width:0;font-size:12px;padding:8px 10px;}
+
+  /* Table → hide, show cards */
+  .table-wrap{display:none;}
+  .mobile-cards{display:flex!important;flex-direction:column;gap:10px;}
+
+  /* Filter bar */
+  .filter-bar{gap:6px;}
+  .filter-bar select,.filter-bar input{font-size:12px;padding:6px 10px;min-width:0!important;}
+
+  /* Modals — bottom sheet */
+  .modal-overlay{padding:0;align-items:flex-end;}
+  .modal{border-radius:18px 18px 0 0;max-height:92vh;max-width:100%!important;}
+  .modal-lg{max-width:100%!important;}
+  .modal-header{padding:16px 16px 0;}
+  .modal-body{padding:14px 16px;}
+  .modal-footer{padding:12px 16px;gap:8px;flex-wrap:wrap;}
+  .modal-footer .btn{flex:1;min-width:120px;font-size:13px;}
+
+  /* Items table in forms */
+  .items-table-wrap{overflow-x:auto;}
+  .items-table th,.items-table td{padding:6px 8px;font-size:11px;}
+
+  /* Toast */
+  #toastContainer{left:10px;right:10px;top:auto;bottom:16px;}
+  .toast{min-width:unset;max-width:100%;}
+
+  /* Stat value smaller */
+  .stat-value{font-size:22px!important;}
 }
 .hamburger{
   display:none;width:34px;height:34px;border-radius:9px;
   background:var(--surf2);border:1px solid var(--bdr2);
   align-items:center;justify-content:center;cursor:pointer;font-size:16px;
 }
+.mobile-cards{display:none;}
 </style>
 </head>
 <body>
@@ -885,8 +919,17 @@ async function checkPendingDerp() {
   const desc = [dp.item, dp.brand, dp.model, dp.serial ? 'S/N: ' + dp.serial : ''].filter(Boolean).join(' — ')
   setVal('f_asset_desc', desc)
 
-  // Condition
-  setVal('f_condition', dp.condition)
+  // Condition — map asset condition to DERP valid values
+  // DERP only accepts: poor, beyond_repair, obsolete, end_of_life
+  const conditionMap = {
+    'excellent': 'poor',       // shouldn't happen but fallback
+    'good': 'poor',
+    'fair': 'poor',
+    'poor': 'poor',
+    'beyond_repair': 'beyond_repair'
+  }
+  const derpCondition = conditionMap[dp.condition] || 'poor'
+  setVal('f_condition', derpCondition)
 
   // Warranty
   setVal('f_warranty', dp.warranty)
@@ -907,6 +950,7 @@ async function checkPendingDerp() {
   }
 
   showToast('success', 'DERP Pre-filled', 'Form filled from Asset Inventory — ' + dp.item)
+  showToast('info', 'Check Condition Field', 'Asset condition mapped to "' + derpCondition + '" — adjust if needed before submitting.')
 }
 
 function renderUserInfo() {
@@ -1257,7 +1301,6 @@ function renderRequestsTable(content, requests, title, subtitle) {
   }
   html += '</div></div>'
 
-  // Filters
   html += '<div class="filter-bar">'
   html += '<select onchange="filterRequests(this.value,\'status\')" id="filterStatus"><option value="">All Status</option>'
   const statuses = ['draft','pending_approval','approved','for_po','ordered','delivered','issued','cancelled']
@@ -1274,19 +1317,24 @@ function renderRequestsTable(content, requests, title, subtitle) {
   if (requests.length === 0) {
     html += '<div class="empty-state"><div class="empty-icon">📭</div><h3>No requests found</h3><p>No requests match your current filters.</p></div>'
   } else {
+    const built = buildRequestRows(requests)
     html += '<div class="table-wrap" id="requestsTableWrap"><table><thead><tr>'
     html += '<th>Request No.</th><th>Type</th><th>Dept</th><th>Purpose</th><th>Urgency</th><th>Status</th><th>Date</th><th></th>'
     html += '</tr></thead><tbody id="requestsTableBody">'
-    html += buildRequestRows(requests)
+    html += built.rows
     html += '</tbody></table></div>'
+    html += '<div class="mobile-cards" id="requestsMobileCards">' + built.cards + '</div>'
   }
   content.innerHTML = html
 }
 
 function buildRequestRows(requests) {
-  let rows = ''
+  let rows = '', cards = ''
   for (const r of requests) {
     const dept = state.departments.find(d => d.id === r.dept_id)
+    const age = Math.floor((Date.now() - new Date(r.created_at)) / 3600000)
+
+    // Table row
     rows += '<tr onclick="viewRequest(\'' + r.id + '\')" style="cursor:pointer;">'
     rows += '<td class="td-mono">' + r.request_no + '</td>'
     rows += '<td><span class="badge badge-' + r.request_type + '">' + r.request_type.toUpperCase() + '</span></td>'
@@ -1297,8 +1345,24 @@ function buildRequestRows(requests) {
     rows += '<td style="color:var(--txt2);white-space:nowrap;">' + formatDate(r.created_at) + '</td>'
     rows += '<td><button class="btn btn-ghost btn-sm no-print" onclick="event.stopPropagation();viewRequest(\'' + r.id + '\')">View</button></td>'
     rows += '</tr>'
+
+    // Mobile card
+    cards += '<div style="background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;padding:14px;cursor:pointer;" onclick="viewRequest(\'' + r.id + '\')">'
+    cards += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+    cards += '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:var(--accent);">' + r.request_no + '</span>'
+    cards += '<div style="display:flex;gap:5px;">'
+    cards += '<span class="badge badge-' + r.urgency + '">' + r.urgency.toUpperCase() + '</span>'
+    cards += statusBadge(r.status)
+    cards += '</div></div>'
+    cards += '<div style="font-size:14px;font-weight:600;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.purpose || '—') + '</div>'
+    cards += '<div style="font-size:12px;color:var(--txt2);display:flex;flex-wrap:wrap;gap:8px;">'
+    cards += '<span>' + (r.request_type === 'derp' ? '♻️' : r.request_type === 'purchase' ? '🛒' : '📋') + ' ' + r.request_type.toUpperCase() + '</span>'
+    cards += '<span>🏢 ' + (dept ? dept.dept_name : '—') + '</span>'
+    cards += '<span>' + age + 'h ago</span>'
+    if (r.source_system && r.source_system !== 'manual') cards += '<span style="color:var(--accent);">🔗 ' + r.source_system + '</span>'
+    cards += '</div></div>'
   }
-  return rows
+  return { rows, cards }
 }
 
 function filterRequests(val, field) {
@@ -1309,8 +1373,11 @@ function filterRequests(val, field) {
   if (status) filtered = filtered.filter(r => r.status === status)
   if (type) filtered = filtered.filter(r => r.request_type === type)
   if (urgency) filtered = filtered.filter(r => r.urgency === urgency)
+  const built = buildRequestRows(filtered)
   const tbody = document.getElementById('requestsTableBody')
-  if (tbody) tbody.innerHTML = buildRequestRows(filtered)
+  if (tbody) tbody.innerHTML = built.rows
+  const mCards = document.getElementById('requestsMobileCards')
+  if (mCards) mCards.innerHTML = built.cards
 }
 
 // ═══════════════════════════════════════════
@@ -1659,7 +1726,7 @@ async function saveRequest(action) {
 
     // DERP fields
     if (reqType === 'derp') {
-      payload.asset_condition = document.getElementById('f_condition') ? document.getElementById('f_condition').value : null
+      payload.asset_condition = document.getElementById('f_condition') ? (document.getElementById('f_condition').value || 'poor') : 'poor'
       payload.disposal_action = document.getElementById('f_disposal') ? document.getElementById('f_disposal').value : null
       payload.asset_condition_notes = document.getElementById('f_condition_notes') ? document.getElementById('f_condition_notes').value : null
     }
@@ -4393,7 +4460,7 @@ async function saveDerpRequest(action) {
       current_approval_level: 1,
       source_system: 'manual',
       derp_category: category,
-      asset_condition: condition,
+      asset_condition: condition || 'poor',
       asset_condition_notes: assetDesc + (conditionNotes ? ' — ' + conditionNotes : ''),
       derp_warranty_status: warranty,
       derp_loaner_needed: loanerNeeded,
