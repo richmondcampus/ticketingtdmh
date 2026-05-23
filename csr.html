@@ -826,12 +826,35 @@ async function bootApp(session) {
   // Subscribe realtime
   subscribeNotifications()
   // Show page
-  const startPage = state.sourceSystem ? 'new_request' : 'dashboard'
+  const startPage = state.pendingDerpParams ? 'derp' : (state.sourceSystem ? 'new_request' : 'dashboard')
   showPage(startPage)
+  // Auto-open DERP modal if coming from Asset Inventory
+  if (state.pendingDerpParams) setTimeout(checkPendingDerp, 600)
 }
 
 function checkSourceParams() {
   const p = new URLSearchParams(window.location.search)
+
+  // DERP from Asset Inventory — ?derp=1&asset_id=...&item=...
+  if (p.get('derp') === '1') {
+    state.pendingDerpParams = {
+      asset_id:   p.get('asset_id') || '',
+      asset_no:   p.get('asset_no') || '',
+      item:       decodeURIComponent(p.get('item') || ''),
+      brand:      decodeURIComponent(p.get('brand') || ''),
+      model:      decodeURIComponent(p.get('model') || ''),
+      serial:     p.get('serial') || '',
+      condition:  p.get('condition') || 'poor',
+      category:   p.get('category') || 'it',
+      location:   decodeURIComponent(p.get('location') || ''),
+      dept:       p.get('dept') || '',
+      cost:       p.get('cost') || '0',
+      warranty:   p.get('warranty') || 'unknown'
+    }
+    return
+  }
+
+  // Legacy source params
   if (p.get('source')) {
     state.sourceSystem = p.get('source')
     state.sourceRefId = p.get('ref')
@@ -839,6 +862,51 @@ function checkSourceParams() {
     state.sourceUrgency = p.get('urgency') || 'routine'
     state.sourceType = p.get('type') || 'supply'
   }
+}
+
+// Called after bootApp is done — auto-opens DERP modal if params present
+async function checkPendingDerp() {
+  if (!state.pendingDerpParams) return
+  const dp = state.pendingDerpParams
+  state.pendingDerpParams = null
+
+  // Navigate to DERP page first
+  showPage('derp')
+  await new Promise(r => setTimeout(r, 400))
+
+  // Open DERP modal for the correct category
+  openDerpModal(dp.category)
+  await new Promise(r => setTimeout(r, 200))
+
+  // Pre-fill the form
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val }
+
+  // Asset description — combine name + brand + model + serial
+  const desc = [dp.item, dp.brand, dp.model, dp.serial ? 'S/N: ' + dp.serial : ''].filter(Boolean).join(' — ')
+  setVal('f_asset_desc', desc)
+
+  // Condition
+  setVal('f_condition', dp.condition)
+
+  // Warranty
+  setVal('f_warranty', dp.warranty)
+
+  // Department
+  if (dp.dept) setVal('f_dept', dp.dept)
+
+  // Purpose — pre-fill with location context
+  const purpose = document.getElementById('f_purpose')
+  if (purpose && dp.location) {
+    purpose.value = 'Equipment located at: ' + dp.location + '. Please assess for repair or replacement.'
+  }
+
+  // Condition notes — cost info
+  const condNotes = document.getElementById('f_condition_notes')
+  if (condNotes && dp.cost && dp.cost !== '0') {
+    condNotes.value = 'Original cost: ₱' + Number(dp.cost).toLocaleString()
+  }
+
+  showToast('success', 'DERP Pre-filled', 'Form filled from Asset Inventory — ' + dp.item)
 }
 
 function renderUserInfo() {
