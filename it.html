@@ -306,6 +306,21 @@ tr:hover td{background:var(--surf2);}
   </div>
 </div>
 
+<!-- KB ARTICLE MODAL -->
+<div class="modal-overlay" id="kbArticleModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3>📝 New Knowledge Base Article</h3>
+      <button class="modal-close" onclick="closeModal('kbArticleModal')">✕</button>
+    </div>
+    <div class="modal-body" id="kbArticleBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('kbArticleModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveArticle()">Publish Article</button>
+    </div>
+  </div>
+</div>
+
 <!-- LINK ASSET MODAL -->
 <div class="modal-overlay" id="linkAssetModal">
   <div class="modal" style="max-width:480px;">
@@ -1336,20 +1351,16 @@ async function viewArticle(articleId) {
 }
 
 async function openNewArticleModal() {
-  document.getElementById('ticketFormTitle').textContent = '📝 New Knowledge Base Article'
-  let html = '<div class="field"><label>Title *</label><input type="text" id="kb_title" placeholder="Article title"></div>'
+  let html = '<div class="field"><label>Title <span style="color:var(--red);">*</span></label><input type="text" id="kb_title" placeholder="Article title"></div>'
   html += '<div class="field-row">'
   html += '<div class="field"><label>Category</label><select id="kb_cat"><option value="">— Select —</option>'
   S.categories.forEach(c => { html += '<option value="' + c.id + '">' + c.icon + ' ' + c.name + '</option>' })
   html += '</select></div>'
   html += '<div class="field"><label>Tags (comma separated)</label><input type="text" id="kb_tags" placeholder="e.g. printer, driver, windows"></div>'
   html += '</div>'
-  html += '<div class="field"><label>Content *</label><textarea id="kb_content" rows="8" placeholder="Write the article content here..."></textarea></div>'
-  document.getElementById('ticketFormBody').innerHTML = html
-  document.getElementById('ticketFormFooter').innerHTML =
-    '<button class="btn btn-ghost" onclick="closeModal(\'ticketFormModal\')">Cancel</button>' +
-    '<button class="btn btn-primary" onclick="saveArticle()">Publish Article</button>'
-  openModal('ticketFormModal')
+  html += '<div class="field"><label>Content <span style="color:var(--red);">*</span></label><textarea id="kb_content" rows="10" placeholder="Write the article content here..."></textarea></div>'
+  document.getElementById('kbArticleBody').innerHTML = html
+  openModal('kbArticleModal')
 }
 
 async function saveArticle() {
@@ -1360,14 +1371,15 @@ async function saveArticle() {
   if (!title) { showToast('error','Required','Title is required.'); return }
   if (!content) { showToast('error','Required','Content is required.'); return }
   const tags = tagsRaw ? tagsRaw.split(',').map(t=>t.trim()).filter(Boolean) : []
-  await SB.from('it_knowledge_base').insert({
-    title, content, category_id: catId||null,
-    author_id: S.user.id, tags,
-    is_published: true
-  })
-  closeModal('ticketFormModal')
-  showToast('success','Published','Article published to knowledge base.')
-  renderKnowledgeBase()
+  try {
+    await SB.from('it_knowledge_base').insert({
+      title, content, category_id: catId||null,
+      author_id: S.user.id, tags, is_published: true
+    })
+    closeModal('kbArticleModal')
+    showToast('success','Published','Article published to knowledge base.')
+    renderKnowledgeBase()
+  } catch(e) { showToast('error','Error', e.message) }
 }
 
 // ═══════════════════════════════════
