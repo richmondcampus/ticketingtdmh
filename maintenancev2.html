@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
 [data-theme="dark"]{
   --bg:#080e14;--surf1:#0d1520;--surf2:#111d2b;--surf3:#162235;--surf4:#1b2940;
@@ -316,6 +317,34 @@ tr:hover td{background:var(--surf2);}
     </div>
     <div class="modal-body" id="ticketDetailBody"></div>
     <div class="modal-footer" id="ticketDetailFooter"></div>
+  </div>
+</div>
+
+<!-- LINK ASSET MODAL -->
+<div class="modal-overlay" id="linkAssetModal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <h3>🏷️ Link Asset to Ticket</h3>
+      <button class="modal-close" onclick="closeLinkAsset()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">Scan the asset QR code or enter the asset number manually.</p>
+      <div id="link_scanner_wrap" style="border-radius:12px;overflow:hidden;background:#000;margin-bottom:12px;display:none;">
+        <div id="link_qr_reader"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input type="text" id="link_asset_input" placeholder="Asset No. e.g. AST-IT-2026-0001"
+          style="flex:1;padding:9px 13px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;color:var(--txt);font-family:inherit;font-size:13px;outline:none;"
+          onkeydown="if(event.key==='Enter')lookupLinkAsset()">
+        <button class="btn btn-ghost btn-sm" onclick="toggleLinkScanner()">📷</button>
+        <button class="btn btn-primary btn-sm" onclick="lookupLinkAsset()">Search</button>
+      </div>
+      <div id="link_asset_preview" style="display:none;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;padding:14px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeLinkAsset()">Cancel</button>
+      <button class="btn btn-primary" id="linkAssetConfirmBtn" style="display:none;" onclick="confirmLinkAsset()">🔗 Link Asset</button>
+    </div>
   </div>
 </div>
 
@@ -755,6 +784,31 @@ async function viewTicket(ticketId) {
   if (t.resolved_at) body += iF('Resolved At', formatDate(t.resolved_at))
   body += '</div>'
 
+  // Linked asset
+  if (t.asset_id || t.asset_no) {
+    let assetHTML = ''
+    if (t.asset_id) {
+      const { data: linkedAsset } = await SB.from('assets').select('*').eq('id', t.asset_id).single()
+      if (linkedAsset) {
+        const photoHTML = linkedAsset.photo_url
+          ? '<img src="' + linkedAsset.photo_url + '" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;">'
+          : '<div style="width:44px;height:44px;background:var(--surf3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">📦</div>'
+        assetHTML = '<div style="display:flex;align-items:center;gap:10px;">' + photoHTML +
+          '<div><div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:var(--accent);">' + linkedAsset.asset_no + '</div>' +
+          '<div style="font-size:13px;font-weight:600;">' + linkedAsset.asset_name + '</div>' +
+          (linkedAsset.brand || linkedAsset.model ? '<div style="font-size:12px;color:var(--txt2);">' + [linkedAsset.brand,linkedAsset.model].filter(Boolean).join(' / ') + '</div>' : '') +
+          '<div style="margin-top:3px;"><span class="badge badge-' + linkedAsset.status + '">' + linkedAsset.status + '</span></div>' +
+          '</div></div>'
+      }
+    } else {
+      assetHTML = '<span style="font-family:\'JetBrains Mono\',monospace;font-size:12px;">' + t.asset_no + '</span>'
+    }
+    body += '<div style="background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;padding:12px 14px;margin-bottom:16px;">'
+    body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏷️ Linked Asset</div>'
+    body += assetHTML
+    body += '</div>'
+  }
+
   // Description
   if (t.description) {
     body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Problem Description</div>'
@@ -810,6 +864,11 @@ async function viewTicket(ticketId) {
 
   // Footer actions
   let footer = '<button class="btn btn-ghost" onclick="closeModal(\'ticketDetailModal\')">Close</button>'
+
+  // Link Asset button — always available for active tickets without asset link
+  if (!t.asset_id && !['closed','resolved'].includes(t.status) && ['technician','supervisor','admin'].includes(role)) {
+    footer += '<button class="btn btn-ghost btn-sm" onclick="openLinkAssetModal(\'' + t.id + '\')">🏷️ Link Asset</button>'
+  }
 
   if (t.status === 'open' && ['technician','supervisor','admin'].includes(role)) {
     footer += '<button class="btn btn-primary" onclick="claimTicket(\'' + t.id + '\')">🙋 Claim Ticket</button>'
@@ -1374,6 +1433,148 @@ async function submitPartsRequest(ticketId, ticketTitle) {
 
 function openAddTeamMemberModal() {
   showToast('info','Settings','Add team members via Settings → Users.')
+}
+
+// ═══════════════════════════════════
+// LINK ASSET TO TICKET
+// ═══════════════════════════════════
+let linkAssetState = { ticketId: null, scanner: null, foundAsset: null }
+
+function openLinkAssetModal(ticketId) {
+  linkAssetState.ticketId = ticketId
+  linkAssetState.foundAsset = null
+  document.getElementById('link_asset_input').value = ''
+  document.getElementById('link_asset_preview').style.display = 'none'
+  document.getElementById('linkAssetConfirmBtn').style.display = 'none'
+  document.getElementById('link_scanner_wrap').style.display = 'none'
+  closeModal('ticketDetailModal')
+  openModal('linkAssetModal')
+}
+
+function closeLinkAsset() {
+  stopLinkScanner()
+  closeModal('linkAssetModal')
+}
+
+function toggleLinkScanner() {
+  const wrap = document.getElementById('link_scanner_wrap')
+  if (wrap.style.display === 'none') {
+    wrap.style.display = 'block'
+    startLinkScanner()
+  } else {
+    wrap.style.display = 'none'
+    stopLinkScanner()
+  }
+}
+
+function startLinkScanner() {
+  if (linkAssetState.scanner) { try { linkAssetState.scanner.stop() } catch(e) {} }
+  try {
+    linkAssetState.scanner = new Html5Qrcode('link_qr_reader')
+    linkAssetState.scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
+      (decoded) => {
+        stopLinkScanner()
+        document.getElementById('link_scanner_wrap').style.display = 'none'
+        document.getElementById('link_asset_input').value = decoded
+        lookupLinkAsset()
+      },
+      () => {}
+    ).catch(() => {
+      document.getElementById('link_qr_reader').innerHTML =
+        '<div style="padding:16px;text-align:center;color:#888;">Camera unavailable. Use manual entry.</div>'
+    })
+  } catch(e) {}
+}
+
+function stopLinkScanner() {
+  if (linkAssetState.scanner) {
+    try { linkAssetState.scanner.stop().then(() => { linkAssetState.scanner = null }) }
+    catch(e) { linkAssetState.scanner = null }
+  }
+}
+
+async function lookupLinkAsset() {
+  const code = document.getElementById('link_asset_input').value.trim()
+  if (!code) return
+  const preview = document.getElementById('link_asset_preview')
+  const confirmBtn = document.getElementById('linkAssetConfirmBtn')
+  preview.style.display = 'block'
+  preview.innerHTML = '<div style="color:var(--txt2);font-size:13px;">🔍 Searching...</div>'
+  confirmBtn.style.display = 'none'
+
+  const { data: asset } = await SB.from('assets').select('*')
+    .or('asset_no.eq.' + code + ',qr_code.eq.' + code + ',serial_no.eq.' + code)
+    .single()
+
+  if (!asset) {
+    preview.innerHTML = '<div style="color:var(--red);font-size:13px;">❌ Asset not found: <code>' + code + '</code></div>'
+    linkAssetState.foundAsset = null
+    return
+  }
+
+  linkAssetState.foundAsset = asset
+  const photoHTML = asset.photo_url
+    ? '<img src="' + asset.photo_url + '" style="width:60px;height:60px;object-fit:cover;border-radius:8px;flex-shrink:0;">'
+    : '<div style="width:60px;height:60px;background:var(--surf3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;">📦</div>'
+
+  preview.innerHTML =
+    '<div style="display:flex;gap:12px;align-items:center;">' +
+    photoHTML +
+    '<div>' +
+    '<div style="font-family:\'JetBrains Mono\',monospace;font-size:12px;color:var(--accent);">' + asset.asset_no + '</div>' +
+    '<div style="font-size:14px;font-weight:600;">' + asset.asset_name + '</div>' +
+    (asset.brand || asset.model ? '<div style="font-size:12px;color:var(--txt2);">' + [asset.brand,asset.model].filter(Boolean).join(' / ') + '</div>' : '') +
+    '<div style="margin-top:4px;"><span class="badge badge-' + asset.status + '">' + asset.status + '</span></div>' +
+    '</div></div>'
+
+  confirmBtn.style.display = 'inline-flex'
+}
+
+async function confirmLinkAsset() {
+  const asset = linkAssetState.foundAsset
+  const ticketId = linkAssetState.ticketId
+  if (!asset || !ticketId) return
+
+  try {
+    // Link asset to ticket
+    await SB.from('maint_tickets').update({
+      asset_id: asset.id,
+      asset_no: asset.asset_no,
+      updated_at: new Date().toISOString()
+    }).eq('id', ticketId)
+
+    // Update asset status to under_repair if ticket is active
+    const { data: ticket } = await SB.from('maint_tickets').select('status').eq('id', ticketId).single()
+    if (ticket && ['claimed','in_progress','for_parts'].includes(ticket.status)) {
+      await SB.from('assets').update({ status: 'under_repair', updated_at: new Date().toISOString() }).eq('id', asset.id)
+    }
+
+    // Log in asset history
+    await SB.from('asset_history').insert({
+      asset_id: asset.id,
+      action: 'updated',
+      from_value: 'unlinked',
+      to_value: 'linked to ' + ticketId,
+      performed_by: S.user.id,
+      reference_type: 'maintenance_ticket',
+      reference_id: ticketId,
+      notes: 'Asset linked to Maintenance ticket ' + ticketId
+    })
+
+    // Note on ticket
+    await SB.from('maint_ticket_notes').insert({
+      ticket_id: ticketId,
+      user_id: S.user.id,
+      note: '🏷️ Asset linked: ' + asset.asset_no + ' — ' + asset.asset_name,
+      note_type: 'system'
+    })
+
+    closeLinkAsset()
+    showToast('success', 'Asset Linked 🔗', asset.asset_no + ' linked to ' + ticketId)
+    viewTicket(ticketId)
+  } catch(e) { showToast('error','Error', e.message) }
 }
 
 // ═══════════════════════════════════
