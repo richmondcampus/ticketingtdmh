@@ -513,7 +513,12 @@ function renderSidebarNav() {
     { id:'all_assets', icon:'🏷️', label:'All Assets', roles:['viewer','encoder','admin'] },
     { id:'by_category', icon:'📂', label:'By Category', roles:['viewer','encoder','admin'] },
     { id:'by_department', icon:'🏢', label:'By Department', roles:['viewer','encoder','admin'] },
-    { id:'for_maintenance', icon:'🔧', label:'For Repair/DERP', roles:['encoder','admin'] },
+    { id:'checkouts', icon:'📤', label:'Borrowing / Checkout', roles:['viewer','encoder','admin'] },
+    { id:'physical_count', icon:'🔢', label:'Physical Count', roles:['encoder','admin'] },
+    { id:'transfers', icon:'↔️', label:'Transfers', roles:['encoder','admin'] },
+    { id:'disposals', icon:'🗑️', label:'Disposals', roles:['encoder','admin'] },
+    { id:'pm_schedule', icon:'🔧', label:'PM Schedule', roles:['encoder','admin'] },
+    { id:'for_maintenance', icon:'⚠️', label:'For Repair/DERP', roles:['encoder','admin'] },
     { id:'depreciation', icon:'📉', label:'Depreciation', roles:['encoder','admin'] },
     { id:'doh_compliance', icon:'📋', label:'DOH Compliance', roles:['encoder','admin'] },
     { id:'reports', icon:'📈', label:'Reports', roles:['encoder','admin'] },
@@ -535,7 +540,9 @@ const PAGE_TITLES = {
   dashboard:'Dashboard', all_assets:'All Assets', by_category:'By Category',
   by_department:'By Department', for_maintenance:'For Repair / DERP',
   depreciation:'Depreciation Report', doh_compliance:'DOH Compliance',
-  reports:'Reports'
+  reports:'Reports', checkouts:'Borrowing / Checkout',
+  physical_count:'Physical Count', transfers:'Asset Transfers',
+  disposals:'Disposal Certificates', pm_schedule:'PM Schedule'
 }
 
 function showPage(page) {
@@ -551,7 +558,10 @@ function showPage(page) {
     dashboard: renderDashboard, all_assets: renderAllAssets,
     by_category: renderByCategory, by_department: renderByDepartment,
     for_maintenance: renderForMaintenance, depreciation: renderDepreciation,
-    doh_compliance: renderDOHCompliance, reports: renderReports
+    doh_compliance: renderDOHCompliance, reports: renderReports,
+    checkouts: renderCheckouts, physical_count: renderPhysicalCount,
+    transfers: renderTransfers, disposals: renderDisposals,
+    pm_schedule: renderPMSchedule
   }
   if (pages[page]) pages[page]()
 }
@@ -1050,16 +1060,99 @@ async function renderReports() {
   const assets = await loadAssets()
   const totalValue = assets.reduce((s,a) => s + Number(a.acquisition_cost||0), 0)
   const fromCSR = assets.filter(a => a.source_csr_id).length
+  const { data: scans } = await SB.from('asset_scan_logs').select('*').order('created_at', { ascending: false }).limit(20)
 
   let html = '<div class="page-header"><h2>📈 Reports</h2>'
-  html += '<button class="btn btn-secondary" onclick="exportCSV()">⬇️ Export CSV</button></div>'
+  html += '<div style="display:flex;gap:8px;">'
+  html += '<button class="btn btn-secondary" onclick="exportCSV()">⬇️ Export CSV</button>'
+  html += '<button class="btn btn-ghost" onclick="openBulkImportModal()">📥 Bulk Import</button>'
+  html += '</div></div>'
+
   html += '<div class="stat-grid" style="margin-bottom:24px;">'
   html += sC('🏷️','Total Assets',assets.length,'All registered','var(--accent)')
   html += sC('💰','Total Value','₱'+totalValue.toLocaleString(),'Acquisition cost','var(--blue)')
-  html += sC('🔗','From CSR',fromCSR,'Auto-registered from purchases','var(--accent)')
-  html += sC('📋','Manual Entries',assets.length-fromCSR,'Manually added','var(--txt2)')
+  html += sC('🔗','From CSR',fromCSR,'Auto-registered','var(--accent)')
+  html += sC('📋','Manual',assets.length-fromCSR,'Manually added','var(--txt2)')
   html += '</div>'
+
+  // Recent scan history
+  if (scans && scans.length > 0) {
+    html += '<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:12px;">📷 Recent Scan History</div>'
+    html += '<div class="table-wrap"><table><thead><tr><th>Asset</th><th>Scanned By</th><th>Purpose</th><th>Date/Time</th></tr></thead><tbody>'
+    for (const scan of scans) {
+      const asset = assets.find(a => a.id === scan.asset_id)
+      html += '<tr><td style="font-size:12px;">' + (asset ? asset.asset_no + ' — ' + asset.asset_name : '—') + '</td>'
+      html += '<td style="color:var(--txt2);">' + (scan.scanned_by_name || '—') + '</td>'
+      html += '<td style="color:var(--txt2);font-size:12px;">' + (scan.scan_purpose||'lookup') + '</td>'
+      html += '<td style="color:var(--txt2);">' + formatDate(scan.created_at) + '</td></tr>'
+    }
+    html += '</tbody></table></div></div>'
+  }
+
   content.innerHTML = html
+}
+
+function openBulkImportModal() {
+  document.getElementById('confirmTitle').textContent = '📥 Bulk Import Assets'
+  document.getElementById('confirmMsg').innerHTML =
+    '<p style="font-size:13px;color:var(--txt2);margin-bottom:12px;">Upload a CSV file to bulk-import assets. Download the template first.</p>' +
+    '<a href="data:text/csv;charset=utf-8,' + encodeURIComponent('asset_name,category_code,brand,model,serial_no,location,acquisition_date,acquisition_cost,useful_life_years,condition\nDell Laptop,IT,Dell,Latitude 5420,SN123456,Room 301,2024-01-15,45000,5,good') + '" download="asset_import_template.csv" style="display:inline-block;margin-bottom:12px;padding:6px 12px;background:var(--surf3);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-size:12px;text-decoration:none;">⬇️ Download CSV Template</a>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:6px;">SELECT CSV FILE</label>' +
+    '<input type="file" id="import_file" accept=".csv" style="font-size:13px;color:var(--txt2);" onchange="previewImport(this)"></div>' +
+    '<div id="import_preview" style="margin-top:10px;font-size:12px;color:var(--txt2);"></div>'
+  document.getElementById('confirmOkBtn').textContent = 'Import Assets'
+  document.getElementById('confirmOkBtn').onclick = processImport
+  openModal('confirmModal')
+}
+
+function previewImport(input) {
+  const file = input.files[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = e => {
+    const lines = e.target.result.split('\n').filter(l => l.trim())
+    const preview = document.getElementById('import_preview')
+    if (preview) preview.innerHTML = '✅ ' + (lines.length - 1) + ' assets ready to import.'
+    document.getElementById('confirmOkBtn')._csvData = e.target.result
+  }
+  reader.readAsText(file)
+}
+
+async function processImport() {
+  const csvData = document.getElementById('confirmOkBtn')._csvData
+  if (!csvData) { showToast('error','No File','Please select a CSV file first.'); return }
+  const lines = csvData.split('\n').filter(l => l.trim())
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''))
+  let imported = 0, errors = 0
+
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g,''))
+    const row = {}
+    headers.forEach((h, idx) => row[h] = vals[idx] || '')
+    if (!row.asset_name) continue
+    try {
+      const cat = S.categories.find(c => c.code === (row.category_code||'OTH').toUpperCase()) || S.categories.find(c => c.code === 'OTH')
+      const { data: num } = await SB.rpc('generate_asset_no', { cat_code: cat?.code || 'OTH' })
+      const assetNo = num || ('AST-OTH-' + Date.now() + i)
+      await SB.from('assets').insert({
+        asset_no: assetNo, qr_code: assetNo,
+        asset_name: row.asset_name,
+        category_id: cat?.id || null,
+        brand: row.brand || null, model: row.model || null,
+        serial_no: row.serial_no || null,
+        location: row.location || null,
+        acquisition_date: row.acquisition_date || null,
+        acquisition_cost: Number(row.acquisition_cost) || 0,
+        useful_life_years: Number(row.useful_life_years) || 5,
+        condition: row.condition || 'good',
+        status: 'active', created_by: S.user.id
+      })
+      imported++
+    } catch(e) { errors++; console.warn('Import row ' + i, e.message) }
+  }
+  closeModal('confirmModal')
+  showToast('success','Import Done', imported + ' assets imported.' + (errors > 0 ? ' ' + errors + ' errors.' : ''))
+  renderReports()
 }
 
 async function exportCSV() {
@@ -1200,6 +1293,38 @@ async function viewAsset(id) {
   }
   body += '</div>'
 
+  // Maintenance tickets linked to this asset
+  const { data: maintTickets } = await SB.from('maint_tickets')
+    .select('id,title,status,priority,created_at,resolved_at')
+    .or('title.ilike.%' + (a.asset_no||'') + '%,description.ilike.%' + (a.asset_no||'') + '%')
+    .order('created_at', { ascending: false }).limit(5)
+
+  if (maintTickets && maintTickets.length > 0) {
+    body += '<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🔧 Linked Maintenance Tickets</div>'
+    body += '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Title</th><th>Status</th><th>Date</th></tr></thead><tbody>'
+    maintTickets.forEach(t => {
+      body += '<tr><td class="td-mono" style="font-size:11px;">' + t.id + '</td>'
+      body += '<td style="font-size:12px;">' + t.title + '</td>'
+      body += '<td><span class="badge badge-' + t.status + '">' + t.status + '</span></td>'
+      body += '<td style="color:var(--txt2);font-size:11px;">' + formatDate(t.created_at) + '</td></tr>'
+    })
+    body += '</tbody></table></div></div>'
+  }
+
+  // Checkout status
+  const { data: activeCheckout } = await SB.from('asset_checkouts')
+    .select('*').eq('asset_id', a.id).eq('status','checked_out').single()
+  if (activeCheckout) {
+    const borrower = S.users.find(u => u.id === activeCheckout.borrowed_by)
+    body += '<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:16px;">'
+    body += '<div style="font-weight:600;color:var(--amber);margin-bottom:4px;">📤 Currently Checked Out</div>'
+    body += '<div style="font-size:12px;color:var(--txt2);">By: ' + (borrower ? borrower.full_name : activeCheckout.borrowed_by_name||'—') + '</div>'
+    body += '<div style="font-size:12px;color:var(--txt2);">Purpose: ' + (activeCheckout.purpose||'—') + '</div>'
+    body += '<div style="font-size:12px;color:var(--txt2);">Expected return: ' + (activeCheckout.expected_return_date ? formatDate(activeCheckout.expected_return_date) : '—') + '</div>'
+    body += '<button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="returnAsset(\'' + activeCheckout.id + '\',\'' + a.id + '\')">↩ Mark as Returned</button>'
+    body += '</div>'
+  }
+
   document.getElementById('assetDetailBody').innerHTML = body
 
   // Footer
@@ -1207,9 +1332,13 @@ async function viewAsset(id) {
   if (['encoder','admin'].includes(role)) {
     footer += '<button class="btn btn-secondary" onclick="openAssetForm(\'' + a.id + '\')">✎ Edit</button>'
     footer += '<button class="btn btn-ghost" onclick="openPrintLabelModal(\'' + a.id + '\')">🖨️ Print</button>'
-    footer += '<button class="btn btn-amber" onclick="flagForDERP(\'' + a.id + '\')">♻️ Flag DERP</button>'
+    footer += '<button class="btn btn-ghost" onclick="openTransferModal(\'' + a.id + '\')">↔️ Transfer</button>'
+    footer += '<button class="btn btn-ghost" onclick="openCheckoutModal(\'' + a.id + '\')">📤 Checkout</button>'
+    footer += '<button class="btn btn-amber" onclick="flagForDERP(\'' + a.id + '\')">♻️ DERP</button>'
   }
-  if (a.status !== 'disposed' && ['admin'].includes(role)) {
+  if (a.status === 'for_disposal' && ['admin'].includes(role)) {
+    footer += '<button class="btn btn-danger" onclick="openDisposalForm(\'' + a.id + '\')">📄 Disposal Cert</button>'
+  } else if (!['disposed','for_disposal'].includes(a.status) && ['admin'].includes(role)) {
     footer += '<button class="btn btn-danger" onclick="updateAssetStatus(\'' + a.id + '\',\'for_disposal\')">🗑 For Disposal</button>'
   }
   document.getElementById('assetDetailFooter').innerHTML = footer
@@ -1441,8 +1570,639 @@ async function flagForDERP(assetId) {
 }
 
 // ═══════════════════════════════════
-// QR SCANNER
+// TRANSFERS
 // ═══════════════════════════════════
+async function renderTransfers() {
+  const content = document.getElementById('mainContent')
+  const { data: transfers } = await SB.from('asset_transfers').select('*').order('created_at', { ascending: false })
+  const all = transfers || []
+
+  let html = '<div class="page-header"><h2>↔️ Asset Transfers</h2></div>'
+  if (all.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">↔️</div><h3>No transfers yet</h3><p>Transfers are recorded when assets are moved between departments.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Asset</th><th>From Dept</th><th>To Dept</th><th>Assigned To</th><th>Reason</th><th>Date</th><th>Acknowledged</th>'
+    html += '</tr></thead><tbody>'
+    all.forEach(t => {
+      const fromDept = S.departments.find(d => d.id === t.from_dept_id)
+      const toDept = S.departments.find(d => d.id === t.to_dept_id)
+      const toUser = S.users.find(u => u.id === t.to_user_id)
+      html += '<tr>'
+      html += '<td class="td-mono" style="font-size:11px;">' + (t.asset_id ? t.asset_id.substring(0,8)+'...' : '—') + '</td>'
+      html += '<td style="color:var(--txt2);">' + (fromDept ? fromDept.dept_name : '—') + '</td>'
+      html += '<td>' + (toDept ? toDept.dept_name : '—') + '</td>'
+      html += '<td style="color:var(--txt2);">' + (toUser ? toUser.full_name : '—') + '</td>'
+      html += '<td style="color:var(--txt2);font-size:12px;">' + (t.reason||'—') + '</td>'
+      html += '<td style="color:var(--txt2);">' + formatDate(t.transfer_date) + '</td>'
+      html += '<td>' + (t.acknowledged_at ? '<span style="color:var(--green);">✅ ' + formatDate(t.acknowledged_at) + '</span>' : '<span style="color:var(--amber);">⏳ Pending</span>') + '</td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div>'
+  }
+  content.innerHTML = html
+}
+
+async function openTransferModal(assetId) {
+  const { data: a } = await SB.from('assets').select('*').eq('id', assetId).single()
+  if (!a) return
+  const dept = S.departments.find(d => d.id === a.dept_id)
+
+  document.getElementById('confirmTitle').textContent = '↔️ Transfer Asset'
+  document.getElementById('confirmMsg').innerHTML =
+    '<p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">Transfer <strong>' + a.asset_name + '</strong> to another department.</p>' +
+    '<div style="background:var(--surf2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--txt2);">Current: ' + (dept ? dept.dept_name : 'Unassigned') + '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">TRANSFER TO DEPARTMENT</label>' +
+    '<select id="tr_dept" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="">— Select Department —</option>' +
+    S.departments.map(d => '<option value="' + d.id + '">' + d.dept_name + '</option>').join('') +
+    '</select></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">ASSIGN TO (optional)</label>' +
+    '<select id="tr_user" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="">— Select Person —</option>' +
+    S.users.map(u => '<option value="' + u.id + '">' + u.full_name + '</option>').join('') +
+    '</select></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">REASON *</label>' +
+    '<input type="text" id="tr_reason" placeholder="Reason for transfer..." style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '</div>'
+
+  document.getElementById('confirmOkBtn').textContent = 'Confirm Transfer'
+  document.getElementById('confirmOkBtn').onclick = async () => {
+    const toDept = document.getElementById('tr_dept').value
+    const toUser = document.getElementById('tr_user').value
+    const reason = document.getElementById('tr_reason').value.trim()
+    if (!toDept) { showToast('error','Required','Please select destination department.'); return }
+    if (!reason) { showToast('error','Required','Please enter a reason.'); return }
+    try {
+      // Record transfer
+      await SB.from('asset_transfers').insert({
+        asset_id: assetId,
+        from_dept_id: a.dept_id,
+        to_dept_id: toDept,
+        from_user_id: a.assigned_to,
+        to_user_id: toUser || null,
+        reason, performed_by: S.user.id,
+        transfer_date: new Date().toISOString().split('T')[0]
+      })
+      // Update asset
+      await SB.from('assets').update({
+        dept_id: toDept,
+        assigned_to: toUser || null,
+        updated_at: new Date().toISOString()
+      }).eq('id', assetId)
+      // Log history
+      const newDept = S.departments.find(d => d.id === toDept)
+      await SB.from('asset_history').insert({
+        asset_id: assetId, action: 'transferred',
+        from_value: dept ? dept.dept_name : 'Unassigned',
+        to_value: newDept ? newDept.dept_name : toDept,
+        performed_by: S.user.id, notes: reason
+      })
+      closeModal('confirmModal')
+      closeModal('assetDetailModal')
+      showToast('success','Transferred','Asset transferred successfully.')
+      if (S.page === 'transfers') renderTransfers()
+      else if (S.page === 'all_assets') renderAllAssets()
+    } catch(e) { showToast('error','Error', e.message) }
+  }
+  closeModal('assetDetailModal')
+  openModal('confirmModal')
+}
+
+// ═══════════════════════════════════
+// CHECKOUTS / BORROWING
+// ═══════════════════════════════════
+async function renderCheckouts() {
+  const content = document.getElementById('mainContent')
+  const { data: checkouts } = await SB.from('asset_checkouts').select('*').order('created_at', { ascending: false })
+  const all = checkouts || []
+  const active = all.filter(c => c.status === 'checked_out')
+  const overdue = active.filter(c => c.expected_return_date && new Date(c.expected_return_date) < new Date())
+
+  let html = '<div class="page-header"><h2>📤 Borrowing / Checkout</h2>'
+  html += '<button class="btn btn-primary" onclick="openCheckoutModal()">＋ New Checkout</button></div>'
+
+  html += '<div class="stat-grid" style="margin-bottom:20px;">'
+  html += sC('📤','Active Checkouts',active.length,'Currently borrowed','var(--amber)')
+  html += sC('⚠️','Overdue',overdue.length,'Past return date','var(--red)')
+  html += sC('✅','Returned',all.filter(c=>c.status==='returned').length,'All time','var(--accent)')
+  html += '</div>'
+
+  if (overdue.length > 0) {
+    html += '<div style="background:var(--red-a);border:1px solid var(--red);border-radius:10px;padding:12px 16px;margin-bottom:16px;">'
+    html += '<strong style="color:var(--red);">⚠️ ' + overdue.length + ' overdue checkout(s)</strong>'
+    html += '</div>'
+  }
+
+  html += '<div class="table-wrap"><table><thead><tr>'
+  html += '<th>Checkout No.</th><th>Asset</th><th>Borrowed By</th><th>Purpose</th><th>Expected Return</th><th>Status</th><th></th>'
+  html += '</tr></thead><tbody>'
+
+  if (all.length === 0) {
+    html += '<tr><td colspan="7" style="text-align:center;color:var(--txt2);padding:30px;">No checkouts yet</td></tr>'
+  }
+  for (const c of all) {
+    const borrower = S.users.find(u => u.id === c.borrowed_by)
+    const isOverdue = c.status === 'checked_out' && c.expected_return_date && new Date(c.expected_return_date) < new Date()
+    const statusLabel = isOverdue ? 'overdue' : c.status
+    const statusColor = { checked_out:'var(--amber)', overdue:'var(--red)', returned:'var(--accent)', lost:'var(--red)' }[statusLabel] || 'var(--txt2)'
+    html += '<tr>'
+    html += '<td class="td-mono" style="font-size:11px;">' + c.checkout_no + '</td>'
+    html += '<td style="font-size:12px;">' + (c.asset_id ? c.asset_id.substring(0,8)+'...' : '—') + '</td>'
+    html += '<td>' + (borrower ? borrower.full_name : (c.borrowed_by_name||'—')) + '</td>'
+    html += '<td style="color:var(--txt2);font-size:12px;">' + (c.purpose||'—') + '</td>'
+    html += '<td style="color:' + (isOverdue?'var(--red)':'var(--txt2)') + ';">' + (c.expected_return_date ? formatDate(c.expected_return_date) : '—') + '</td>'
+    html += '<td><span style="color:' + statusColor + ';font-size:12px;font-weight:600;">' + statusLabel.toUpperCase() + '</span></td>'
+    html += '<td>' + (c.status === 'checked_out' ? '<button class="btn btn-ghost btn-sm" onclick="returnAsset(\'' + c.id + '\',\'' + c.asset_id + '\')">↩ Return</button>' : '') + '</td>'
+    html += '</tr>'
+  }
+  html += '</tbody></table></div>'
+  content.innerHTML = html
+}
+
+async function openCheckoutModal(assetId) {
+  document.getElementById('confirmTitle').textContent = '📤 New Asset Checkout'
+  let assetOptions = ''
+  if (!assetId) {
+    const assets = await loadAssets({ status: 'active' })
+    assetOptions = '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">ASSET *</label>' +
+      '<select id="co_asset" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+      '<option value="">— Select Asset —</option>' +
+      assets.map(a => '<option value="' + a.id + '">' + a.asset_no + ' — ' + a.asset_name + '</option>').join('') +
+      '</select></div>'
+  } else {
+    assetOptions = '<input type="hidden" id="co_asset" value="' + assetId + '">'
+  }
+
+  document.getElementById('confirmMsg').innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+    assetOptions +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">BORROWER *</label>' +
+    '<select id="co_user" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="">— Select User —</option>' +
+    S.users.map(u => '<option value="' + u.id + '">' + u.full_name + '</option>').join('') +
+    '<option value="external">External / Non-system user</option>' +
+    '</select></div>' +
+    '<div id="co_ext_wrap" style="display:none;"><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">EXTERNAL NAME *</label>' +
+    '<input type="text" id="co_ext_name" placeholder="Full name" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">PURPOSE *</label>' +
+    '<input type="text" id="co_purpose" placeholder="Why borrowing this asset?" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">EXPECTED RETURN DATE *</label>' +
+    '<input type="date" id="co_return" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '</div>'
+
+  setTimeout(() => {
+    const sel = document.getElementById('co_user')
+    if (sel) sel.addEventListener('change', () => {
+      const wrap = document.getElementById('co_ext_wrap')
+      if (wrap) wrap.style.display = sel.value === 'external' ? 'block' : 'none'
+    })
+  }, 100)
+
+  document.getElementById('confirmOkBtn').textContent = 'Confirm Checkout'
+  document.getElementById('confirmOkBtn').onclick = async () => {
+    const aid = document.getElementById('co_asset')?.value
+    const userId = document.getElementById('co_user')?.value
+    const extName = document.getElementById('co_ext_name')?.value.trim()
+    const purpose = document.getElementById('co_purpose')?.value.trim()
+    const returnDate = document.getElementById('co_return')?.value
+    if (!aid) { showToast('error','Required','Please select an asset.'); return }
+    if (!userId) { showToast('error','Required','Please select a borrower.'); return }
+    if (userId === 'external' && !extName) { showToast('error','Required','Please enter external name.'); return }
+    if (!purpose) { showToast('error','Required','Please enter purpose.'); return }
+    if (!returnDate) { showToast('error','Required','Please set expected return date.'); return }
+    try {
+      const { data: numData } = await SB.rpc('generate_checkout_no')
+      const checkoutNo = numData || ('CHK-' + Date.now())
+      await SB.from('asset_checkouts').insert({
+        checkout_no: checkoutNo,
+        asset_id: aid,
+        borrowed_by: userId !== 'external' ? userId : null,
+        borrowed_by_name: userId === 'external' ? extName : null,
+        dept_id: S.user.dept_id,
+        purpose, expected_return_date: returnDate,
+        checked_out_by: S.user.id,
+        condition_out: 'good', status: 'checked_out'
+      })
+      // Update asset assigned_to
+      await SB.from('assets').update({ assigned_to: userId !== 'external' ? userId : null }).eq('id', aid)
+      await SB.from('asset_history').insert({
+        asset_id: aid, action: 'assigned',
+        to_value: userId !== 'external' ? (S.users.find(u=>u.id===userId)?.full_name||userId) : extName,
+        performed_by: S.user.id, notes: 'Checked out — ' + purpose
+      })
+      closeModal('confirmModal')
+      closeModal('assetDetailModal')
+      showToast('success','Checked Out',checkoutNo + ' recorded.')
+      if (S.page === 'checkouts') renderCheckouts()
+    } catch(e) { showToast('error','Error', e.message) }
+  }
+  closeModal('assetDetailModal')
+  openModal('confirmModal')
+}
+
+async function returnAsset(checkoutId, assetId) {
+  confirm2('Confirm asset has been returned?', async () => {
+    await SB.from('asset_checkouts').update({
+      status: 'returned',
+      actual_return_date: new Date().toISOString().split('T')[0],
+      checked_in_by: S.user.id
+    }).eq('id', checkoutId)
+    await SB.from('asset_history').insert({
+      asset_id: assetId, action: 'returned',
+      performed_by: S.user.id, notes: 'Asset returned from checkout'
+    })
+    showToast('success','Returned','Asset marked as returned.')
+    if (S.page === 'checkouts') renderCheckouts()
+    else closeModal('assetDetailModal')
+  })
+}
+
+// ═══════════════════════════════════
+// PHYSICAL COUNT
+// ═══════════════════════════════════
+async function renderPhysicalCount() {
+  const content = document.getElementById('mainContent')
+  const { data: counts } = await SB.from('physical_counts').select('*').order('created_at', { ascending: false })
+  const all = counts || []
+
+  let html = '<div class="page-header"><h2>🔢 Physical Count</h2>'
+  html += '<button class="btn btn-primary" onclick="openNewCountModal()">＋ New Count</button></div>'
+
+  if (all.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">🔢</div><h3>No physical counts yet</h3><p>Conduct a physical count to reconcile actual vs recorded assets.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Count No.</th><th>Title</th><th>Conducted By</th><th>Date</th><th>Status</th><th></th>'
+    html += '</tr></thead><tbody>'
+    all.forEach(c => {
+      const conductor = S.users.find(u => u.id === c.conducted_by)
+      const statusClass = { draft:'badge-draft', in_progress:'badge-pending', completed:'badge-approved', approved:'badge-issued' }[c.status] || 'badge-draft'
+      html += '<tr>'
+      html += '<td class="td-mono">' + c.count_no + '</td>'
+      html += '<td><strong>' + c.title + '</strong></td>'
+      html += '<td style="color:var(--txt2);">' + (conductor ? conductor.full_name : '—') + '</td>'
+      html += '<td style="color:var(--txt2);">' + formatDate(c.conducted_at) + '</td>'
+      html += '<td><span class="badge ' + statusClass + '">' + c.status + '</span></td>'
+      html += '<td><button class="btn btn-ghost btn-sm" onclick="openCountDetail(\'' + c.id + '\')">View / Count</button></td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div>'
+  }
+  content.innerHTML = html
+}
+
+async function openNewCountModal() {
+  document.getElementById('confirmTitle').textContent = '🔢 New Physical Count'
+  document.getElementById('confirmMsg').innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">TITLE *</label>' +
+    '<input type="text" id="pc_title" placeholder="e.g. Q2 2026 Asset Count" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">DATE</label>' +
+    '<input type="date" id="pc_date" value="' + new Date().toISOString().split('T')[0] + '" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">NOTES</label>' +
+    '<input type="text" id="pc_notes" placeholder="Optional notes..." style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '</div>'
+  document.getElementById('confirmOkBtn').textContent = 'Create Count'
+  document.getElementById('confirmOkBtn').onclick = async () => {
+    const title = document.getElementById('pc_title')?.value.trim()
+    if (!title) { showToast('error','Required','Please enter a title.'); return }
+    const { data: num } = await SB.rpc('generate_count_no')
+    const countNo = num || ('PHY-' + Date.now())
+    const { data: count } = await SB.from('physical_counts').insert({
+      count_no: countNo, title,
+      conducted_by: S.user.id,
+      conducted_at: document.getElementById('pc_date')?.value,
+      notes: document.getElementById('pc_notes')?.value.trim() || null,
+      status: 'in_progress'
+    }).select().single()
+    // Pre-populate with all active assets
+    const assets = await loadAssets()
+    if (assets.length > 0) {
+      await SB.from('physical_count_items').insert(assets.map(a => ({
+        count_id: count.id, asset_id: a.id,
+        expected_status: a.status, found: null
+      })))
+    }
+    closeModal('confirmModal')
+    showToast('success','Count Created', countNo + ' — ' + assets.length + ' assets loaded.')
+    openCountDetail(count.id)
+  }
+  openModal('confirmModal')
+}
+
+async function openCountDetail(countId) {
+  const { data: count } = await SB.from('physical_counts').select('*').eq('id', countId).single()
+  const { data: items } = await SB.from('physical_count_items').select('*').eq('count_id', countId)
+  if (!count || !items) return
+
+  const content = document.getElementById('mainContent')
+  S.page = 'physical_count'
+
+  const found = items.filter(i => i.found === true).length
+  const notFound = items.filter(i => i.found === false).length
+  const unchecked = items.filter(i => i.found === null).length
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>🔢 ' + count.count_no + '</h2><p style="font-size:13px;color:var(--txt2);">' + count.title + '</p></div>'
+  html += '<div style="display:flex;gap:8px;">'
+  html += '<button class="btn btn-ghost btn-sm" onclick="renderPhysicalCount()">← Back</button>'
+  if (count.status === 'in_progress') {
+    html += '<button class="btn btn-primary" onclick="completeCount(\'' + countId + '\')">✅ Complete Count</button>'
+  }
+  html += '</div></div>'
+
+  html += '<div class="stat-grid" style="margin-bottom:16px;">'
+  html += sC('📋','Total',items.length,'Assets to check','var(--txt2)')
+  html += sC('✅','Found',found,'Located','var(--accent)')
+  html += sC('❌','Not Found',notFound,'Missing','var(--red)')
+  html += sC('⏳','Unchecked',unchecked,'Not yet checked','var(--amber)')
+  html += '</div>'
+
+  html += '<p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">📷 Scan asset QR code to mark as found, or click manually.</p>'
+
+  html += '<div class="table-wrap"><table><thead><tr>'
+  html += '<th>Asset No.</th><th>Name</th><th>Dept</th><th>Expected</th><th>Found?</th><th>Condition</th><th></th>'
+  html += '</tr></thead><tbody>'
+  for (const item of items) {
+    const asset = S.assets.find(a => a.id === item.asset_id)
+    const dept = S.departments.find(d => d.id === (asset?.dept_id))
+    const foundColor = item.found === true ? 'var(--green)' : item.found === false ? 'var(--red)' : 'var(--txt3)'
+    html += '<tr>'
+    html += '<td class="td-mono">' + (asset?.asset_no || '—') + '</td>'
+    html += '<td>' + (asset?.asset_name || '—') + '</td>'
+    html += '<td style="color:var(--txt2);font-size:12px;">' + (dept?.dept_name || '—') + '</td>'
+    html += '<td><span class="badge badge-' + (item.expected_status||'active') + '">' + (item.expected_status||'—') + '</span></td>'
+    html += '<td style="font-weight:700;color:' + foundColor + ';">' + (item.found === true ? '✅ Found' : item.found === false ? '❌ Missing' : '⏳ —') + '</td>'
+    html += '<td style="color:var(--txt2);font-size:12px;">' + (item.condition_found || '—') + '</td>'
+    html += '<td><div style="display:flex;gap:4px;">'
+    if (item.found !== true) html += '<button class="btn btn-ghost btn-sm" style="color:var(--green);" onclick="markCountItem(\'' + item.id + '\',true)">✅</button>'
+    if (item.found !== false) html += '<button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="markCountItem(\'' + item.id + '\',false)">❌</button>'
+    html += '</div></td>'
+    html += '</tr>'
+  }
+  html += '</tbody></table></div>'
+  content.innerHTML = html
+}
+
+async function markCountItem(itemId, found) {
+  await SB.from('physical_count_items').update({
+    found, scanned_by: S.user.id,
+    scanned_at: new Date().toISOString(),
+    condition_found: found ? 'good' : null
+  }).eq('id', itemId)
+  // Refresh
+  const countId = (await SB.from('physical_count_items').select('count_id').eq('id', itemId).single()).data?.count_id
+  if (countId) openCountDetail(countId)
+}
+
+async function completeCount(countId) {
+  confirm2('Mark this physical count as completed?', async () => {
+    await SB.from('physical_counts').update({ status: 'completed' }).eq('id', countId)
+    showToast('success','Completed','Physical count marked as completed.')
+    renderPhysicalCount()
+  })
+}
+
+// ═══════════════════════════════════
+// DISPOSALS
+// ═══════════════════════════════════
+async function renderDisposals() {
+  const content = document.getElementById('mainContent')
+  const { data: disposals } = await SB.from('disposal_certificates').select('*').order('created_at', { ascending: false })
+  const all = disposals || []
+
+  let html = '<div class="page-header"><h2>🗑️ Disposal Certificates</h2></div>'
+  if (all.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">🗑️</div><h3>No disposal certificates</h3><p>Tag an asset as "For Disposal" then generate a disposal certificate.</p></div>'
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Cert No.</th><th>Asset</th><th>Method</th><th>Reason</th><th>Date</th><th>Witness</th><th>Approved</th>'
+    html += '</tr></thead><tbody>'
+    all.forEach(d => {
+      const methodColors = { condemned:'var(--red)', donated:'var(--blue)', sold:'var(--green)', archived:'var(--txt2)', transferred_out:'var(--violet)' }
+      html += '<tr>'
+      html += '<td class="td-mono">' + d.cert_no + '</td>'
+      html += '<td style="font-size:12px;">' + (d.asset_id ? d.asset_id.substring(0,8)+'...' : '—') + '</td>'
+      html += '<td><span style="color:' + (methodColors[d.disposal_method]||'var(--txt2)') + ';font-weight:600;">' + d.disposal_method.replace('_',' ').toUpperCase() + '</span></td>'
+      html += '<td style="color:var(--txt2);font-size:12px;">' + (d.reason||'—') + '</td>'
+      html += '<td style="color:var(--txt2);">' + formatDate(d.disposal_date) + '</td>'
+      html += '<td style="color:var(--txt2);">' + (d.witness_name||'—') + '</td>'
+      html += '<td>' + (d.approved_at ? '<span style="color:var(--green);">✅</span>' : '<span style="color:var(--amber);">⏳</span>') + '</td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div>'
+  }
+  content.innerHTML = html
+}
+
+async function openDisposalForm(assetId) {
+  const { data: a } = await SB.from('assets').select('*').eq('id', assetId).single()
+  if (!a) return
+  document.getElementById('confirmTitle').textContent = '📄 Generate Disposal Certificate'
+  document.getElementById('confirmMsg').innerHTML =
+    '<p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">Asset: <strong>' + a.asset_name + '</strong> (' + a.asset_no + ')</p>' +
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">DISPOSAL METHOD *</label>' +
+    '<select id="ds_method" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="condemned">Condemned</option>' +
+    '<option value="donated">Donated</option>' +
+    '<option value="sold">Sold</option>' +
+    '<option value="archived">Archived</option>' +
+    '<option value="transferred_out">Transferred Out</option>' +
+    '</select></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">REASON *</label>' +
+    '<input type="text" id="ds_reason" placeholder="Reason for disposal..." style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">APPRAISED VALUE (₱)</label>' +
+    '<input type="number" id="ds_value" value="0" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">WITNESS NAME</label>' +
+    '<input type="text" id="ds_witness" placeholder="Full name of witness" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">WITNESS POSITION</label>' +
+    '<input type="text" id="ds_witness_pos" placeholder="e.g. Hospital Administrator" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '</div>'
+  document.getElementById('confirmOkBtn').textContent = 'Generate Certificate'
+  document.getElementById('confirmOkBtn').onclick = async () => {
+    const method = document.getElementById('ds_method').value
+    const reason = document.getElementById('ds_reason').value.trim()
+    const value = Number(document.getElementById('ds_value').value) || 0
+    const witness = document.getElementById('ds_witness').value.trim()
+    const witnessPos = document.getElementById('ds_witness_pos').value.trim()
+    if (!reason) { showToast('error','Required','Reason is required.'); return }
+    try {
+      const { data: num } = await SB.rpc('generate_disposal_no')
+      const certNo = num || ('DSP-' + Date.now())
+      await SB.from('disposal_certificates').insert({
+        cert_no: certNo, asset_id: assetId,
+        disposal_method: method, reason,
+        appraised_value: value,
+        witness_name: witness || null,
+        witness_position: witnessPos || null,
+        disposed_by: S.user.id,
+        disposal_date: new Date().toISOString().split('T')[0]
+      })
+      // Update asset to disposed
+      await SB.from('assets').update({ status: 'disposed', updated_at: new Date().toISOString() }).eq('id', assetId)
+      await SB.from('asset_history').insert({
+        asset_id: assetId, action: 'disposed',
+        to_value: method + ' — ' + certNo,
+        performed_by: S.user.id, notes: reason
+      })
+      closeModal('confirmModal')
+      showToast('success','Certificate Generated', certNo + ' — asset marked as disposed.')
+      printDisposalCert(certNo, a, method, reason, value, witness, witnessPos)
+      if (S.page === 'disposals') renderDisposals()
+    } catch(e) { showToast('error','Error', e.message) }
+  }
+  closeModal('assetDetailModal')
+  openModal('confirmModal')
+}
+
+function printDisposalCert(certNo, asset, method, reason, value, witness, witnessPos) {
+  const win = window.open('','_blank','width=800,height=600')
+  win.document.write('<html><head><title>Disposal Certificate ' + certNo + '</title>')
+  win.document.write('<style>body{font-family:Arial,sans-serif;margin:40px;font-size:13px;} h2{text-align:center;} table{width:100%;border-collapse:collapse;margin:16px 0;} th,td{border:1px solid #ccc;padding:8px 12px;} th{background:#f5f5f5;text-align:left;} .sig{display:flex;gap:60px;margin-top:50px;} .sig-line{border-top:1px solid #000;min-width:180px;padding-top:6px;font-size:12px;} .center{text-align:center;} @media print{body{margin:20px;}}</style>')
+  win.document.write('</head><body>')
+  win.document.write('<div class="center"><strong>TAYTAY DOCTORS MULTISPECIALTY HOSPITAL</strong></div>')
+  win.document.write('<div class="center" style="font-size:11px;color:#666;">Taytay, Rizal</div>')
+  win.document.write('<h2>ASSET DISPOSAL CERTIFICATE</h2>')
+  win.document.write('<div class="center" style="margin-bottom:20px;">Certificate No.: <strong>' + certNo + '</strong> &nbsp;|&nbsp; Date: <strong>' + new Date().toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric'}) + '</strong></div>')
+  win.document.write('<table><tr><th>Asset No.</th><td>' + asset.asset_no + '</td><th>Asset Name</th><td>' + asset.asset_name + '</td></tr>')
+  win.document.write('<tr><th>Brand / Model</th><td>' + [asset.brand,asset.model].filter(Boolean).join(' / ')||'—' + '</td><th>Serial No.</th><td>' + (asset.serial_no||'—') + '</td></tr>')
+  win.document.write('<tr><th>Acquisition Date</th><td>' + (asset.acquisition_date||'—') + '</td><th>Acquisition Cost</th><td>₱' + Number(asset.acquisition_cost||0).toLocaleString() + '</td></tr>')
+  win.document.write('<tr><th>Disposal Method</th><td><strong>' + method.replace('_',' ').toUpperCase() + '</strong></td><th>Appraised Value</th><td>₱' + value.toLocaleString() + '</td></tr>')
+  win.document.write('<tr><th colspan="1">Reason for Disposal</th><td colspan="3">' + reason + '</td></tr></table>')
+  win.document.write('<p style="margin-top:20px;">This certifies that the above-mentioned asset has been officially disposed of in accordance with hospital policy and applicable government regulations.</p>')
+  win.document.write('<div class="sig">')
+  win.document.write('<div><div class="sig-line">Disposed By</div><div style="font-size:11px;margin-top:4px;">Asset Inventory Officer</div></div>')
+  if (witness) win.document.write('<div><div class="sig-line">' + witness + '</div><div style="font-size:11px;margin-top:4px;">' + (witnessPos||'Witness') + '</div></div>')
+  win.document.write('<div><div class="sig-line">Approved By</div><div style="font-size:11px;margin-top:4px;">Hospital Administrator</div></div>')
+  win.document.write('</div>')
+  win.document.write('<script>window.onload=function(){window.print();}<\/script>')
+  win.document.write('</body></html>')
+  win.document.close()
+}
+
+// ═══════════════════════════════════
+// PM SCHEDULE
+// ═══════════════════════════════════
+async function renderPMSchedule() {
+  const content = document.getElementById('mainContent')
+  const { data: schedules } = await SB.from('pm_schedules')
+    .select('*').eq('is_active', true).order('next_due_date')
+  const all = schedules || []
+  const today = new Date()
+  const in30 = new Date(today.getTime() + 30*24*3600000)
+
+  const overdue = all.filter(s => s.next_due_date && new Date(s.next_due_date) < today)
+  const soon = all.filter(s => s.next_due_date && new Date(s.next_due_date) >= today && new Date(s.next_due_date) <= in30)
+
+  let html = '<div class="page-header"><h2>🔧 PM Schedule</h2>'
+  html += '<button class="btn btn-primary" onclick="openAddPMModal()">＋ Add Schedule</button></div>'
+
+  if (overdue.length > 0) {
+    html += '<div style="background:var(--red-a);border:1px solid var(--red);border-radius:10px;padding:12px 16px;margin-bottom:16px;">'
+    html += '<strong style="color:var(--red);">⚠️ ' + overdue.length + ' overdue PM(s)</strong>'
+    html += '</div>'
+  }
+  if (soon.length > 0) {
+    html += '<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:16px;">'
+    html += '<strong style="color:var(--amber);">⏰ ' + soon.length + ' PM(s) due within 30 days</strong>'
+    html += '</div>'
+  }
+
+  html += '<div class="table-wrap"><table><thead><tr>'
+  html += '<th>Asset</th><th>PM Type</th><th>Frequency</th><th>Last Done</th><th>Next Due</th><th>Assigned To</th><th>Status</th><th></th>'
+  html += '</tr></thead><tbody>'
+  if (all.length === 0) {
+    html += '<tr><td colspan="8" style="text-align:center;color:var(--txt2);padding:30px;">No PM schedules yet</td></tr>'
+  }
+  for (const s of all) {
+    const asset = S.assets.find(a => a.id === s.asset_id)
+    const assigned = S.users.find(u => u.id === s.assigned_to)
+    const dueDate = s.next_due_date ? new Date(s.next_due_date) : null
+    const isOverdue = dueDate && dueDate < today
+    const isSoon = dueDate && dueDate >= today && dueDate <= in30
+    const dueColor = isOverdue ? 'var(--red)' : isSoon ? 'var(--amber)' : 'var(--accent)'
+    html += '<tr>'
+    html += '<td><strong style="font-size:12px;">' + (asset ? asset.asset_no + ' — ' + asset.asset_name : '—') + '</strong></td>'
+    html += '<td style="color:var(--txt2);">' + s.pm_type + '</td>'
+    html += '<td style="color:var(--txt2);">Every ' + s.frequency_months + ' months</td>'
+    html += '<td style="color:var(--txt2);">' + (s.last_done_date ? formatDate(s.last_done_date) : '—') + '</td>'
+    html += '<td style="color:' + dueColor + ';font-weight:' + (isOverdue||isSoon?'700':'400') + ';">' + (s.next_due_date ? formatDate(s.next_due_date) : '—') + (isOverdue?' ⚠️':isSoon?' ⏰':'') + '</td>'
+    html += '<td style="color:var(--txt2);">' + (assigned ? assigned.full_name : '—') + '</td>'
+    html += '<td>' + (isOverdue ? '<span style="color:var(--red);font-size:11px;font-weight:700;">OVERDUE</span>' : isSoon ? '<span style="color:var(--amber);font-size:11px;font-weight:700;">DUE SOON</span>' : '<span style="color:var(--accent);font-size:11px;">OK</span>') + '</td>'
+    html += '<td><button class="btn btn-ghost btn-sm" onclick="markPMDone(\'' + s.id + '\',\'' + s.frequency_months + '\')">✅ Mark Done</button></td>'
+    html += '</tr>'
+  }
+  html += '</tbody></table></div>'
+  content.innerHTML = html
+}
+
+async function openAddPMModal() {
+  const assets = await loadAssets()
+  document.getElementById('confirmTitle').textContent = '🔧 Add PM Schedule'
+  document.getElementById('confirmMsg').innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">ASSET *</label>' +
+    '<select id="pm_asset" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="">— Select Asset —</option>' +
+    assets.map(a => '<option value="' + a.id + '">' + a.asset_no + ' — ' + a.asset_name + '</option>').join('') +
+    '</select></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">PM TYPE</label>' +
+    '<select id="pm_type" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="preventive">Preventive Maintenance</option>' +
+    '<option value="calibration">Calibration</option>' +
+    '<option value="inspection">Inspection</option>' +
+    '</select></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">FREQUENCY (months)</label>' +
+    '<select id="pm_freq" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="1">Monthly</option><option value="3">Quarterly</option>' +
+    '<option value="6" selected>Semi-annual</option><option value="12">Annual</option>' +
+    '</select></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">NEXT DUE DATE *</label>' +
+    '<input type="date" id="pm_due" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '<div><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:4px;">ASSIGNED TO</label>' +
+    '<select id="pm_user" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="">— Select —</option>' +
+    S.users.map(u => '<option value="' + u.id + '">' + u.full_name + '</option>').join('') +
+    '</select></div></div>'
+  document.getElementById('confirmOkBtn').textContent = 'Add Schedule'
+  document.getElementById('confirmOkBtn').onclick = async () => {
+    const assetId = document.getElementById('pm_asset').value
+    const due = document.getElementById('pm_due').value
+    if (!assetId) { showToast('error','Required','Please select an asset.'); return }
+    if (!due) { showToast('error','Required','Please set a due date.'); return }
+    await SB.from('pm_schedules').insert({
+      asset_id: assetId,
+      pm_type: document.getElementById('pm_type').value,
+      frequency_months: Number(document.getElementById('pm_freq').value),
+      next_due_date: due,
+      assigned_to: document.getElementById('pm_user').value || null
+    })
+    closeModal('confirmModal')
+    showToast('success','Schedule Added','PM schedule created.')
+    renderPMSchedule()
+  }
+  openModal('confirmModal')
+}
+
+async function markPMDone(scheduleId, freqMonths) {
+  confirm2('Mark this PM as done today?', async () => {
+    const today = new Date()
+    const nextDue = new Date(today)
+    nextDue.setMonth(nextDue.getMonth() + Number(freqMonths))
+    await SB.from('pm_schedules').update({
+      last_done_date: today.toISOString().split('T')[0],
+      next_due_date: nextDue.toISOString().split('T')[0]
+    }).eq('id', scheduleId)
+    showToast('success','PM Done ✅','Next due: ' + formatDate(nextDue.toISOString()))
+    renderPMSchedule()
+  })
+}
+
+// ═══════════════════════════════════
+// QR SCANNER — log scan on lookup
 let qrScanner = null
 
 function openScannerModal() {
@@ -1496,6 +2256,15 @@ async function lookupAsset(code) {
     if (resultEl) {
       resultEl.style.display = 'block'
       resultEl.innerHTML = '✅ Found: <strong>' + asset.asset_no + ' — ' + asset.asset_name + '</strong>'
+    }
+    // Log the scan
+    if (S.user) {
+      SB.from('asset_scan_logs').insert({
+        asset_id: asset.id,
+        scanned_by: S.user.id,
+        scanned_by_name: S.user.full_name,
+        scan_purpose: 'lookup'
+      }).catch(() => {})
     }
     setTimeout(() => {
       closeScanner()
