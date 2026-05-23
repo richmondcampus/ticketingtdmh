@@ -1590,19 +1590,40 @@ async function updateAssetStatus(assetId, newStatus) {
 async function flagForDERP(assetId) {
   const { data: a } = await SB.from('assets').select('*').eq('id', assetId).single()
   if (!a) return
-  confirm2('Flag "' + a.asset_name + '" for DERP? This will open a DERP request in the CSR system.', async () => {
+  const cat = S.categories.find(c => c.id === a.category_id)
+
+  confirm2('Flag "' + a.asset_name + '" for DERP? This will open the CSR system with the form pre-filled.', async () => {
     // Log in asset history
     await SB.from('asset_history').insert({
       asset_id: assetId, action: 'derp_flagged',
       performed_by: S.user.id, notes: 'Flagged for DERP assessment'
     })
-    // Update asset status
-    await SB.from('assets').update({ status: 'for_disposal', updated_at: new Date().toISOString() }).eq('id', assetId)
     closeModal('assetDetailModal')
-    showToast('success','Flagged ♻️', a.asset_name + ' flagged for DERP.')
-    // Redirect to CSR with DERP pre-fill
-    const url = 'https://ittdmh.pro/csr?source=inventory&ref=' + assetId + '&type=derp&item=' + encodeURIComponent(a.asset_name)
-    if (confirm('Open CSR system to submit DERP request?')) window.open(url, '_blank')
+    showToast('success','Flagged ♻️', a.asset_name + ' — opening DERP form in CSR...')
+
+    // Build URL with all asset details for pre-filling
+    const derpCategory = cat ? (
+      cat.code === 'IT' ? 'it' :
+      cat.code === 'MED' ? 'gsd' : 'maintenance'
+    ) : 'it'
+
+    const params = new URLSearchParams({
+      derp: '1',
+      asset_id: assetId,
+      asset_no: a.asset_no || '',
+      item: a.asset_name || '',
+      brand: a.brand || '',
+      model: a.model || '',
+      serial: a.serial_no || '',
+      condition: a.condition || 'poor',
+      category: derpCategory,
+      location: a.location || '',
+      dept: a.dept_id || '',
+      cost: a.acquisition_cost || '0',
+      warranty: a.warranty_expiry ? (new Date(a.warranty_expiry) > new Date() ? 'in_warranty' : 'out_of_warranty') : 'unknown'
+    })
+
+    window.open('https://ittdmh.pro/csr?' + params.toString(), '_blank')
   })
 }
 
