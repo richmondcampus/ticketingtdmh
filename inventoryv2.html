@@ -1641,8 +1641,8 @@ async function printViaBluetooth(assetId) {
     showToast('info','Printing...','Preparing label...')
 
     // ─── Build label canvas ───
-    // D110_M label: 12mm wide = 12*8 = 96px wide at 203dpi
-    // Standard label 12x40mm → 96 x 320 pixels
+    // D110_M label: 12mm × 40mm at 203dpi = 96 × 320 pixels
+    // Printable area is slightly narrower — use 96w × 320h
     const W = 96
     const H = 320
 
@@ -1652,41 +1652,53 @@ async function printViaBluetooth(assetId) {
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0,0,W,H)
 
-    // QR code — fit in top portion
+    // QR code — 80×80px centered at top, leaving margin
     const qrCanvas = document.createElement('canvas')
-    new QRious({ element:qrCanvas, value:a.qr_code||a.asset_no, size:96, background:'#ffffff', foreground:'#000000' })
-    ctx.drawImage(qrCanvas, 0, 0, 96, 96)
+    new QRious({
+      element: qrCanvas,
+      value: a.qr_code || a.asset_no,
+      size: 80,
+      background: '#ffffff',
+      foreground: '#000000',
+      level: 'M'
+    })
+    ctx.drawImage(qrCanvas, 8, 8, 80, 80)
 
-    // Text below QR
-    ctx.fillStyle = '#000000'
-    ctx.font = 'bold 9px Arial'
+    // Text below QR — compact
     ctx.textAlign = 'center'
+    ctx.fillStyle = '#000000'
 
-    // Asset No
-    ctx.fillText(a.asset_no, 48, 112)
+    // Asset No — bold, small
+    ctx.font = 'bold 8px Arial'
+    ctx.fillText(a.asset_no, 48, 100)
 
-    // Name — wrap
-    ctx.font = '8px Arial'
-    const words = a.asset_name.split(' ')
-    let line = '', textY = 126
-    words.forEach(word => {
+    // Asset Name — wrap at 90px max
+    ctx.font = '7px Arial'
+    const nameWords = a.asset_name.split(' ')
+    let line = '', ty = 112
+    nameWords.forEach(word => {
       const test = line ? line+' '+word : word
       if (ctx.measureText(test).width > 90 && line) {
-        ctx.fillText(line, 48, textY); line=word; textY+=11
-      } else line = test
+        ctx.fillText(line, 48, ty); line=word; ty+=10
+      } else line=test
     })
-    if (line) { ctx.fillText(line, 48, textY); textY+=11 }
+    if (line) { ctx.fillText(line, 48, ty); ty+=10 }
 
-    // Dept + Location
+    // Dept
     const dept = S.departments.find(d=>d.id===a.dept_id)
-    ctx.font = '7px Arial'
-    ctx.fillStyle = '#555555'
-    if (dept) { ctx.fillText(dept.dept_name, 48, textY); textY+=10 }
-    if (a.location) { ctx.fillText(a.location, 48, textY); textY+=10 }
-
     ctx.font = '6px Arial'
+    ctx.fillStyle = '#444444'
+    if (dept && ty < 290) {
+      ctx.fillText(dept.dept_name, 48, ty); ty+=9
+    }
+    if (a.location && ty < 290) {
+      ctx.fillText(a.location, 48, ty); ty+=9
+    }
+
+    // Hospital footer
+    ctx.font = '5px Arial'
     ctx.fillStyle = '#aaaaaa'
-    ctx.fillText('TDMH', 48, H-8)
+    ctx.fillText('TDMH Asset Inventory', 48, H-6)
 
     // ─── D110M_V4 PRINT SEQUENCE ───
     // Ref: printers.niim.blue/interfacing/print-tasks/#d110m_v4
