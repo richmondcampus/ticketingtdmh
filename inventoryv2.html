@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<!-- QR code generator -->
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<!-- QR code generator - uses window.QRious -->
+<script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
 <!-- Barcode scanner -->
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
@@ -457,6 +457,26 @@ async function doLogout() {
 // ═══════════════════════════════════
 // BOOT
 // ═══════════════════════════════════
+// QR generator using QRious (no conflict with html5-qrcode)
+function generateQRDataURL(text, size) {
+  try {
+    const canvas = document.createElement('canvas')
+    const qr = new QRious({
+      element: canvas,
+      value: text,
+      size: size || 200,
+      backgroundAlpha: 1,
+      foreground: '#000000',
+      background: '#ffffff',
+      level: 'M'
+    })
+    return canvas.toDataURL('image/png')
+  } catch(e) {
+    console.warn('QR generation failed:', e)
+    return ''
+  }
+}
+
 async function bootApp(session) {
   S.user = session
   document.getElementById('loginScreen').style.display = 'none'
@@ -1146,9 +1166,7 @@ async function viewAsset(id) {
 
   // QR Code — generate as data URL before injecting HTML
   let detailQRUrl = ''
-  try {
-    detailQRUrl = await QRCode.toDataURL(a.qr_code || a.asset_no, { width: 120, margin: 1 })
-  } catch(e) {}
+  detailQRUrl = generateQRDataURL(a.qr_code || a.asset_no, 120)
 
   // QR Code
   body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
@@ -1503,12 +1521,7 @@ async function openPrintLabelModal(assetId) {
 
   // Generate QR as data URL first — before injecting into DOM
   let qrDataUrl = ''
-  try {
-    qrDataUrl = await QRCode.toDataURL(a.qr_code || a.asset_no, {
-      width: 200, margin: 2,
-      color: { dark: '#000000', light: '#ffffff' }
-    })
-  } catch(e) { console.warn('QR gen error', e) }
+  qrDataUrl = generateQRDataURL(a.qr_code || a.asset_no, 200)
 
   // Label preview HTML with img tag (not canvas — avoids timing issues)
   const labelHTML =
@@ -1582,7 +1595,7 @@ async function printViaBluetooth(assetId) {
 
     // QR code
     const qrCanvas = document.createElement('canvas')
-    await QRCode.toCanvas(qrCanvas, a.qr_code || a.asset_no, { width: 160, margin: 1 })
+    new QRious({ element: qrCanvas, value: a.qr_code || a.asset_no, size: 160, background: '#ffffff', foreground: '#000000' })
     ctx.drawImage(qrCanvas, 10, 16)
 
     // Text
