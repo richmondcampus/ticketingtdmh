@@ -545,6 +545,9 @@ tr:hover td{background:var(--surf2);}
       <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">
     </div>
     <button class="btn btn-primary btn-full" id="loginBtn" onclick="doLogin()">Sign In</button>
+    <div style="text-align:center;margin-top:12px;">
+      <a href="https://ittdmh.pro/reset?from=csr" style="font-size:12px;color:var(--txt2);text-decoration:none;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--txt2)'">Forgot password?</a>
+    </div>
     <p style="font-size:11px;color:var(--txt3);text-align:center;margin-top:16px;">
       Taytay Doctors Multispecialty Hospital · IT Department
     </p>
@@ -1637,7 +1640,7 @@ function renderNewRequestForm(reqType) {
     html += '</div>'
   }
 
-  // Items table
+  // Items table — with stock check for supply type
   html += '<div class="field"><label>Items Requested</label>'
   html += '<div class="items-table-wrap">'
   html += '<table class="items-table"><thead><tr>'
@@ -1648,12 +1651,185 @@ function renderNewRequestForm(reqType) {
   html += '<button class="btn btn-ghost btn-sm" onclick="addItemRow()" style="margin-top:8px;">＋ Add Item</button>'
   html += '</div>'
 
+  // Direct issuance option — Supply Officer / Admin only, supply type
+  if (reqType === 'supply' && ['supply_officer','admin'].includes(state.user.csr_role)) {
+    html += '<div id="stockCheckWrap" style="background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;padding:14px;margin-top:4px;">'
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+    html += '<div style="font-size:12px;font-weight:600;">⚡ Quick Issue from Stock</div>'
+    html += '<button class="btn btn-ghost btn-sm" onclick="checkStockAvailability()">🔍 Check Stock</button>'
+    html += '</div>'
+    html += '<div id="stockCheckResult" style="font-size:12px;color:var(--txt2);">Click "Check Stock" to see if items are available for direct issuance.</div>'
+    html += '</div>'
+  }
+
   document.getElementById('newRequestBody').innerHTML = html
 }
 
 function switchReqType(t) {
   state.sourceType = t
   renderNewRequestForm(t)
+}
+
+// ─────────────────────────────
+// DIRECT ISSUANCE FROM STOCK
+// ─────────────────────────────
+async function checkStockAvailability() {
+  const items = state.itemRows.filter(r => r.item_name && r.item_name.trim())
+  if (items.length === 0) {
+    showToast('warning','No Items','Please add items first.')
+    return
+  }
+  const resultEl = document.getElementById('stockCheckResult')
+  if (!resultEl) return
+  resultEl.innerHTML = '<span style="color:var(--txt2);">⏳ Checking stock...</span>'
+
+  let allAvailable = true
+  let resultHTML = '<div style="display:flex;flex-direction:column;gap:6px;">'
+
+  for (const item of items) {
+    // Search stock by name
+    const { data: stockItems } = await SB.from('stock_items')
+      .select('id,item_name,quantity_on_hand,unit,location_id')
+      .ilike('item_name', '%' + item.item_name.substring(0,15) + '%')
+      .eq('is_active', true)
+      .limit(3)
+
+    const best = stockItems && stockItems.length > 0 ?
+      stockItems.sort((a,b) => b.quantity_on_hand - a.quantity_on_hand)[0] : null
+    const available = best ? Number(best.quantity_on_hand) : 0
+    const needed = Number(item.quantity) || 1
+    const hasStock = available >= needed
+
+    if (!hasStock) allAvailable = false
+
+    const color = hasStock ? 'var(--green)' : available > 0 ? 'var(--amber)' : 'var(--red)'
+    const icon = hasStock ? '✅' : available > 0 ? '⚠️' : '❌'
+    resultHTML += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surf3);border-radius:8px;">'
+    resultHTML += '<span style="font-size:12px;">' + icon + ' ' + item.item_name + '</span>'
+    resultHTML += '<span style="font-size:12px;color:' + color + ';font-weight:600;">'
+    resultHTML += (best ? available + ' ' + (best.unit||'pcs') + ' available' : 'Not in stock system')
+    resultHTML += ' (need ' + needed + ')</span>'
+    resultHTML += '</div>'
+  }
+
+  resultHTML += '</div>'
+
+  if (allAvailable) {
+    resultHTML += '<div style="margin-top:10px;">'
+    resultHTML += '<button class="btn btn-success" onclick="directIssueFromStock()" style="width:100%;">⚡ Issue Now — Skip Approval</button>'
+    resultHTML += '<div style="font-size:11px;color:var(--txt3);margin-top:6px;text-align:center;">All items available in stock. Will deduct immediately and notify requester.</div>'
+    resultHTML += '</div>'
+  } else {
+    resultHTML += '<div style="margin-top:8px;font-size:12px;color:var(--amber);">⚠️ Some items are insufficient in stock. Submit normally for purchase order.</div>'
+  }
+
+  resultEl.innerHTML = resultHTML
+}
+
+async function directIssueFromStock() {
+  const dept = document.getElementById('f_dept')?.value
+  const urgency = document.getElementById('f_urgency')?.value || 'routine'
+  const purpose = document.getElementById('f_purpose')?.value.trim() || 'Direct issuance from stock'
+  const items = state.itemRows.filter(r => r.item_name && r.item_name.trim())
+
+  if (!dept) { showToast('error','Validation','Please select department.'); return }
+  if (items.length === 0) { showToast('error','Validation','Please add items.'); return }
+
+  try {
+    // Create request — auto approved + issued
+    const { data: numData } = await SB.rpc('generate_request_no')
+    const requestNo = numData || ('CSR-' + Date.now())
+    const { data: req, error } = await SB.from('requests').insert({
+      request_no: requestNo,
+      request_type: 'supply',
+      dept_id: dept,
+      requested_by: state.user.id,
+      urgency, purpose,
+      status: 'issued',
+      current_approval_level: 1,
+      source_system: 'manual'
+    }).select().single()
+    if (error) throw error
+
+    // Insert request items
+    await SB.from('request_items').insert(items.map(item => ({
+      request_id: req.id,
+      item_name: item.item_name,
+      item_description: item.item_description || null,
+      quantity: Number(item.quantity) || 1,
+      unit: item.unit || 'pcs',
+      estimated_cost: Number(item.estimated_cost) || 0,
+      category: item.category || 'consumable'
+    })))
+
+    // Generate issuance
+    const { data: issNum } = await SB.rpc('generate_issuance_no')
+    const issNo = issNum || ('ISS-' + Date.now())
+    const token = generateToken()
+
+    const { data: iss } = await SB.from('issuances').insert({
+      issuance_no: issNo,
+      request_id: req.id,
+      issued_by: state.user.id,
+      received_by: null,
+      issued_at: new Date().toISOString(),
+      scenario: 'from_stock',
+      prepared_by: state.user.id,
+      confirm_token: token,
+      confirm_token_expires_at: new Date(Date.now() + 72*3600000).toISOString(),
+      notes: 'Direct issuance — ' + purpose
+    }).select().single()
+
+    // Deduct from stock + create issuance items
+    for (const item of items) {
+      const { data: stockItems } = await SB.from('stock_items')
+        .select('id,quantity_on_hand,unit')
+        .ilike('item_name', '%' + item.item_name.substring(0,15) + '%')
+        .eq('is_active', true)
+        .order('quantity_on_hand', { ascending: false })
+        .limit(1)
+
+      const stockItem = stockItems?.[0]
+
+      await SB.from('issuance_items').insert({
+        issuance_id: iss.id,
+        quantity_issued: Number(item.quantity) || 1,
+        from_stock: !!stockItem,
+        stock_item_id: stockItem?.id || null
+      })
+
+      if (stockItem) {
+        const newQty = Math.max(0, Number(stockItem.quantity_on_hand) - (Number(item.quantity) || 1))
+        await SB.from('stock_items').update({ quantity_on_hand: newQty, last_updated: new Date().toISOString() }).eq('id', stockItem.id)
+        await SB.from('stock_movements').insert({
+          stock_item_id: stockItem.id,
+          movement_type: 'issue',
+          quantity: -(Number(item.quantity) || 1),
+          quantity_before: Number(stockItem.quantity_on_hand),
+          quantity_after: newQty,
+          performed_by: state.user.id,
+          remarks: 'Direct issuance — ' + requestNo,
+          reference_type: 'csr_request',
+          reference_id: req.id
+        })
+      }
+    }
+
+    // SMS confirmation link to dept
+    const deptUsers = state.users.filter(u => u.dept_id === dept && u.phone)
+    if (deptUsers.length > 0) {
+      const confirmUrl = 'https://ittdmh.pro/csr?confirm=' + token
+      const deptName = state.departments.find(d => d.id === dept)?.dept_name || 'your department'
+      await sendSMS(deptUsers.map(u => u.phone),
+        '[TDMH Supply] ' + requestNo + ' — items from stock are ready for pickup. Please confirm receipt: ' + confirmUrl)
+    }
+
+    closeModal('newRequestModal')
+    showToast('success','⚡ Issued Directly!', requestNo + ' — ' + issNo + ' generated. Stock deducted. SMS sent for confirmation.')
+    if (state.page === 'dashboard') renderDashboard()
+    else showPage('all_requests')
+
+  } catch(e) { showToast('error','Error', e.message); console.error(e) }
 }
 
 function buildItemRows() {
