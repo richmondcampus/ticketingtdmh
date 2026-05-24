@@ -256,6 +256,9 @@ tr:hover td{background:var(--surf2);}
       <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">
     </div>
     <button class="btn btn-primary btn-full" id="loginBtn" onclick="doLogin()">Sign In</button>
+    <div style="text-align:center;margin-top:12px;">
+      <a href="https://ittdmh.pro/reset?from=it" style="font-size:12px;color:var(--txt2);text-decoration:none;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--txt2)'">Forgot password?</a>
+    </div>
     <p style="font-size:11px;color:var(--txt3);text-align:center;margin-top:16px;">Taytay Doctors Multispecialty Hospital · IT Department</p>
   </div>
 </div>
@@ -397,6 +400,24 @@ let S = {
 function getSession() { try { return JSON.parse(localStorage.getItem('tdmh_session')) } catch { return null } }
 function setSession(d) { localStorage.setItem('tdmh_session', JSON.stringify(d)) }
 function clearSession() { localStorage.removeItem('tdmh_session') }
+
+function storeAuthSession(authData, profile) {
+  const roleFields = ['csr_role','it_role','maintenance_role','inventory_role']
+  const session = {
+    id: profile.id, auth_id: authData.user.id,
+    employee_no: profile.employee_no, full_name: profile.full_name,
+    dept_id: profile.dept_id, phone: profile.phone, email: profile.email,
+    access_token: authData.session?.access_token,
+    refresh_token: authData.session?.refresh_token,
+    expires_at: authData.session?.expires_at
+  }
+  roleFields.forEach(r => { session[r] = profile[r] || null })
+  // extra fields
+  if (profile.spec !== undefined) session.spec = profile.spec
+  if (profile.color !== undefined) session.color = profile.color
+  setSession(session)
+  return session
+}
 
 async function doLogin() {
   const empNo = document.getElementById('loginEmpNo').value.trim()
@@ -747,16 +768,34 @@ function filterTicketList() {
 }
 
 // ═══ NEW TICKET FORM ═══
-function openTicketForm(categoryId) {
-  document.getElementById('ticketFormTitle').textContent = '🖥️ New IT Support Ticket'
-  renderTicketForm(categoryId)
+function openTicketForm(categoryId, ticketType) {
+  const type = ticketType || 'regular'
+  document.getElementById('ticketFormTitle').textContent = type === 'agimat' ? '🆔 Agimat Account Request' : '🖥️ New IT Support Ticket'
+  // Always reset footer to default submit button
+  document.getElementById('ticketFormFooter').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'ticketFormModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="' + (type === 'agimat' ? 'submitAgimatRequest()' : 'submitTicket()') + '">' +
+    (type === 'agimat' ? '📤 Submit Account Request' : 'Submit Ticket') + '</button>'
+
+  if (type === 'agimat') {
+    renderAgimatForm()
+  } else {
+    renderTicketForm(categoryId)
+  }
   openModal('ticketFormModal')
 }
 
 function openTicketFormWithCategory(catId) { openTicketForm(catId) }
 
 function renderTicketForm(categoryId) {
-  let html = '<div class="field"><label>Subject <span style="color:var(--red);">*</span></label>'
+  // Ticket type selector
+  let html = '<div class="field"><label>Ticket Type</label>'
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">'
+  html += '<button onclick="openTicketForm(null,\'regular\')" style="padding:7px 14px;border-radius:9px;border:2px solid var(--accent);background:var(--accent-a);color:var(--accent);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;">🖥️ IT Issue / Request</button>'
+  html += '<button onclick="openTicketForm(null,\'agimat\')" style="padding:7px 14px;border-radius:9px;border:1px solid var(--bdr2);background:var(--surf2);color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">🆔 Agimat Account</button>'
+  html += '</div></div>'
+
+  html += '<div class="field"><label>Subject <span style="color:var(--red);">*</span></label>'
   html += '<input type="text" id="tf_subject" placeholder="Brief description of the issue"></div>'
 
   html += '<div class="field-row">'
@@ -794,6 +833,215 @@ function renderTicketForm(categoryId) {
   html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">Images, PDFs accepted. Max 5MB each.</div></div>'
 
   document.getElementById('ticketFormBody').innerHTML = html
+}
+
+// ═══════════════════════════════════
+// AGIMAT ACCOUNT REQUEST
+// ═══════════════════════════════════
+const POSITIONS = [
+  'Doctor','Nurse','Medical Technologist','Pharmacist','Radiologic Technologist',
+  'Physical Therapist','Dentist','Nutritionist-Dietitian','Social Worker',
+  'Administrative Staff','Accounting / Finance','IT Staff','Security',
+  'Maintenance','Housekeeping','Driver','Other'
+]
+
+function renderAgimatForm() {
+  let html = ''
+
+  // Ticket type selector — same as regular
+  html += '<div class="field"><label>Ticket Type</label>'
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">'
+  html += '<button onclick="openTicketForm(null,\'regular\')" style="padding:7px 14px;border-radius:9px;border:1px solid var(--bdr2);background:var(--surf2);color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">🖥️ IT Issue / Request</button>'
+  html += '<button onclick="openTicketForm(null,\'agimat\')" style="padding:7px 14px;border-radius:9px;border:2px solid var(--accent);background:var(--accent-a);color:var(--accent);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;">🆔 Agimat Account</button>'
+  html += '</div></div>'
+
+  html += '<div style="background:var(--accent-a);border:1px solid var(--accent-b);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--txt2);">'
+  html += '🆔 Request for creation of an <strong>Agimat EMR account</strong>. Fill out all required fields accurately. IT will process within 1-2 business days.'
+  html += '</div>'
+
+  // Basic info
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>First Name <span style="color:var(--red);">*</span></label><input type="text" id="ag_fname" placeholder="Juan"></div>'
+  html += '<div class="field"><label>Middle Name</label><input type="text" id="ag_mname" placeholder="Santos"></div>'
+  html += '</div>'
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Last Name <span style="color:var(--red);">*</span></label><input type="text" id="ag_lname" placeholder="Dela Cruz"></div>'
+  html += '<div class="field"><label>Email Address <span style="color:var(--red);">*</span></label><input type="email" id="ag_email" placeholder="juan@email.com"></div>'
+  html += '</div>'
+
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Department <span style="color:var(--red);">*</span></label><select id="ag_dept">'
+  html += '<option value="">— Select Department —</option>'
+  S.departments.forEach(d => {
+    const sel = d.id === S.user.dept_id ? ' selected' : ''
+    html += '<option value="' + d.id + '"' + sel + '>' + d.dept_name + '</option>'
+  })
+  html += '</select></div>'
+  html += '<div class="field"><label>Position / Job Title <span style="color:var(--red);">*</span></label><select id="ag_position" onchange="checkAgimatPosition()">'
+  html += '<option value="">— Select Position —</option>'
+  POSITIONS.forEach(p => { html += '<option value="' + p + '">' + p + '</option>' })
+  html += '</select></div>'
+  html += '</div>'
+
+  // PRC License — shown always for licensed professionals
+  html += '<div id="ag_prc_wrap" style="display:none;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;padding:14px;margin-bottom:14px;">'
+  html += '<div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--accent);">📋 PRC License Details</div>'
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>PRC License Number <span style="color:var(--red);">*</span></label><input type="text" id="ag_prc_no" placeholder="0123456"></div>'
+  html += '<div class="field"><label>PRC Expiry Date <span style="color:var(--red);">*</span></label><input type="date" id="ag_prc_expiry"></div>'
+  html += '</div>'
+  // Doctor-specific: upload PRC ID photo
+  html += '<div id="ag_prc_photo_wrap" style="display:none;">'
+  html += '<div class="field"><label>PRC ID Photo <span style="color:var(--red);">*</span> <span style="font-size:11px;color:var(--txt3);">(Required for Doctors)</span></label>'
+  html += '<input type="file" id="ag_prc_photo" accept="image/*" style="color:var(--txt2);font-size:13px;" onchange="previewPRCPhoto(this)">'
+  html += '<div id="ag_prc_preview" style="margin-top:8px;"></div>'
+  html += '</div>'
+  html += '</div>'
+  html += '</div>'
+
+  // Optional fields
+  html += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-bottom:4px;">'
+  html += '<div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:10px;">Optional Fields <span style="font-weight:400;font-size:11px;">(fill if applicable)</span></div>'
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>PhilHealth Accreditation No.</label><input type="text" id="ag_philhealth" placeholder="Accreditation number"></div>'
+  html += '<div class="field"><label>TIN</label><input type="text" id="ag_tin" placeholder="Tax Identification Number"></div>'
+  html += '</div>'
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>PTR No.</label><input type="text" id="ag_ptr" placeholder="Professional Tax Receipt"></div>'
+  html += '<div class="field"><label>PMA No.</label><input type="text" id="ag_pma" placeholder="Philippine Medical Association"></div>'
+  html += '</div>'
+  html += '<div class="field" style="max-width:50%;"><label>S2 No.</label><input type="text" id="ag_s2" placeholder="S2 License (if applicable)"></div>'
+  html += '</div>'
+
+  html += '<div class="field"><label>Additional Notes</label>'
+  html += '<textarea id="ag_notes" rows="2" placeholder="Any additional information for IT..."></textarea></div>'
+
+  document.getElementById('ticketFormBody').innerHTML = html
+}
+
+function checkAgimatPosition() {
+  const position = document.getElementById('ag_position')?.value
+  const prcWrap = document.getElementById('ag_prc_wrap')
+  const photoWrap = document.getElementById('ag_prc_photo_wrap')
+
+  // Show PRC fields for licensed positions
+  const licensedPositions = ['Doctor','Nurse','Medical Technologist','Pharmacist',
+    'Radiologic Technologist','Physical Therapist','Dentist','Nutritionist-Dietitian']
+  const isLicensed = licensedPositions.includes(position)
+  const isDoctor = position === 'Doctor'
+
+  if (prcWrap) prcWrap.style.display = isLicensed ? 'block' : 'none'
+  if (photoWrap) photoWrap.style.display = isDoctor ? 'block' : 'none'
+}
+
+function previewPRCPhoto(input) {
+  const file = input.files[0]
+  if (!file) return
+  const preview = document.getElementById('ag_prc_preview')
+  if (!preview) return
+  const url = URL.createObjectURL(file)
+  preview.innerHTML = '<img src="' + url + '" style="max-width:200px;max-height:140px;object-fit:cover;border-radius:8px;border:1px solid var(--bdr2);">'
+}
+
+async function submitAgimatRequest() {
+  const fname = document.getElementById('ag_fname')?.value.trim()
+  const lname = document.getElementById('ag_lname')?.value.trim()
+  const email = document.getElementById('ag_email')?.value.trim()
+  const dept = document.getElementById('ag_dept')?.value
+  const position = document.getElementById('ag_position')?.value
+  const prcNo = document.getElementById('ag_prc_no')?.value.trim()
+  const prcExpiry = document.getElementById('ag_prc_expiry')?.value
+  const prcPhoto = document.getElementById('ag_prc_photo')?.files[0]
+
+  // Validation
+  if (!fname) { showToast('error','Required','First name is required.'); return }
+  if (!lname) { showToast('error','Required','Last name is required.'); return }
+  if (!email) { showToast('error','Required','Email address is required.'); return }
+  if (!dept) { showToast('error','Required','Department is required.'); return }
+  if (!position) { showToast('error','Required','Position/Job Title is required.'); return }
+
+  // PRC validation for licensed positions
+  const licensedPositions = ['Doctor','Nurse','Medical Technologist','Pharmacist',
+    'Radiologic Technologist','Physical Therapist','Dentist','Nutritionist-Dietitian']
+  if (licensedPositions.includes(position)) {
+    if (!prcNo) { showToast('error','Required','PRC License Number is required for ' + position + '.'); return }
+    if (!prcExpiry) { showToast('error','Required','PRC Expiry Date is required.'); return }
+    if (position === 'Doctor' && !prcPhoto) { showToast('error','Required','PRC ID Photo is required for Doctors.'); return }
+  }
+
+  try {
+    // Upload PRC photo if present
+    let prcPhotoUrl = null
+    if (prcPhoto) {
+      const ext = prcPhoto.name.split('.').pop()
+      const path = 'prc-ids/' + Date.now() + '-' + lname.toLowerCase() + '.' + ext
+      const { data: uploadData, error: uploadErr } = await SB.storage
+        .from('asset-photos')
+        .upload(path, prcPhoto, { upsert: false, contentType: prcPhoto.type })
+      if (!uploadErr) {
+        const { data: urlData } = SB.storage.from('asset-photos').getPublicUrl(path)
+        prcPhotoUrl = urlData.publicUrl
+      }
+    }
+
+    // Build ticket description
+    const deptName = S.departments.find(d => d.id === dept)?.dept_name || ''
+    const optional = [
+      document.getElementById('ag_philhealth')?.value ? 'PhilHealth: ' + document.getElementById('ag_philhealth').value : '',
+      document.getElementById('ag_tin')?.value ? 'TIN: ' + document.getElementById('ag_tin').value : '',
+      document.getElementById('ag_ptr')?.value ? 'PTR: ' + document.getElementById('ag_ptr').value : '',
+      document.getElementById('ag_pma')?.value ? 'PMA: ' + document.getElementById('ag_pma').value : '',
+      document.getElementById('ag_s2')?.value ? 'S2: ' + document.getElementById('ag_s2').value : '',
+    ].filter(Boolean).join('\n')
+
+    const description =
+      'AGIMAT ACCOUNT REQUEST\n' +
+      '━━━━━━━━━━━━━━━━━━━━━\n' +
+      'Name: ' + fname + ' ' + (document.getElementById('ag_mname')?.value || '') + ' ' + lname + '\n' +
+      'Email: ' + email + '\n' +
+      'Department: ' + deptName + '\n' +
+      'Position: ' + position + '\n' +
+      (prcNo ? 'PRC No.: ' + prcNo + '\n' : '') +
+      (prcExpiry ? 'PRC Expiry: ' + prcExpiry + '\n' : '') +
+      (prcPhotoUrl ? 'PRC ID Photo: ' + prcPhotoUrl + '\n' : '') +
+      (optional ? '\nOptional:\n' + optional + '\n' : '') +
+      (document.getElementById('ag_notes')?.value ? '\nNotes: ' + document.getElementById('ag_notes').value : '')
+
+    // Find Agimat/Account category
+    const cat = S.categories.find(c => c.slug === 'email' || c.name.toLowerCase().includes('email') || c.name.toLowerCase().includes('account')) || S.categories[0]
+
+    // Create ticket
+    const { data: numData } = await SB.rpc('generate_it_ticket_no')
+    const ticketId = numData || ('IT-' + Date.now())
+
+    const { data: ticket, error } = await SB.from('it_tickets').insert({
+      id: ticketId,
+      subject: '🆔 Agimat Account Request — ' + fname + ' ' + lname + ' (' + position + ')',
+      description,
+      category_id: cat?.id || null,
+      priority: 'medium',
+      dept_id: dept,
+      requester_id: S.user.id,
+      sla_response_due: new Date(Date.now() + 8*3600000).toISOString(),
+      sla_resolution_due: new Date(Date.now() + 48*3600000).toISOString(),
+      status: 'open',
+      source_system: 'agimat_request'
+    }).select().single()
+    if (error) throw error
+
+    // Notify IT staff
+    const itStaff = S.users.filter(u => ['technician','supervisor','admin'].includes(u.it_role) && u.phone)
+    if (itStaff.length > 0) {
+      sendSMS(itStaff.map(u => u.phone),
+        '[TDMH IT] New Agimat Account Request ' + ticketId + ' — ' + fname + ' ' + lname + ' (' + position + ', ' + deptName + ')')
+    }
+
+    closeModal('ticketFormModal')
+    showToast('success','Request Submitted 🆔', ticketId + ' — IT will process within 1-2 business days.')
+    viewTicket(ticketId)
+    if (['dashboard','my_tickets'].includes(S.page)) showPage(S.page)
+
+  } catch(e) { showToast('error','Error', e.message); console.error(e) }
 }
 
 async function submitTicket() {
@@ -1603,24 +1851,38 @@ document.getElementById('loginPass').addEventListener('keydown', e => { if (e.ke
 ;(async function init() {
   const savedTheme = localStorage.getItem('tdmh_theme') || 'dark'
   document.documentElement.setAttribute('data-theme', savedTheme)
+
+  // Try restore from stored tokens
+  const stored = getSession()
+  if (stored && stored.access_token && stored.refresh_token) {
+    try {
+      const { data: { session: restored }, error } = await SB.auth.setSession({
+        access_token: stored.access_token,
+        refresh_token: stored.refresh_token
+      })
+      if (restored && !error) {
+        const { data: profile } = await SB.from('users').select('*').eq('id', restored.user.id).eq('is_active', true).single()
+        if (profile && profile.it_role) {
+          const session = storeAuthSession({ user: restored.user, session: restored }, profile)
+          await bootApp(session)
+          return
+        }
+      }
+    } catch(e) { console.warn('Session restore failed:', e.message) }
+  }
+
+  // Fallback: check active Supabase session
   const { data: { session: authSession } } = await SB.auth.getSession()
   if (authSession) {
     const { data: profile } = await SB.from('users').select('*').eq('id', authSession.user.id).eq('is_active', true).single()
     if (profile && profile.it_role) {
-      const session = {
-        id: profile.id, auth_id: authSession.user.id,
-        employee_no: profile.employee_no, full_name: profile.full_name,
-        dept_id: profile.dept_id, phone: profile.phone, email: profile.email,
-        it_role: profile.it_role, csr_role: profile.csr_role,
-        maintenance_role: profile.maintenance_role, inventory_role: profile.inventory_role
-      }
-      setSession(session)
+      const session = storeAuthSession({ user: authSession.user, session: authSession }, profile)
       await bootApp(session)
       return
     }
   }
-  const session = getSession()
-  if (session && session.it_role) { await bootApp(session); return }
+
+  clearSession()
 })()
 </script>
 </body>
