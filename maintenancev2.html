@@ -286,6 +286,9 @@ tr:hover td{background:var(--surf2);}
       <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">
     </div>
     <button class="btn btn-primary btn-full" id="loginBtn" onclick="doLogin()">Sign In</button>
+    <div style="text-align:center;margin-top:12px;">
+      <a href="https://ittdmh.pro/reset?from=maintenance" style="font-size:12px;color:var(--txt2);text-decoration:none;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--txt2)'">Forgot password?</a>
+    </div>
     <p style="font-size:11px;color:var(--txt3);text-align:center;margin-top:16px;">Taytay Doctors Multispecialty Hospital · Maintenance Dept</p>
   </div>
 </div>
@@ -423,6 +426,24 @@ function getSession() { try { return JSON.parse(localStorage.getItem('tdmh_sessi
 function setSession(d) { localStorage.setItem('tdmh_session', JSON.stringify(d)) }
 function clearSession() { localStorage.removeItem('tdmh_session') }
 
+// Store full Supabase auth session so JWT persists across page reloads
+function storeAuthSession(authData, profile) {
+  const session = {
+    id: profile.id, auth_id: authData.user.id,
+    employee_no: profile.employee_no, full_name: profile.full_name,
+    dept_id: profile.dept_id, phone: profile.phone, email: profile.email,
+    csr_role: profile.csr_role, maintenance_role: profile.maintenance_role,
+    it_role: profile.it_role, inventory_role: profile.inventory_role,
+    spec: profile.spec, color: profile.color,
+    // Store tokens for session restore
+    access_token: authData.session?.access_token,
+    refresh_token: authData.session?.refresh_token,
+    expires_at: authData.session?.expires_at
+  }
+  setSession(session)
+  return session
+}
+
 async function doLogin() {
   const empNo = document.getElementById('loginEmpNo').value.trim()
   const pass = document.getElementById('loginPass').value.trim()
@@ -449,15 +470,7 @@ async function doLogin() {
     if (!profile) { showLoginErr('Account not found. Contact IT.'); await SB.auth.signOut(); return }
     if (!profile.maintenance_role) { showLoginErr('No access to Maintenance system. Contact IT.'); await SB.auth.signOut(); return }
 
-    const session = {
-      id: profile.id, auth_id: authData.user.id,
-      employee_no: profile.employee_no, full_name: profile.full_name,
-      dept_id: profile.dept_id, phone: profile.phone, email: profile.email,
-      csr_role: profile.csr_role, maintenance_role: profile.maintenance_role,
-      it_role: profile.it_role, inventory_role: profile.inventory_role,
-      spec: profile.spec, color: profile.color
-    }
-    setSession(session)
+    const session = storeAuthSession(authData, profile)
     await bootApp(session)
   } catch(e) { showLoginErr('Connection error. Try again.'); console.error(e) }
   finally { btn.disabled = false; btn.textContent = 'Sign In' }
@@ -1700,27 +1713,41 @@ document.getElementById('loginPass').addEventListener('keydown', e => { if (e.ke
   const savedTheme = localStorage.getItem('tdmh_theme') || 'dark'
   document.documentElement.setAttribute('data-theme', savedTheme)
 
+  // Try to restore Supabase auth session from stored tokens first
+  const stored = getSession()
+  if (stored?.access_token && stored?.refresh_token) {
+    try {
+      const { data: { session: restored }, error } = await SB.auth.setSession({
+        access_token: stored.access_token,
+        refresh_token: stored.refresh_token
+      })
+      if (restored && !error) {
+        // Session restored — verify profile still active
+        const { data: profile } = await SB.from('users').select('*').eq('id', restored.user.id).eq('is_active', true).single()
+        if (profile && profile.maintenance_role) {
+          const session = storeAuthSession({ user: restored.user, session: restored }, profile)
+          await bootApp(session)
+          return
+        }
+      }
+    } catch(e) { console.warn('Session restore failed:', e.message) }
+  }
+
+  // Fallback: check if Supabase already has an active session
   const { data: { session: authSession } } = await SB.auth.getSession()
   if (authSession) {
     const { data: profile } = await SB.from('users').select('*').eq('id', authSession.user.id).eq('is_active', true).single()
     if (profile && profile.maintenance_role) {
-      const session = {
-        id: profile.id, auth_id: authSession.user.id,
-        employee_no: profile.employee_no, full_name: profile.full_name,
-        dept_id: profile.dept_id, phone: profile.phone, email: profile.email,
-        csr_role: profile.csr_role, maintenance_role: profile.maintenance_role,
-        it_role: profile.it_role, inventory_role: profile.inventory_role,
-        spec: profile.spec, color: profile.color
-      }
-      setSession(session)
+      const session = storeAuthSession({ user: authSession.user, session: authSession }, profile)
       await bootApp(session)
       return
     }
   }
 
-  const session = getSession()
-  if (session && session.maintenance_role) { await bootApp(session); return }
+  // No valid session — show login
+  clearSession()
 })()
+
 </script>
 </body>
 </html>
