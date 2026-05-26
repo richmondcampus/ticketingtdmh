@@ -2970,8 +2970,10 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const isMoto = vtype === 'motorcycle'
 
   const { data: tripData } = await SB.from('trips')
-    .select('departure_at,expected_return_at')
+    .select('departure_at,expected_return_at,pool_id')
     .eq('id', id).single()
+
+  window._rsaPoolId = tripData?.pool_id || null
 
   const depISO = tripData?.departure_at || new Date().toISOString()
   const retISO = tripData?.expected_return_at || new Date(new Date(depISO).getTime() + 4*3600000).toISOString()
@@ -3064,7 +3066,15 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
 
   const canOverrideType = ['admin','approver_admin','super_approver'].includes(currentProfile?.role) && vtype !== 'ambulance'
 
+  const poolInfo = window._rsaPoolId
+    ? `<div class="info info-purple" style="margin-bottom:14px">
+        <strong>🚌 This is a pooled trip.</strong><br>
+        <span style="font-size:12px">Reassigning will update the driver and vehicle for <strong>ALL tickets</strong> in this pool at once.</span>
+      </div>`
+    : ''
+
   openMO(`↻ Reassign — ${ticketNo}`,
+    poolInfo +
     `<div class="info info-amber" style="margin-bottom:14px">
        <strong>⚠ Reassigning an already-assigned ticket.</strong><br>
        <span style="font-size:11px">The current driver and vehicle will be released back to available status. Old driver will be notified via SMS.</span>
@@ -3174,7 +3184,77 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
     }
   }
 
-  // Atomic reassign via DB function
+  // Check if this ticket is part of a pool
+  const { data: poolCheck } = await SB.from('trips').select('pool_id').eq('id', id).single()
+  const poolId = poolCheck?.pool_id
+
+  if (poolId) {
+    // POOL REASSIGN — update ALL tickets in the pool + trip_pools record
+    const { data: poolTickets } = await SB.from('trips')
+      .select('id,ticket_no,driver_id,vehicle_id')
+      .eq('pool_id', poolId)
+
+    const ticketNos = (poolTickets||[]).map(t => t.ticket_no).join(', ')
+    const ticketIds = (poolTickets||[]).map(t => t.id)
+
+    // Batch update all pool tickets
+    await SB.from('trips').update({
+      driver_id:     newDriverId,
+      driver_name:   newDriverName,
+      vehicle_id:    vv,
+      vehicle_plate: newVehicle?.plate || '',
+      vehicle_name:  newVehicle?.name  || '',
+      assigned_by:   currentProfile?.id,
+      assigned_at:   new Date().toISOString()
+    }).eq('pool_id', poolId)
+
+    // Update trip_pools record
+    await SB.from('trip_pools').update({
+      driver_id:    newDriverId,
+      driver_name:  newDriverName,
+      vehicle_id:   vv,
+      vehicle_plate: newVehicle?.plate || '',
+      vehicle_name:  newVehicle?.name  || ''
+    }).eq('id', poolId)
+
+    // Release old driver + vehicle → available
+    if (curDriverId && curDriverId !== newDriverId)
+      await SB.from('drivers').update({ status:'available' }).eq('id', curDriverId)
+    if (curVehicleId && curVehicleId !== vv)
+      await SB.from('vehicles').update({ status:'available' }).eq('id', curVehicleId)
+
+    // Set new driver + vehicle → on-trip
+    if (newDriverId !== curDriverId)
+      await SB.from('drivers').update({ status:'on-trip' }).eq('id', newDriverId)
+    if (vv !== curVehicleId)
+      await SB.from('vehicles').update({ status:'on-trip' }).eq('id', vv)
+
+    // Audit log for the pool
+    const changes = []
+    if (newDriverId !== curDriverId) changes.push(`Driver: ${_drivers.find(d=>d.id===curDriverId)?.full_name||curDriverId} → ${newDriverName}`)
+    if (vv !== curVehicleId)         changes.push(`Vehicle: ${_vehicles.find(v=>v.id===curVehicleId)?.plate||curVehicleId} → ${newVehicle?.plate||vv}`)
+    await addAudit(poolTickets?.[0]?.id, ticketNos,
+      '↻ Pool Reassigned',
+      `${changes.join(' | ')} | All ${(poolTickets||[]).length} pool tickets updated | Reason: ${reason} | By: ${currentProfile?.full_name}`)
+
+    // SMS old driver
+    if (curDriverId && curDriverId !== newDriverId) {
+      const { data: oldDrv } = await SB.from('drivers').select('phone').eq('id', curDriverId).single()
+      if (oldDrv?.phone) await sendSMS([oldDrv.phone], `[TDMH VTS] You have been UNASSIGNED from pool trip.\nTickets: ${ticketNos}\nReason: ${reason}`)
+    }
+    // SMS new driver
+    if (newDriverId !== curDriverId) {
+      const { data: newDrv } = await SB.from('drivers').select('phone').eq('id', newDriverId).single()
+      const dep = tripData?.departure_at ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
+      if (newDrv?.phone) await sendSMS([newDrv.phone], `[TDMH VTS] POOL TRIP ASSIGNMENT\nTickets: ${ticketNos}\nVehicle: ${newVehicle?.name||newVehicle?.plate||'—'} (${newVehicle?.plate||'—'})\nDeparture: ${dep}\nReport to motor pool.`)
+    }
+
+    closeMO(true)
+    renderTickets()
+    return
+  }
+
+  // SINGLE TICKET REASSIGN (non-pool) — atomic via DB function
   const { data: result, error: rErr } = await SB.rpc('reassign_trip_atomic', {
     p_trip_id:          id,
     p_admin_id:         currentProfile?.id,
