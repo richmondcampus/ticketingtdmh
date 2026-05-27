@@ -1106,36 +1106,38 @@ async function reopenTicket(ticketId) {
 // NEW TICKET FORM
 // ═══════════════════════════════════
 function openNewTicketModal() {
+  const dept = S.departments.find(d => d.id === S.user.dept_id)
   let html = ''
-  html += '<div class="field"><label>Issue Title <span style="color:var(--red);">*</span></label>'
-  html += '<input type="text" id="tk_title" placeholder="Brief description of the problem"></div>'
 
+  // Category + Problem Description first — title flows from these
   html += '<div class="field-row">'
-  html += '<div class="field"><label>Department</label><select id="tk_dept">'
-  html += '<option value="">— Select Dept —</option>'
-  S.departments.forEach(d => {
-    const sel = d.id === S.user.dept_id ? ' selected' : ''
-    html += '<option value="' + d.id + '" data-name="' + d.dept_name + '"' + sel + '>' + d.dept_name + '</option>'
-  })
-  html += '</select></div>'
-  html += '<div class="field"><label>Location <span style="color:var(--red);">*</span></label>'
-  html += '<input type="text" id="tk_location" placeholder="Room/Floor/Area"></div>'
-  html += '</div>'
-
-  html += '<div class="field-row">'
-  html += '<div class="field"><label>Category</label><select id="tk_cat">'
+  html += '<div class="field"><label>Category</label><select id="tk_cat" onchange="autoFillMaintTitle()">'
+  const catIcons = { electrical:'⚡',plumbing:'🚿',hvac:'❄️',civil:'🏗️',equipment:'⚙️',it_infra:'🖥️',general:'🔧' }
   ;['electrical','plumbing','hvac','civil','equipment','it_infra','general'].forEach(c => {
-    html += '<option value="' + c + '">' + c.charAt(0).toUpperCase()+c.slice(1).replace('_',' ') + '</option>'
+    const icon = catIcons[c] || '🔧'
+    html += '<option value="' + c + '" data-icon="' + icon + '">' + icon + ' ' + c.charAt(0).toUpperCase()+c.slice(1).replace('_',' ') + '</option>'
   })
   html += '</select></div>'
   html += '<div class="field"><label>Priority</label><select id="tk_priority">'
-  ;[['low','Low'],['normal','Normal'],['high','High'],['urgent','Urgent'],['emergency','🚨 EMERGENCY']].forEach(([v,l]) => {
+  ;[['low','Low'],['normal','Normal — Default'],['high','High'],['urgent','Urgent'],['emergency','🚨 EMERGENCY']].forEach(([v,l]) => {
     html += '<option value="' + v + '"' + (v==='normal'?' selected':'') + '>' + l + '</option>'
   })
   html += '</select></div>'
   html += '</div>'
 
-  // Ticket subtype — Feature 8: calibration/PM sync to asset
+  html += '<div class="field"><label>What\'s the problem? <span style="color:var(--red);">*</span></label>'
+  html += '<textarea id="tk_desc" placeholder="Describe what\'s broken — what you noticed, where it is, when it started..." rows="4" oninput="autoFillMaintTitle()"></textarea></div>'
+
+  // Title — auto-generated, editable
+  html += '<div class="field"><label>Issue Title <span style="font-size:11px;font-weight:400;color:var(--txt3);">(auto-generated, you can edit)</span></label>'
+  html += '<input type="text" id="tk_title" placeholder="Will auto-fill when you type above...">'
+  html += '</div>'
+
+  // Location still required — relevant for maintenance
+  html += '<div class="field"><label>Location <span style="color:var(--red);">*</span></label>'
+  html += '<input type="text" id="tk_location" placeholder="Room / Floor / Area where the issue is"></div>'
+
+  // Ticket subtype
   html += '<div class="field"><label>Ticket Type</label><select id="tk_subtype">'
   ;[['general','General Repair'],['calibration','Calibration 📋'],['pm','Preventive Maintenance 🔧'],['inspection','Inspection']].forEach(([v,l]) => {
     html += '<option value="' + v + '">' + l + '</option>'
@@ -1146,33 +1148,68 @@ function openNewTicketModal() {
   html += '<div class="field"><label>Calibration Done Date</label><input type="date" id="tk_cal_date" value="' + new Date().toISOString().split('T')[0] + '"></div>'
   html += '<div class="field"><label>Next Calibration Due</label><input type="date" id="tk_next_cal"></div>'
   html += '</div></div>'
-
-  // Add listener for subtype change
   html += '<script>setTimeout(() => { const st = document.getElementById("tk_subtype"); if(st) st.addEventListener("change", () => { const extra = document.getElementById("calibration_extra"); if(extra) extra.style.display = ["calibration","pm"].includes(st.value) ? "block" : "none"; }); }, 100);<\/script>'
 
-  // Asset link — optional
-  html += '<div class="field"><label>Linked Asset (optional)</label>'
-  html += '<input type="text" id="tk_asset_no" placeholder="Asset No. e.g. AST-IT-2026-0001 — leave blank if not asset-related">'
-  html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">Linking an asset will auto-update its status to "Under Repair" when ticket is claimed. Calibration/PM completion will update asset calibration dates.</div></div>'
+  // Asset link
+  html += '<div class="field"><label>Linked Asset <span style="font-size:11px;font-weight:400;color:var(--txt3);">(optional)</span></label>'
+  html += '<input type="text" id="tk_asset_no" placeholder="Asset No. e.g. AST-IT-2026-0001">'
+  html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">Linking an asset auto-updates its status + syncs calibration dates when resolved.</div></div>'
 
-  html += '<div class="field"><label>Problem Description</label>'
-  html += '<textarea id="tk_desc" placeholder="Describe the issue in detail..." rows="3"></textarea></div>'
+  // Dept — hidden, auto from profile, shown as info
+  html += '<input type="hidden" id="tk_dept" value="' + (S.user.dept_id || '') + '">'
+  html += '<input type="hidden" id="tk_dept_name" value="' + (dept?.dept_name || '') + '">'
+  if (dept) {
+    html += '<div style="font-size:12px;color:var(--txt2);background:var(--surf2);border:1px solid var(--bdr);border-radius:8px;padding:8px 12px;margin-bottom:4px;">'
+    html += '🏢 Filing on behalf of: <strong>' + dept.dept_name + '</strong>'
+    html += ' <span style="font-size:11px;color:var(--txt3);">· Change in your profile if incorrect</span></div>'
+  }
 
   document.getElementById('newTicketBody').innerHTML = html
   openModal('newTicketModal')
+  setTimeout(autoFillMaintTitle, 50)
 }
 
-async function submitTicket() {
-  const title = document.getElementById('tk_title').value.trim()
-  const location = document.getElementById('tk_location').value.trim()
-  const deptEl = document.getElementById('tk_dept')
-  const deptId = deptEl.value
-  const deptName = deptEl.options[deptEl.selectedIndex]?.getAttribute('data-name') || ''
-  const cat = document.getElementById('tk_cat').value
-  const priority = document.getElementById('tk_priority').value
-  const desc = document.getElementById('tk_desc').value.trim()
+function autoFillMaintTitle() {
+  const catEl = document.getElementById('tk_cat')
+  const descEl = document.getElementById('tk_desc')
+  const titleEl = document.getElementById('tk_title')
+  if (!titleEl) return
+  if (titleEl.dataset.manualEdit === 'true') return
+  const catOpt = catEl?.selectedOptions[0]
+  const icon = catOpt?.dataset?.icon || '🔧'
+  const catName = catOpt?.text?.replace(/^.\s/,'') || ''
+  const desc = descEl?.value?.trim() || ''
+  let title = ''
+  if (catName && desc) {
+    const firstLine = desc.split('\n')[0].substring(0, 55)
+    title = icon + ' ' + catName + ' — ' + firstLine
+  } else if (desc) {
+    title = desc.split('\n')[0].substring(0, 80)
+  }
+  titleEl.value = title
+}
 
-  if (!title) { showToast('error','Validation','Issue title is required.'); return }
+document.addEventListener('input', e => {
+  if (e.target?.id === 'tk_title') e.target.dataset.manualEdit = 'true'
+})
+
+async function submitTicket() {
+  const desc = document.getElementById('tk_desc')?.value.trim()
+  const location = document.getElementById('tk_location')?.value.trim()
+  const deptId = document.getElementById('tk_dept')?.value
+  const deptName = document.getElementById('tk_dept_name')?.value || ''
+  const cat = document.getElementById('tk_cat')?.value
+  const priority = document.getElementById('tk_priority')?.value
+  // Use edited title or auto-generate fresh
+  let title = document.getElementById('tk_title')?.value.trim()
+  if (!title && desc) {
+    const catEl = document.getElementById('tk_cat')
+    const icon = catEl?.selectedOptions[0]?.dataset?.icon || '🔧'
+    const catName = catEl?.selectedOptions[0]?.text?.replace(/^.\s/,'') || cat
+    title = icon + ' ' + catName + ' — ' + desc.split('\n')[0].substring(0, 55)
+  }
+
+  if (!desc) { showToast('error','Validation','Please describe the problem.'); return }
   if (!location) { showToast('error','Validation','Location is required.'); return }
 
   const assetNoInput = document.getElementById('tk_asset_no')?.value.trim()
