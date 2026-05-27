@@ -599,10 +599,9 @@ tr:hover td{background:var(--surf2);}
         <button class="hamburger" id="hamburger" onclick="toggleSidebar()">☰</button>
         <div class="topbar-title" id="topbarTitle">Dashboard</div>
         <div class="topbar-actions">
+          <div class="icon-btn" onclick="openPortal()" title="All Systems" style="font-size:13px;">🏥</div>
+          <div class="icon-btn" onclick="openNotifications()" title="Notifications" id="notifBell" style="position:relative;">🔔<span id="notifBadge" style="display:none;position:absolute;top:-3px;right:-3px;background:var(--red);color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;"></span></div>
           <div class="icon-btn" onclick="toggleTheme()" title="Toggle theme">🌙</div>
-          <div class="icon-btn" id="notifBtn" onclick="showPage('notifications')" title="Notifications">
-            🔔<span class="notif-dot" id="notifDot" style="display:none"></span>
-          </div>
         </div>
       </div>
       <div class="content" id="mainContent">
@@ -1623,7 +1622,9 @@ function renderNewRequestForm(reqType) {
   // DERP-specific fields
   if (reqType === 'derp') {
     html += '<div style="background:var(--violet-a);border:1px solid var(--violet);border-radius:10px;padding:14px;margin-bottom:14px;">'
-    html += '<div style="font-size:12px;font-weight:600;color:var(--violet);margin-bottom:10px;">♻️ DERP Assessment</div>'
+    html += '<div style="font-size:12px;font-weight:600;color:var(--violet);margin-bottom:12px;">♻️ DERP Assessment</div>'
+
+    // Condition + Disposal action
     html += '<div class="field-row">'
     html += '<div class="field"><label>Asset Condition</label><select id="f_condition">'
     ;['poor','beyond_repair','obsolete','end_of_life'].forEach(c => {
@@ -1636,7 +1637,39 @@ function renderNewRequestForm(reqType) {
     })
     html += '</select></div>'
     html += '</div>'
+
     html += '<div class="field"><label>Condition Notes</label><textarea id="f_condition_notes" placeholder="Describe the asset\'s condition in detail..." rows="2"></textarea></div>'
+
+    // ── DERP ACTION OPTIONS ──
+    html += '<div style="font-size:12px;font-weight:600;color:var(--violet);margin:12px 0 8px;">DERP Action</div>'
+    html += '<div style="display:flex;flex-direction:column;gap:8px;" id="derpActionWrap">'
+
+    // Option A — Disposal Only
+    html += '<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;">'
+    html += '<input type="radio" name="derp_action" value="disposal_only" id="da_disposal" onchange="onDerpActionChange()" style="margin-top:2px;accent-color:var(--red);">'
+    html += '<div><div style="font-size:13px;font-weight:600;">🗑️ For Disposal Only</div>'
+    html += '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">No replacement needed. Generate disposal certificate and tag asset as disposed.</div></div></label>'
+
+    // Option B — Repair Only
+    html += '<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;">'
+    html += '<input type="radio" name="derp_action" value="repair_only" id="da_repair" onchange="onDerpActionChange()" style="margin-top:2px;accent-color:var(--amber);">'
+    html += '<div><div style="font-size:13px;font-weight:600;">🔧 For Repair Only</div>'
+    html += '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">No replacement. Route to Maintenance for repair. No PO needed.</div></div></label>'
+
+    // Option C — Needs Replacement
+    html += '<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;">'
+    html += '<input type="radio" name="derp_action" value="with_replacement" id="da_replace" onchange="onDerpActionChange()" checked style="margin-top:2px;accent-color:var(--accent);">'
+    html += '<div><div style="font-size:13px;font-weight:600;">🔄 Needs Replacement</div>'
+    html += '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">Procure replacement item via purchase order. Fill in items below.</div></div></label>'
+
+    html += '</div>'
+
+    // Repair-only extra: maintenance ticket reference
+    html += '<div id="derpRepairExtra" style="display:none;margin-top:10px;">'
+    html += '<div class="field"><label>Maintenance Ticket No. (optional)</label>'
+    html += '<input type="text" id="f_maint_ticket" placeholder="TKT-2026-XXXX — leave blank to auto-create"></div>'
+    html += '</div>'
+
     html += '</div>'
   }
 
@@ -1663,6 +1696,36 @@ function renderNewRequestForm(reqType) {
   }
 
   document.getElementById('newRequestBody').innerHTML = html
+}
+
+function onDerpActionChange() {
+  const action = document.querySelector('input[name="derp_action"]:checked')?.value
+  const repairExtra = document.getElementById('derpRepairExtra')
+  const itemsSection = document.getElementById('itemsBody')?.closest('.field')
+
+  // Hide items table for disposal-only and repair-only
+  if (itemsSection) {
+    itemsSection.style.display = action === 'with_replacement' ? 'block' : 'none'
+  }
+  if (repairExtra) {
+    repairExtra.style.display = action === 'repair_only' ? 'block' : 'none'
+  }
+
+  // Update submit button label
+  const footer = document.querySelector('#newRequestModal .modal-footer')
+  if (footer) {
+    const labels = {
+      disposal_only:    '🗑️ Submit for Disposal',
+      repair_only:      '🔧 Route to Maintenance',
+      with_replacement: '📋 Submit DERP Request'
+    }
+    const submitBtn = footer.querySelector('.btn-primary')
+    if (submitBtn && action) submitBtn.textContent = labels[action] || 'Submit'
+  }
+}
+
+function getDerpAction() {
+  return document.querySelector('input[name="derp_action"]:checked')?.value || 'with_replacement'
 }
 
 function switchReqType(t) {
@@ -1907,20 +1970,86 @@ async function saveRequest(action) {
       payload.asset_condition_notes = document.getElementById('f_condition_notes') ? document.getElementById('f_condition_notes').value : null
     }
 
+    const derpAction = reqType === 'derp' ? getDerpAction() : null
+
+    // Disposal Only — skip approval, auto-close
+    if (derpAction === 'disposal_only') {
+      payload.status = 'cancelled'  // no procurement needed
+      payload.purpose = (purpose || '') + ' [DISPOSAL ONLY — No replacement required]'
+    }
+    // Repair Only — skip items, route to maintenance
+    if (derpAction === 'repair_only') {
+      payload.status = 'cancelled'
+      payload.purpose = (purpose || '') + ' [FOR REPAIR — No replacement required. Routed to Maintenance.]'
+      validItems = []  // no items needed
+    }
+
     const { data: req, error } = await SB.from('requests').insert(payload).select().single()
     if (error) throw error
 
-    // Insert items
-    const itemsPayload = validItems.map(item => ({
-      request_id: req.id,
-      item_name: item.item_name,
-      item_description: item.item_description || null,
-      quantity: Number(item.quantity) || 1,
-      unit: item.unit,
-      estimated_cost: Number(item.estimated_cost) || 0,
-      category: item.category
-    }))
-    await SB.from('request_items').insert(itemsPayload)
+    // Insert items (only for with_replacement or non-DERP)
+    if (validItems.length > 0) {
+      const itemsPayload = validItems.map(item => ({
+        request_id: req.id,
+        item_name: item.item_name,
+        item_description: item.item_description || null,
+        quantity: Number(item.quantity) || 1,
+        unit: item.unit,
+        estimated_cost: Number(item.estimated_cost) || 0,
+        category: item.category
+      }))
+      await SB.from('request_items').insert(itemsPayload)
+    }
+
+    // DISPOSAL ONLY — generate disposal certificate automatically
+    if (derpAction === 'disposal_only' && state.pendingDerpParams?.asset_id) {
+      const assetId = state.pendingDerpParams.asset_id
+      const { data: certNum } = await SB.rpc('generate_disposal_no')
+      const certNo = certNum || ('DSP-' + Date.now())
+      await SB.from('disposal_certificates').insert({
+        cert_no: certNo,
+        asset_id: assetId,
+        disposal_method: document.getElementById('f_disposal')?.value === 'condemn' ? 'condemned' :
+                         document.getElementById('f_disposal')?.value === 'donate' ? 'donated' : 'archived',
+        reason: document.getElementById('f_condition_notes')?.value || payload.purpose,
+        disposed_by: state.user.id,
+        disposal_date: new Date().toISOString().split('T')[0]
+      })
+      // Update asset status
+      await SB.from('assets').update({ status: 'for_disposal', updated_at: new Date().toISOString() }).eq('id', assetId)
+      await SB.from('asset_history').insert({
+        asset_id: assetId, action: 'disposed',
+        to_value: 'disposal_only — ' + certNo,
+        performed_by: state.user.id,
+        notes: 'DERP: Disposal only, no replacement. CSR ref: ' + req.request_no
+      })
+      showToast('info','Disposal Cert Created 📄', certNo + ' generated — no replacement procurement needed.')
+    }
+
+    // REPAIR ONLY — create or link maintenance ticket
+    if (derpAction === 'repair_only') {
+      const maintTicketRef = document.getElementById('f_maint_ticket')?.value.trim()
+      if (!maintTicketRef) {
+        // Auto-create maintenance ticket
+        const { data: ticketNum } = await SB.rpc('generate_ticket_no')
+        const ticketId = ticketNum || ('TKT-' + Date.now())
+        await SB.from('maint_tickets').insert({
+          id: ticketId,
+          title: (state.pendingDerpParams?.item || 'Asset') + ' — DERP Repair Request',
+          description: 'Auto-created from DERP. ' + (document.getElementById('f_condition_notes')?.value || ''),
+          dept_id: deptId || null,
+          dept_name: state.departments.find(d=>d.id===deptId)?.dept_name || '',
+          location: state.pendingDerpParams?.location || '',
+          category: 'equipment',
+          priority: 'high',
+          submitted_by: state.user.id,
+          status: 'open',
+          asset_id: state.pendingDerpParams?.asset_id || null,
+          asset_no: state.pendingDerpParams?.asset_no || null
+        })
+        showToast('info','Maintenance Ticket Created 🔧', ticketId + ' — routed to Maintenance.')
+      }
+    }
 
     // Cross-reference if from another system
     if (state.sourceSystem && state.sourceRefId) {
@@ -1934,10 +2063,16 @@ async function saveRequest(action) {
     }
 
     closeModal('newRequestModal')
-    showToast('success', action === 'submit' ? 'Request Submitted' : 'Draft Saved', req.request_no + ' has been ' + (action === 'submit' ? 'submitted for approval.' : 'saved as draft.'))
+    const actionLabels = {
+      disposal_only: '🗑️ Disposal recorded — no procurement needed.',
+      repair_only: '🔧 Routed to Maintenance — no procurement needed.',
+      with_replacement: action === 'submit' ? 'Submitted for approval.' : 'Saved as draft.',
+      null: action === 'submit' ? 'Submitted for approval.' : 'Saved as draft.'
+    }
+    showToast('success', req.request_no, actionLabels[derpAction] || actionLabels['null'])
 
-    // Notify approver if submitted
-    if (action === 'submit') {
+    // Notify approver only if needs replacement
+    if (action === 'submit' && derpAction !== 'disposal_only' && derpAction !== 'repair_only') {
       notifyApprovers(req, 1)
     }
 
@@ -2502,15 +2637,95 @@ async function viewPO(id) {
     if (['sent','acknowledged','partial'].includes(po.status)) {
       footer += '<button class="btn btn-success" onclick="openReceiveDelivery(\'' + po.id + '\')">📦 Receive Delivery</button>'
     }
+    if (['delivered','partial_delivery'].includes(po.status) && !po.delivery_rating) {
+      footer += '<button class="btn btn-secondary" onclick="openSupplierRating(\'' + po.id + '\')">⭐ Rate Supplier</button>'
+    }
     footer += '<button class="btn btn-primary" onclick="printPO(\'' + po.id + '\')">🖨️ Print</button>'
   }
   document.getElementById('requestDetailFooter').innerHTML = footer
   openModal('requestDetailModal')
 }
 
-// ─────────────────────────────
-// SEND PO OPTIONS
-// ─────────────────────────────
+// ─── Feature 10: Supplier Performance Rating ───
+function openSupplierRating(poId) {
+  document.getElementById('approvalModalTitle').textContent = '⭐ Rate Supplier Performance'
+  document.getElementById('approvalModalDesc').innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:12px;">' +
+    '<div><div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px;">DELIVERY RATING</div>' +
+    '<div style="display:flex;gap:6px;" id="deliveryStars">' +
+    [1,2,3,4,5].map(i => '<span onclick="setSupplierStar(\'delivery\',' + i + ')" style="font-size:24px;cursor:pointer;" data-val="' + i + '">☆</span>').join('') +
+    '</div></div>' +
+    '<div><div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px;">QUALITY RATING</div>' +
+    '<div style="display:flex;gap:6px;" id="qualityStars">' +
+    [1,2,3,4,5].map(i => '<span onclick="setSupplierStar(\'quality\',' + i + ')" style="font-size:24px;cursor:pointer;" data-val="' + i + '">☆</span>').join('') +
+    '</div></div>' +
+    '<div><div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px;">DELIVERY DATE</div>' +
+    '<input type="date" id="actual_delivery_date" value="' + new Date().toISOString().split('T')[0] + '" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>' +
+    '<div><textarea id="rating_notes" rows="2" placeholder="Notes about this delivery..." style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;resize:none;"></textarea></div>' +
+    '</div>'
+
+  const approvalModal = document.getElementById('approvalModal')
+  const footer = approvalModal?.querySelector('.modal-footer') || document.getElementById('approvalModalFooter')
+  document.getElementById('approvalModalConfirm').textContent = '⭐ Save Rating'
+  document.getElementById('approvalModalConfirm').onclick = async () => {
+    const deliveryRating = parseInt(document.querySelector('#deliveryStars .selected')?.dataset?.val || 0)
+    const qualityRating = parseInt(document.querySelector('#qualityStars .selected')?.dataset?.val || 0)
+    const actualDate = document.getElementById('actual_delivery_date')?.value
+    const notes = document.getElementById('rating_notes')?.value
+
+    await SB.from('purchase_orders').update({
+      delivery_rating: deliveryRating || null,
+      quality_rating: qualityRating || null,
+      actual_delivery_date: actualDate || null,
+      rating_notes: notes || null
+    }).eq('id', poId)
+
+    closeModal('approvalModal')
+    showToast('success','Rating Saved ⭐','Supplier performance recorded.')
+  }
+  openModal('approvalModal')
+}
+
+function setSupplierStar(type, val) {
+  const container = document.getElementById(type + 'Stars')
+  if (!container) return
+  container.querySelectorAll('span').forEach((s, i) => {
+    s.textContent = i < val ? '⭐' : '☆'
+    if (i === val-1) s.classList.add('selected')
+    else s.classList.remove('selected')
+    s.dataset.val = i+1
+  })
+}
+
+// ─── Feature 3: Auto IT ticket on IT equipment issuance ───
+async function autoCreateITSetupTicket(assetNo, assetName, deptId) {
+  // Check if IT staff available
+  const { data: itStaff } = await SB.from('users')
+    .select('id').not('it_role','is',null).neq('it_role','requester').eq('is_active',true).limit(1)
+  if (!itStaff || itStaff.length === 0) return
+
+  const { data: num } = await SB.rpc('generate_it_ticket_no')
+  const ticketId = num || ('IT-' + Date.now())
+  await SB.from('it_tickets').insert({
+    id: ticketId,
+    subject: '🆕 New Equipment Setup: ' + assetNo + ' — ' + assetName,
+    description: 'New IT equipment issued from CSR. Please configure:\n\nAsset: ' + assetNo + '\nName: ' + assetName,
+    priority: 'medium', dept_id: deptId || null,
+    requester_id: state.user.id, status: 'open',
+    sla_response_due: new Date(Date.now() + 8*3600000).toISOString(),
+    sla_resolution_due: new Date(Date.now() + 48*3600000).toISOString(),
+    source_system: 'csr_auto'
+  }).catch(() => {})
+
+  await sendNotification(
+    itStaff.map(u => u.id),
+    '🆕 New Equipment Setup: ' + assetNo,
+    assetName + ' issued from CSR — needs IT setup.',
+    'action_required', 'csr', 'asset', assetNo,
+    'https://ittdmh.pro/it'
+  )
+  showToast('info','IT Setup Ticket Created', ticketId + ' — IT team notified.')
+}
 function openPOSendOptions(poId) {
   document.getElementById('approvalModalTitle').textContent = '📤 Send Purchase Order'
   document.getElementById('approvalModalDesc').innerHTML =
@@ -6067,6 +6282,150 @@ document.getElementById('loginPass').addEventListener('keydown', e => {
 
   // No session — show login
 })()
+
+// ═══════════════════════════════════
+// UNIFIED NOTIFICATIONS + PORTAL
+// ═══════════════════════════════════
+async function loadNotifications() {
+  if (!window.S?.user && !window.state?.user) return []
+  const uid = (window.S?.user?.id || window.state?.user?.id)
+  if (!uid) return []
+  const { data } = await SB.from('notifications').select('*').eq('user_id', uid)
+    .order('created_at', { ascending: false }).limit(30)
+  const all = data || []
+  updateNotifBadge(all.filter(n => !n.is_read).length)
+  return all
+}
+function updateNotifBadge(count) {
+  const badge = document.getElementById('notifBadge')
+  if (!badge) return
+  if (count > 0) { badge.textContent = count > 9 ? '9+' : count; badge.style.display = 'flex' }
+  else badge.style.display = 'none'
+}
+async function openNotifications() {
+  const notifs = await loadNotifications()
+  const uid = (window.S?.user?.id || window.state?.user?.id)
+  if (notifs && notifs.some(n => !n.is_read)) {
+    await SB.from('notifications').update({ is_read: true }).eq('user_id', uid).eq('is_read', false)
+    updateNotifBadge(0)
+  }
+  const icons = { info:'ℹ️', warning:'⚠️', success:'✅', error:'❌', action_required:'🔔' }
+  const systemIcons = { csr:'📋', maintenance:'🔧', it:'🖥️', inventory:'🏷️', system:'🏥' }
+  let html = ''
+  if (!notifs || notifs.length === 0) {
+    html = '<div style="text-align:center;padding:30px;color:var(--txt2);">🔔 No notifications yet</div>'
+  } else {
+    notifs.forEach(n => {
+      const ago = Math.floor((Date.now() - new Date(n.created_at)) / 60000)
+      const timeStr = ago < 60 ? ago + 'm ago' : ago < 1440 ? Math.floor(ago/60) + 'h ago' : Math.floor(ago/1440) + 'd ago'
+      html += '<div style="display:flex;gap:10px;padding:12px 0;border-bottom:1px solid var(--bdr);">'
+      html += '<div style="font-size:18px;flex-shrink:0;">' + (icons[n.type]||'ℹ️') + '</div>'
+      html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">' + n.title + '</div>'
+      if (n.body) html += '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">' + n.body + '</div>'
+      html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">' + (systemIcons[n.source_system]||'') + ' ' + timeStr + '</div>'
+      html += '</div></div>'
+    })
+  }
+  if (typeof showConfirmModal === 'function') {
+    showConfirmModal('🔔 Notifications', '<div style="max-height:400px;overflow-y:auto;">' + html + '</div>', null)
+  } else {
+    document.getElementById('confirmTitle').textContent = '🔔 Notifications'
+    document.getElementById('confirmMsg').innerHTML = '<div style="max-height:400px;overflow-y:auto;">' + html + '</div>'
+    document.getElementById('confirmOkBtn').style.display = 'none'
+    document.querySelector('#confirmModal .modal-footer .btn-ghost').textContent = 'Close'
+    openModal('confirmModal')
+    setTimeout(() => { document.getElementById('confirmOkBtn').style.display = '' }, 100)
+  }
+}
+async function sendNotification(userIds, title, body, type, sourceSystem, refType, refId, actionUrl) {
+  if (!userIds || userIds.length === 0) return
+  const inserts = userIds.map(uid => ({ user_id:uid, title, body:body||null, type:type||'info', source_system:sourceSystem||null, source_ref_type:refType||null, source_ref_id:refId||null, action_url:actionUrl||null }))
+  await SB.from('notifications').insert(inserts).catch(() => {})
+}
+async function openPortal() {
+  const u = window.S?.user || window.state?.user
+  if (!u) return
+  const systems = [
+    { key:'csr', icon:'📋', label:'CSR System', url:'https://ittdmh.pro/csr', role:u.csr_role },
+    { key:'maintenance', icon:'🔧', label:'Maintenance Hub', url:'https://ittdmh.pro/maintenance', role:u.maintenance_role },
+    { key:'it', icon:'🖥️', label:'IT Helpdesk', url:'https://ittdmh.pro/it', role:u.it_role },
+    { key:'inventory', icon:'🏷️', label:'Asset Inventory', url:'https://ittdmh.pro/inventory', role:u.inventory_role },
+    { key:'scan', icon:'📷', label:'Scan & Request', url:'https://ittdmh.pro/scan', role:'any' },
+  ]
+  const { data: notifs } = await SB.from('notifications').select('source_system').eq('user_id', u.id).eq('is_read', false)
+  const unreadBySystem = {}
+  ;(notifs||[]).forEach(n => { unreadBySystem[n.source_system] = (unreadBySystem[n.source_system]||0)+1 })
+  let html = '<div style="display:flex;flex-direction:column;gap:10px;">'
+  systems.forEach(s => {
+    if (!s.role) return
+    const unread = unreadBySystem[s.key] || 0
+    html += '<a href="' + s.url + '" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:12px;text-decoration:none;color:var(--txt);">'
+    html += '<div style="font-size:24px;">' + s.icon + '</div>'
+    html += '<div style="flex:1;"><div style="font-size:14px;font-weight:600;">' + s.label + '</div></div>'
+    if (unread > 0) html += '<div style="background:var(--red);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700;">' + unread + '</div>'
+    html += '<span style="color:var(--txt3);">→</span></a>'
+  })
+  html += '</div>'
+  document.getElementById('confirmTitle').textContent = '🏥 TDMH Systems'
+  document.getElementById('confirmMsg').innerHTML = html
+  document.getElementById('confirmOkBtn').style.display = 'none'
+  document.querySelector('#confirmModal .modal-footer .btn-ghost').textContent = 'Close'
+  openModal('confirmModal')
+  setTimeout(() => { document.getElementById('confirmOkBtn').style.display = '' }, 100)
+}
+
+// ─── editRequest: open existing request for editing (draft only) ───
+function editRequest(requestId) {
+  const req = state.requests?.find(r => r.id === requestId)
+  if (!req) { showToast('error','Not Found','Request not found.'); return }
+  if (req.status !== 'draft') { showToast('warning','Cannot Edit','Only draft requests can be edited.'); return }
+  state.sourceType = req.request_type
+  state.editingRequestId = requestId
+  openNewRequestModal(req.request_type)
+}
+
+// ─── assignDerpEvaluator: assign a supply officer to evaluate DERP ───
+function assignDerpEvaluator(requestId) {
+  document.getElementById('confirmTitle').textContent = '👤 Assign DERP Evaluator'
+  const officers = (state.users || []).filter(u => ['supply_officer','admin'].includes(u.csr_role))
+  document.getElementById('confirmMsg').innerHTML =
+    '<div class="field"><label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:6px;">SELECT EVALUATOR</label>' +
+    '<select id="derp_evaluator" style="width:100%;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;">' +
+    '<option value="">— Select —</option>' +
+    officers.map(u => '<option value="' + u.id + '">' + u.full_name + '</option>').join('') +
+    '</select></div>'
+  document.getElementById('confirmOkBtn').textContent = 'Assign'
+  document.getElementById('confirmOkBtn').onclick = async () => {
+    const uid = document.getElementById('derp_evaluator')?.value
+    if (!uid) { showToast('error','Required','Please select an evaluator.'); return }
+    await SB.from('requests').update({ assigned_to: uid, updated_at: new Date().toISOString() }).eq('id', requestId)
+    closeModal('confirmModal')
+    showToast('success','Assigned','DERP evaluator assigned.')
+    if (state.page) showPage(state.page)
+  }
+  openModal('confirmModal')
+}
+
+// ─── Concurrent-safe insert with retry ───
+// Handles rare race conditions on unique constraints
+async function insertWithRetry(table, payload, maxRetries) {
+  maxRetries = maxRetries || 3
+  let lastError = null
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data, error } = await SB.from(table).insert(payload).select().single()
+    if (!error) return { data, error: null }
+    // If unique violation on the ID field, regenerate and retry
+    if (error.code === '23505' && error.message.includes('_pkey')) {
+      console.warn('[Retry ' + (attempt+1) + '] Unique conflict on ' + table + ', regenerating ID...')
+      lastError = error
+      // Small random delay before retry
+      await new Promise(r => setTimeout(r, Math.random() * 100 + 50))
+    } else {
+      return { data: null, error }
+    }
+  }
+  return { data: null, error: lastError }
+}
 </script>
 </body>
 </html>
