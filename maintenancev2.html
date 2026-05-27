@@ -321,9 +321,10 @@ tr:hover td{background:var(--surf2);}
       <div class="topbar">
         <button class="hamburger" onclick="toggleSidebar()">☰</button>
         <div class="topbar-title" id="topbarTitle">Dashboard</div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <div class="icon-btn" onclick="openPortal()" title="All Systems" style="font-size:13px;">🏥</div>
+          <div class="icon-btn" onclick="openNotifications()" title="Notifications" id="notifBell" style="position:relative;">🔔<span id="notifBadge" style="display:none;position:absolute;top:-3px;right:-3px;background:var(--red);color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;"></span></div>
           <div class="icon-btn" onclick="toggleTheme()">🌙</div>
-          <div class="icon-btn" id="notifBtn">🔔</div>
         </div>
       </div>
       <div class="content" id="mainContent"></div>
@@ -604,6 +605,8 @@ async function renderDashboard() {
   const content = document.getElementById('mainContent')
   const tickets = await loadTickets()
   S.tickets = tickets
+  // Run SLA escalation check silently
+  checkMaintSLAEscalation().catch(() => {})
   const role = S.user.maintenance_role
 
   const open = tickets.filter(t => t.status === 'open').length
@@ -962,8 +965,29 @@ async function viewTicket(ticketId) {
     footer += '<button class="btn btn-success" onclick="resolveTicket(\'' + t.id + '\')">✅ Mark Resolved</button>'
   }
   if (t.status === 'for_parts') {
+    // Check if parts are available from CSR
+    const { data: partsReqs } = await SB.from('maint_parts_requests')
+      .select('id,status,part_name')
+      .eq('ticket_id', t.id)
+    const allParts = partsReqs || []
+    const pendingParts = allParts.filter(p => !['available','received'].includes(p.status))
+    const availableParts = allParts.filter(p => p.status === 'available')
+
     footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts via CSR</button>'
-    footer += '<button class="btn btn-secondary" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">▶ Parts Received, Continue</button>'
+
+    if (allParts.length === 0) {
+      // No parts requested yet — allow continue
+      footer += '<button class="btn btn-secondary" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">▶ Continue (No Parts Needed)</button>'
+    } else if (pendingParts.length > 0) {
+      // Parts pending from CSR — locked
+      footer += '<button class="btn btn-secondary" disabled title="Waiting for CSR to mark parts as available (' + pendingParts.length + ' pending)">⏳ Waiting for Parts (' + pendingParts.length + ' pending)</button>'
+      // Show which parts are still pending
+      const pendingNames = pendingParts.map(p => p.part_name || 'Part').join(', ')
+      footer += '<div style="font-size:11px;color:var(--amber);margin-top:6px;padding:0 4px;">⚠️ Pending from CSR: ' + pendingNames + '</div>'
+    } else {
+      // All parts available — unlock
+      footer += '<button class="btn btn-success" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">✅ Parts Available — Continue Repair</button>'
+    }
   }
   if (t.status === 'resolved' && ['supervisor','admin'].includes(role)) {
     footer += '<button class="btn btn-primary" onclick="closeTicket(\'' + t.id + '\')">🔒 Close Ticket</button>'
@@ -1097,10 +1121,25 @@ function openNewTicketModal() {
   html += '</select></div>'
   html += '</div>'
 
+  // Ticket subtype — Feature 8: calibration/PM sync to asset
+  html += '<div class="field"><label>Ticket Type</label><select id="tk_subtype">'
+  ;[['general','General Repair'],['calibration','Calibration 📋'],['pm','Preventive Maintenance 🔧'],['inspection','Inspection']].forEach(([v,l]) => {
+    html += '<option value="' + v + '">' + l + '</option>'
+  })
+  html += '</select></div>'
+  html += '<div id="calibration_extra" style="display:none;background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;padding:12px;margin-bottom:10px;">'
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Calibration Done Date</label><input type="date" id="tk_cal_date" value="' + new Date().toISOString().split('T')[0] + '"></div>'
+  html += '<div class="field"><label>Next Calibration Due</label><input type="date" id="tk_next_cal"></div>'
+  html += '</div></div>'
+
+  // Add listener for subtype change
+  html += '<script>setTimeout(() => { const st = document.getElementById("tk_subtype"); if(st) st.addEventListener("change", () => { const extra = document.getElementById("calibration_extra"); if(extra) extra.style.display = ["calibration","pm"].includes(st.value) ? "block" : "none"; }); }, 100);<\/script>'
+
   // Asset link — optional
   html += '<div class="field"><label>Linked Asset (optional)</label>'
   html += '<input type="text" id="tk_asset_no" placeholder="Asset No. e.g. AST-IT-2026-0001 — leave blank if not asset-related">'
-  html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">Linking an asset will auto-update its status to "Under Repair" when ticket is claimed.</div></div>'
+  html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">Linking an asset will auto-update its status to "Under Repair" when ticket is claimed. Calibration/PM completion will update asset calibration dates.</div></div>'
 
   html += '<div class="field"><label>Problem Description</label>'
   html += '<textarea id="tk_desc" placeholder="Describe the issue in detail..." rows="3"></textarea></div>'
@@ -1146,7 +1185,10 @@ async function submitTicket() {
       submitted_by: S.user.id,
       status: 'open',
       asset_id: linkedAssetId,
-      asset_no: linkedAssetId ? assetNoInput : null
+      asset_no: linkedAssetId ? assetNoInput : null,
+      ticket_subtype: document.getElementById('tk_subtype')?.value || 'general',
+      calibration_done_at: document.getElementById('tk_cal_date')?.value || null,
+      next_calibration_date: document.getElementById('tk_next_cal')?.value || null
     }).select().single()
 
     if (error) throw error
@@ -1655,6 +1697,42 @@ async function confirmLinkAsset() {
 }
 
 // ═══════════════════════════════════
+// ─── Feature 7: Maintenance SLA Escalation ───
+async function checkMaintSLAEscalation() {
+  if (!['supervisor','admin'].includes(S.user.maintenance_role)) return
+  const now = new Date()
+  const { data: configs } = await SB.from('maint_sla_config').select('*')
+  if (!configs || configs.length === 0) return
+  const { data: openTickets } = await SB.from('maint_tickets')
+    .select('id,title,category,priority,created_at,status')
+    .not('status','in','("resolved","closed","cancelled")')
+  if (!openTickets) return
+  for (const t of openTickets) {
+    const cfg = configs.find(c => c.category === t.category && c.priority === t.priority)
+    if (!cfg) continue
+    const ageHours = (now - new Date(t.created_at)) / 3600000
+    if (ageHours < cfg.resolution_hours) continue
+    const { data: existing } = await SB.from('sla_escalation_log')
+      .select('id').eq('ticket_id', t.id)
+      .gt('escalated_at', new Date(now - 4*3600000).toISOString()).limit(1)
+    if (existing && existing.length > 0) continue
+    const { data: supervisors } = await SB.from('users')
+      .select('id').in('maintenance_role',['supervisor','admin']).eq('is_active',true)
+    if (supervisors && supervisors.length > 0) {
+      await sendNotification(
+        supervisors.map(u => u.id),
+        '🚨 Maintenance SLA Breached: ' + t.id,
+        t.title + ' — ' + Math.round(ageHours) + 'h elapsed.',
+        'error', 'maintenance', 'ticket', t.id,
+        'https://ittdmh.pro/maintenance'
+      )
+      await SB.from('sla_escalation_log').insert(
+        supervisors.map(u => ({ ticket_id:t.id, ticket_type:'maintenance', escalated_to:u.id, reason:'SLA resolution breached' }))
+      ).catch(() => {})
+    }
+  }
+}
+
 // UTILITIES
 // ═══════════════════════════════════
 function formatDate(iso) {
@@ -1748,6 +1826,124 @@ document.getElementById('loginPass').addEventListener('keydown', e => { if (e.ke
   clearSession()
 })()
 
+
+// ═══════════════════════════════════
+// UNIFIED NOTIFICATIONS
+// ═══════════════════════════════════
+async function loadNotifications() {
+  if (!S.user) return []
+  const { data } = await SB.from('notifications')
+    .select('*').eq('user_id', S.user.id)
+    .order('created_at', { ascending: false }).limit(30)
+  const all = data || []
+  updateNotifBadge(all.filter(n => !n.is_read).length)
+  return all
+}
+function updateNotifBadge(count) {
+  const badge = document.getElementById('notifBadge')
+  if (!badge) return
+  if (count > 0) { badge.textContent = count > 9 ? '9+' : count; badge.style.display = 'flex' }
+  else badge.style.display = 'none'
+}
+function subscribeNotifications() {
+  if (!S.user) return
+  SB.channel('notif-' + S.user.id)
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:'user_id=eq.'+S.user.id }, (payload) => {
+      showToast('info', payload.new.title, payload.new.body || '')
+      loadNotifications()
+    }).subscribe()
+}
+async function openNotifications() {
+  const notifs = await loadNotifications()
+  if (notifs && notifs.some(n => !n.is_read)) {
+    await SB.from('notifications').update({ is_read: true }).eq('user_id', S.user.id).eq('is_read', false)
+    updateNotifBadge(0)
+  }
+  const icons = { info:'ℹ️', warning:'⚠️', success:'✅', error:'❌', action_required:'🔔' }
+  const systemIcons = { csr:'📋', maintenance:'🔧', it:'🖥️', inventory:'🏷️', system:'🏥' }
+  let html = ''
+  if (!notifs || notifs.length === 0) {
+    html = '<div style="text-align:center;padding:30px;color:var(--txt2);">🔔 No notifications yet</div>'
+  } else {
+    notifs.forEach(n => {
+      const ago = Math.floor((Date.now() - new Date(n.created_at)) / 60000)
+      const timeStr = ago < 60 ? ago + 'm ago' : ago < 1440 ? Math.floor(ago/60) + 'h ago' : Math.floor(ago/1440) + 'd ago'
+      html += '<div style="display:flex;gap:10px;padding:12px 0;border-bottom:1px solid var(--bdr);">'
+      html += '<div style="font-size:18px;flex-shrink:0;">' + (icons[n.type]||'ℹ️') + '</div>'
+      html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">' + n.title + '</div>'
+      if (n.body) html += '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">' + n.body + '</div>'
+      html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">' + (systemIcons[n.source_system]||'') + ' ' + timeStr + '</div>'
+      html += '</div></div>'
+    })
+  }
+  document.getElementById('confirmTitle').textContent = '🔔 Notifications'
+  document.getElementById('confirmMsg').innerHTML = '<div style="max-height:400px;overflow-y:auto;">' + html + '</div>'
+  document.getElementById('confirmOkBtn').style.display = 'none'
+  document.querySelector('#confirmModal .modal-footer .btn-ghost').textContent = 'Close'
+  openModal('confirmModal')
+  setTimeout(() => { document.getElementById('confirmOkBtn').style.display = '' }, 100)
+}
+async function sendNotification(userIds, title, body, type, sourceSystem, refType, refId, actionUrl) {
+  if (!userIds || userIds.length === 0) return
+  const inserts = userIds.map(uid => ({ user_id:uid, title, body:body||null, type:type||'info', source_system:sourceSystem||null, source_ref_type:refType||null, source_ref_id:refId||null, action_url:actionUrl||null }))
+  await SB.from('notifications').insert(inserts).catch(() => {})
+}
+
+// ═══════════════════════════════════
+// CROSS-SYSTEM PORTAL
+// ═══════════════════════════════════
+async function openPortal() {
+  const u = S.user
+  const systems = [
+    { key:'csr', icon:'📋', label:'CSR System', sub:'Supply Requests', url:'https://ittdmh.pro/csr', role: u.csr_role },
+    { key:'maintenance', icon:'🔧', label:'Maintenance Hub', sub:'Maintenance Tickets', url:'https://ittdmh.pro/maintenance', role: u.maintenance_role },
+    { key:'it', icon:'🖥️', label:'IT Helpdesk', sub:'IT Support Tickets', url:'https://ittdmh.pro/it', role: u.it_role },
+    { key:'inventory', icon:'🏷️', label:'Asset Inventory', sub:'Asset Management', url:'https://ittdmh.pro/inventory', role: u.inventory_role },
+    { key:'scan', icon:'📷', label:'Scan & Request', sub:'Quick QR scan', url:'https://ittdmh.pro/scan', role:'any' },
+  ]
+  const { data: notifs } = await SB.from('notifications').select('source_system').eq('user_id', u.id).eq('is_read', false)
+  const unreadBySystem = {}
+  ;(notifs||[]).forEach(n => { unreadBySystem[n.source_system] = (unreadBySystem[n.source_system]||0)+1 })
+  let html = '<div style="display:flex;flex-direction:column;gap:10px;">'
+  systems.forEach(s => {
+    if (!s.role) return
+    const unread = unreadBySystem[s.key] || 0
+    html += '<a href="' + s.url + '" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:12px;text-decoration:none;color:var(--txt);">'
+    html += '<div style="font-size:24px;">' + s.icon + '</div>'
+    html += '<div style="flex:1;"><div style="font-size:14px;font-weight:600;">' + s.label + '</div>'
+    html += '<div style="font-size:12px;color:var(--txt2);">' + s.sub + ' · ' + (s.role === 'any' ? 'All' : s.role) + '</div></div>'
+    if (unread > 0) html += '<div style="background:var(--red);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700;">' + unread + '</div>'
+    html += '<span style="color:var(--txt3);">→</span></a>'
+  })
+  html += '</div><div style="margin-top:14px;font-size:12px;color:var(--txt3);text-align:center;">Taytay Doctors Multispecialty Hospital</div>'
+  document.getElementById('confirmTitle').textContent = '🏥 TDMH Systems'
+  document.getElementById('confirmMsg').innerHTML = html
+  document.getElementById('confirmOkBtn').style.display = 'none'
+  document.querySelector('#confirmModal .modal-footer .btn-ghost').textContent = 'Close'
+  openModal('confirmModal')
+  setTimeout(() => { document.getElementById('confirmOkBtn').style.display = '' }, 100)
+}
+
+// ─── Concurrent-safe insert with retry ───
+// Handles rare race conditions on unique constraints
+async function insertWithRetry(table, payload, maxRetries) {
+  maxRetries = maxRetries || 3
+  let lastError = null
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data, error } = await SB.from(table).insert(payload).select().single()
+    if (!error) return { data, error: null }
+    // If unique violation on the ID field, regenerate and retry
+    if (error.code === '23505' && error.message.includes('_pkey')) {
+      console.warn('[Retry ' + (attempt+1) + '] Unique conflict on ' + table + ', regenerating ID...')
+      lastError = error
+      // Small random delay before retry
+      await new Promise(r => setTimeout(r, Math.random() * 100 + 50))
+    } else {
+      return { data: null, error }
+    }
+  }
+  return { data: null, error: lastError }
+}
 </script>
 </body>
 </html>
