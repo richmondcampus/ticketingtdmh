@@ -519,12 +519,13 @@ function formatMaintRole(r) {
 function renderSidebarNav() {
   const role = S.user.maintenance_role
   const items = [
-    { id:'dashboard', icon:'📊', label:'Dashboard', roles:['requester','technician','supervisor','admin'] },
-    { id:'my_tickets', icon:'🎫', label:'My Tickets', roles:['requester','technician','supervisor','admin'] },
-    { id:'all_tickets', icon:'🗂', label:'All Tickets', roles:['technician','supervisor','admin'] },
+    { id:'dashboard',    icon:'📊', label:'Dashboard',    roles:['requester','technician','supervisor','admin'] },
+    { id:'my_tickets',   icon:'🎫', label:'My Tickets',   roles:['requester','technician','supervisor','admin'] },
     { id:'open_tickets', icon:'🔓', label:'Open Tickets', roles:['technician','supervisor','admin'] },
-    { id:'analytics', icon:'📈', label:'Analytics', roles:['supervisor','admin'] },
-    { id:'team', icon:'👥', label:'Team', roles:['supervisor','admin'] },
+    { id:'kanban',       icon:'📋', label:'Kanban Board', roles:['technician','supervisor','admin'] },
+    { id:'all_tickets',  icon:'🗂', label:'All Tickets',  roles:['technician','supervisor','admin'] },
+    { id:'analytics',    icon:'📈', label:'Analytics',    roles:['supervisor','admin'] },
+    { id:'team',         icon:'👥', label:'Team',         roles:['supervisor','admin'] },
   ]
   let html = ''
   items.forEach(item => {
@@ -542,7 +543,7 @@ function renderSidebarNav() {
 // ═══════════════════════════════════
 const PAGE_TITLES = {
   dashboard:'Dashboard', my_tickets:'My Tickets', all_tickets:'All Tickets',
-  open_tickets:'Open Tickets', analytics:'Analytics', team:'Team'
+  open_tickets:'Open Tickets', kanban:'Kanban Board', analytics:'Analytics', team:'Team'
 }
 
 function showPage(page) {
@@ -556,7 +557,7 @@ function showPage(page) {
   content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
   const pages = { dashboard:renderDashboard, my_tickets:renderMyTickets,
     all_tickets:renderAllTickets, open_tickets:renderOpenTickets,
-    analytics:renderAnalytics, team:renderTeam }
+    kanban:renderKanban, analytics:renderAnalytics, team:renderTeam }
   if (pages[page]) pages[page]()
 }
 
@@ -663,6 +664,17 @@ function ticketCard(t) {
   const claimedBy = S.users.find(u => u.id === t.claimed_by)
   const dept = S.departments.find(d => d.id === t.dept_id)
   const age = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
+  const role = S.user.maintenance_role
+  const isTech = ['technician','supervisor','admin'].includes(role)
+  const isMe = t.claimed_by === S.user.id
+
+  // Quick action button based on status
+  let quickBtn = ''
+  if (t.status === 'open' && isTech)
+    quickBtn = '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();quickClaimStartMaint(\'' + t.id + '\')" style="margin-top:8px;width:100%;">⚡ Claim & Start</button>'
+  else if (t.status === 'in_progress' && isMe)
+    quickBtn = '<button class="btn btn-success btn-sm" onclick="event.stopPropagation();quickResolveMaint(\'' + t.id + '\')" style="margin-top:8px;width:100%;">✅ Mark as Resolved</button>'
+
   return '<div class="ticket-card priority-' + t.priority + '" onclick="viewTicket(\'' + t.id + '\')">' +
     '<div class="ticket-header">' +
     '<span class="ticket-id">' + t.id + '</span>' +
@@ -679,7 +691,9 @@ function ticketCard(t) {
     '<div style="display:flex;align-items:center;gap:8px;">' +
     (claimedBy ? '<span style="font-size:11px;color:var(--txt2);">👤 ' + claimedBy.full_name.split(' ')[0] + '</span>' : '') +
     '<span style="font-size:11px;color:var(--txt3);">' + age + 'h ago</span>' +
-    '</div></div></div>'
+    '</div></div>' +
+    quickBtn +
+    '</div>'
 }
 
 function formatStatus(s) {
@@ -1731,6 +1745,132 @@ async function checkMaintSLAEscalation() {
       ).catch(() => {})
     }
   }
+}
+
+// ═══════════════════════════════════
+// KANBAN BOARD — MAINTENANCE
+// ═══════════════════════════════════
+async function renderKanban() {
+  const content = document.getElementById('mainContent')
+  const tickets = await loadTickets()
+  const cols = [
+    { id:'open',       label:'🔓 Open',       color:'var(--accent)', bg:'var(--accent-a)' },
+    { id:'claimed',    label:'👤 Claimed',     color:'var(--violet)', bg:'var(--violet-a)' },
+    { id:'in_progress',label:'🔄 In Progress', color:'var(--amber)',  bg:'var(--amber-a)' },
+    { id:'for_parts',  label:'🔩 For Parts',   color:'var(--amber)',  bg:'var(--amber-a)' },
+    { id:'resolved',   label:'✅ Resolved',    color:'var(--green)',  bg:'var(--green-a)' },
+  ]
+
+  let html = '<div class="page-header"><h2>📋 Kanban Board</h2>'
+  html += '<button class="btn btn-primary btn-sm" onclick="openNewTicketModal()">＋ New Ticket</button></div>'
+  html += '<style>.kanban-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:16px;min-height:400px;}.kanban-col{min-width:260px;width:260px;flex-shrink:0;}.kanban-col-header{padding:10px 12px;border-radius:10px 10px 0 0;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;}.kanban-col-body{background:var(--surf2);border-radius:0 0 10px 10px;padding:8px;min-height:160px;border:1px solid var(--bdr);border-top:none;}.kanban-card{background:var(--surf1);border:1px solid var(--bdr);border-radius:10px;padding:12px;margin-bottom:8px;cursor:pointer;}.kanban-card:hover{border-color:var(--bdr2);box-shadow:0 2px 8px rgba(0,0,0,.2);}.kanban-card.priority-emergency,.kanban-card.priority-urgent{border-left:3px solid var(--red);}.kanban-card.priority-high{border-left:3px solid var(--amber);}</style>'
+  html += '<div class="kanban-board">'
+
+  const role = S.user.maintenance_role
+  const isTech = ['technician','supervisor','admin'].includes(role)
+
+  cols.forEach(col => {
+    const colTickets = tickets.filter(t => t.status === col.id)
+    html += '<div class="kanban-col"><div class="kanban-col-header" style="background:' + col.bg + ';color:' + col.color + ';">'
+    html += col.label + '<span style="background:' + col.color + ';color:#fff;border-radius:20px;padding:1px 8px;font-size:11px;">' + colTickets.length + '</span></div>'
+    html += '<div class="kanban-col-body">'
+    if (!colTickets.length) html += '<div style="text-align:center;padding:20px;color:var(--txt3);font-size:12px;">Empty</div>'
+    colTickets.forEach(t => {
+      const dept = S.departments.find(d => d.id === t.dept_id)
+      const claimed = S.users.find(u => u.id === t.claimed_by)
+      const age = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
+      const isMe = t.claimed_by === S.user.id
+      html += '<div class="kanban-card priority-' + t.priority + '" onclick="viewTicket(\'' + t.id + '\')">'
+      html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;">'
+      html += '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--accent);">' + t.id + '</span>'
+      html += '<span class="badge badge-' + t.priority + '" style="font-size:10px;padding:2px 6px;">' + t.priority.toUpperCase() + '</span>'
+      html += '</div>'
+      html += '<div style="font-size:13px;font-weight:600;margin-bottom:6px;line-height:1.3;">' + t.title + '</div>'
+      html += '<div style="font-size:11px;color:var(--txt2);margin-bottom:6px;">🏢 ' + (dept ? dept.dept_name : t.dept_name || '—') + '</div>'
+      html += '<div style="font-size:11px;color:var(--txt2);margin-bottom:6px;">🔧 ' + (t.category || '—') + '</div>'
+      if (t.asset_no) html += '<div style="font-size:11px;color:var(--txt3);margin-bottom:6px;">🏷️ ' + t.asset_no + '</div>'
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">'
+      html += '<span style="font-size:10px;color:var(--txt3);">' + age + 'h ago</span>'
+      html += '<div style="display:flex;gap:4px;">'
+      if (t.status === 'open' && isTech)
+        html += '<button class="btn btn-primary btn-sm" style="padding:3px 9px;font-size:11px;" onclick="event.stopPropagation();quickClaimStartMaint(\'' + t.id + '\')">⚡ Claim & Start</button>'
+      if (t.status === 'in_progress' && isMe)
+        html += '<button class="btn btn-success btn-sm" style="padding:3px 9px;font-size:11px;" onclick="event.stopPropagation();quickResolveMaint(\'' + t.id + '\')">Done ✅</button>'
+      html += '</div></div></div>'
+    })
+    html += '</div></div>'
+  })
+  html += '</div>'
+  content.innerHTML = html
+}
+
+// ─── Quick Actions — Maintenance ───
+async function quickClaimStartMaint(ticketId) {
+  await SB.from('maint_tickets').update({ claimed_by:S.user.id, status:'in_progress', updated_at:new Date().toISOString() }).eq('id',ticketId)
+  await SB.from('maint_ticket_notes').insert({ ticket_id:ticketId, user_id:S.user.id, note:'⚡ Claimed and started by '+S.user.full_name, note_type:'system' })
+  const{data:t}=await SB.from('maint_tickets').select('submitted_by,title').eq('id',ticketId).single()
+  if(t?.submitted_by) await SB.from('notifications').insert({ user_id:t.submitted_by, title:'⚡ Ticket In Progress: '+ticketId, body:t.title+' is now being worked on.', type:'info', source_system:'maintenance' })
+  showToast('success','⚡ Started!',ticketId+' claimed and started.')
+  if(S.page==='kanban')renderKanban()
+  else showPage(S.page)
+}
+
+async function quickClaimMaint(ticketId) {
+  await SB.from('maint_tickets').update({
+    claimed_by: S.user.id, status: 'claimed',
+    updated_at: new Date().toISOString()
+  }).eq('id', ticketId)
+  await SB.from('maint_ticket_notes').insert({
+    ticket_id: ticketId, user_id: S.user.id,
+    note: '👤 Ticket claimed by ' + S.user.full_name, note_type: 'system'
+  })
+  // Notify requester
+  const { data: t } = await SB.from('maint_tickets').select('submitted_by,title').eq('id', ticketId).single()
+  if (t?.submitted_by) {
+    await SB.from('notifications').insert({
+      user_id: t.submitted_by, title: '👤 Ticket Claimed: ' + ticketId,
+      body: S.user.full_name + ' will handle: ' + t.title,
+      type: 'info', source_system: 'maintenance'
+    })
+  }
+  showToast('success', 'Claimed ✅', ticketId + ' assigned to you.')
+  if (S.page === 'kanban') renderKanban()
+  else showPage(S.page)
+}
+
+async function quickStartMaint(ticketId) {
+  await SB.from('maint_tickets').update({
+    status: 'in_progress', updated_at: new Date().toISOString()
+  }).eq('id', ticketId)
+  await SB.from('maint_ticket_notes').insert({
+    ticket_id: ticketId, user_id: S.user.id,
+    note: '▶ Work started by ' + S.user.full_name, note_type: 'system'
+  })
+  showToast('success', 'Started ▶', ticketId + ' is now in progress.')
+  if (S.page === 'kanban') renderKanban()
+  else showPage(S.page)
+}
+
+async function quickResolveMaint(ticketId) {
+  await SB.from('maint_tickets').update({
+    status: 'resolved', resolved_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }).eq('id', ticketId)
+  await SB.from('maint_ticket_notes').insert({
+    ticket_id: ticketId, user_id: S.user.id,
+    note: '✅ Resolved by ' + S.user.full_name, note_type: 'system'
+  })
+  const { data: t } = await SB.from('maint_tickets').select('submitted_by,title').eq('id', ticketId).single()
+  if (t?.submitted_by) {
+    await SB.from('notifications').insert({
+      user_id: t.submitted_by, title: '✅ Ticket Resolved: ' + ticketId,
+      body: t.title + ' has been resolved. Please confirm completion.',
+      type: 'success', source_system: 'maintenance'
+    })
+  }
+  showToast('success', 'Resolved ✅', ticketId + ' marked as done.')
+  if (S.page === 'kanban') renderKanban()
+  else showPage(S.page)
 }
 
 // UTILITIES
