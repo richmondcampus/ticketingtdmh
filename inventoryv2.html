@@ -313,7 +313,9 @@ tr:hover td{background:var(--surf2);}
       <div class="topbar">
         <button class="hamburger" onclick="toggleSidebar()">☰</button>
         <div class="topbar-title" id="topbarTitle">Dashboard</div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <div class="icon-btn" onclick="openPortal()" title="All Systems" style="font-size:13px;">🏥</div>
+          <div class="icon-btn" onclick="openNotifications()" title="Notifications" id="notifBell" style="position:relative;">🔔<span id="notifBadge" style="display:none;position:absolute;top:-3px;right:-3px;background:var(--red);color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;"></span></div>
           <div class="icon-btn" onclick="openScannerModal()" title="Scan QR/Barcode">📷</div>
           <div class="icon-btn" onclick="toggleTheme()">🌙</div>
         </div>
@@ -528,6 +530,8 @@ async function bootApp(session) {
   // Check for QR scan link
   checkScanParam()
   showPage('dashboard')
+  subscribeNotifications()
+  loadNotifications()
 }
 
 function formatInvRole(r) {
@@ -640,6 +644,8 @@ async function renderDashboard() {
   const assets = await loadAssets()
   S.assets = assets
   const role = S.user.inventory_role
+  // Run background checks silently
+  runBackgroundChecks().catch(() => {})
 
   const total = assets.length
   const active = assets.filter(a => a.status === 'active').length
@@ -1388,6 +1394,31 @@ async function viewAsset(id) {
   }
   body += '</div>'
 
+  // Cost of Ownership
+  const { data: costEntries } = await SB.from('asset_cost_entries')
+    .select('*').eq('asset_id', a.id).order('entry_date', { ascending: false })
+  if (costEntries && costEntries.length > 0) {
+    const totalCost = costEntries.reduce((s,e) => s + Number(e.amount||0), 0)
+    const acqCost = Number(a.acquisition_cost||0)
+    const tco = acqCost + totalCost
+    body += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-bottom:16px;">'
+    body += '<div style="font-size:12px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">💰 Total Cost of Ownership</div>'
+    body += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">'
+    body += '<div><div style="font-size:11px;color:var(--txt2);">Acquisition</div><div style="font-weight:600;">₱' + acqCost.toLocaleString() + '</div></div>'
+    body += '<div><div style="font-size:11px;color:var(--txt2);">Repair/Parts</div><div style="font-weight:600;color:var(--amber);">₱' + totalCost.toLocaleString() + '</div></div>'
+    body += '<div><div style="font-size:11px;color:var(--txt2);">Total TCO</div><div style="font-weight:600;color:var(--red);">₱' + tco.toLocaleString() + '</div></div>'
+    body += '</div>'
+    // Cost breakdown
+    body += '<div style="display:flex;flex-direction:column;gap:4px;">'
+    costEntries.slice(0,5).forEach(e => {
+      body += '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--txt2);">'
+      body += '<span>' + e.entry_type + ' · ' + (e.description||'') + '</span>'
+      body += '<span>₱' + Number(e.amount).toLocaleString() + ' · ' + formatDate(e.entry_date) + '</span>'
+      body += '</div>'
+    })
+    body += '</div></div>'
+  }
+
   // Maintenance tickets linked to this asset
   const { data: maintTickets } = await SB.from('maint_tickets')
     .select('id,title,status,priority,created_at,resolved_at')
@@ -1453,9 +1484,94 @@ function iF(label, value) {
   return '<div><div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">' + label + '</div><div style="font-size:13px;">' + value + '</div></div>'
 }
 
-// ═══════════════════════════════════
-// ASSET FORM
-// ═══════════════════════════════════
+// ─── Feature 9: Warranty Expiry Alerts ───
+async function checkWarrantyAlerts() {
+  const today = new Date()
+  const in30 = new Date(today.getTime() + 30*24*3600000)
+  const { data: assets } = await SB.from('assets')
+    .select('id,asset_no,asset_name,warranty_expiry')
+    .not('warranty_expiry','is',null)
+    .lt('warranty_expiry', in30.toISOString().split('T')[0])
+    .gt('warranty_expiry', today.toISOString().split('T')[0])
+    .eq('status','active')
+  if (!assets || assets.length === 0) return
+  for (const a of assets) {
+    // Check if already notified this month
+    const { data: existing } = await SB.from('asset_alerts')
+      .select('id').eq('asset_id', a.id).eq('alert_type','warranty_expiry')
+      .eq('resolved', false).limit(1)
+    if (existing && existing.length > 0) continue
+    await SB.from('asset_alerts').insert({
+      asset_id: a.id, alert_type: 'warranty_expiry',
+      due_date: a.warranty_expiry, days_before: 30
+    })
+    // Notify inventory staff
+    const daysLeft = Math.ceil((new Date(a.warranty_expiry) - today) / 86400000)
+    await sendNotification(
+      [S.user.id],
+      '⚠️ Warranty Expiring: ' + a.asset_no,
+      a.asset_name + ' warranty expires in ' + daysLeft + ' days.',
+      'warning', 'inventory', 'asset', a.id,
+      'https://ittdmh.pro/inventory'
+    )
+  }
+}
+
+// ─── Feature 8: PM Auto-create Ticket ───
+async function checkPMSchedules() {
+  const today = new Date()
+  const { data: due } = await SB.from('pm_schedules')
+    .select('*').eq('is_active', true).eq('auto_create_ticket', true)
+    .lte('next_due_date', today.toISOString().split('T')[0])
+    .is('last_ticket_id', null)
+  if (!due || due.length === 0) return
+  for (const pm of due) {
+    // Auto-create maintenance ticket
+    const { data: asset } = await SB.from('assets').select('asset_no,asset_name,dept_id').eq('id', pm.asset_id).single()
+    if (!asset) continue
+    const { data: num } = await SB.rpc('generate_ticket_no')
+    const ticketId = num || ('TKT-' + Date.now())
+    await SB.from('maint_tickets').insert({
+      id: ticketId,
+      title: pm.pm_type.toUpperCase() + ': ' + asset.asset_name + ' — ' + asset.asset_no,
+      description: 'Auto-generated from PM schedule. ' + pm.pm_type + ' due: ' + pm.next_due_date,
+      dept_id: asset.dept_id, category: 'equipment',
+      priority: 'normal', status: 'open',
+      submitted_by: S.user.id,
+      asset_id: pm.asset_id, asset_no: asset.asset_no,
+      ticket_subtype: pm.pm_type === 'calibration' ? 'calibration' : 'pm'
+    })
+    // Mark PM schedule with ticket
+    await SB.from('pm_schedules').update({ last_ticket_id: ticketId }).eq('id', pm.id)
+    // Notify maintenance
+    const { data: maintStaff } = await SB.from('users')
+      .select('id').not('maintenance_role','is',null).eq('is_active',true)
+    if (maintStaff && maintStaff.length > 0) {
+      await sendNotification(
+        maintStaff.map(u => u.id),
+        '🔧 PM Due: ' + asset.asset_no,
+        pm.pm_type + ' required for ' + asset.asset_name,
+        'action_required', 'inventory', 'pm_schedule', pm.id,
+        'https://ittdmh.pro/maintenance'
+      )
+    }
+  }
+}
+
+// ─── Feature 2: Log acquisition cost on new asset ───
+async function logAcquisitionCost(assetId, amount, sourceSystem, refId) {
+  if (!amount || amount <= 0) return
+  await SB.from('asset_cost_entries').insert({
+    asset_id: assetId, entry_type: 'acquisition',
+    amount, source_system: sourceSystem||'manual',
+    source_ref_id: refId||null, recorded_by: S.user?.id||null
+  }).catch(() => {})
+}
+
+// ─── Run background checks on dashboard load ───
+async function runBackgroundChecks() {
+  await Promise.all([checkWarrantyAlerts(), checkPMSchedules()])
+}
 async function openAssetForm(assetId) {
   S.editingAssetId = assetId || null
   let a = null
@@ -2951,6 +3067,127 @@ document.getElementById('loginPass').addEventListener('keydown', e => { if (e.ke
 
   clearSession()
 })()
+
+// ═══════════════════════════════════
+// UNIFIED NOTIFICATIONS + PORTAL
+// ═══════════════════════════════════
+async function loadNotifications() {
+  if (!window.S?.user && !window.state?.user) return []
+  const uid = (window.S?.user?.id || window.state?.user?.id)
+  if (!uid) return []
+  const { data } = await SB.from('notifications').select('*').eq('user_id', uid)
+    .order('created_at', { ascending: false }).limit(30)
+  const all = data || []
+  updateNotifBadge(all.filter(n => !n.is_read).length)
+  return all
+}
+function updateNotifBadge(count) {
+  const badge = document.getElementById('notifBadge')
+  if (!badge) return
+  if (count > 0) { badge.textContent = count > 9 ? '9+' : count; badge.style.display = 'flex' }
+  else badge.style.display = 'none'
+}
+function subscribeNotifications() {
+  const uid = (window.S?.user?.id || window.state?.user?.id)
+  if (!uid) return
+  SB.channel('notif-' + uid)
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:'user_id=eq.'+uid }, (payload) => {
+      if (typeof showToast === 'function') showToast('info', payload.new.title, payload.new.body || '')
+      loadNotifications()
+    }).subscribe()
+}
+async function openNotifications() {
+  const notifs = await loadNotifications()
+  const uid = (window.S?.user?.id || window.state?.user?.id)
+  if (notifs && notifs.some(n => !n.is_read)) {
+    await SB.from('notifications').update({ is_read: true }).eq('user_id', uid).eq('is_read', false)
+    updateNotifBadge(0)
+  }
+  const icons = { info:'ℹ️', warning:'⚠️', success:'✅', error:'❌', action_required:'🔔' }
+  const systemIcons = { csr:'📋', maintenance:'🔧', it:'🖥️', inventory:'🏷️', system:'🏥' }
+  let html = ''
+  if (!notifs || notifs.length === 0) {
+    html = '<div style="text-align:center;padding:30px;color:var(--txt2);">🔔 No notifications yet</div>'
+  } else {
+    notifs.forEach(n => {
+      const ago = Math.floor((Date.now() - new Date(n.created_at)) / 60000)
+      const timeStr = ago < 60 ? ago + 'm ago' : ago < 1440 ? Math.floor(ago/60) + 'h ago' : Math.floor(ago/1440) + 'd ago'
+      html += '<div style="display:flex;gap:10px;padding:12px 0;border-bottom:1px solid var(--bdr);">'
+      html += '<div style="font-size:18px;flex-shrink:0;">' + (icons[n.type]||'ℹ️') + '</div>'
+      html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">' + n.title + '</div>'
+      if (n.body) html += '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">' + n.body + '</div>'
+      html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">' + (systemIcons[n.source_system]||'') + ' ' + timeStr + '</div>'
+      html += '</div></div>'
+    })
+  }
+  if (typeof showConfirmModal === 'function') {
+    showConfirmModal('🔔 Notifications', '<div style="max-height:400px;overflow-y:auto;">' + html + '</div>', null)
+  } else {
+    document.getElementById('confirmTitle').textContent = '🔔 Notifications'
+    document.getElementById('confirmMsg').innerHTML = '<div style="max-height:400px;overflow-y:auto;">' + html + '</div>'
+    document.getElementById('confirmOkBtn').style.display = 'none'
+    document.querySelector('#confirmModal .modal-footer .btn-ghost').textContent = 'Close'
+    openModal('confirmModal')
+    setTimeout(() => { document.getElementById('confirmOkBtn').style.display = '' }, 100)
+  }
+}
+async function sendNotification(userIds, title, body, type, sourceSystem, refType, refId, actionUrl) {
+  if (!userIds || userIds.length === 0) return
+  const inserts = userIds.map(uid => ({ user_id:uid, title, body:body||null, type:type||'info', source_system:sourceSystem||null, source_ref_type:refType||null, source_ref_id:refId||null, action_url:actionUrl||null }))
+  await SB.from('notifications').insert(inserts).catch(() => {})
+}
+async function openPortal() {
+  const u = window.S?.user || window.state?.user
+  if (!u) return
+  const systems = [
+    { key:'csr', icon:'📋', label:'CSR System', url:'https://ittdmh.pro/csr', role:u.csr_role },
+    { key:'maintenance', icon:'🔧', label:'Maintenance Hub', url:'https://ittdmh.pro/maintenance', role:u.maintenance_role },
+    { key:'it', icon:'🖥️', label:'IT Helpdesk', url:'https://ittdmh.pro/it', role:u.it_role },
+    { key:'inventory', icon:'🏷️', label:'Asset Inventory', url:'https://ittdmh.pro/inventory', role:u.inventory_role },
+    { key:'scan', icon:'📷', label:'Scan & Request', url:'https://ittdmh.pro/scan', role:'any' },
+  ]
+  const { data: notifs } = await SB.from('notifications').select('source_system').eq('user_id', u.id).eq('is_read', false)
+  const unreadBySystem = {}
+  ;(notifs||[]).forEach(n => { unreadBySystem[n.source_system] = (unreadBySystem[n.source_system]||0)+1 })
+  let html = '<div style="display:flex;flex-direction:column;gap:10px;">'
+  systems.forEach(s => {
+    if (!s.role) return
+    const unread = unreadBySystem[s.key] || 0
+    html += '<a href="' + s.url + '" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:12px;text-decoration:none;color:var(--txt);">'
+    html += '<div style="font-size:24px;">' + s.icon + '</div>'
+    html += '<div style="flex:1;"><div style="font-size:14px;font-weight:600;">' + s.label + '</div></div>'
+    if (unread > 0) html += '<div style="background:var(--red);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700;">' + unread + '</div>'
+    html += '<span style="color:var(--txt3);">→</span></a>'
+  })
+  html += '</div>'
+  document.getElementById('confirmTitle').textContent = '🏥 TDMH Systems'
+  document.getElementById('confirmMsg').innerHTML = html
+  document.getElementById('confirmOkBtn').style.display = 'none'
+  document.querySelector('#confirmModal .modal-footer .btn-ghost').textContent = 'Close'
+  openModal('confirmModal')
+  setTimeout(() => { document.getElementById('confirmOkBtn').style.display = '' }, 100)
+}
+
+// ─── Concurrent-safe insert with retry ───
+// Handles rare race conditions on unique constraints
+async function insertWithRetry(table, payload, maxRetries) {
+  maxRetries = maxRetries || 3
+  let lastError = null
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data, error } = await SB.from(table).insert(payload).select().single()
+    if (!error) return { data, error: null }
+    // If unique violation on the ID field, regenerate and retry
+    if (error.code === '23505' && error.message.includes('_pkey')) {
+      console.warn('[Retry ' + (attempt+1) + '] Unique conflict on ' + table + ', regenerating ID...')
+      lastError = error
+      // Small random delay before retry
+      await new Promise(r => setTimeout(r, Math.random() * 100 + 50))
+    } else {
+      return { data: null, error }
+    }
+  }
+  return { data: null, error: lastError }
+}
 </script>
 </body>
 </html>
