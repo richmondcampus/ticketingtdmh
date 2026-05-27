@@ -1695,7 +1695,21 @@ function renderNewRequestForm(reqType) {
     html += '</div>'
   }
 
+  // Auto-approval hint — shown to all for supply/purchase requests
+  if (['supply','purchase'].includes(reqType)) {
+    html += '<div id="autoApproveHint" style="display:none;background:var(--accent-a);border:1px solid var(--accent-b);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:var(--accent);">'
+    html += '⚡ Below auto-approval threshold — this request will be auto-approved immediately.</div>'
+    html += '<div id="needsApprovalHint" style="display:none;background:var(--surf2);border:1px solid var(--bdr);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:var(--txt2);">'
+    html += '📋 Above auto-approval threshold — will require department head approval.</div>'
+  }
+
   document.getElementById('newRequestBody').innerHTML = html
+  // Wire up live cost estimate
+  setTimeout(() => {
+    document.querySelectorAll('.item-qty,.item-cost').forEach(el => {
+      el.addEventListener('input', updateAutoApproveHint)
+    })
+  }, 200)
 }
 
 function onDerpActionChange() {
@@ -1726,6 +1740,25 @@ function onDerpActionChange() {
 
 function getDerpAction() {
   return document.querySelector('input[name="derp_action"]:checked')?.value || 'with_replacement'
+}
+
+async function updateAutoApproveHint() {
+  const total = state.itemRows.reduce((s,r) => s + (Number(r.estimated_cost)||0) * (Number(r.quantity)||1), 0)
+  if (total === 0) return
+  const { data: settings } = await SB.from('settings').select('value').eq('key','csr_auto_approve_threshold').single()
+  const threshold = Number(settings?.value || 5000)
+  const { data: enabledSetting } = await SB.from('settings').select('value').eq('key','csr_auto_approve_enabled').single()
+  const enabled = enabledSetting?.value !== 'false'
+  const hint = document.getElementById('autoApproveHint')
+  const needsHint = document.getElementById('needsApprovalHint')
+  if (!hint || !needsHint || !enabled) return
+  if (total <= threshold) {
+    hint.style.display = 'block'
+    needsHint.style.display = 'none'
+  } else {
+    hint.style.display = 'none'
+    needsHint.style.display = 'block'
+  }
 }
 
 function switchReqType(t) {
@@ -1963,6 +1996,20 @@ async function saveRequest(action) {
       source_ref_id: state.sourceRefId || null,
     }
 
+    // ── AUTO-APPROVAL CHECK ──
+    // Compute total estimated cost of items
+    const totalEstimated = validItems.reduce((s, r) => s + (Number(r.estimated_cost) || 0) * (Number(r.quantity) || 1), 0)
+    if (action === 'submit' && reqType !== 'derp') {
+      const { data: autoApprove } = await SB.rpc('should_auto_approve', {
+        p_request_type: reqType,
+        p_total_amount: totalEstimated
+      })
+      if (autoApprove) {
+        payload.status = 'approved'
+        payload.current_approval_level = 99 // marks as fully approved
+      }
+    }
+
     // DERP fields
     if (reqType === 'derp') {
       payload.asset_condition = document.getElementById('f_condition') ? (document.getElementById('f_condition').value || 'poor') : 'poor'
@@ -2063,16 +2110,21 @@ async function saveRequest(action) {
     }
 
     closeModal('newRequestModal')
+    const wasAutoApproved = payload.status === 'approved'
     const actionLabels = {
       disposal_only: '🗑️ Disposal recorded — no procurement needed.',
       repair_only: '🔧 Routed to Maintenance — no procurement needed.',
-      with_replacement: action === 'submit' ? 'Submitted for approval.' : 'Saved as draft.',
-      null: action === 'submit' ? 'Submitted for approval.' : 'Saved as draft.'
+      with_replacement: wasAutoApproved
+        ? '⚡ Auto-approved (below threshold) — ready for PO.'
+        : action === 'submit' ? 'Submitted for approval.' : 'Saved as draft.',
+      null: wasAutoApproved
+        ? '⚡ Auto-approved (below threshold) — ready for PO.'
+        : action === 'submit' ? 'Submitted for approval.' : 'Saved as draft.'
     }
     showToast('success', req.request_no, actionLabels[derpAction] || actionLabels['null'])
 
-    // Notify approver only if needs replacement
-    if (action === 'submit' && derpAction !== 'disposal_only' && derpAction !== 'repair_only') {
+    // Notify approver only if needs approval (not auto-approved, not disposal/repair-only)
+    if (action === 'submit' && !wasAutoApproved && derpAction !== 'disposal_only' && derpAction !== 'repair_only') {
       notifyApprovers(req, 1)
     }
 
@@ -6019,23 +6071,57 @@ async function renderThresholdsSettings(el) {
   const settingsMap = {}
   ;(settings||[]).forEach(s => { settingsMap[s.key] = s.value })
 
-  let html = '<div style="max-width:500px;">'
-  html += '<div class="card" style="margin-bottom:16px;">'
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:16px;">💰 Finance Approval Threshold</div>'
-  html += '<p style="font-size:13px;color:var(--txt2);margin-bottom:16px;">Requests with estimated total equal to or above this amount will require Finance approval (Level 3) in addition to Dept Head and Supply Officer.</p>'
+  let html = '<div style="max-width:500px;display:flex;flex-direction:column;gap:16px;">'
+
+  // Auto-approve threshold — NEW
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:6px;">⚡ Auto-Approval Threshold</div>'
+  html += '<p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">Supply and purchase requests <strong>below or equal</strong> to this amount are automatically approved — no need for department head sign-off. Reduces friction for routine small purchases.</p>'
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Threshold Amount (₱)</label>'
+  html += '<input type="number" id="thresh_auto" value="' + (settingsMap['csr_auto_approve_threshold']||5000) + '" min="0" step="500" placeholder="e.g. 5000"></div>'
+  html += '<div class="field"><label>Enable Auto-Approval</label>'
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;">'
+  const autoEnabled = settingsMap['csr_auto_approve_enabled'] !== 'false'
+  html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">'
+  html += '<input type="checkbox" id="thresh_auto_enabled"' + (autoEnabled?' checked':'') + ' style="width:16px;height:16px;accent-color:var(--accent);">'
+  html += '<span style="font-size:13px;">Enabled</span></label></div></div>'
+  html += '</div>'
+  html += '<div style="background:var(--accent-a);border:1px solid var(--accent-b);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--txt2);margin-bottom:14px;">'
+  html += '💡 Example: Set to ₱5,000 — a request for printer paper (₱800) auto-approves. A request for a laptop (₱35,000) goes through normal approval.'
+  html += '</div>'
+  html += '<button class="btn btn-primary btn-sm" onclick="saveAutoThreshold()">Save Auto-Approval Settings</button>'
+  html += '</div>'
+
+  // Finance threshold
+  html += '<div class="card">'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:6px;">💰 Finance Approval Threshold</div>'
+  html += '<p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">Requests with estimated total <strong>equal to or above</strong> this amount require Finance approval (Level 3) in addition to Dept Head and Supply Officer.</p>'
   html += '<div class="field"><label>Threshold Amount (₱)</label>'
   html += '<input type="number" id="thresh_finance" value="' + (settingsMap['finance_threshold']||10000) + '" min="0" step="1000"></div>'
-  html += '<button class="btn btn-primary" onclick="saveThreshold()">Save Threshold</button>'
+  html += '<button class="btn btn-primary btn-sm" onclick="saveThreshold()">Save Finance Threshold</button>'
   html += '</div>'
 
   html += '<div class="card">'
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:16px;">🏥 Hospital Information</div>'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">🏥 Hospital Information</div>'
   html += '<div class="field"><label>Hospital Name</label>'
   html += '<input type="text" id="thresh_hospital" value="' + (settingsMap['hospital_name']||'Taytay Doctors Multispecialty Hospital') + '"></div>'
-  html += '<button class="btn btn-primary" onclick="saveHospitalName()">Save</button>'
+  html += '<button class="btn btn-primary btn-sm" onclick="saveHospitalName()">Save</button>'
   html += '</div>'
   html += '</div>'
   el.innerHTML = html
+}
+
+async function saveAutoThreshold() {
+  const threshold = document.getElementById('thresh_auto')?.value
+  const enabled = document.getElementById('thresh_auto_enabled')?.checked
+  try {
+    await Promise.all([
+      SB.from('settings').upsert({ key:'csr_auto_approve_threshold', value:threshold, updated_by:state.user.id, updated_at:new Date().toISOString() }),
+      SB.from('settings').upsert({ key:'csr_auto_approve_enabled', value:String(enabled), updated_by:state.user.id, updated_at:new Date().toISOString() })
+    ])
+    showToast('success','Saved ⚡','Auto-approval set to ₱' + Number(threshold).toLocaleString() + (enabled ? ' — enabled.' : ' — disabled.'))
+  } catch(e) { showToast('error','Error', e.message) }
 }
 
 async function saveThreshold() {
