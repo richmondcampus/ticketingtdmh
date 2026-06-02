@@ -83,9 +83,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .item-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);transition:box-shadow .25s,border-color .25s,transform .2s}
 .item-card:hover{box-shadow:var(--shadow-lg);border-color:var(--border2);transform:translateY(-1px)}
 .item-card.closed{opacity:.75}
-.item-imgs{position:relative;height:210px;background:var(--bg2);overflow:hidden;cursor:pointer}
-.item-imgs img{width:100%;height:100%;object-fit:cover;transition:transform .4s ease}
-.item-imgs:hover img{transform:scale(1.04)}
+.item-imgs{position:relative;aspect-ratio:4/3;background:var(--bg3);overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.item-imgs img{width:100%;height:100%;object-fit:contain;transition:transform .4s ease;background:var(--bg3)}
+.item-imgs:hover img{transform:scale(1.03)}
 .img-count{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);border-radius:20px;padding:3px 10px;font-size:10px;font-weight:500;color:#fff;letter-spacing:.04em}
 .no-img{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:12px;flex-direction:column;gap:8px}
 .no-img-icon{font-size:32px;opacity:.25}
@@ -102,8 +102,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .stat-block{padding:12px 14px;border-right:1px solid var(--border)}
 .stat-block:last-child{border-right:none}
 .stat-lbl{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:5px}
-.stat-val{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;color:var(--text);letter-spacing:-.01em;line-height:1}
-.stat-val.sm{font-size:15px;font-family:'Inter',sans-serif;font-weight:500;color:var(--text2)}
+.stat-val{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;color:var(--tdmh-navy);letter-spacing:-.01em;line-height:1}
+.stat-val.sm{font-size:16px;font-family:'Cormorant Garamond',serif;font-weight:600;color:var(--text2);letter-spacing:-.01em}
+[data-theme="dark"] .stat-val{color:var(--gold)}
 .item-meta{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}
 .meta-item{font-size:11px;color:var(--text3);font-weight:400}
 .meta-item strong{color:var(--text2);font-weight:500}
@@ -236,6 +237,16 @@ textarea.modal-inp{resize:vertical;min-height:80px}
 .img-preview img{width:100%;height:100%;object-fit:cover}
 .img-preview-del{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.65);border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 
+/* ===== CATEGORY PILLS ===== */
+.cat-pill{padding:7px 16px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;letter-spacing:.02em}
+.cat-pill:hover{border-color:var(--tdmh-navy);color:var(--tdmh-navy);background:var(--blue-bg)}
+.cat-pill.active{background:var(--tdmh-navy);border-color:var(--tdmh-navy);color:#fff}
+[data-theme="dark"] .cat-pill.active{background:var(--accent);border-color:var(--accent)}
+.cat-manage-row{display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;transition:border-color .2s}
+.cat-manage-row:hover{border-color:var(--border2)}
+.cat-manage-name{font-size:14px;color:var(--text);font-weight:500}
+.cat-manage-actions{display:flex;gap:6px;align-items:center}
+
 /* ===== RESPONSIVE ===== */
 @media(max-width:640px){
   .items-grid{grid-template-columns:1fr;padding:0 16px 48px}
@@ -276,6 +287,9 @@ textarea.modal-inp{resize:vertical;min-height:80px}
     <div class="hero-title">Collateral Bidding Portal</div>
     <div class="hero-sub">Unclaimed patient collateral items available for employee bidding. Highest bids are visible to all — bidder identities remain confidential.</div>
   </div>
+  <div style="max-width:1000px;margin:0 auto;padding:0 32px 20px;display:flex;gap:8px;flex-wrap:wrap" id="cat-filter-wrap">
+    <button class="cat-pill active" onclick="filterByCategory('')">All Items</button>
+  </div>
   <div class="items-grid" id="items-container">
     <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Loading items...</div></div>
   </div>
@@ -311,6 +325,7 @@ textarea.modal-inp{resize:vertical;min-height:80px}
       <button class="tab-btn active" onclick="switchTab('items')">Items</button>
       <button class="tab-btn" onclick="switchTab('bids')">All Bids</button>
       <button class="tab-btn" onclick="switchTab('employees')">Employees</button>
+      <button class="tab-btn" onclick="switchTab('categories')">Categories</button>
     </div>
 
     <!-- TAB: ITEMS -->
@@ -371,6 +386,25 @@ textarea.modal-inp{resize:vertical;min-height:80px}
   </div>
 </div>
 
+    <!-- TAB: CATEGORIES -->
+    <div id="tab-categories" class="hidden">
+      <div class="admin-section">
+        <div class="section-head">
+          <span class="section-head-title">Categories <span class="badge-count" id="cat-count">0</span></span>
+        </div>
+        <div style="padding:22px 24px">
+          <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6">These categories appear as filter options on the public bidding page and as dropdown choices when adding items.</div>
+          <div class="emp-add-row">
+            <input type="text" class="emp-add-inp" id="new-cat-inp" placeholder="New category name" onkeydown="if(event.key==='Enter')addCategory()">
+            <button class="btn-emp-add" onclick="addCategory()">Add</button>
+          </div>
+          <div id="cat-list" style="margin-top:16px;display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ITEM MODAL -->
 <div class="modal-bg hidden" id="item-modal">
   <div class="modal">
@@ -385,14 +419,14 @@ textarea.modal-inp{resize:vertical;min-height:80px}
         <input type="text" class="modal-inp" id="m-name" placeholder="e.g. Samsung Galaxy A54 5G">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="modal-row"><label class="modal-lbl">Category</label><input type="text" class="modal-inp" id="m-category" placeholder="e.g. Mobile Device"></div>
+        <div class="modal-row"><label class="modal-lbl">Category</label><select class="modal-inp" id="m-category"><option value="">— Select category —</option></select></div>
         <div class="modal-row"><label class="modal-lbl">Condition</label>
           <select class="modal-inp" id="m-condition"><option value="Excellent">Excellent</option><option value="Good" selected>Good</option><option value="Fair">Fair</option><option value="Poor">Poor</option></select>
         </div>
       </div>
       <div class="modal-row"><label class="modal-lbl">Description</label><textarea class="modal-inp" id="m-desc" placeholder="Item details, visible condition notes, etc."></textarea></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="modal-row"><label class="modal-lbl">Starting Price (₱) *</label><input type="number" class="modal-inp" id="m-start-price" placeholder="0.00" min="0"></div>
+        <div class="modal-row"><label class="modal-lbl">Starting Price (₱) *</label><input type="number" class="modal-inp" id="m-start-price" placeholder="100.00" min="0" value="100"></div>
         <div class="modal-row"><label class="modal-lbl">Min Increment (₱)</label><input type="number" class="modal-inp" id="m-increment" placeholder="100.00" min="1" value="100"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -530,21 +564,39 @@ async function loadEmployees(){
 }
 
 // ---- PUBLIC ITEMS ----
+let publicItems=[];
+let publicBidMap={};
+
 async function loadPublicItems(){
   const{data:items,error}=await sb.from('items').select('*').eq('status','active').order('created_at',{ascending:false});
   const pill=document.getElementById('status-pill');
   const stxt=document.getElementById('status-text');
   if(error){stxt.textContent='Error';document.getElementById('items-container').innerHTML='<div class="empty-state"><div class="empty-title">Failed to load items</div></div>';return;}
-  const all=items||[];
-  stxt.textContent=all.length>0?'Bidding Live':'No Active Bids';
+  publicItems=items||[];
+  stxt.textContent=publicItems.length>0?'Bidding Live':'No Active Bids';
+  if(publicItems.length===0){
+    document.getElementById('items-container').innerHTML='<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">No active items</div><div class="empty-sub">Check back soon for upcoming bidding events.</div></div>';
+    return;
+  }
+  const ids=publicItems.map(i=>i.id);
+  const{data:bids}=await sb.from('bids').select('item_id,amount,submitted_at,is_valid').in('item_id',ids).eq('is_valid',true).order('amount',{ascending:false});
+  publicBidMap={};
+  (bids||[]).forEach(b=>{if(!publicBidMap[b.item_id])publicBidMap[b.item_id]=[];publicBidMap[b.item_id].push(b);});
+  renderPublicItems();
+  loadCategoryPills();
+}
+
+function renderPublicItems(){
+  const all=activeCategory?publicItems.filter(i=>i.category===activeCategory):publicItems;
+  const bidMap=publicBidMap;
+  if(all.length===0&&activeCategory){
+    document.getElementById('items-container').innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">No items in this category</div><div class="empty-sub">Try selecting a different category.</div></div>';
+    return;
+  }
   if(all.length===0){
     document.getElementById('items-container').innerHTML='<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">No active items</div><div class="empty-sub">Check back soon for upcoming bidding events.</div></div>';
     return;
   }
-  const ids=all.map(i=>i.id);
-  const{data:bids}=await sb.from('bids').select('item_id,amount,submitted_at,is_valid').in('item_id',ids).eq('is_valid',true).order('amount',{ascending:false});
-  const bidMap={};
-  (bids||[]).forEach(b=>{if(!bidMap[b.item_id])bidMap[b.item_id]=[];bidMap[b.item_id].push(b);});
   document.getElementById('items-container').innerHTML=all.map(item=>{
     const isBids=bidMap[item.id]||[];
     const highBid=isBids[0]?.amount||item.starting_price;
@@ -629,7 +681,7 @@ function closeLightbox(){document.getElementById('lightbox').classList.add('hidd
 function lbNav(d){lbIdx=(lbIdx+d+lbImages.length)%lbImages.length;document.getElementById('lb-img').src=lbImages[lbIdx];document.getElementById('lb-counter').textContent=(lbIdx+1)+' / '+lbImages.length;}
 
 // ---- ADMIN ----
-async function loadAdminData(){await Promise.all([loadAdminItems(),loadAdminBids(),loadAdminEmployees()]);}
+async function loadAdminData(){await Promise.all([loadAdminItems(),loadAdminBids(),loadAdminEmployees(),loadAdminCategories()]);}
 
 async function loadAdminItems(){
   const{data}=await sb.from('items').select('*').order('created_at',{ascending:false});
@@ -716,6 +768,9 @@ function openItemModal(item=null){
   document.getElementById('m-close').value=item?.bid_close_at?item.bid_close_at.slice(0,16):'';
   modalImages=(item?.images||[]).map(url=>({url,isNew:false}));
   renderImgPreviews();
+  populateCategoryDropdown().then(()=>{
+    if(item?.category) document.getElementById('m-category').value=item.category;
+  });
   document.getElementById('item-modal').classList.remove('hidden');
 }
 async function editItem(id){const{data}=await sb.from('items').select('*').eq('id',id).single();openItemModal(data);}
@@ -764,19 +819,88 @@ async function declareWinner(itemId){
 }
 
 function switchTab(tab){
-  ['items','bids','employees'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==tab));
-  document.querySelectorAll('.tab-btn').forEach((btn,i)=>btn.classList.toggle('active',['items','bids','employees'][i]===tab));
+  ['items','bids','employees','categories'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==tab));
+  document.querySelectorAll('.tab-btn').forEach((btn,i)=>btn.classList.toggle('active',['items','bids','employees','categories'][i]===tab));
   if(tab==='bids')loadAdminBids();
   if(tab==='employees')loadAdminEmployees();
+  if(tab==='categories')loadAdminCategories();
 }
 
 async function ensureBucket(){await sb.storage.createBucket('item-images',{public:true,allowedMimeTypes:['image/*'],fileSizeLimit:5242880}).catch(()=>{});}
+
+// ---- CATEGORIES ----
+let allCategories = [];
+
+async function loadCategories(){
+  const{data}=await sb.from('categories').select('*').order('sort_order').order('name');
+  allCategories=(data||[]);
+  return allCategories;
+}
+
+async function loadCategoryPills(){
+  await loadCategories();
+  const wrap=document.getElementById('cat-filter-wrap');
+  wrap.innerHTML='<button class="cat-pill active" onclick="filterByCategory(this,'')">All Items</button>'
+    +allCategories.map(c=>`<button class="cat-pill" onclick="filterByCategory(this,'${c.name}')">${c.name}</button>`).join('');
+}
+
+let activeCategory='';
+function filterByCategory(btn,cat){
+  activeCategory=cat;
+  document.querySelectorAll('.cat-pill').forEach(p=>p.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  renderPublicItems();
+}
+
+async function populateCategoryDropdown(){
+  if(!allCategories.length) await loadCategories();
+  const sel=document.getElementById('m-category');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— Select category —</option>'
+    +allCategories.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');
+  if(cur) sel.value=cur;
+}
+
+async function loadAdminCategories(){
+  await loadCategories();
+  document.getElementById('cat-count').textContent=allCategories.length;
+  const list=document.getElementById('cat-list');
+  if(!allCategories.length){list.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0">No categories yet.</div>';return;}
+  list.innerHTML=allCategories.map(c=>`
+    <div class="cat-manage-row">
+      <span class="cat-manage-name">${c.name}</span>
+      <div class="cat-manage-actions">
+        <button class="btn-sm danger" onclick="deleteCategory('${c.id}','${c.name}')">Remove</button>
+      </div>
+    </div>`).join('');
+}
+
+async function addCategory(){
+  const inp=document.getElementById('new-cat-inp');
+  const name=inp.value.trim();if(!name)return;
+  const{error}=await sb.from('categories').insert({name,sort_order:99});
+  if(error){toast('Error: '+error.message,true);return;}
+  inp.value='';
+  toast('✓ Category added: '+name);
+  loadAdminCategories();
+  loadCategoryPills();
+}
+
+async function deleteCategory(id,name){
+  if(!confirm('Remove category "'+name+'"?\n\nItems using this category will not be affected.'))return;
+  const{error}=await sb.from('categories').delete().eq('id',id);
+  if(error){toast('Error: '+error.message,true);return;}
+  toast('Category removed');
+  loadAdminCategories();
+  loadCategoryPills();
+}
 
 async function init(){
   initTheme();
   if(sessionStorage.getItem('cbp_admin')==='1')adminLoggedIn=true;
   ensureBucket();
   await loadEmployees();
+  await loadCategories();
   route();
   loadPublicItems();
   if(adminLoggedIn&&window.location.hash.replace('#','')=== ADMIN_SLUG)loadAdminData();
