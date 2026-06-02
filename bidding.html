@@ -620,7 +620,7 @@ function renderPublicItems(){
             <div class="item-name">${item.name}</div>
             <div class="item-cat">${item.category||''}&nbsp;${item.condition?'· '+item.condition:''}</div>
           </div>
-          <div class="status-badge ${isLive?'badge-active':item.status==='closed'||isExpired?'badge-closed':'badge-draft'}">${isLive?'<div class="dot"></div> Live':item.status==='closed'||isExpired?'Closed':'Pending'}</div>
+          <div class="status-badge ${isLive?'badge-active':item.status==='closed'||isExpired?'badge-closed':'badge-draft'}">${isLive?'Accepting Bids':item.status==='closed'||isExpired?'Ended':'Pending'}</div>
         </div>
         ${item.description?`<div class="item-desc-text">${item.description}</div>`:''}
         <div class="bid-stats">
