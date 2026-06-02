@@ -840,8 +840,8 @@ async function loadCategories(){
 async function loadCategoryPills(){
   await loadCategories();
   const wrap=document.getElementById('cat-filter-wrap');
-  wrap.innerHTML='<button class="cat-pill active" onclick="filterByCategory(this,'')">All Items</button>'
-    +allCategories.map(c=>`<button class="cat-pill" onclick="filterByCategory(this,'${c.name}')">${c.name}</button>`).join('');
+  wrap.innerHTML=`<button class="cat-pill active" onclick="filterByCategory(this,'')">All Items</button>`
+    +allCategories.map(c=>`<button class="cat-pill" onclick="filterByCategory(this,'${c.name.replace(/'/g,"\\'")}')">${c.name}</button>`).join('');
 }
 
 let activeCategory='';
