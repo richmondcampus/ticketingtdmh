@@ -327,6 +327,7 @@ textarea.modal-inp{resize:vertical;min-height:80px}
     <div class="admin-tabs">
       <button class="tab-btn active" onclick="switchTab('items')">Items</button>
       <button class="tab-btn" onclick="switchTab('bids')">All Bids</button>
+      <button class="tab-btn" onclick="switchTab('winners')">Winners</button>
       <button class="tab-btn" onclick="switchTab('employees')">Employees</button>
       <button class="tab-btn" onclick="switchTab('categories')">Categories</button>
     </div>
@@ -388,6 +389,35 @@ textarea.modal-inp{resize:vertical;min-height:80px}
     </div>
   </div>
 </div>
+
+    <!-- TAB: WINNERS -->
+    <div id="tab-winners" class="hidden">
+      <div class="admin-section">
+        <div class="section-head">
+          <span class="section-head-title">Winners <span class="badge-count" id="winners-count">0</span></span>
+          <button class="btn-sm" onclick="exportWinners()">Export CSV</button>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Lot #</th>
+              <th>Item</th>
+              <th>Category</th>
+              <th>Employee No.</th>
+              <th>Winner Name</th>
+              <th>Winning Bid</th>
+              <th>Closed On</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="winners-tbody">
+            <tr><td colspan="7" style="text-align:center;color:var(--text3);padding:28px">Loading...</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
 
     <!-- TAB: CATEGORIES -->
     <div id="tab-categories" class="hidden">
@@ -833,11 +863,99 @@ async function declareWinner(itemId){
 }
 
 function switchTab(tab){
-  ['items','bids','employees','categories'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==tab));
-  document.querySelectorAll('.tab-btn').forEach((btn,i)=>btn.classList.toggle('active',['items','bids','employees','categories'][i]===tab));
+  ['items','bids','winners','employees','categories'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==tab));
+  document.querySelectorAll('.tab-btn').forEach((btn,i)=>btn.classList.toggle('active',['items','bids','winners','employees','categories'][i]===tab));
   if(tab==='bids')loadAdminBids();
+  if(tab==='winners')loadAdminWinners();
   if(tab==='employees')loadAdminEmployees();
   if(tab==='categories')loadAdminCategories();
+}
+
+async function loadAdminWinners(){
+  const{data:items}=await sb.from('items')
+    .select('*')
+    .eq('status','closed')
+    .not('winner_bid_id','is',null)
+    .order('created_at',{ascending:false});
+
+  const tbody=document.getElementById('winners-tbody');
+
+  if(!items||!items.length){
+    document.getElementById('winners-count').textContent='0';
+    tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:28px">No winners declared yet.</td></tr>';
+    return;
+  }
+
+  // Fetch winning bids (include backed_out)
+  const winnerBidIds=items.map(i=>i.winner_bid_id).filter(Boolean);
+  const{data:winnerBids}=await sb.from('bids').select('id,employee_number_input,amount,submitted_at,backed_out').in('id',winnerBidIds);
+  const bidMap={};
+  (winnerBids||[]).forEach(b=>{bidMap[b.id]=b;});
+
+  document.getElementById('winners-count').textContent=items.length;
+
+  tbody.innerHTML=items.map(item=>{
+    const wb=bidMap[item.winner_bid_id]||{};
+    const empNum=wb.employee_number_input||'—';
+    const empName=employeeMap[empNum.toString().trim()]||'—';
+    const backedOut=wb.backed_out||false;
+    return`<tr style="${backedOut?'opacity:.5':''}">
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text3)">${item.lot_number}</td>
+      <td><div class="tbl-name">${item.name}</div></td>
+      <td style="font-size:12px;color:var(--text2)">${item.category||'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--tdmh-navy)">${empNum}</td>
+      <td style="font-size:13px;font-weight:500;color:var(--text)">${empName}${backedOut?'<span style="margin-left:6px;font-size:10px;color:var(--red);font-weight:600;background:var(--red-bg);border:1px solid var(--red-border);border-radius:10px;padding:1px 7px">Backed Out</span>':''}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:${backedOut?'var(--text3)':'var(--gold)'};text-decoration:${backedOut?'line-through':'none'}">${peso(wb.amount||0)}</td>
+      <td style="font-size:11px;color:var(--text3)">${fmtDate(item.bid_close_at)}</td>
+      <td>${!backedOut?`<button class="btn-sm danger" onclick="handleBackout('${item.id}','${wb.id}')">Backout</button>`:'<span style="font-size:11px;color:var(--text3)">—</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function handleBackout(itemId, bidId){
+  if(!confirm('Mark current winner as backed out?\n\nThe system will automatically award to the next highest valid bid.'))return;
+
+  // Mark current winner bid as backed out
+  await sb.from('bids').update({backed_out:true}).eq('id',bidId);
+
+  // Find next highest valid bid that is not backed out
+  const{data:nextBids}=await sb.from('bids')
+    .select('*')
+    .eq('item_id',itemId)
+    .eq('is_valid',true)
+    .eq('backed_out',false)
+    .order('amount',{ascending:false})
+    .limit(1);
+
+  if(nextBids&&nextBids.length>0){
+    const next=nextBids[0];
+    await sb.from('items').update({winner_bid_id:next.id}).eq('id',itemId);
+    const nextName=employeeMap[next.employee_number_input.toString().trim()]||next.employee_number_input;
+    toast(`✓ Re-awarded to ${nextName} — ${peso(next.amount)}`);
+  } else {
+    // No more valid bids — clear winner
+    await sb.from('items').update({winner_bid_id:null}).eq('id',itemId);
+    toast('No more valid bids. Item has no winner.',true);
+  }
+
+  loadAdminWinners();
+  loadAdminItems();
+}
+
+function exportWinners(){
+  const rows=document.querySelectorAll('#winners-tbody tr');
+  if(!rows.length||rows[0].cells.length<2)return;
+  const headers=['Lot #','Item','Category','Employee No.','Winner Name','Winning Bid','Closed On'];
+  const csvRows=[headers.join(',')];
+  rows.forEach(row=>{
+    const cells=Array.from(row.cells).map(c=>'"'+c.innerText.replace(/"/g,'""')+'"');
+    if(cells.length>1) csvRows.push(cells.join(','));
+  });
+  const blob=new Blob([csvRows.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='tdmh-bidding-winners.csv';
+  a.click();
 }
 
 async function ensureBucket(){await sb.storage.createBucket('item-images',{public:true,allowedMimeTypes:['image/*'],fileSizeLimit:5242880}).catch(()=>{});}
