@@ -216,7 +216,7 @@ textarea.modal-inp{resize:vertical;min-height:80px}
 .btn-save:hover{opacity:.82}
 
 /* ===== EMPLOYEES ===== */
-.emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;max-height:300px;overflow-y:auto;margin-top:14px}
+.emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;max-height:360px;overflow-y:auto;margin-top:14px}
 .emp-chip{display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px;font-family:'JetBrains Mono',monospace;font-weight:500;color:var(--text2);transition:border-color .2s}
 .emp-chip:hover{border-color:var(--border2)}
 .emp-del{background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;line-height:1;padding:0 2px;transition:color .2s}
@@ -360,7 +360,7 @@ textarea.modal-inp{resize:vertical;min-height:80px}
         </div>
         <div style="overflow-x:auto">
         <table class="admin-table">
-          <thead><tr><th>#</th><th>Item</th><th>Employee No.</th><th>Amount</th><th>Valid</th><th>Submitted</th><th>Action</th></tr></thead>
+          <thead><tr><th>#</th><th>Item</th><th>Employee No.</th><th>Name</th><th>Amount</th><th>Valid</th><th>Submitted</th><th>Action</th></tr></thead>
           <tbody id="admin-bids-tbody"><tr><td colspan="7" style="text-align:center;color:var(--text3);padding:28px">Loading...</td></tr></tbody>
         </table>
         </div>
@@ -558,9 +558,12 @@ function fmtDate(ts){
 }
 
 // ---- EMPLOYEES ----
+let employeeMap={};// number -> name
 async function loadEmployees(){
-  const{data}=await sb.from('employee_numbers').select('employee_number');
+  const{data}=await sb.from('employee_numbers').select('employee_number,employee_name');
   validEmployees=new Set((data||[]).map(r=>r.employee_number.toString().trim()));
+  employeeMap={};
+  (data||[]).forEach(r=>{ employeeMap[r.employee_number.toString().trim()]=r.employee_name||''; });
 }
 
 // ---- PUBLIC ITEMS ----
@@ -722,10 +725,12 @@ async function loadAdminBids(){
   if(!bids||!bids.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:28px">No bids found.</td></tr>';return;}
   tbody.innerHTML=bids.map((b,i)=>{
     const it=imap[b.item_id]||{};
+    const empName=employeeMap[b.employee_number_input.toString().trim()]||'';
     return`<tr>
       <td style="color:var(--text3);font-size:12px">${i+1}</td>
       <td><div style="font-size:12px;color:var(--text2)">${it.lot_number||'—'}</div><div style="font-size:11px;color:var(--text3)">${it.name||'—'}</div></td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500">${b.employee_number_input}</td>
+      <td style="font-size:12px;color:var(--text2)">${empName?`<span style="font-weight:500">${empName}</span>`:'<span style="color:var(--text3);font-style:italic">Unknown</span>'}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:${b.is_valid?'var(--gold)':'var(--text3)'}">${peso(b.amount)}</td>
       <td><span class="valid-chip ${b.is_valid?'yes':'no'}">${b.is_valid?'✓ Valid':'✗ Invalid'}</span></td>
       <td style="font-size:11px;color:var(--text3)">${fmtDate(b.submitted_at)}</td>
@@ -735,11 +740,17 @@ async function loadAdminBids(){
 }
 
 async function loadAdminEmployees(){
-  const{data}=await sb.from('employee_numbers').select('*').order('employee_number');
+  const{data}=await sb.from('employee_numbers').select('id,employee_number,employee_name').order('employee_number');
   const emps=data||[];
   document.getElementById('emp-count').textContent=emps.length;
   validEmployees=new Set(emps.map(e=>e.employee_number.toString().trim()));
-  document.getElementById('emp-list').innerHTML=emps.map(e=>`<div class="emp-chip"><span>${e.employee_number}</span><button class="emp-del" onclick="deleteEmployee('${e.id}')">×</button></div>`).join('')||'<div style="color:var(--text3);font-size:13px;padding:14px 0;grid-column:1/-1">No employees added yet.</div>';
+  document.getElementById('emp-list').innerHTML=emps.map(e=>`<div class="emp-chip" style="flex-direction:column;align-items:flex-start;gap:2px">
+    <div style="display:flex;width:100%;justify-content:space-between;align-items:center">
+      <span style="font-family:'JetBrains Mono',monospace;font-weight:600">${e.employee_number}</span>
+      <button class="emp-del" onclick="deleteEmployee('${e.id}')">×</button>
+    </div>
+    ${e.employee_name?`<span style="font-size:11px;color:var(--text2);font-family:'Inter',sans-serif;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${e.employee_name}</span>`:''}
+  </div>`).join('')||'<div style="color:var(--text3);font-size:13px;padding:14px 0;grid-column:1/-1">No employees added yet.</div>';
 }
 
 async function addEmployee(){
@@ -813,7 +824,8 @@ async function declareWinner(itemId){
   const{data:bids}=await sb.from('bids').select('*').eq('item_id',itemId).eq('is_valid',true).order('amount',{ascending:false}).limit(1);
   if(!bids||!bids.length){toast('No valid bids for this item.',true);return;}
   const top=bids[0];
-  if(!confirm(`Declare winner?\n\nEmployee No: ${top.employee_number_input}\nBid Amount: ${peso(top.amount)}\n\nThis will close the bidding.`))return;
+  const winnerName=employeeMap[top.employee_number_input.toString().trim()]||'';
+  if(!confirm(`Declare winner?\n\nEmployee No: ${top.employee_number_input}${winnerName?'\nName: '+winnerName:''}\nBid Amount: ${peso(top.amount)}\n\nThis will close the bidding.`))return;
   await sb.from('items').update({winner_bid_id:top.id,status:'closed'}).eq('id',itemId);
   toast(`✓ Winner declared — Employee ${top.employee_number_input}: ${peso(top.amount)}`);loadAdminItems();
 }
