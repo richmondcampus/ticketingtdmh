@@ -54,7 +54,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .logo-text{font-family:'Inter',sans-serif;font-size:13px;font-weight:700;color:var(--tdmh-navy);line-height:1.2;letter-spacing:.04em;text-transform:uppercase}
 .logo-sub{font-size:10px;font-weight:500;color:var(--tdmh-green);letter-spacing:.06em;text-transform:uppercase;font-family:'Inter',sans-serif}
 .topbar-right{display:flex;align-items:center;gap:10px}
-.live-pill{display:flex;align-items:center;gap:6px;background:var(--green-bg);border:1px solid var(--green-border);border-radius:20px;padding:5px 13px;font-size:11px;font-weight:600;color:var(--tdmh-green);letter-spacing:.03em;font-family:'Inter',sans-serif}
+.live-pill{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:var(--green-bg);border:1px solid var(--green-border);cursor:default;transition:background .3s,border-color .3s}
+.live-pill.error{background:var(--red-bg);border-color:var(--red-border)}
+.live-pill .dot{width:10px;height:10px;border-radius:50%;background:var(--tdmh-green);transition:background .3s}
+.live-pill.error .dot{background:var(--red);animation:none;opacity:1;transform:none}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.8s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.75)}}
 .theme-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .2s;color:var(--text2)}
@@ -274,7 +277,7 @@ textarea.modal-inp{resize:vertical;min-height:80px}
     </div>
   </div>
   <div class="topbar-right">
-    <div class="live-pill" id="status-pill"><div class="dot"></div><span id="status-text">Loading</span></div>
+    <div class="live-pill" id="status-pill" title="System status"><div class="dot"></div></div>
     <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">☀</button>
     <a href="#" class="admin-link" onclick="goAdmin();return false;">Admin</a>
   </div>
@@ -573,10 +576,9 @@ let publicBidMap={};
 async function loadPublicItems(){
   const{data:items,error}=await sb.from('items').select('*').eq('status','active').order('created_at',{ascending:false});
   const pill=document.getElementById('status-pill');
-  const stxt=document.getElementById('status-text');
-  if(error){stxt.textContent='Error';document.getElementById('items-container').innerHTML='<div class="empty-state"><div class="empty-title">Failed to load items</div></div>';return;}
+  if(error){pill.classList.add('error');pill.title='Connection error';document.getElementById('items-container').innerHTML='<div class="empty-state"><div class="empty-title">Failed to load items</div></div>';return;}
+  pill.classList.remove('error');pill.title='System online';
   publicItems=items||[];
-  stxt.textContent=publicItems.length>0?'Bidding Live':'No Active Bids';
   if(publicItems.length===0){
     document.getElementById('items-container').innerHTML='<div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">No active items</div><div class="empty-sub">Check back soon for upcoming bidding events.</div></div>';
     return;
