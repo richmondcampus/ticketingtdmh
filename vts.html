@@ -1871,7 +1871,7 @@ function renderTicketsTable() {
         acts.push(`<button class="tbl-act tbl-act-purple" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
       if ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-      if ((role==='admin' || role==='super_approver') && !['completed','cancelled'].includes(t.status))
+      if ((role==='admin' || role==='super_approver' || (role==='approver_admin' && t.vehicle_type_needed!=='ambulance')) && !['completed','cancelled'].includes(t.status))
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
       // Trip Pool — only show if this ticket's date has 2+ poolable tickets
       if (['admin','super_approver','approver_admin','approver_amb'].includes(role) && ['approved','assigned'].includes(t.status) && !t.pool_id) {
@@ -2154,8 +2154,9 @@ function buildMobCards(filtered, role) {
       (role==='approver_amb' && t.vehicle_type_needed==='ambulance')
     )
     const canCancel = (
-      ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && isPending && isOwnTicket) ||
-      ((role==='admin' || role==='super_approver') && !isCompleted && !isCancelled)
+      ((role==='requester' || role==='approver_amb') && isPending && isOwnTicket) ||
+      ((role==='admin' || role==='super_approver') && !isCompleted && !isCancelled) ||
+      (role==='approver_admin' && t.vehicle_type_needed!=='ambulance' && !isCompleted && !isCancelled)
     )
 
     // Status color for left border
@@ -2357,6 +2358,14 @@ async function openViewModal(id) {
       // Guard manifest editor
       if (r === 'guard' && !['completed','cancelled','rejected'].includes(t.status)) {
         btns.push(`<button class="btn btn-ghost" onclick="closeMO();openManifestEditor('${t.id}','${t.ticket_no}')">✏ Edit Manifest</button>`)
+      }
+
+      // Cancel ticket
+      if (!['completed','cancelled','rejected'].includes(t.status) && (
+        r === 'admin' || r === 'super_approver' ||
+        (r === 'approver_admin' && t.vehicle_type_needed !== 'ambulance')
+      )) {
+        btns.push(`<button class="btn btn-amber btn-sm" onclick="closeMO();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">✕ Cancel Trip</button>`)
       }
 
       return btns.join('') || `<span></span>`
