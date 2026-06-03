@@ -631,6 +631,21 @@ tr:hover td{background:var(--surf2);}
   </div>
 </div>
 
+<!-- User Modal (separate from newRequestModal to prevent button bleedover) -->
+<div class="modal-overlay" id="userModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 id="userModalTitle">Add User</h3>
+      <button class="modal-close" onclick="closeModal('userModal')">✕</button>
+    </div>
+    <div class="modal-body" id="userModalBody"></div>
+    <div class="modal-footer" id="userModalFooter">
+      <button class="btn btn-ghost" onclick="closeModal('userModal')">Cancel</button>
+      <button class="btn btn-primary" id="userModalOkBtn" onclick="saveUser()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Request Detail Modal -->
 <div class="modal-overlay" id="requestDetailModal">
   <div class="modal modal-lg">
@@ -1708,7 +1723,17 @@ function openNewRequestModal(type) {
     return
   }
   state.editingRequest = null
-  state.itemRows = [{ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'consumable' }]
+  state.itemRows = [{ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'consumable', image_file:null, image_preview:null }]
+
+  // Always reset footer to supply request buttons (prevent bleedover from user modal)
+  document.getElementById('newRequestTitle').textContent = '＋ New Supply Request'
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-secondary" onclick="saveRequest(\'draft\')">Save Draft</button>' +
+    '<button class="btn btn-primary" onclick="saveRequest(\'submit\')">Submit Request</button>'
+  // Also clear userId dataset to prevent edit mode
+  document.getElementById('newRequestBody').dataset.userId = ''
+
   const reqType = type || state.sourceType || 'supply'
   renderNewRequestForm(reqType)
   openModal('newRequestModal')
@@ -5189,99 +5214,99 @@ function derpStatusBadge(status) {
 // ─────────────────────────────
 function openDerpModal(category) {
   const cat = DERP_CATEGORIES[category]
+  const role = state.user.csr_role
+  const isEvaluator = ['supply_officer','purchasing_officer','admin'].includes(role)
+  const dept = state.departments.find(d => d.id === state.user.dept_id)
+
   state.sourceType = 'derp'
-  state.itemRows = [{ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'equipment' }]
+  state.itemRows = [{ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'equipment', image_file:null, image_preview:null }]
 
   document.getElementById('newRequestTitle').textContent = cat.icon + ' New ' + cat.label + ' Request'
-  const checklist = DERP_CHECKLISTS[category] || []
 
   let html = ''
+
   // Category badge
-  html += '<div style="margin-bottom:16px;padding:10px 14px;background:' + cat.color + '18;border:1px solid ' + cat.color + '44;border-radius:10px;font-size:13px;">'
+  html += '<div style="padding:10px 14px;background:' + cat.color + '18;border:1px solid ' + cat.color + '44;border-radius:10px;font-size:13px;margin-bottom:16px;">'
   html += '<strong style="color:' + cat.color + ';">' + cat.icon + ' ' + cat.label + '</strong>'
   html += ' <span style="color:var(--txt2);">· SLA: ' + cat.sla + ' hours evaluation target</span>'
+  if (dept) html += '<div style="font-size:12px;color:var(--txt2);margin-top:3px;">🏢 Filing from: <strong>' + dept.dept_name + '</strong></div>'
   html += '</div>'
 
-  html += '<div class="field-row">'
-  // Department
-  html += '<div class="field"><label>Requesting Department</label><select id="f_dept">'
-  state.departments.forEach(d => {
-    const sel = d.id === state.user.dept_id ? ' selected' : ''
-    html += '<option value="' + d.id + '"' + sel + '>' + d.dept_name + '</option>'
-  })
-  html += '</select></div>'
-  // Urgency
+  // Hidden dept + urgency row
+  html += '<input type="hidden" id="f_dept" value="' + (state.user.dept_id || '') + '">'
   html += '<div class="field"><label>Urgency</label><select id="f_urgency">'
   ;['routine','urgent','emergency'].forEach(u => {
     html += '<option value="' + u + '">' + u.charAt(0).toUpperCase() + u.slice(1) + '</option>'
   })
   html += '</select></div>'
-  html += '</div>'
 
   // Asset description
-  html += '<div class="field"><label>Equipment / Asset Description</label>'
-  html += '<input type="text" id="f_asset_desc" placeholder="e.g. Dell Latitude 5420 — IT Dept, 3rd Floor"></div>'
+  html += '<div class="field"><label>Equipment / Asset Description <span style="color:var(--red);">*</span></label>'
+  html += '<input type="text" id="f_asset_desc" placeholder="e.g. Dell Latitude 5420, Printer HP LaserJet, AC Unit Room 301..."></div>'
 
-  // Asset condition
-  html += '<div class="field-row">'
+  // Condition (simplified — requester knows if bad or not)
   html += '<div class="field"><label>Asset Condition</label><select id="f_condition">'
-  ;['poor','beyond_repair','obsolete','end_of_life'].forEach(c => {
-    html += '<option value="' + c + '">' + c.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase()) + '</option>'
+  ;[['poor','Poor — Still working but degraded'],['beyond_repair','Beyond Repair'],['obsolete','Obsolete / Outdated'],['end_of_life','End of Life']].forEach(([v,l]) => {
+    html += '<option value="' + v + '">' + l + '</option>'
   })
   html += '</select></div>'
-  html += '<div class="field"><label>Warranty Status</label><select id="f_warranty">'
-  ;['unknown','in_warranty','out_of_warranty'].forEach(w => {
-    html += '<option value="' + w + '">' + w.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase()) + '</option>'
-  })
-  html += '</select></div>'
-  html += '</div>'
 
-  html += '<div class="field"><label>Problem Description / Justification</label>'
-  html += '<textarea id="f_purpose" placeholder="Describe the problem in detail, how it affects operations..." rows="3"></textarea></div>'
+  // Problem description
+  html += '<div class="field"><label>What\'s the problem? <span style="color:var(--red);">*</span></label>'
+  html += '<textarea id="f_purpose" placeholder="Describe what\'s wrong, how it affects your work, history of repairs if any..." rows="3"></textarea></div>'
 
-  html += '<div class="field"><label>Condition Notes</label>'
-  html += '<textarea id="f_condition_notes" placeholder="Additional observations, history of repairs, etc." rows="2"></textarea></div>'
-
-  // Loaner needed?
-  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 14px;background:var(--surf3);border-radius:9px;">'
-  html += '<input type="checkbox" id="f_loaner" style="width:16px;height:16px;">'
-  html += '<label for="f_loaner" style="font-size:13px;cursor:pointer;">Loaner equipment needed while awaiting resolution</label>'
-  html += '</div>'
-
-  // Preliminary recommendation
-  html += '<div class="field"><label>Initial Recommendation</label>'
-  html += '<div style="display:flex;gap:10px;">'
-  html += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;">'
-  html += '<input type="radio" name="f_recommendation" value="for_repair" checked> For Repair</label>'
-  html += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;">'
-  html += '<input type="radio" name="f_recommendation" value="for_replacement"> For Replacement</label>'
+  // Recommendation
+  html += '<div class="field"><label>Your Initial Recommendation</label>'
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">'
+  html += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;flex:1;">'
+  html += '<input type="radio" name="f_recommendation" value="for_repair" checked> 🔧 Repair</label>'
+  html += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;flex:1;">'
+  html += '<input type="radio" name="f_recommendation" value="for_replacement"> 🔄 Replace</label>'
   html += '</div></div>'
 
-  // Evaluation checklist preview
-  html += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-bottom:16px;">'
-  html += '<div style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Evaluation Checklist (completed by evaluator)</div>'
-  checklist.forEach((item, i) => {
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--txt2);">'
-    html += '<span style="width:18px;height:18px;border:1px solid var(--bdr2);border-radius:4px;flex-shrink:0;"></span>'
-    html += item + '</div>'
-  })
-  html += '</div>'
+  // Warranty — CSR/Purchasing/Inventory only
+  if (isEvaluator) {
+    html += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-bottom:14px;">'
+    html += '<div style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">📋 Evaluator Fields</div>'
+    html += '<div class="field-row">'
+    html += '<div class="field"><label>Warranty Status</label><select id="f_warranty">'
+    ;[['unknown','Unknown'],['in_warranty','In Warranty'],['out_of_warranty','Out of Warranty']].forEach(([v,l]) => {
+      html += '<option value="' + v + '">' + l + '</option>'
+    })
+    html += '</select></div>'
+    html += '<div class="field"><label>Condition Notes</label>'
+    html += '<input type="text" id="f_condition_notes" placeholder="History of repairs, observations..."></div>'
+    html += '</div>'
+    // Checklist — evaluator only
+    const checklist = DERP_CHECKLISTS[category] || []
+    if (checklist.length) {
+      html += '<div style="margin-top:8px;">'
+      html += '<div style="font-size:11px;font-weight:600;color:var(--txt2);margin-bottom:8px;">Evaluation Checklist</div>'
+      checklist.forEach((item, i) => {
+        html += '<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;cursor:pointer;">'
+        html += '<input type="checkbox" id="chk_' + i + '" style="accent-color:var(--accent);"> ' + item
+        html += '</label>'
+      })
+      html += '</div>'
+    }
+    html += '</div>'
+  }
 
-  // Items (replacement parts or new unit)
-  html += '<div class="field"><label>Items (if requesting specific parts or replacement unit)</label>'
+  // Items (optional — only if parts/replacement needed)
+  html += '<div class="field">'
+  html += '<label>Items Needed <span style="font-size:11px;font-weight:400;color:var(--txt3);">(optional — leave empty if just requesting evaluation)</span></label>'
   html += '<div class="items-table-wrap"><table class="items-table"><thead><tr>'
-  html += '<th style="width:35%">Item</th><th style="width:20%">Description</th><th style="width:8%">Qty</th><th style="width:8%">Unit</th><th style="width:12%">Est. Cost</th><th style="width:5%"></th>'
+  html += '<th>Item</th><th>Description</th><th>Qty</th><th>Unit</th><th>Est. Cost</th><th>Photo</th><th></th>'
   html += '</tr></thead><tbody id="itemsBody">'
   html += buildItemRows()
   html += '</tbody></table></div>'
-  html += '<button class="btn btn-ghost btn-sm" onclick="addItemRow()" style="margin-top:8px;">＋ Add Item</button></div>'
+  html += '<button class="btn btn-ghost btn-sm" onclick="addItemRow()" style="margin-top:8px;">＋ Add Item</button>'
+  html += '</div>'
 
-  // Store category for save
   document.getElementById('newRequestBody').innerHTML = html
   document.getElementById('newRequestBody').dataset.derpCategory = category
   document.getElementById('newRequestBody').dataset.derpSla = cat.sla
 
-  // Update footer buttons
   document.querySelector('#newRequestModal .modal-footer').innerHTML =
     '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
     '<button class="btn btn-secondary" onclick="saveDerpRequest(\'draft\')">Save Draft</button>' +
@@ -5294,14 +5319,14 @@ async function saveDerpRequest(action) {
   const body = document.getElementById('newRequestBody')
   const category = body.dataset.derpCategory
   const slaHours = parseInt(body.dataset.derpSla) || 48
-  const dept = document.getElementById('f_dept').value
+  const dept = document.getElementById('f_dept').value || state.user.dept_id
   const urgency = document.getElementById('f_urgency').value
   const purpose = document.getElementById('f_purpose').value.trim()
   const assetDesc = document.getElementById('f_asset_desc').value.trim()
   const condition = document.getElementById('f_condition').value
-  const conditionNotes = document.getElementById('f_condition_notes').value.trim()
-  const warranty = document.getElementById('f_warranty').value
-  const loanerNeeded = document.getElementById('f_loaner').checked
+  const conditionNotes = document.getElementById('f_condition_notes')?.value.trim() || ''
+  const warranty = document.getElementById('f_warranty')?.value || 'unknown'
+  const loanerNeeded = false // removed from requester form
   const recommendation = document.querySelector('input[name="f_recommendation"]:checked')
   const recValue = recommendation ? recommendation.value : 'for_repair'
 
@@ -6206,26 +6231,21 @@ async function renderUsersSettings(el) {
 }
 
 function openAddUserModal() {
-  document.getElementById('newRequestTitle').textContent = '👤 Add New User'
+  document.getElementById('userModalTitle').textContent = '👤 Add New User'
+  document.getElementById('newRequestBody').dataset.userId = ''
   renderUserForm(null)
-  document.querySelector('#newRequestModal .modal-footer').innerHTML =
-    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
-    '<button class="btn btn-primary" onclick="saveUser()">Create User</button>'
-  openModal('newRequestModal')
+  document.getElementById('userModalOkBtn').textContent = 'Create User'
+  openModal('userModal')
 }
 
 function openEditUserModal(userId) {
-  const user = (window._settingsUsers || []).find ? null : null
-  document.getElementById('newRequestTitle').textContent = '✎ Edit User'
+  document.getElementById('userModalTitle').textContent = '✎ Edit User'
   document.getElementById('newRequestBody').dataset.userId = userId
-
   SB.from('users').select('*').eq('id', userId).single().then(({ data }) => {
     if (data) renderUserForm(data)
   })
-  document.querySelector('#newRequestModal .modal-footer').innerHTML =
-    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
-    '<button class="btn btn-primary" onclick="saveUser()">Update User</button>'
-  openModal('newRequestModal')
+  document.getElementById('userModalOkBtn').textContent = 'Update User'
+  openModal('userModal')
 }
 
 function renderUserForm(u) {
@@ -6278,7 +6298,7 @@ function renderUserForm(u) {
   })
   html += '</div></div>'
 
-  document.getElementById('newRequestBody').innerHTML = html
+  document.getElementById('userModalBody').innerHTML = html
 }
 
 async function saveUser() {
@@ -6330,7 +6350,7 @@ async function saveUser() {
       if (!data.success) throw new Error(data.error || 'Failed to create user')
       showToast('success','User Created ✅', name + ' added. Login: ' + empNo.toLowerCase().replace(/[^a-z0-9]/g,'-') + '@tdmh.local')
     }
-    closeModal('newRequestModal')
+    closeModal('userModal')
     renderSettings()
   } catch(e) { showToast('error','Error', e.message) }
 }
