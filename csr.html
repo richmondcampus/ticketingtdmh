@@ -756,14 +756,14 @@ async function doLogin() {
       return
     }
     // Step 2: Fetch profile — IT Helpdesk pattern
-    // users.id = auth.uid() directly (same UUID as auth.users)
+    // Look up profile by auth_id (correct column) with alias fallback
     let profile = null
     const { data: directProfile } = await SB
       .from('users')
       .select('*')
-      .eq('id', authData.user.id)
+      .eq('auth_id', authData.user.id)
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
 
     if (directProfile) {
       profile = directProfile
@@ -773,14 +773,14 @@ async function doLogin() {
         .from('user_auth_aliases')
         .select('primary_user_id')
         .eq('alias_auth_id', authData.user.id)
-        .single()
+        .maybeSingle()
       if (alias) {
         const { data: aliasProfile } = await SB
           .from('users')
           .select('*')
           .eq('id', alias.primary_user_id)
           .eq('is_active', true)
-          .single()
+          .maybeSingle()
         if (aliasProfile) profile = aliasProfile
       }
     }
@@ -6571,7 +6571,7 @@ document.getElementById('loginPass').addEventListener('keydown', e => {
     // Auth session — IT Helpdesk pattern: users.id = auth.uid()
     const { data: profile } = await SB
       .from('users').select('*')
-      .eq('id', authSession.user.id).eq('is_active', true).single()
+      .eq('auth_id', authSession.user.id).eq('is_active', true).maybeSingle()
     if (profile) {
       const session = {
         id: profile.id,
