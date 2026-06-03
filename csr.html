@@ -2119,8 +2119,18 @@ async function directIssueFromStock() {
 function buildItemRows() {
   let html = ''
   state.itemRows.forEach((row, i) => {
+    const hasCost = Number(row.estimated_cost) > 0
+    const sourceIcon = row.price_source === 'purchase_history' ? '📋' :
+                       row.price_source === 'stock_items' ? '📦' :
+                       row.price_source === 'ai_estimate' ? '🤖' : ''
+    const costStyle = row.price_source ? 'color:var(--green);font-weight:600;' : ''
+    const costTitle = row.price_source === 'purchase_history' ? 'From purchase history' :
+                      row.price_source === 'stock_items' ? 'From stock records' :
+                      row.price_source === 'ai_estimate' ? 'AI estimated — verify before submitting' : ''
+
     html += '<tr id="row_' + row.id + '">'
-    html += '<td><input type="text" placeholder="Item name" value="' + (row.item_name||'') + '" oninput="updateItemRow(' + row.id + ',\'item_name\',this.value)"></td>'
+    html += '<td><input type="text" placeholder="Item name" value="' + (row.item_name||'') + '"'
+    html += ' oninput="updateItemRow(' + row.id + ',\'item_name\',this.value);scheduleSmartPrice(' + row.id + ',this.value)"></td>'
     html += '<td><input type="text" placeholder="Description" value="' + (row.item_description||'') + '" oninput="updateItemRow(' + row.id + ',\'item_description\',this.value)"></td>'
     html += '<td><input type="number" min="1" value="' + (row.quantity||1) + '" oninput="updateItemRow(' + row.id + ',\'quantity\',this.value)"></td>'
     html += '<td><select onchange="updateItemRow(' + row.id + ',\'unit\',this.value)">'
@@ -2128,35 +2138,80 @@ function buildItemRows() {
       html += '<option value="' + u + '"' + (row.unit===u?' selected':'') + '>' + u + '</option>'
     })
     html += '</select></td>'
-    html += '<td><input type="number" min="0" placeholder="0" value="' + (row.estimated_cost||'') + '" oninput="updateItemRow(' + row.id + ',\'estimated_cost\',this.value)"></td>'
+    // Cost cell with source indicator
+    html += '<td style="position:relative;">'
+    html += '<input type="number" min="0" placeholder="0" value="' + (row.estimated_cost||'') + '"'
+    html += ' style="' + costStyle + '" title="' + costTitle + '"'
+    html += ' oninput="updateItemRow(' + row.id + ',\'estimated_cost\',this.value);updateItemRow(' + row.id + ',\'price_source\',null)">'
+    if (row.price_loading) {
+      html += '<span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:11px;">⏳</span>'
+    } else if (sourceIcon && hasCost) {
+      html += '<span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:12px;" title="' + costTitle + '">' + sourceIcon + '</span>'
+    }
+    html += '</td>'
     html += '<td><select onchange="updateItemRow(' + row.id + ',\'category\',this.value)">'
     ;['consumable','equipment','it_hardware','medical','office','maintenance_material'].forEach(c => {
       html += '<option value="' + c + '"' + (row.category===c?' selected':'') + '>' + c + '</option>'
     })
     html += '</select></td>'
-
     // Per-item image cell
     html += '<td style="text-align:center;padding:4px 6px;">'
     if (row.image_preview) {
-      // Has preview — show thumbnail + remove button
       html += '<div style="position:relative;display:inline-block;">'
       html += '<img src="' + row.image_preview + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--bdr2);display:block;cursor:pointer;" onclick="viewItemImage(\'' + row.image_preview + '\')" title="Click to enlarge">'
       html += '<button onclick="removeItemImage(' + row.id + ')" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:var(--red);color:#fff;border:none;cursor:pointer;font-size:9px;padding:0;line-height:16px;text-align:center;">✕</button>'
       html += '</div>'
     } else {
-      // No image — show upload button
-      html += '<label style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px dashed var(--bdr2);background:var(--surf2);" title="Attach image for this item">'
-      html += '📷'
-      html += '<input type="file" accept="image/*" style="display:none;" onchange="attachItemImage(' + row.id + ',this)">'
-      html += '</label>'
+      html += '<label style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px dashed var(--bdr2);background:var(--surf2);" title="Attach image">'
+      html += '📷<input type="file" accept="image/*" style="display:none;" onchange="attachItemImage(' + row.id + ',this)"></label>'
     }
     html += '</td>'
-
     html += '<td><button class="remove-row" onclick="removeItemRow(' + row.id + ')" ' + (state.itemRows.length<=1?'disabled':'') + '>✕</button></td>'
     html += '</tr>'
   })
   return html
 }
+
+// ─── Smart Price Estimation ───
+const _priceTimers = {}
+
+function scheduleSmartPrice(rowId, itemName) {
+  clearTimeout(_priceTimers[rowId])
+  if (!itemName || itemName.trim().length < 3) return
+  _priceTimers[rowId] = setTimeout(() => fetchSmartPrice(rowId, itemName.trim()), 800)
+}
+
+async function fetchSmartPrice(rowId, itemName) {
+  const row = state.itemRows.find(r => r.id === rowId)
+  if (!row || Number(row.estimated_cost) > 0) return // don\'t overwrite manual entry
+  row.price_loading = true
+  document.getElementById('itemsBody').innerHTML = buildItemRows()
+  try {
+    const { data: { session } } = await SB.auth.getSession()
+    if (!session) return
+    const res = await fetch(SUPA_URL + '/functions/v1/estimate-item-price', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+      body: JSON.stringify({ items: [{ item_name: itemName }] })
+    })
+    const data = await res.json()
+    const result = data?.results?.[itemName]
+    if (result && result.price > 0) {
+      const r = state.itemRows.find(r => r.id === rowId)
+      if (r && !Number(r.estimated_cost)) {
+        r.estimated_cost = result.price
+        r.price_source = result.source
+        r.price_loading = false
+        document.getElementById('itemsBody').innerHTML = buildItemRows()
+        updateAutoApproveHint()
+      }
+    }
+  } catch(e) {
+    const r = state.itemRows.find(r => r.id === rowId)
+    if (r) { r.price_loading = false; document.getElementById('itemsBody').innerHTML = buildItemRows() }
+  }
+}
+
 
 function attachItemImage(rowId, input) {
   const file = input.files[0]
