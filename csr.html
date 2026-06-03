@@ -6128,15 +6128,16 @@ async function saveUser() {
       await SB.from('users').update(payload).eq('id', userId)
       showToast('success','Updated', name + ' updated.')
     } else {
-      // Create via edge function — auth verified server-side via JWT
-      const { data: { session } } = await SB.auth.getSession()
-      if (!session) throw new Error('No active session')
+      // Always get fresh session before calling Edge Function
+      const { data: { session: freshSession } } = await SB.auth.getSession()
+      const token = freshSession?.access_token
+      if (!token) throw new Error('No active session. Please log in again.')
 
       const res = await fetch(SUPA_URL + '/functions/v1/create-user', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + session.access_token
+          'Authorization': 'Bearer ' + token
         },
         body: JSON.stringify({ ...payload, password, employee_no: empNo, full_name: name })
       })
