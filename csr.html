@@ -2220,7 +2220,8 @@ function onCostManualEdit(rowId, value) {
   const qty = Number(row.quantity) || 1
   row.unit_price = Number(value) / qty
   row.estimated_cost = Number(value)
-  row.price_source = null // mark as manual
+  row.price_source = null
+  row.manually_edited = true  // prevent AI from overwriting
   updateAutoApproveHint()
 }
 const _priceTimers = {}
@@ -2247,14 +2248,19 @@ async function fetchSmartPrice(rowId, itemName) {
     const data = await res.json()
     if (result && result.price > 0) {
       const r = state.itemRows.find(r => r.id === rowId)
-      if (r && !Number(r.estimated_cost)) {
+      // Update if: no cost yet, OR cost came from AI (not manually typed)
+      if (r && (!Number(r.estimated_cost) || r.price_source === 'ai_estimate' || r.price_source === null && !r.manually_edited)) {
         const qty = Number(r.quantity) || 1
-        r.unit_price = result.price          // store per-unit price
-        r.estimated_cost = result.price * qty // total = unit × qty
+        r.unit_price = result.price
+        r.estimated_cost = result.price * qty
         r.price_source = result.source
         r.price_loading = false
+        r.manually_edited = false
         document.getElementById('itemsBody').innerHTML = buildItemRows()
         updateAutoApproveHint()
+      } else {
+        const r2 = state.itemRows.find(r => r.id === rowId)
+        if (r2) { r2.price_loading = false; document.getElementById('itemsBody').innerHTML = buildItemRows() }
       }
     } else {
       const r = state.itemRows.find(r => r.id === rowId)
