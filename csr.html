@@ -1656,16 +1656,29 @@ function openNewRequestModal(type) {
 }
 
 function renderNewRequestForm(reqType) {
+  const role = state.user.csr_role
+
+  // Requester: always supply, no type selector
+  if (role === 'requester') reqType = 'supply'
+
   document.getElementById('newRequestTitle').textContent = reqType === 'derp' ? '♻️ DERP Request' : '＋ New ' + reqType.charAt(0).toUpperCase() + reqType.slice(1) + ' Request'
   let html = ''
-  // Type selector
-  html += '<div class="field"><label>Request Type</label>'
-  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
-  ;['supply','purchase','issuance','derp'].forEach(t => {
-    const active = t === reqType ? 'border-color:var(--accent);background:var(--accent-a);' : ''
-    html += '<button onclick="switchReqType(\'' + t + '\')" style="' + active + 'padding:7px 14px;border-radius:9px;border:1px solid var(--bdr2);background:var(--surf2);color:var(--txt);font-family:inherit;font-size:13px;cursor:pointer;font-weight:' + (t===reqType?'600':'400') + ';">' + t.toUpperCase() + '</button>'
-  })
-  html += '</div></div>'
+
+  // Type selector — hidden for requesters, they only file supply requests
+  if (role !== 'requester') {
+    html += '<div class="field"><label>Request Type</label>'
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+    ;['supply','purchase','derp'].forEach(t => {
+      const active = t === reqType ? 'border-color:var(--accent);background:var(--accent-a);' : ''
+      html += '<button onclick="switchReqType(\'' + t + '\')" style="' + active + 'padding:7px 14px;border-radius:9px;border:1px solid var(--bdr2);background:var(--surf2);color:var(--txt);font-family:inherit;font-size:13px;cursor:pointer;font-weight:' + (t===reqType?'600':'400') + ';">' + t.toUpperCase() + '</button>'
+    })
+    html += '</div></div>'
+  } else {
+    // Requester — show a simple info label instead
+    html += '<div style="background:var(--accent-a);border:1px solid var(--accent-b);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--txt2);margin-bottom:14px;">'
+    html += '📋 Supply Request — your request will be reviewed by your department head and the supply team.'
+    html += '</div>'
+  }
 
   // Source badge if from another system
   if (state.sourceSystem) {
@@ -2049,7 +2062,10 @@ async function saveRequest(action) {
   const dept = document.getElementById('f_dept') ? document.getElementById('f_dept').value : state.user.dept_id
   const urgency = document.getElementById('f_urgency') ? document.getElementById('f_urgency').value : 'routine'
   const purpose = document.getElementById('f_purpose') ? document.getElementById('f_purpose').value.trim() : ''
-  const reqType = state.sourceType || 'supply'
+  // Requesters can only file supply requests — server-side enforcement
+  const reqType = state.user.csr_role === 'requester'
+    ? 'supply'
+    : (state.sourceType || 'supply')
   // Validate items
   const validItems = state.itemRows.filter(r => r.item_name && r.item_name.trim())
   if (validItems.length === 0) { showToast('error', 'Validation', 'Please add at least one item.'); return }
