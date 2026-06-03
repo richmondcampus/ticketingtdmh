@@ -965,7 +965,7 @@ function renderUserInfo() {
 
 function formatRole(r) {
   const map = { requester:'Requester', dept_head:'Dept. Head', supply_officer:'Supply Officer',
-    finance:'Finance', admin:'Admin', viewer:'Viewer' }
+    purchasing_officer:'Purchasing Officer', admin:'Admin', viewer:'Viewer' }
   return map[r] || r || '—'
 }
 
@@ -976,15 +976,15 @@ function renderSidebarNav() {
   const role = state.user.csr_role
   const nav = document.getElementById('sidebarNav')
   const items = [
-    { id:'dashboard', icon:'📊', label:'Dashboard', roles:['requester','dept_head','supply_officer','finance','admin','viewer'] },
-    { id:'my_requests', icon:'📋', label:'My Requests', roles:['requester','dept_head','supply_officer','finance','admin'] },
-    { id:'approval_queue', icon:'✅', label:'Approval Queue', roles:['dept_head','supply_officer','finance','admin'], badge:'approval_count' },
+    { id:'dashboard', icon:'📊', label:'Dashboard', roles:['requester','dept_head','supply_officer','purchasing_officer','admin','viewer'] },
+    { id:'my_requests', icon:'📋', label:'My Requests', roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
+    { id:'approval_queue', icon:'✅', label:'Approval Queue', roles:['dept_head','supply_officer','purchasing_officer','admin'], badge:'approval_count' },
     { id:'all_requests', icon:'🗂', label:'All Requests', roles:['supply_officer','admin'] },
     { id:'purchase_orders', icon:'🛒', label:'Purchase Orders', roles:['supply_officer','admin'] },
     { id:'issuance', icon:'📤', label:'Issuance', roles:['supply_officer','admin'] },
     { id:'stock_inventory', icon:'🏪', label:'Stock Inventory', roles:['supply_officer','admin'] },
-    { id:'derp', icon:'♻️', label:'DERP', roles:['requester','dept_head','supply_officer','finance','admin'] },
-    { id:'reports', icon:'📈', label:'Reports', roles:['supply_officer','finance','admin'] },
+    { id:'derp', icon:'♻️', label:'DERP', roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
+    { id:'reports', icon:'📈', label:'Reports', roles:['supply_officer','purchasing_officer','admin'] },
     { id:'settings', icon:'⚙️', label:'Settings', roles:['admin'] },
   ]
   let html = ''
@@ -1083,7 +1083,7 @@ async function loadStats() {
     const role = state.user.csr_role
     const [myPending, approvalQueue, allPending, lowStock] = await Promise.all([
       SB.from('requests').select('id', { count: 'exact', head: true }).eq('requested_by', uid).in('status', ['draft','pending_approval']),
-      (role === 'dept_head' || role === 'supply_officer' || role === 'finance' || role === 'admin')
+      (role === 'dept_head' || role === 'supply_officer' || role === 'purchasing_officer' || role === 'admin')
         ? SB.from('requests').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval').eq('current_approval_level', roleApprovalLevel(role))
         : { count: 0 },
       SB.from('requests').select('id', { count: 'exact', head: true }).in('status', ['pending_approval','approved','for_po','ordered']),
@@ -1100,7 +1100,7 @@ async function loadStats() {
 }
 
 function roleApprovalLevel(role) {
-  const map = { dept_head: 1, supply_officer: 2, finance: 3 }
+  const map = { dept_head: 1, supply_officer: 2, purchasing_officer: 3 }
   return map[role] || 1
 }
 
@@ -1189,7 +1189,7 @@ async function renderDashboard() {
   // Stat cards
   html += '<div class="stat-grid">'
   html += statCard('📋', 'My Pending', state.stats.my_pending, 'Requests awaiting action', 'stat-accent')
-  if (['dept_head','supply_officer','finance','admin'].includes(role)) {
+  if (['dept_head','supply_officer','purchasing_officer','admin'].includes(role)) {
     html += statCard('✅', 'Needs Approval', state.stats.approval_count, 'Pending your approval', 'stat-amber')
   }
   if (['supply_officer','admin'].includes(role)) {
@@ -1393,33 +1393,81 @@ async function renderApprovalQueue() {
   const myQueue = role === 'admin' ? requests : requests.filter(r => r.current_approval_level === level)
   state.requests = myQueue
 
-  let html = '<div class="page-header"><div><h2>Approval Queue</h2>'
-  html += '<p style="font-size:13px;color:var(--txt2);">' + myQueue.length + ' request(s) pending your action</p></div></div>'
+  const levelLabels = { 1: 'Dept Head', 2: 'Supply Officer', 3: 'Purchasing Officer' }
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>Approval Queue</h2>'
+  html += '<p style="font-size:13px;color:var(--txt2);">'
+  html += myQueue.length + ' request(s) waiting for your approval'
+  if (role !== 'admin') html += ' <span style="background:var(--accent-a);color:var(--accent);padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">You are: ' + (levelLabels[level] || role) + ' — Level ' + level + '</span>'
+  html += '</p></div></div>'
+
+  // Approval flow visual
+  html += '<div style="display:flex;align-items:center;gap:0;margin-bottom:20px;background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;overflow:hidden;">'
+  const steps = [
+    { level: 1, label: '1. Dept Head', icon: '🏢' },
+    { level: 2, label: '2. Supply Officer', icon: '📋' },
+    { level: 3, label: '3. Purchasing Officer', icon: '💰' },
+  ]
+  steps.forEach((step, i) => {
+    const isActive = level === step.level || role === 'admin'
+    const bg = isActive ? 'var(--accent-a)' : 'var(--surf2)'
+    const color = isActive ? 'var(--accent)' : 'var(--txt3)'
+    const border = isActive ? 'border-left:2px solid var(--accent);' : ''
+    html += '<div style="flex:1;padding:12px 16px;background:' + bg + ';' + border + '">'
+    html += '<div style="font-size:16px;margin-bottom:2px;">' + step.icon + '</div>'
+    html += '<div style="font-size:12px;font-weight:600;color:' + color + ';">' + step.label + '</div>'
+    html += '</div>'
+    if (i < steps.length - 1) html += '<div style="width:1px;background:var(--bdr);"></div>'
+  })
+  html += '</div>'
 
   if (myQueue.length === 0) {
     html += '<div class="empty-state"><div class="empty-icon">✅</div><h3>All clear!</h3><p>No requests pending your approval right now.</p></div>'
   } else {
     html += '<div class="table-wrap"><table><thead><tr>'
-    html += '<th>Request No.</th><th>Type</th><th>Dept</th><th>Purpose</th><th>Urgency</th><th>Est. Total</th><th>Date</th><th>Action</th>'
+    html += '<th>Request No.</th><th>Type</th><th>Dept</th><th>Purpose</th><th>Urgency</th><th>Level</th><th>Date</th><th>Actions</th>'
     html += '</tr></thead><tbody>'
     for (const r of myQueue) {
       const dept = state.departments.find(d => d.id === r.dept_id)
+      const lvl = r.current_approval_level || 1
+      const lvlLabel = levelLabels[lvl] || 'Level ' + lvl
       html += '<tr>'
-      html += '<td class="td-mono" onclick="viewRequest(\'' + r.id + '\')" style="cursor:pointer;">' + r.request_no + '</td>'
+      html += '<td class="td-mono" onclick="viewRequest(\'' + r.id + '\')" style="cursor:pointer;color:var(--accent);">' + r.request_no + '</td>'
       html += '<td><span class="badge badge-' + r.request_type + '">' + r.request_type.toUpperCase() + '</span></td>'
       html += '<td style="color:var(--txt2);">' + (dept ? dept.dept_name : '—') + '</td>'
       html += '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.purpose || '—') + '</td>'
       html += '<td><span class="badge badge-' + r.urgency + '">' + r.urgency.toUpperCase() + '</span></td>'
-      html += '<td style="color:var(--txt2);">₱—</td>'
-      html += '<td style="color:var(--txt2);">' + formatDate(r.created_at) + '</td>'
-      html += '<td><div style="display:flex;gap:6px;">'
-      html += '<button class="btn btn-success btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'approve\')">Approve</button>'
-      html += '<button class="btn btn-ghost btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'return\')">Return</button>'
-      html += '<button class="btn btn-danger btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'reject\')">Reject</button>'
+      html += '<td><span style="font-size:11px;background:var(--accent-a);color:var(--accent);padding:2px 8px;border-radius:8px;">L' + lvl + ' — ' + lvlLabel + '</span></td>'
+      html += '<td style="color:var(--txt2);white-space:nowrap;">' + formatDate(r.created_at) + '</td>'
+      html += '<td><div style="display:flex;gap:5px;">'
+      html += '<button class="btn btn-success btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'approve\')">✅ Approve</button>'
+      html += '<button class="btn btn-ghost btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'return\')">↩ Return</button>'
+      html += '<button class="btn btn-danger btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'reject\')">❌ Reject</button>'
       html += '</div></td>'
       html += '</tr>'
     }
     html += '</tbody></table></div>'
+
+    // Mobile cards
+    html += '<div class="mobile-cards" id="approvalMobileCards">'
+    for (const r of myQueue) {
+      const dept = state.departments.find(d => d.id === r.dept_id)
+      const lvl = r.current_approval_level || 1
+      html += '<div style="background:var(--surf1);border:1px solid var(--bdr2);border-radius:14px;padding:14px;margin-bottom:8px;">'
+      html += '<div style="display:flex;justify-content:space-between;margin-bottom:8px;">'
+      html += '<span class="td-mono" style="font-size:11px;">' + r.request_no + '</span>'
+      html += '<span class="badge badge-' + r.urgency + '">' + r.urgency.toUpperCase() + '</span>'
+      html += '</div>'
+      html += '<div style="font-size:14px;font-weight:600;margin-bottom:6px;">' + (r.purpose || r.request_type) + '</div>'
+      html += '<div style="font-size:12px;color:var(--txt2);margin-bottom:10px;">🏢 ' + (dept ? dept.dept_name : '—') + ' · Level ' + lvl + '</div>'
+      html += '<div style="display:flex;gap:6px;">'
+      html += '<button class="btn btn-success btn-sm" style="flex:1;" onclick="openApprovalModal(\'' + r.id + '\',\'approve\')">✅ Approve</button>'
+      html += '<button class="btn btn-ghost btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'return\')">↩</button>'
+      html += '<button class="btn btn-danger btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'reject\')">❌</button>'
+      html += '</div></div>'
+    }
+    html += '</div>'
   }
   content.innerHTML = html
 }
@@ -1437,6 +1485,35 @@ async function viewRequest(id) {
 
   document.getElementById('detailModalTitle').textContent = req.request_no
   let body = ''
+
+  // Approval progress tracker
+  if (['pending_approval','approved','cancelled'].includes(req.status)) {
+    const approvalSteps = [
+      { level: 1, label: 'Dept Head', icon: '🏢' },
+      { level: 2, label: 'Supply Officer', icon: '📋' },
+      { level: 3, label: 'Purchasing Officer', icon: '💰' },
+    ]
+    body += '<div style="margin-bottom:16px;">'
+    body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Approval Progress</div>'
+    body += '<div style="display:flex;align-items:stretch;border-radius:10px;overflow:hidden;border:1px solid var(--bdr);">'
+    approvalSteps.forEach((step, i) => {
+      const approved = approvals.find(a => a.level === step.level && a.decision === 'approved')
+      const rejected = approvals.find(a => a.level === step.level && a.decision === 'rejected')
+      const current = req.current_approval_level === step.level && req.status === 'pending_approval'
+      const bg = approved ? 'var(--green-a)' : rejected ? 'var(--red-a)' : current ? 'var(--accent-a)' : 'var(--surf2)'
+      const color = approved ? 'var(--green)' : rejected ? 'var(--red)' : current ? 'var(--accent)' : 'var(--txt3)'
+      const stepIcon = approved ? '✅' : rejected ? '❌' : current ? '⏳' : step.icon
+      const approver = approved ? state.users.find(u => u.id === approved.approver_id) : null
+      body += '<div style="flex:1;padding:10px;background:' + bg + ';text-align:center;">'
+      body += '<div style="font-size:16px;">' + stepIcon + '</div>'
+      body += '<div style="font-size:11px;font-weight:600;color:' + color + ';margin-top:2px;">' + step.label + '</div>'
+      if (approver) body += '<div style="font-size:10px;color:var(--txt3);">' + approver.full_name.split(' ')[0] + '</div>'
+      if (current) body += '<div style="font-size:10px;color:var(--accent);">Waiting...</div>'
+      body += '</div>'
+      if (i < approvalSteps.length - 1) body += '<div style="width:1px;background:var(--bdr);"></div>'
+    })
+    body += '</div></div>'
+  }
 
   // Source badge
   if (req.source_system && req.source_system !== 'manual') {
@@ -1529,7 +1606,7 @@ function buildApprovalStepper(req, approvals) {
   const steps = [
     { level: 1, label: 'Dept Head', role: 'dept_head' },
     { level: 2, label: 'Supply Officer', role: 'supply_officer' },
-    { level: 3, label: 'Finance', role: 'finance' },
+    { level: 3, label: 'Purchasing Officer', role: 'purchasing_officer' },
   ]
   let html = '<div class="stepper">'
   steps.forEach((step, i) => {
@@ -2172,21 +2249,64 @@ let approvalRequestId = null
 function openApprovalModal(reqId, action) {
   approvalAction = action
   approvalRequestId = reqId
-  const titles = { approve: 'Approve Request', reject: 'Reject Request', return: 'Return for Revision' }
-  const descs = {
-    approve: 'You are approving this request. It will proceed to the next approval level or be fully approved.',
-    reject: 'You are rejecting this request. The requester will be notified. This action cannot be undone.',
-    return: 'You are returning this request to the requester for revision. Please provide remarks.'
+  const role = state.user.csr_role
+  const level = roleApprovalLevel(role)
+
+  const titles = {
+    approve: 'Approve Request',
+    reject:  'Reject Request',
+    return:  'Return for Revision'
   }
+  const descs = {
+    approve: level === 2
+      ? 'Choose how to fulfill this request:'
+      : 'You are approving this request. It will proceed to the next approval level.',
+    reject:  'You are rejecting this request. The requester will be notified. This cannot be undone.',
+    return:  'You are returning this request to the requester for revision. Please provide remarks.'
+  }
+
   document.getElementById('approvalModalTitle').textContent = titles[action]
-  document.getElementById('approvalModalDesc').textContent = descs[action]
+  document.getElementById('approvalModalDesc').innerHTML = descs[action]
+
+  // Level 2 (Supply Officer) approving — show fulfillment options
+  const optionWrap = document.getElementById('approvalOptionWrap') ||
+    (() => {
+      const d = document.createElement('div')
+      d.id = 'approvalOptionWrap'
+      document.getElementById('approvalModalDesc').after(d)
+      return d
+    })()
+
+  if (action === 'approve' && level === 2) {
+    optionWrap.innerHTML =
+      '<div style="display:flex;flex-direction:column;gap:8px;margin:12px 0;">' +
+        '<label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;cursor:pointer;">' +
+          '<input type="radio" name="csr_fulfill" value="issue_stock" checked style="margin-top:2px;accent-color:var(--green);">' +
+          '<div>' +
+            '<div style="font-size:13px;font-weight:600;">📦 Issue from Stock</div>' +
+            '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">Items are available in stock. Issue directly — no need to purchase.</div>' +
+          '</div>' +
+        '</label>' +
+        '<label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;cursor:pointer;">' +
+          '<input type="radio" name="csr_fulfill" value="forward_purchasing" style="margin-top:2px;accent-color:var(--accent);">' +
+          '<div>' +
+            '<div style="font-size:13px;font-weight:600;">💰 Forward to Purchasing Officer</div>' +
+            '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">Items need to be purchased. Forward for PO creation.</div>' +
+          '</div>' +
+        '</label>' +
+      '</div>'
+  } else {
+    optionWrap.innerHTML = ''
+  }
+
   document.getElementById('remarksReq').style.display = action === 'approve' ? 'none' : 'inline'
   document.getElementById('approvalRemarks').value = ''
 
   const footer = document.getElementById('approvalModalFooter')
   const btnClass = action === 'approve' ? 'btn-success' : action === 'reject' ? 'btn-danger' : 'btn-secondary'
-  footer.innerHTML = '<button class="btn btn-ghost" onclick="closeModal(\'approvalModal\')">Cancel</button>'
-    + '<button class="btn ' + btnClass + '" onclick="processApproval()">Confirm ' + titles[action] + '</button>'
+  footer.innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'approvalModal\')">Cancel</button>' +
+    '<button class="btn ' + btnClass + '" onclick="processApproval()">Confirm</button>'
 
   closeModal('requestDetailModal')
   openModal('approvalModal')
@@ -2214,38 +2334,130 @@ async function processApproval() {
       decided_at: new Date().toISOString()
     })
 
-    // Update request status
+    // ── 3-LEVEL APPROVAL FLOW ──
+    // Level 1: Dept Head       → approve → Level 2 (Supply Officer)
+    // Level 2: Supply Officer  → approve → Level 3 (Purchasing Officer)
+    // Level 3: Purchasing Off  → approve → Fully approved, ready for PO
     let newStatus = req.status
     let newLevel = req.current_approval_level
+    let toastMsg = ''
+
     if (approvalAction === 'approve') {
-      if (level >= 3 || (level >= 2)) { // simplified: 2 levels for now unless finance needed
-        newStatus = 'approved'; newLevel = level
+      // Check if Level 2 (Supply Officer) chose to issue from stock
+      const fulfillChoice = document.querySelector('input[name="csr_fulfill"]:checked')?.value
+
+      if (level === 2 && fulfillChoice === 'issue_stock') {
+        // ── ISSUE FROM STOCK ──
+        // Skip Level 3 entirely — CSR handles it directly
+        newStatus = 'issued'
+        newLevel = 2
+        toastMsg = '📦 Issued from stock — no PO needed.'
+
+        // Auto-generate issuance record
+        const { data: num } = await SB.rpc('generate_issuance_no')
+        const issNo = num || ('ISS-' + Date.now())
+        const token = Math.random().toString(36).substring(2, 14)
+        await SB.from('issuances').insert({
+          issuance_no: issNo,
+          request_id: req.id,
+          issued_by: state.user.id,
+          issued_at: new Date().toISOString(),
+          scenario: 'from_stock',
+          prepared_by: state.user.id,
+          confirm_token: token,
+          confirm_token_expires_at: new Date(Date.now() + 72*3600000).toISOString(),
+          notes: 'Direct issuance from stock — approved by Supply Officer'
+        })
+
+        // Load request items and deduct from stock
+        const { data: reqItems } = await SB.from('request_items').select('*').eq('request_id', req.id)
+        for (const item of (reqItems || [])) {
+          const { data: stockItems } = await SB.from('stock_items')
+            .select('id,quantity_on_hand,unit')
+            .ilike('item_name', '%' + item.item_name.substring(0, 15) + '%')
+            .eq('is_active', true)
+            .order('quantity_on_hand', { ascending: false })
+            .limit(1)
+          if (stockItems?.[0]) {
+            const s = stockItems[0]
+            const newQty = Math.max(0, Number(s.quantity_on_hand) - Number(item.quantity))
+            await SB.from('stock_items').update({
+              quantity_on_hand: newQty,
+              last_updated: new Date().toISOString()
+            }).eq('id', s.id)
+            await SB.from('stock_movements').insert({
+              stock_item_id: s.id,
+              movement_type: 'issue',
+              quantity: -Number(item.quantity),
+              quantity_before: Number(s.quantity_on_hand),
+              quantity_after: newQty,
+              performed_by: state.user.id,
+              remarks: 'Issued from stock — ' + req.request_no,
+              reference_type: 'csr_request',
+              reference_id: req.id
+            })
+          }
+        }
+
+        // Notify requester via in-app notification + email
+        if (req.requested_by) {
+          const confirmUrl = 'https://ittdmh.pro/csr?confirm=' + token
+          await SB.from('notifications').insert({
+            user_id: req.requested_by,
+            title: '📦 Items Ready for Pickup — ' + req.request_no,
+            body: 'Your request has been fulfilled from stock. Items are ready for pickup. Please confirm receipt.',
+            type: 'action_required',
+            source_system: 'csr',
+            source_ref_type: 'request',
+            source_ref_id: req.id,
+            action_url: confirmUrl
+          })
+        }
+
+      } else if (level === 1) {
+        newLevel = 2; newStatus = 'pending_approval'
+        toastMsg = '✅ Dept Head approved — forwarded to Supply Officer.'
+        await notifyApprovers(req, 2)
+      } else if (level === 2) {
+        // forward_purchasing (default)
+        newLevel = 3; newStatus = 'pending_approval'
+        toastMsg = '✅ Forwarded to Purchasing Officer for PO creation.'
+        await notifyApprovers(req, 3)
       } else {
-        newLevel = level + 1
+        newLevel = 3; newStatus = 'approved'
+        toastMsg = '✅ Fully approved — ready for Purchase Order.'
       }
     } else if (approvalAction === 'reject') {
       newStatus = 'cancelled'
+      toastMsg = '❌ Request rejected.'
     } else {
       newStatus = 'draft'; newLevel = 1
+      toastMsg = '↩ Returned for revision.'
     }
 
-    await SB.from('requests').update({ status: newStatus, current_approval_level: newLevel }).eq('id', approvalRequestId)
-
-    closeModal('approvalModal')
-    showToast('success', 'Done', 'Request has been ' + (approvalAction === 'approve' ? 'approved.' : approvalAction === 'reject' ? 'rejected.' : 'returned.'))
+    await SB.from('requests').update({
+      status: newStatus, current_approval_level: newLevel,
+      updated_at: new Date().toISOString()
+    }).eq('id', approvalRequestId)
 
     // Notify requester
     if (req.requested_by) {
-      await SB.from('system_notifications').insert({
-        recipient_id: req.requested_by,
-        target_system: 'csr',
-        target_ref_id: req.id,
-        source_system: 'csr',
-        message: 'Your request ' + req.request_no + ' has been ' + (approvalAction === 'approve' ? 'approved' : approvalAction === 'reject' ? 'rejected' : 'returned for revision') + (remarks ? ': ' + remarks : '.'),
-        type: approvalAction === 'approve' ? 'approved' : 'rejected'
+      const titles = {
+        approve: newStatus === 'approved' ? '✅ Request Fully Approved: ' + req.request_no : '📋 Approval Progress: ' + req.request_no,
+        reject: '❌ Request Rejected: ' + req.request_no,
+        return: '↩ Request Returned: ' + req.request_no
+      }
+      await SB.from('notifications').insert({
+        user_id: req.requested_by,
+        title: titles[approvalAction],
+        body: remarks || (newStatus === 'approved' ? 'Your request has been approved by all levels.' : toastMsg),
+        type: approvalAction === 'approve' ? 'success' : approvalAction === 'reject' ? 'error' : 'warning',
+        source_system: 'csr', source_ref_type: 'request', source_ref_id: req.id
       })
     }
 
+    closeModal('approvalModal')
+    showToast('success', 'Done', toastMsg)
     if (state.page === 'approval_queue') renderApprovalQueue()
     else if (state.page === 'all_requests') renderAllRequests()
     else if (state.page === 'dashboard') renderDashboard()
@@ -2258,17 +2470,19 @@ async function processApproval() {
 
 async function notifyApprovers(req, level) {
   try {
-    const roleMap = { 1: 'dept_head', 2: 'supply_officer', 3: 'finance' }
+    const roleMap = { 1: 'dept_head', 2: 'supply_officer', 3: 'purchasing_officer' }
+    const levelLabel = { 1: 'Dept Head', 2: 'Supply Officer', 3: 'Purchasing Officer' }
     const approverRole = roleMap[level]
     const approvers = state.users.filter(u => u.csr_role === approverRole || u.csr_role === 'admin')
     for (const approver of approvers) {
-      await SB.from('system_notifications').insert({
-        recipient_id: approver.id,
-        target_system: 'csr',
-        target_ref_id: req.id,
+      await SB.from('notifications').insert({
+        user_id: approver.id,
+        title: '📋 Approval Required — ' + req.request_no,
+        body: 'A CSR request needs your approval as ' + (levelLabel[level] || 'Approver') + ': ' + (req.purpose || req.request_type),
+        type: 'action_required',
         source_system: 'csr',
-        message: 'New CSR request ' + req.request_no + ' requires your approval.',
-        type: 'approval_needed'
+        source_ref_type: 'request',
+        source_ref_id: req.id
       })
     }
   } catch(e) { console.warn('notifyApprovers', e) }
@@ -2286,9 +2500,23 @@ let poState = {
 }
 
 const PO_STATUS_LABELS = {
-  draft: 'Draft', sent: 'Sent to Supplier', acknowledged: 'Acknowledged',
-  partial: 'Partial Delivery', delivered: 'Fully Delivered'
+  draft:            'Draft',
+  sent:             'Sent to Supplier',
+  partial_delivery: 'Partial Delivery',
+  delivered:        'Fully Delivered',
+  issued:           'Issued to Dept',
+  cancelled:        'Cancelled'
 }
+
+// Visual step progression for PO
+const PO_STEPS = [
+  { status: 'draft',            icon: '📝', label: 'Draft' },
+  { status: 'sent',             icon: '📤', label: 'Sent to Supplier' },
+  { status: 'delivered',        icon: '📦', label: 'Delivered' },
+  { status: 'issued',           icon: '✅', label: 'Issued' },
+]
+
+const PO_STEP_ORDER = { draft:0, sent:1, partial_delivery:1.5, delivered:2, issued:3, cancelled:-1 }
 
 async function renderPurchaseOrders() {
   const content = document.getElementById('mainContent')
@@ -2303,7 +2531,7 @@ async function renderPurchaseOrders() {
 
   // Stats
   const draft = poState.pos.filter(p => p.status === 'draft').length
-  const sent = poState.pos.filter(p => p.status === 'sent' || p.status === 'acknowledged').length
+  const sent = poState.pos.filter(p => p.status === 'sent' || p.status === 'sent').length
   const pending = poState.pos.filter(p => p.status === 'partial').length
   const totalSpend = poState.pos.filter(p => p.status === 'delivered')
     .reduce((s, p) => s + Number(p.total_amount || 0), 0)
@@ -2355,7 +2583,7 @@ function buildPORows(pos) {
   for (const po of pos) {
     const supplier = poState.suppliers.find(s => s.id === po.supplier_id)
     const statusBadgeClass = {
-      draft:'badge-draft', sent:'badge-pending', acknowledged:'badge-approved',
+      draft:'badge-draft', sent:'badge-pending', 
       partial:'badge-pending', delivered:'badge-issued'
     }[po.status] || 'badge-draft'
 
@@ -2628,13 +2856,31 @@ async function viewPO(id) {
   document.getElementById('detailModalTitle').textContent = po.po_number
 
   let body = ''
-  // Status bar
-  const statusColors = { draft:'var(--txt2)', sent:'var(--blue)', acknowledged:'var(--green)', partial:'var(--amber)', delivered:'var(--green)' }
-  body += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">'
-  body += '<span class="badge ' + ({draft:'badge-draft',sent:'badge-pending',acknowledged:'badge-approved',partial:'badge-pending',delivered:'badge-issued'}[po.status]||'badge-draft') + '" style="font-size:13px;padding:5px 12px;">'
-  body += (PO_STATUS_LABELS[po.status] || po.status) + '</span>'
-  if (po.sent_at) body += '<span style="font-size:12px;color:var(--txt2);">Sent: ' + formatDate(po.sent_at) + '</span>'
+
+  // PO Progress Steps
+  const currentOrder = PO_STEP_ORDER[po.status] ?? 0
+  body += '<div style="display:flex;align-items:stretch;border-radius:10px;overflow:hidden;border:1px solid var(--bdr);margin-bottom:16px;">'
+  PO_STEPS.forEach((step, i) => {
+    const stepOrder = PO_STEP_ORDER[step.status]
+    const done = currentOrder > stepOrder
+    const current = Math.floor(currentOrder) === stepOrder || (po.status === 'partial_delivery' && step.status === 'delivered')
+    const bg = done ? 'var(--green-a)' : current ? 'var(--accent-a)' : 'var(--surf2)'
+    const color = done ? 'var(--green)' : current ? 'var(--accent)' : 'var(--txt3)'
+    const icon = done ? '✅' : current ? (po.status === 'partial_delivery' && step.status === 'delivered' ? '📦' : step.icon) : step.icon
+    body += '<div style="flex:1;padding:10px 8px;background:' + bg + ';text-align:center;">'
+    body += '<div style="font-size:18px;">' + icon + '</div>'
+    body += '<div style="font-size:11px;font-weight:600;color:' + color + ';margin-top:2px;">' + step.label + '</div>'
+    if (step.status === 'sent' && po.sent_at) body += '<div style="font-size:10px;color:var(--txt3);">' + formatDate(po.sent_at).split(',')[0] + '</div>'
+    if (step.status === 'delivered' && po.actual_delivery_date) body += '<div style="font-size:10px;color:var(--txt3);">' + formatDate(po.actual_delivery_date).split(',')[0] + '</div>'
+    if (po.status === 'partial_delivery' && step.status === 'delivered') body += '<div style="font-size:10px;color:var(--amber);">Partial</div>'
+    body += '</div>'
+    if (i < PO_STEPS.length - 1) body += '<div style="width:1px;background:var(--bdr);"></div>'
+  })
   body += '</div>'
+
+  if (po.status === 'cancelled') {
+    body += '<div style="background:var(--red-a);border:1px solid var(--red);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--red);margin-bottom:14px;">❌ This PO has been cancelled.</div>'
+  }
 
   // Info grid
   body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">'
@@ -2686,7 +2932,7 @@ async function viewPO(id) {
     if (po.status === 'draft') {
       footer += '<button class="btn btn-secondary" onclick="openPOSendOptions(\'' + po.id + '\')">📤 Send PO</button>'
     }
-    if (['sent','acknowledged','partial'].includes(po.status)) {
+    if (['sent','partial_delivery','partial'].includes(po.status)) {
       footer += '<button class="btn btn-success" onclick="openReceiveDelivery(\'' + po.id + '\')">📦 Receive Delivery</button>'
     }
     if (['delivered','partial_delivery'].includes(po.status) && !po.delivery_rating) {
@@ -3345,7 +3591,7 @@ async function renderIssuance() {
   // Stats
   html += '<div class="stat-grid" style="margin-bottom:20px;">'
   html += statCard('⏳', 'Pending Confirmation', pending, 'SMS sent, awaiting receiver', 'stat-amber')
-  html += statCard('✅', 'Confirmed', confirmed, 'Digitally acknowledged', 'stat-green')
+  html += statCard('✅', 'Confirmed', confirmed, 'Digitally confirmed', 'stat-green')
   html += statCard('📤', 'Issued Today', today, 'Issuances today', 'stat-blue')
   html += statCard('📋', 'For Issuance', issState.pendingRequests.length, 'Approved requests', 'stat-accent')
   html += '</div>'
@@ -3718,11 +3964,11 @@ async function saveIssuance() {
     }
 
     // In-app notification to receiver
-    await SB.from('system_notifications').insert({
-      recipient_id: receiverId,
-      target_system: 'csr', target_ref_id: iss.id,
+    await SB.from('notifications').insert({
+      user_id: receiverId,
+      source_system: 'csr', source_ref_id: iss.id,
       source_system: 'csr',
-      message: 'Your supply request is ready for pickup at the Supply Room. Issuance: ' + issuanceNo,
+      body: 'Your supply request is ready for pickup at the Supply Room. Issuance: ' + issuanceNo,
       type: 'issuance_ready'
     })
 
@@ -5072,8 +5318,7 @@ async function viewDerp(id) {
   }
 
   // Activity log
-  const { data: logs } = await SB.from('derp_activity_log')
-    .select('*').eq('request_id', id).order('created_at', { ascending: true })
+  const { data: logs } = await SB.from('asset_history').select('*').eq('request_id', id).order('created_at', { ascending: true })
   if (logs && logs.length > 0) {
     body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Activity Log</div>'
     body += '<div class="timeline">'
@@ -5192,11 +5437,11 @@ async function closeDerp(id) {
     // Notify requester
     const { data: req } = await SB.from('requests').select('requested_by,request_no').eq('id', id).single()
     if (req) {
-      await SB.from('system_notifications').insert({
-        recipient_id: req.requested_by,
-        target_system: 'csr', target_ref_id: id,
+      await SB.from('notifications').insert({
+        user_id: req.requested_by,
+        source_system: 'csr', source_ref_id: id,
         source_system: 'csr',
-        message: 'DERP request ' + req.request_no + ' has been closed. Equipment is repaired and ready for use.',
+        body: 'DERP request ' + req.request_no + ' has been closed. Equipment is repaired and ready for use.',
         type: 'derp_closed'
       })
     }
@@ -5298,34 +5543,26 @@ async function processDerpTransfer(reqId, fromCategory) {
     }).eq('id', reqId)
 
     // Log transfer
-    await SB.from('derp_activity_log').insert({
-      request_id: reqId,
-      action: 'transferred',
-      from_value: fromCategory,
-      to_value: toCat,
-      performed_by: state.user.id,
-      remarks
-    })
-
-    // Notify new evaluators
+    // derp_activity_log removed — covered by asset_history
+      // Notify new evaluators
     const admins = state.users.filter(u => u.csr_role === 'admin')
     for (const admin of admins) {
-      await SB.from('system_notifications').insert({
-        recipient_id: admin.id,
-        target_system: 'csr', target_ref_id: reqId,
+      await SB.from('notifications').insert({
+        user_id: admin.id,
+        source_system: 'csr', source_ref_id: reqId,
         source_system: 'csr',
-        message: toCatInfo.icon + ' DERP ' + req.request_no + ' transferred to ' + toCatInfo.label + '. Reason: ' + remarks,
+        body: toCatInfo.icon + ' DERP ' + req.request_no + ' transferred to ' + toCatInfo.label + '. Reason: ' + remarks,
         type: 'derp_transferred'
       })
     }
 
     // Notify requester
     if (req.requested_by) {
-      await SB.from('system_notifications').insert({
-        recipient_id: req.requested_by,
-        target_system: 'csr', target_ref_id: reqId,
+      await SB.from('notifications').insert({
+        user_id: req.requested_by,
+        source_system: 'csr', source_ref_id: reqId,
         source_system: 'csr',
-        message: 'Your DERP request ' + req.request_no + ' has been transferred to ' + toCatInfo.label + ' for evaluation.',
+        body: 'Your DERP request ' + req.request_no + ' has been transferred to ' + toCatInfo.label + ' for evaluation.',
         type: 'derp_transferred'
       })
     }
@@ -5372,22 +5609,14 @@ async function processDerpReturn(reqId) {
     }).eq('id', reqId)
 
     // Log return
-    await SB.from('derp_activity_log').insert({
-      request_id: reqId,
-      action: 'returned',
-      from_value: 'under_evaluation',
-      to_value: 'draft',
-      performed_by: state.user.id,
-      remarks
-    })
-
-    // Notify requester
+    // derp_activity_log removed — covered by asset_history
+      // Notify requester
     if (req.requested_by) {
-      await SB.from('system_notifications').insert({
-        recipient_id: req.requested_by,
-        target_system: 'csr', target_ref_id: reqId,
+      await SB.from('notifications').insert({
+        user_id: req.requested_by,
+        source_system: 'csr', source_ref_id: reqId,
         source_system: 'csr',
-        message: 'Your DERP request ' + req.request_no + ' was returned for revision. Reason: ' + remarks,
+        body: 'Your DERP request ' + req.request_no + ' was returned for revision. Reason: ' + remarks,
         type: 'derp_returned'
       })
     }
@@ -5405,11 +5634,11 @@ async function notifyDerpEvaluators(req, category) {
     const cat = DERP_CATEGORIES[category]
     const admins = state.users.filter(u => u.csr_role === 'admin')
     for (const admin of admins) {
-      await SB.from('system_notifications').insert({
-        recipient_id: admin.id,
-        target_system: 'csr', target_ref_id: req.id,
+      await SB.from('notifications').insert({
+        user_id: admin.id,
+        source_system: 'csr', source_ref_id: req.id,
         source_system: 'csr',
-        message: cat.icon + ' New ' + cat.label + ' request ' + req.request_no + ' submitted for evaluation.',
+        body: cat.icon + ' New ' + cat.label + ' request ' + req.request_no + ' submitted for evaluation.',
         type: 'derp_submitted'
       })
     }
@@ -5579,7 +5808,7 @@ async function renderReports() {
       const dept = state.departments.find(d => d.id === r.dept_id)
       const days = Math.floor((Date.now() - new Date(r.created_at)) / 86400000)
       const agingColor = days >= 7 ? 'var(--red)' : days >= 3 ? 'var(--amber)' : 'var(--green)'
-      const levelLabels = { 1:'Dept Head', 2:'Supply Officer', 3:'Finance' }
+      const levelLabels = { 1:'Dept Head', 2:'Supply Officer', 3:'Purchasing Officer' }
       html += '<tr>'
       html += '<td class="td-mono">' + r.request_no + '</td>'
       html += '<td><span class="badge badge-' + r.request_type + '">' + r.request_type.toUpperCase() + '</span></td>'
@@ -5847,7 +6076,7 @@ function renderUserForm(u) {
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
 
   const roleOptions = {
-    csr_role: { label:'CSR Role', opts:['requester','dept_head','supply_officer','finance','admin','viewer'] },
+    csr_role: { label:'CSR Role', opts:['requester','dept_head','supply_officer','purchasing_officer','admin','viewer'] },
     it_role: { label:'IT Role', opts:['requester','technician','supervisor','admin'] },
     maintenance_role: { label:'Maintenance Role', opts:['requester','technician','supervisor','admin'] },
     inventory_role: { label:'Inventory Role', opts:['viewer','encoder','admin'] }
@@ -6093,13 +6322,13 @@ async function renderThresholdsSettings(el) {
   html += '<button class="btn btn-primary btn-sm" onclick="saveAutoThreshold()">Save Auto-Approval Settings</button>'
   html += '</div>'
 
-  // Finance threshold
+  // Purchasing Officer threshold
   html += '<div class="card">'
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:6px;">💰 Finance Approval Threshold</div>'
-  html += '<p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">Requests with estimated total <strong>equal to or above</strong> this amount require Finance approval (Level 3) in addition to Dept Head and Supply Officer.</p>'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:6px;">💰 Purchasing Officer Approval Threshold</div>'
+  html += '<p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">Requests with estimated total <strong>equal to or above</strong> this amount require Purchasing Officer approval (Level 3) in addition to Dept Head and Supply Officer.</p>'
   html += '<div class="field"><label>Threshold Amount (₱)</label>'
-  html += '<input type="number" id="thresh_finance" value="' + (settingsMap['finance_threshold']||10000) + '" min="0" step="1000"></div>'
-  html += '<button class="btn btn-primary btn-sm" onclick="saveThreshold()">Save Finance Threshold</button>'
+  html += '<input type="number" id="thresh_purchasing" value="' + (settingsMap['purchasing_threshold']||10000) + '" min="0" step="1000"></div>'
+  html += '<button class="btn btn-primary btn-sm" onclick="saveThreshold()">Save Purchasing Officer Threshold</button>'
   html += '</div>'
 
   html += '<div class="card">'
@@ -6125,10 +6354,10 @@ async function saveAutoThreshold() {
 }
 
 async function saveThreshold() {
-  const val = document.getElementById('thresh_finance').value
+  const val = document.getElementById('thresh_purchasing').value
   try {
-    await SB.from('settings').upsert({ key: 'finance_threshold', value: val, updated_by: state.user.id, updated_at: new Date().toISOString() })
-    showToast('success','Saved','Finance threshold updated to ₱' + Number(val).toLocaleString())
+    await SB.from('settings').upsert({ key: 'purchasing_threshold', value: val, updated_by: state.user.id, updated_at: new Date().toISOString() })
+    showToast('success','Saved','Purchasing Officer threshold updated to ₱' + Number(val).toLocaleString())
   } catch(e) { showToast('error','Error', e.message) }
 }
 
@@ -6512,6 +6741,151 @@ async function insertWithRetry(table, payload, maxRetries) {
   }
   return { data: null, error: lastError }
 }
+
+// ═══════════════════════════════════
+// SESSION EXPIRY HANDLING
+// ═══════════════════════════════════
+let _sessionRefreshTimer = null
+
+// Wrap every Supabase call — if 401, try refresh first
+async function sbGuard(fn) {
+  try {
+    const result = await fn()
+    // Check if result indicates auth error
+    if (result?.error?.status === 401 || result?.error?.message?.includes('JWT')) {
+      const refreshed = await tryRefreshSession()
+      if (refreshed) return await fn()
+      else handleSessionExpired()
+    }
+    return result
+  } catch(e) {
+    if (e.status === 401 || e.message?.includes('JWT') || e.message?.includes('token')) {
+      const refreshed = await tryRefreshSession()
+      if (refreshed) return await fn()
+      else handleSessionExpired()
+    }
+    throw e
+  }
+}
+
+async function tryRefreshSession() {
+  try {
+    const { data: { session }, error } = await SB.auth.refreshSession()
+    if (error || !session) return false
+    // Update stored tokens
+    const stored = getSession()
+    if (stored) {
+      stored.access_token = session.access_token
+      stored.refresh_token = session.refresh_token
+      stored.expires_at = session.expires_at
+      setSession(stored)
+    }
+    console.log('[Auth] Session refreshed successfully')
+    return true
+  } catch(e) {
+    console.warn('[Auth] Session refresh failed:', e.message)
+    return false
+  }
+}
+
+function handleSessionExpired() {
+  // Show non-intrusive banner instead of redirect
+  const existing = document.getElementById('sessionExpiredBanner')
+  if (existing) return
+  const banner = document.createElement('div')
+  banner.id = 'sessionExpiredBanner'
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--red);color:#fff;padding:12px 20px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(0,0,0,0.4);'
+  banner.innerHTML = '<span>⚠️ Session expired — your login has timed out.</span>' +
+    '<div style="display:flex;gap:8px;">' +
+    '<button onclick="reLoginInPlace()" style="padding:6px 14px;background:#fff;color:var(--red);border:none;border-radius:7px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;">Re-login</button>' +
+    '<button onclick="document.getElementById(&quot;sessionExpiredBanner&quot;).remove()" style="padding:6px 10px;background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:7px;font-family:inherit;font-size:12px;cursor:pointer;">✕</button>' +
+    '</div>'
+  document.body.prepend(banner)
+}
+
+async function reLoginInPlace() {
+  // Show a mini re-auth modal without losing page state
+  document.getElementById('sessionExpiredBanner')?.remove()
+  const stored = getSession()
+  const empNo = stored?.employee_no || stored?.email || ''
+
+  const overlay = document.createElement('div')
+  overlay.id = 'reLoginOverlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;'
+  overlay.innerHTML = '<div style="background:var(--surf1);border:1px solid var(--bdr2);border-radius:18px;padding:28px;width:100%;max-width:380px;box-shadow:0 12px 40px rgba(0,0,0,0.6);">' +
+    '<h3 style="font-size:18px;font-weight:700;margin-bottom:6px;font-family:sans-serif;">🔐 Re-authenticate</h3>' +
+    '<p style="font-size:13px;color:var(--txt2);margin-bottom:20px;">Your session expired. Enter your password to continue — your current page will not be lost.</p>' +
+    '<div style="margin-bottom:12px;"><input type="text" id="reLoginEmp" value="' + empNo + '" placeholder="Employee No. or Email" style="width:100%;padding:10px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;color:var(--txt);font-family:inherit;font-size:14px;outline:none;margin-bottom:10px;">' +
+    '<input type="password" id="reLoginPass" placeholder="Password" style="width:100%;padding:10px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;color:var(--txt);font-family:inherit;font-size:14px;outline:none;"></div>' +
+    '<div id="reLoginErr" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none;"></div>' +
+    '<div style="display:flex;gap:8px;">' +
+    '<button onclick="submitReLogin()" style="flex:1;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;">Continue</button>' +
+    '<button onclick="doLogout()" style="padding:10px 16px;background:var(--surf2);color:var(--txt2);border:1px solid var(--bdr2);border-radius:10px;font-family:inherit;font-size:13px;cursor:pointer;">Sign Out</button>' +
+    '</div></div>'
+  document.body.appendChild(overlay)
+  setTimeout(() => { const rp = document.getElementById('reLoginPass'); if(rp){ rp.focus(); rp.addEventListener('keydown', e => { if(e.key==='Enter') submitReLogin() }) } }, 100)
+}
+
+async function submitReLogin() {
+  const emp = document.getElementById('reLoginEmp')?.value.trim()
+  const pass = document.getElementById('reLoginPass')?.value
+  const errEl = document.getElementById('reLoginErr')
+  if (!pass) { errEl.textContent = 'Please enter your password.'; errEl.style.display = 'block'; return }
+  const email = emp.includes('@') ? emp.toLowerCase() : emp.toLowerCase().replace(/[^a-z0-9]/g,'-')+'@tdmh.local'
+  try {
+    const { data: authData, error } = await SB.auth.signInWithPassword({ email, password: pass })
+    if (error || !authData.user) { errEl.textContent = 'Invalid credentials.'; errEl.style.display = 'block'; return }
+    // Refresh stored session tokens
+    const stored = getSession()
+    if (stored) {
+      stored.access_token = authData.session.access_token
+      stored.refresh_token = authData.session.refresh_token
+      setSession(stored)
+    }
+    document.getElementById('reLoginOverlay')?.remove()
+    showToast('success', '✅ Session Restored', 'You can continue where you left off.')
+  } catch(e) {
+    errEl.textContent = 'Connection error. Try again.'
+    errEl.style.display = 'block'
+  }
+}
+
+// Auto-refresh session 5 minutes before expiry
+function scheduleSessionRefresh() {
+  if (_sessionRefreshTimer) clearTimeout(_sessionRefreshTimer)
+  const stored = getSession()
+  if (!stored?.expires_at) return
+  const expiresAt = new Date(stored.expires_at * 1000)
+  const refreshAt = new Date(expiresAt.getTime() - 5 * 60 * 1000) // 5 min before
+  const msUntilRefresh = refreshAt.getTime() - Date.now()
+  if (msUntilRefresh <= 0) {
+    tryRefreshSession().then(ok => { if (ok) scheduleSessionRefresh() })
+    return
+  }
+  _sessionRefreshTimer = setTimeout(async () => {
+    const ok = await tryRefreshSession()
+    if (ok) scheduleSessionRefresh()
+    else handleSessionExpired()
+  }, msUntilRefresh)
+  console.log('[Auth] Session refresh scheduled in', Math.round(msUntilRefresh/60000), 'minutes')
+}
+
+// Listen for Supabase auth state changes
+SB.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESHED' && session) {
+    const stored = getSession()
+    if (stored) {
+      stored.access_token = session.access_token
+      stored.refresh_token = session.refresh_token
+      stored.expires_at = session.expires_at
+      setSession(stored)
+      scheduleSessionRefresh()
+    }
+  }
+  if (event === 'SIGNED_OUT') {
+    document.getElementById('reLoginOverlay')?.remove()
+  }
+})
 </script>
 </body>
 </html>
