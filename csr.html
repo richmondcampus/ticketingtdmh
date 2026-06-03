@@ -2132,20 +2132,22 @@ function buildItemRows() {
     html += '<td><input type="text" placeholder="Item name" value="' + (row.item_name||'') + '"'
     html += ' oninput="updateItemRow(' + row.id + ',\'item_name\',this.value);scheduleSmartPrice(' + row.id + ',this.value)"></td>'
     html += '<td><input type="text" placeholder="Description" value="' + (row.item_description||'') + '" oninput="updateItemRow(' + row.id + ',\'item_description\',this.value)"></td>'
-    html += '<td><input type="number" min="1" value="' + (row.quantity||1) + '" oninput="updateItemRow(' + row.id + ',\'quantity\',this.value)"></td>'
-    html += '<td><select onchange="updateItemRow(' + row.id + ',\'unit\',this.value)">'
+    html += '<td><input type="number" min="1" value="' + (row.quantity||1) + '" oninput="updateItemRow(' + row.id + ',\'quantity\',this.value);recomputeItemTotal(' + row.id + ')"></td>'
+    html += '<td><select onchange="updateItemRow(' + row.id + ',\'unit\',this.value);clearItemPrice(' + row.id + ',this.value)">'
     ;['pcs','box','ream','liters','sets','kg','meters','rolls','packs'].forEach(u => {
       html += '<option value="' + u + '"' + (row.unit===u?' selected':'') + '>' + u + '</option>'
     })
     html += '</select></td>'
-    // Cost cell with source indicator
+    // Cost cell — shows total (unit_price × qty), source icon
+    const unitPrice = row.unit_price || row.estimated_cost || 0
+    const total = unitPrice * (Number(row.quantity) || 1)
     html += '<td style="position:relative;">'
-    html += '<input type="number" min="0" placeholder="0" value="' + (row.estimated_cost||'') + '"'
-    html += ' style="' + costStyle + '" title="' + costTitle + '"'
-    html += ' oninput="updateItemRow(' + row.id + ',\'estimated_cost\',this.value);updateItemRow(' + row.id + ',\'price_source\',null)">'
+    html += '<input type="number" min="0" placeholder="0" value="' + (total || '') + '"'
+    html += ' style="' + costStyle + '" title="' + (costTitle || 'Enter estimated cost') + '"'
+    html += ' oninput="onCostManualEdit(' + row.id + ',this.value)">'
     if (row.price_loading) {
       html += '<span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:11px;">⏳</span>'
-    } else if (sourceIcon && hasCost) {
+    } else if (sourceIcon && unitPrice > 0) {
       html += '<span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:12px;" title="' + costTitle + '">' + sourceIcon + '</span>'
     }
     html += '</td>'
@@ -2172,7 +2174,43 @@ function buildItemRows() {
   return html
 }
 
-// ─── Smart Price Estimation ───
+function recomputeItemTotal(rowId) {
+  // When qty changes — unit_price stays, total = unit_price × qty
+  const row = state.itemRows.find(r => r.id === rowId)
+  if (!row || !row.unit_price) return
+  const qty = Number(row.quantity) || 1
+  row.estimated_cost = row.unit_price * qty
+  document.getElementById('itemsBody').innerHTML = buildItemRows()
+  updateAutoApproveHint()
+}
+
+function clearItemPrice(rowId, newUnit) {
+  // When unit changes — clear the AI price so it re-estimates with new unit context
+  const row = state.itemRows.find(r => r.id === rowId)
+  if (!row) return
+  // Only re-estimate if price came from AI (not manual)
+  if (row.price_source === 'ai_estimate') {
+    row.unit_price = 0
+    row.estimated_cost = 0
+    row.price_source = null
+    document.getElementById('itemsBody').innerHTML = buildItemRows()
+    // Re-trigger smart price with unit context
+    if (row.item_name && row.item_name.length >= 3) {
+      scheduleSmartPrice(rowId, row.item_name + ' per ' + newUnit)
+    }
+  }
+}
+
+function onCostManualEdit(rowId, value) {
+  // User manually typed a cost — treat as unit price × 1, clear AI source
+  const row = state.itemRows.find(r => r.id === rowId)
+  if (!row) return
+  const qty = Number(row.quantity) || 1
+  row.unit_price = Number(value) / qty
+  row.estimated_cost = Number(value)
+  row.price_source = null // mark as manual
+  updateAutoApproveHint()
+}
 const _priceTimers = {}
 
 function scheduleSmartPrice(rowId, itemName) {
@@ -2195,16 +2233,20 @@ async function fetchSmartPrice(rowId, itemName) {
       body: JSON.stringify({ items: [{ item_name: itemName }] })
     })
     const data = await res.json()
-    const result = data?.results?.[itemName]
     if (result && result.price > 0) {
       const r = state.itemRows.find(r => r.id === rowId)
       if (r && !Number(r.estimated_cost)) {
-        r.estimated_cost = result.price
+        const qty = Number(r.quantity) || 1
+        r.unit_price = result.price          // store per-unit price
+        r.estimated_cost = result.price * qty // total = unit × qty
         r.price_source = result.source
         r.price_loading = false
         document.getElementById('itemsBody').innerHTML = buildItemRows()
         updateAutoApproveHint()
       }
+    } else {
+      const r = state.itemRows.find(r => r.id === rowId)
+      if (r) { r.price_loading = false; document.getElementById('itemsBody').innerHTML = buildItemRows() }
     }
   } catch(e) {
     const r = state.itemRows.find(r => r.id === rowId)
@@ -2243,7 +2285,7 @@ function viewItemImage(src) {
 }
 
 function addItemRow() {
-  state.itemRows.push({ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'consumable', image_file:null, image_preview:null })
+  state.itemRows.push({ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, unit_price:0, category:'consumable', image_file:null, image_preview:null })
   document.getElementById('itemsBody').innerHTML = buildItemRows()
 }
 
