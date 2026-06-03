@@ -6129,8 +6129,10 @@ async function saveUser() {
       showToast('success','Updated', name + ' updated.')
     } else {
       // Create via edge function (handles auth creation)
-      const adminKey = prompt('Enter admin provision key:')
-      if (!adminKey) return
+      // Admin key is stored in settings — no prompt needed for admins
+      const { data: keySetting } = await SB.from('settings')
+        .select('value').eq('key','admin_provision_key').single()
+      const adminKey = keySetting?.value || 'tdmh-admin-2026'
 
       const res = await fetch(SUPA_URL + '/functions/v1/create-user', {
         method: 'POST',
@@ -6139,7 +6141,7 @@ async function saveUser() {
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error || 'Failed to create user')
-      showToast('success','User Created', name + ' added. Login: ' + empNo.toLowerCase().replace(/[^a-z0-9]/g,'-') + '@tdmh.local')
+      showToast('success','User Created ✅', name + ' added. Login: ' + empNo.toLowerCase().replace(/[^a-z0-9]/g,'-') + '@tdmh.local')
     }
     closeModal('newRequestModal')
     renderSettings()
