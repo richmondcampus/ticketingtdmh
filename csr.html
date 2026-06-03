@@ -1464,7 +1464,19 @@ async function renderApprovalQueue() {
   const role = state.user.csr_role
   const level = roleApprovalLevel(role)
   const requests = await loadRequests({ status: 'pending_approval' })
-  const myQueue = role === 'admin' ? requests : requests.filter(r => r.current_approval_level === level)
+  // Dept heads see only their department's requests
+  // Supply officers and above see all
+  let myQueue
+  if (role === 'dept_head') {
+    myQueue = requests.filter(r =>
+      r.current_approval_level === level &&
+      r.dept_id === state.user.dept_id
+    )
+  } else if (role === 'admin') {
+    myQueue = requests
+  } else {
+    myQueue = requests.filter(r => r.current_approval_level === level)
+  }
   state.requests = myQueue
 
   const levelLabels = { 1: 'Dept Head', 2: 'Supply Officer', 3: 'Purchasing Officer' }
@@ -2752,22 +2764,44 @@ async function processApproval() {
 
 async function notifyApprovers(req, level) {
   try {
-    const roleMap = { 1: 'dept_head', 2: 'supply_officer', 3: 'purchasing_officer' }
-    const levelLabel = { 1: 'Dept Head', 2: 'Supply Officer', 3: 'Purchasing Officer' }
-    const approverRole = roleMap[level]
-    const approvers = state.users.filter(u => u.csr_role === approverRole || u.csr_role === 'admin')
-    for (const approver of approvers) {
+    const levelLabel = { 1:'Dept Head', 2:'Supply Officer', 3:'Purchasing Officer' }
+    const roleMap = { 2:'supply_officer', 3:'purchasing_officer' }
+
+    let approverIds = []
+
+    if (level === 1) {
+      // Level 1 — notify ONLY the dept head + OIC of the requester's department
+      const { data: deptApprovers } = await SB.rpc('get_dept_approvers', { p_dept_id: req.dept_id })
+      approverIds = (deptApprovers || []).map(a => a.user_id).filter(Boolean)
+
+      // Fallback: if dept has no head assigned, notify all dept_head role users
+      if (approverIds.length === 0) {
+        const fallback = state.users.filter(u => u.csr_role === 'dept_head' || u.csr_role === 'admin')
+        approverIds = fallback.map(u => u.id)
+      }
+    } else {
+      // Level 2/3 — notify by role (supply_officer, purchasing_officer)
+      const role = roleMap[level]
+      approverIds = state.users
+        .filter(u => u.csr_role === role || u.csr_role === 'admin')
+        .map(u => u.id)
+    }
+
+    // Remove duplicates and requester
+    approverIds = [...new Set(approverIds)].filter(id => id !== req.requested_by)
+
+    for (const uid of approverIds) {
       await SB.from('notifications').insert({
-        user_id: approver.id,
+        user_id: uid,
         title: '📋 Approval Required — ' + req.request_no,
-        body: 'A CSR request needs your approval as ' + (levelLabel[level] || 'Approver') + ': ' + (req.purpose || req.request_type),
+        body: (levelLabel[level] || 'Approver') + ' action needed: ' + (req.purpose || req.request_type),
         type: 'action_required',
         source_system: 'csr',
         source_ref_type: 'request',
         source_ref_id: req.id
       })
     }
-  } catch(e) { console.warn('notifyApprovers', e) }
+  } catch(e) { console.warn('notifyApprovers error:', e) }
 }
 
 // ═══════════════════════════════════════════
@@ -6287,44 +6321,375 @@ async function renderUsersSettings(el) {
   const { data: users } = await SB.from('users').select('*').order('full_name')
   const allUsers = users || []
 
-  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
-  html += '<div><strong>' + allUsers.length + ' users</strong> <span style="color:var(--txt2);font-size:13px;">· ' + allUsers.filter(u=>u.is_active).length + ' active</span></div>'
-  html += '<button class="btn btn-primary" onclick="openAddUserModal()">＋ Add User</button>'
+  let html = ''
+
+  // ── Tab bar ──
+  html += '<div style="display:flex;gap:0;border-bottom:1px solid var(--bdr);margin-bottom:20px;">'
+  ;[['users','👥 Users'],['departments','🏢 Departments'],['bulk_import','📥 Bulk Import']].forEach(([key, label]) => {
+    const active = (window._userSettingsTab || 'users') === key
+    html += '<button onclick="switchUserTab(\'' + key + '\')" style="padding:8px 16px;border:none;background:transparent;font-family:inherit;font-size:13px;cursor:pointer;border-bottom:2px solid ' + (active ? 'var(--accent)' : 'transparent') + ';color:' + (active ? 'var(--accent)' : 'var(--txt2)') + ';font-weight:' + (active ? '600' : '400') + ';">' + label + '</button>'
+  })
   html += '</div>'
 
-  html += '<div class="table-wrap"><table><thead><tr>'
-  html += '<th>Name</th><th>Employee No.</th><th>Dept</th><th>CSR Role</th><th>IT Role</th><th>Maintenance</th><th>Inventory</th><th>Status</th><th></th>'
+  const tab = window._userSettingsTab || 'users'
+
+  if (tab === 'users') {
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">'
+    html += '<div><strong>' + allUsers.length + ' users</strong> <span style="color:var(--txt2);font-size:13px;">· ' + allUsers.filter(u=>u.is_active).length + ' active</span></div>'
+    html += '<div style="display:flex;gap:8px;">'
+    html += '<input type="text" id="userSearch" placeholder="Search name or emp no..." oninput="filterUsersTable(this.value)" style="padding:7px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;outline:none;width:200px;">'
+    html += '<button class="btn btn-primary" onclick="openAddUserModal()">＋ Add User</button>'
+    html += '</div></div>'
+
+    html += '<div class="table-wrap"><table id="usersTable"><thead><tr>'
+    html += '<th>Name</th><th>Emp No.</th><th>Dept</th><th>Position</th><th>CSR</th><th>IT</th><th>Maint</th><th>Inv</th><th>Status</th><th></th>'
+    html += '</tr></thead><tbody>'
+    allUsers.forEach(u => {
+      const dept = state.departments.find(d => d.id === u.dept_id)
+      const rb = (role, color) => role
+        ? '<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:' + color + '18;color:' + color + ';">' + role + '</span>'
+        : '<span style="color:var(--txt3);font-size:11px;">—</span>'
+      html += '<tr class="user-row" data-name="' + (u.full_name||'').toLowerCase() + '" data-emp="' + (u.employee_no||'').toLowerCase() + '">'
+      html += '<td><strong>' + u.full_name + '</strong>'
+      if (u.email) html += '<br><span style="font-size:11px;color:var(--txt2);">' + u.email + '</span>'
+      html += '</td>'
+      html += '<td class="td-mono" style="font-size:11px;">' + u.employee_no + '</td>'
+      html += '<td style="font-size:12px;color:var(--txt2);">' + (dept ? dept.dept_name : '—') + '</td>'
+      html += '<td style="font-size:12px;color:var(--txt2);">' + (u.position || '—') + '</td>'
+      html += '<td>' + rb(u.csr_role,'var(--accent)') + '</td>'
+      html += '<td>' + rb(u.it_role,'var(--blue)') + '</td>'
+      html += '<td>' + rb(u.maintenance_role,'var(--amber)') + '</td>'
+      html += '<td>' + rb(u.inventory_role,'var(--green)') + '</td>'
+      html += '<td>' + (u.is_active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-cancelled">Inactive</span>') + '</td>'
+      html += '<td><div style="display:flex;gap:4px;">'
+      html += '<button class="btn btn-ghost btn-sm" onclick="openEditUserModal(\'' + u.id + '\')">Edit</button>'
+      if (u.id !== state.user.id) {
+        html += '<button class="btn btn-ghost btn-sm" onclick="toggleUserActive(\'' + u.id + '\',' + u.is_active + ')">' + (u.is_active ? 'Deactivate' : 'Activate') + '</button>'
+      }
+      html += '</div></td></tr>'
+    })
+    html += '</tbody></table></div>'
+
+  } else if (tab === 'departments') {
+    const { data: depts } = await SB.from('departments').select('*').order('dept_name')
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+    html += '<strong>' + (depts||[]).length + ' departments</strong>'
+    html += '<button class="btn btn-primary btn-sm" onclick="openDeptModal(null)">＋ Add Department</button>'
+    html += '</div>'
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>Department</th><th>Code</th><th>Dept Head</th><th>OIC</th><th>Status</th><th></th>'
+    html += '</tr></thead><tbody>'
+    ;(depts || []).forEach(d => {
+      const head = allUsers.find(u => u.id === d.dept_head_id)
+      const oic = allUsers.find(u => u.id === d.dept_oic_id)
+      html += '<tr>'
+      html += '<td><strong>' + d.dept_name + '</strong></td>'
+      html += '<td class="td-mono" style="font-size:11px;">' + (d.dept_code || '—') + '</td>'
+      html += '<td style="font-size:13px;">' + (head ? '👤 ' + head.full_name : '<span style="color:var(--txt3);">Not assigned</span>') + '</td>'
+      html += '<td style="font-size:13px;">' + (oic ? '👤 ' + oic.full_name : '<span style="color:var(--txt3);">—</span>') + '</td>'
+      html += '<td>' + (d.is_active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-cancelled">Inactive</span>') + '</td>'
+      html += '<td><button class="btn btn-ghost btn-sm" onclick="openDeptModal(\'' + d.id + '\')">Edit</button></td>'
+      html += '</tr>'
+    })
+    html += '</tbody></table></div>'
+
+  } else if (tab === 'bulk_import') {
+    html += '<div style="max-width:600px;">'
+    html += '<div class="card" style="margin-bottom:16px;">'
+    html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">📥 Bulk Import Users via Excel/CSV</div>'
+    html += '<p style="font-size:13px;color:var(--txt2);margin-bottom:16px;">Upload an Excel (.xlsx) or CSV file to add or update multiple users at once. Existing employees (matched by Employee No.) will be updated, new ones will be created.</p>'
+
+    // Template download
+    html += '<div style="background:var(--accent-a);border:1px solid var(--accent-b);border-radius:8px;padding:12px;margin-bottom:14px;">'
+    html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;">📋 Required Columns:</div>'
+    html += '<div style="font-family:monospace;font-size:12px;color:var(--txt2);line-height:1.8;">'
+    ;['employee_no *','full_name *','department','position','email','phone',
+      'csr_role','maintenance_role','it_role','inventory_role'].forEach(col => {
+      const req = col.includes('*') ? '<span style="color:var(--red);">required</span>' : 'optional'
+      html += col.replace(' *','') + ' <span style="color:var(--txt3);">— ' + req + '</span><br>'
+    })
+    html += '</div>'
+    html += '<button class="btn btn-ghost btn-sm" onclick="downloadImportTemplate()" style="margin-top:10px;">⬇️ Download Template</button>'
+    html += '</div>'
+
+    html += '<div style="border:2px dashed var(--bdr2);border-radius:10px;padding:24px;text-align:center;cursor:pointer;background:var(--surf2);" onclick="document.getElementById(\'bulkImportFile\').click()" id="bulkDropZone">'
+    html += '<div style="font-size:28px;margin-bottom:8px;">📂</div>'
+    html += '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">Click to upload or drag & drop</div>'
+    html += '<div style="font-size:12px;color:var(--txt2);">.xlsx or .csv files</div>'
+    html += '</div>'
+    html += '<input type="file" id="bulkImportFile" accept=".xlsx,.csv,.xls" style="display:none;" onchange="processBulkImport(this)">'
+
+    html += '<div id="bulkPreview" style="margin-top:16px;"></div>'
+    html += '</div></div>'
+
+    // Wire drag & drop after render
+    setTimeout(() => {
+      const zone = document.getElementById('bulkDropZone')
+      if (zone) {
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor = 'var(--accent)' })
+        zone.addEventListener('dragleave', () => { zone.style.borderColor = 'var(--bdr2)' })
+        zone.addEventListener('drop', e => {
+          e.preventDefault(); zone.style.borderColor = 'var(--bdr2)'
+          const f = e.dataTransfer.files[0]
+          if (f) { const input = document.getElementById('bulkImportFile'); const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files; processBulkImport(input) }
+        })
+      }
+    }, 100)
+  }
+
+  el.innerHTML = html
+}
+
+function switchUserTab(tab) {
+  window._userSettingsTab = tab
+  const el = document.getElementById('settingsUsersContainer')
+  if (el) renderUsersSettings(el)
+}
+
+function filterUsersTable(query) {
+  const q = query.toLowerCase()
+  document.querySelectorAll('#usersTable .user-row').forEach(row => {
+    const name = row.dataset.name || ''
+    const emp = row.dataset.emp || ''
+    row.style.display = (!q || name.includes(q) || emp.includes(q)) ? '' : 'none'
+  })
+}
+
+// ── Department Modal ──
+async function openDeptModal(deptId) {
+  const { data: depts } = await SB.from('departments').select('*')
+  const dept = depts?.find(d => d.id === deptId) || null
+  const allUsers = state.users || []
+
+  document.getElementById('userModalTitle').textContent = dept ? '🏢 Edit Department' : '🏢 Add Department'
+  let html = ''
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Department Name *</label><input type="text" id="dm_name" value="' + (dept?.dept_name||'') + '" placeholder="e.g. Nursing Department"></div>'
+  html += '<div class="field"><label>Code</label><input type="text" id="dm_code" value="' + (dept?.dept_code||'') + '" placeholder="e.g. NURS"></div>'
+  html += '</div>'
+  html += '<div class="field"><label>Department Head</label><select id="dm_head">'
+  html += '<option value="">— Not assigned —</option>'
+  allUsers.filter(u => u.is_active).forEach(u => {
+    const sel = u.id === dept?.dept_head_id ? ' selected' : ''
+    html += '<option value="' + u.id + '"' + sel + '>' + u.full_name + ' (' + u.employee_no + ')</option>'
+  })
+  html += '</select></div>'
+  html += '<div class="field"><label>OIC (Officer-in-Charge) <span style="font-size:11px;font-weight:400;color:var(--txt3);">Optional</span></label><select id="dm_oic">'
+  html += '<option value="">— None —</option>'
+  allUsers.filter(u => u.is_active).forEach(u => {
+    const sel = u.id === dept?.dept_oic_id ? ' selected' : ''
+    html += '<option value="' + u.id + '"' + sel + '>' + u.full_name + ' (' + u.employee_no + ')</option>'
+  })
+  html += '</select></div>'
+  html += '<div class="field"><label>Status</label>'
+  html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">'
+  html += '<input type="checkbox" id="dm_active"' + (dept?.is_active !== false ? ' checked' : '') + ' style="width:16px;height:16px;accent-color:var(--accent);">'
+  html += '<span style="font-size:13px;">Active</span></label></div>'
+
+  document.getElementById('userModalBody').innerHTML = html
+  document.getElementById('userModalOkBtn').textContent = dept ? 'Update Department' : 'Create Department'
+  document.getElementById('userModalOkBtn').onclick = () => saveDept(deptId)
+  openModal('userModal')
+}
+
+async function saveDept(deptId) {
+  const name = document.getElementById('dm_name')?.value.trim()
+  if (!name) { showToast('error','Required','Department name is required.'); return }
+  const payload = {
+    dept_name: name,
+    dept_code: document.getElementById('dm_code')?.value.trim() || null,
+    dept_head_id: document.getElementById('dm_head')?.value || null,
+    dept_oic_id: document.getElementById('dm_oic')?.value || null,
+    is_active: document.getElementById('dm_active')?.checked ?? true,
+    updated_at: new Date().toISOString()
+  }
+  if (deptId) {
+    await SB.from('departments').update(payload).eq('id', deptId)
+    showToast('success','Updated','Department updated.')
+  } else {
+    await SB.from('departments').insert(payload)
+    showToast('success','Created','Department created.')
+  }
+  closeModal('userModal')
+  // Refresh departments in state
+  const { data: depts } = await SB.from('departments').select('*').eq('is_active', true).order('dept_name')
+  state.departments = depts || []
+  const el = document.getElementById('settingsUsersContainer')
+  if (el) renderUsersSettings(el)
+}
+
+// ── Bulk Import ──
+function downloadImportTemplate() {
+  const csv = [
+    'employee_no,full_name,department,position,email,phone,csr_role,maintenance_role,it_role,inventory_role',
+    '10001,Juan dela Cruz,Nursing Department,Nurse II,juan@hospital.com,09171234567,requester,requester,requester,',
+    '10002,Maria Santos,Information Technology,IT Specialist,maria@hospital.com,09181234567,requester,,technician,',
+    '10003,Pedro Reyes,Supply / Procurement,Supply Officer,pedro@hospital.com,09191234567,supply_officer,,,',
+  ].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'tdmh_users_template.csv'
+  a.click()
+}
+
+async function processBulkImport(input) {
+  const file = input.files[0]
+  if (!file) return
+  const preview = document.getElementById('bulkPreview')
+  preview.innerHTML = '<div style="color:var(--txt2);font-size:13px;">⏳ Reading file...</div>'
+
+  const ext = file.name.split('.').pop().toLowerCase()
+  let rows = []
+
+  if (ext === 'csv') {
+    const text = await file.text()
+    const lines = text.split('\n').filter(l => l.trim())
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+    rows = lines.slice(1).map(line => {
+      const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g,''))
+      const obj = {}
+      headers.forEach((h, i) => { obj[h] = vals[i] || '' })
+      return obj
+    }).filter(r => r.employee_no)
+  } else if (ext === 'xlsx' || ext === 'xls') {
+    // Use SheetJS (loaded via CDN if available)
+    if (typeof XLSX === 'undefined') {
+      // Load SheetJS dynamically
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+        script.onload = resolve
+        script.onerror = reject
+        document.head.appendChild(script)
+      })
+    }
+    const ab = await file.arrayBuffer()
+    const wb = XLSX.read(ab, { type: 'array' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+    // Normalize headers to lowercase
+    rows = rows.map(r => {
+      const obj = {}
+      Object.keys(r).forEach(k => { obj[k.toLowerCase().trim()] = String(r[k] || '').trim() })
+      return obj
+    }).filter(r => r.employee_no)
+  }
+
+  if (rows.length === 0) {
+    preview.innerHTML = '<div style="color:var(--red);font-size:13px;">❌ No valid rows found. Check your file format.</div>'
+    return
+  }
+
+  // Map department names to IDs
+  const deptMap = {}
+  state.departments.forEach(d => {
+    deptMap[d.dept_name.toLowerCase()] = d.id
+    if (d.dept_code) deptMap[d.dept_code.toLowerCase()] = d.id
+  })
+
+  // Preview table
+  let html = '<div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:10px;">Preview — ' + rows.length + ' row(s)</div>'
+  html += '<div class="table-wrap" style="margin-bottom:14px;max-height:280px;overflow-y:auto;"><table><thead><tr>'
+  html += '<th>Emp No.</th><th>Name</th><th>Department</th><th>Position</th><th>CSR Role</th><th>Status</th>'
   html += '</tr></thead><tbody>'
 
-  allUsers.forEach(u => {
-    const dept = state.departments.find(d => d.id === u.dept_id)
-    const roleBadge = (role, color) => role
-      ? '<span style="font-size:11px;padding:2px 7px;border-radius:10px;background:' + color + '18;color:' + color + ';">' + role + '</span>'
-      : '<span style="color:var(--txt3);font-size:11px;">—</span>'
+  const valid = [], errors = []
+  rows.forEach(r => {
+    const deptId = deptMap[(r.department||'').toLowerCase()] || null
+    const deptOk = !r.department || !!deptId
+    const nameOk = !!r.full_name
+    const empOk = !!r.employee_no
+    const ok = empOk && nameOk
 
+    if (!ok) { errors.push(r.employee_no + ' — missing required fields'); return }
+    valid.push({ ...r, dept_id: deptId })
+
+    const warn = !deptOk ? '⚠️ Dept not found' : deptId ? '' : ''
     html += '<tr>'
-    html += '<td><strong>' + u.full_name + '</strong>'
-    if (u.email) html += '<br><span style="font-size:11px;color:var(--txt2);">' + u.email + '</span>'
-    html += '</td>'
-    html += '<td class="td-mono" style="font-size:11px;">' + u.employee_no + '</td>'
-    html += '<td style="font-size:12px;color:var(--txt2);">' + (dept ? dept.dept_name : '—') + '</td>'
-    html += '<td>' + roleBadge(u.csr_role, 'var(--accent)') + '</td>'
-    html += '<td>' + roleBadge(u.it_role, 'var(--blue)') + '</td>'
-    html += '<td>' + roleBadge(u.maintenance_role, 'var(--amber)') + '</td>'
-    html += '<td>' + roleBadge(u.inventory_role, 'var(--green)') + '</td>'
-    html += '<td>' + (u.is_active
-      ? '<span class="badge badge-approved">Active</span>'
-      : '<span class="badge badge-cancelled">Inactive</span>') + '</td>'
-    html += '<td><div style="display:flex;gap:4px;">'
-    html += '<button class="btn btn-ghost btn-sm" onclick="openEditUserModal(\'' + u.id + '\')">Edit</button>'
-    if (u.id !== state.user.id) {
-      html += '<button class="btn btn-ghost btn-sm" onclick="toggleUserActive(\'' + u.id + '\',' + u.is_active + ')">' + (u.is_active ? 'Deactivate' : 'Activate') + '</button>'
-    }
-    html += '</div></td>'
+    html += '<td class="td-mono">' + r.employee_no + '</td>'
+    html += '<td>' + r.full_name + '</td>'
+    html += '<td style="font-size:12px;">' + (deptId ? (state.departments.find(d=>d.id===deptId)?.dept_name||r.department) : '<span style="color:var(--amber);">⚠️ ' + (r.department||'—') + '</span>') + '</td>'
+    html += '<td style="font-size:12px;">' + (r.position||'—') + '</td>'
+    html += '<td style="font-size:11px;">' + (r.csr_role||'—') + '</td>'
+    html += '<td style="font-size:11px;color:var(--green);">✅ Ready</td>'
     html += '</tr>'
   })
   html += '</tbody></table></div>'
-  el.innerHTML = html
+
+  if (errors.length) {
+    html += '<div style="background:var(--red-a);border:1px solid var(--red);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;">'
+    html += '⚠️ ' + errors.length + ' row(s) skipped: ' + errors.slice(0,3).join(', ')
+    html += '</div>'
+  }
+
+  html += '<div style="display:flex;gap:8px;">'
+  html += '<button class="btn btn-primary" onclick="executeBulkImport()">📥 Import ' + valid.length + ' Users</button>'
+  html += '<button class="btn btn-ghost" onclick="document.getElementById(\'bulkPreview\').innerHTML=\'\'">Cancel</button>'
+  html += '</div>'
+
+  preview.innerHTML = html
+  window._bulkImportRows = valid
+}
+
+async function executeBulkImport() {
+  const rows = window._bulkImportRows || []
+  if (!rows.length) return
+  const preview = document.getElementById('bulkPreview')
+  preview.innerHTML = '<div style="color:var(--txt2);font-size:13px;">⏳ Importing ' + rows.length + ' users...</div>'
+
+  let created = 0, updated = 0, failed = 0
+
+  for (const r of rows) {
+    try {
+      // Check if employee already exists
+      const { data: existing } = await SB.from('users')
+        .select('id').eq('employee_no', r.employee_no).maybeSingle()
+
+      const payload = {
+        employee_no: r.employee_no,
+        full_name: r.full_name,
+        dept_id: r.dept_id || null,
+        position: r.position || null,
+        email: r.email || null,
+        phone: r.phone || null,
+        csr_role: r.csr_role || null,
+        maintenance_role: r.maintenance_role || null,
+        it_role: r.it_role || null,
+        inventory_role: r.inventory_role || null,
+        is_active: true,
+        updated_at: new Date().toISOString()
+      }
+
+      if (existing) {
+        await SB.from('users').update(payload).eq('id', existing.id)
+        updated++
+      } else {
+        // New user — needs auth account too
+        // For now just insert profile (no auth login until admin sets password)
+        await SB.from('users').insert({ ...payload, auth_id: null })
+        created++
+      }
+    } catch(e) {
+      console.warn('Import error for ' + r.employee_no + ':', e)
+      failed++
+    }
+  }
+
+  preview.innerHTML = '<div style="background:var(--green-a);border:1px solid var(--green);border-radius:10px;padding:16px;">'
+    + '<div style="font-size:14px;font-weight:600;color:var(--green);margin-bottom:6px;">✅ Import Complete</div>'
+    + '<div style="font-size:13px;color:var(--txt2);">'
+    + '📥 Created: <strong>' + created + '</strong> · '
+    + '✏️ Updated: <strong>' + updated + '</strong>'
+    + (failed > 0 ? ' · ❌ Failed: <strong style="color:var(--red);">' + failed + '</strong>' : '')
+    + '</div>'
+    + (created > 0 ? '<div style="font-size:12px;color:var(--txt3);margin-top:8px;">Note: Newly created users need a password set by admin before they can log in.</div>' : '')
+    + '</div>'
+
+  window._bulkImportRows = []
+  // Refresh users list
+  const { data: users } = await SB.from('users').select('*').order('full_name')
+  state.users = users || []
 }
 
 function openAddUserModal() {
@@ -6512,23 +6877,7 @@ function openEditDeptModal(id, name, email) {
   openModal('newRequestModal')
 }
 
-async function saveDept() {
-  const name = document.getElementById('dept_name').value.trim()
-  const email = document.getElementById('dept_email').value.trim()
-  const deptId = document.getElementById('newRequestBody').dataset.deptId
-  if (!name) { showToast('error','Validation','Department name required.'); return }
-  try {
-    if (deptId) {
-      await SB.from('departments').update({ dept_name: name, email: email||null }).eq('id', deptId)
-    } else {
-      await SB.from('departments').insert({ dept_name: name, email: email||null })
-    }
-    closeModal('newRequestModal')
-    showToast('success','Saved', name + (deptId ? ' updated.' : ' added.'))
-    await loadDepartments()
-    renderSettings()
-  } catch(e) { showToast('error','Error', e.message) }
-}
+// saveDept(deptId) is defined above in Department Modal section
 
 // ─────────────────────────────
 // LOCATIONS SETTINGS
