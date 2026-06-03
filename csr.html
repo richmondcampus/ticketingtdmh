@@ -6128,16 +6128,17 @@ async function saveUser() {
       await SB.from('users').update(payload).eq('id', userId)
       showToast('success','Updated', name + ' updated.')
     } else {
-      // Create via edge function (handles auth creation)
-      // Admin key is stored in settings — no prompt needed for admins
-      const { data: keySetting } = await SB.from('settings')
-        .select('value').eq('key','admin_provision_key').single()
-      const adminKey = keySetting?.value || 'tdmh-admin-2026'
+      // Create via edge function — auth verified server-side via JWT
+      const { data: { session } } = await SB.auth.getSession()
+      if (!session) throw new Error('No active session')
 
       const res = await fetch(SUPA_URL + '/functions/v1/create-user', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, password, admin_key: adminKey, employee_no: empNo, full_name: name })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session.access_token
+        },
+        body: JSON.stringify({ ...payload, password, employee_no: empNo, full_name: name })
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error || 'Failed to create user')
