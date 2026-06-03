@@ -1826,7 +1826,7 @@ function renderNewRequestForm(reqType) {
   html += '<div class="field"><label>Items Requested</label>'
   html += '<div class="items-table-wrap">'
   html += '<table class="items-table"><thead><tr>'
-  html += '<th style="width:30%">Item Name</th><th style="width:20%">Description</th><th style="width:8%">Qty</th><th style="width:8%">Unit</th><th style="width:10%">Est. Cost</th><th style="width:15%">Category</th><th style="width:5%"></th>'
+  html += '<th style="width:28%">Item Name</th><th style="width:18%">Description</th><th style="width:7%">Qty</th><th style="width:7%">Unit</th><th style="width:9%">Est. Cost</th><th style="width:13%">Category</th><th style="width:13%">Photo</th><th style="width:5%"></th>'
   html += '</tr></thead><tbody id="itemsBody">'
   html += buildItemRows()
   html += '</tbody></table></div>'
@@ -1852,47 +1852,12 @@ function renderNewRequestForm(reqType) {
     html += '📋 Above auto-approval threshold — will require department head approval.</div>'
   }
 
-  // Image attachment — supply requests only
-  if (['supply','purchase'].includes(reqType)) {
-    html += '<div class="field" style="margin-top:8px;">'
-    html += '<label>Attach Image <span style="font-size:11px;font-weight:400;color:var(--txt3);">(optional — photo of item needed, current condition, etc.)</span></label>'
-    html += '<div id="imageUploadWrap" style="border:2px dashed var(--bdr2);border-radius:10px;padding:16px;text-align:center;cursor:pointer;background:var(--surf2);" onclick="document.getElementById(\'f_image\').click()">'
-    html += '<div style="font-size:24px;margin-bottom:6px;">📷</div>'
-    html += '<div style="font-size:12px;color:var(--txt2);">Click to select image or drag & drop</div>'
-    html += '<div style="font-size:11px;color:var(--txt3);margin-top:3px;">JPG, PNG, WEBP — max 5MB</div>'
-    html += '</div>'
-    html += '<input type="file" id="f_image" accept="image/*" style="display:none;" onchange="previewRequestImage(this)">'
-    html += '<div id="imagePreviewWrap" style="display:none;margin-top:10px;position:relative;display:none;">'
-    html += '<img id="imagePreview" src="" style="max-width:100%;max-height:200px;object-fit:contain;border-radius:10px;border:1px solid var(--bdr2);">'
-    html += '<button onclick="removeRequestImage()" style="position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;border:none;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>'
-    html += '</div>'
-    html += '</div>'
-  }
-
   document.getElementById('newRequestBody').innerHTML = html
   // Wire up live cost estimate
   setTimeout(() => {
     document.querySelectorAll('.item-qty,.item-cost').forEach(el => {
       el.addEventListener('input', updateAutoApproveHint)
     })
-    // Image drag & drop
-    const wrap = document.getElementById('imageUploadWrap')
-    if (wrap) {
-      wrap.addEventListener('dragover', e => { e.preventDefault(); wrap.style.borderColor = 'var(--accent)' })
-      wrap.addEventListener('dragleave', () => { wrap.style.borderColor = 'var(--bdr2)' })
-      wrap.addEventListener('drop', e => {
-        e.preventDefault()
-        wrap.style.borderColor = 'var(--bdr2)'
-        const file = e.dataTransfer.files[0]
-        if (file && file.type.startsWith('image/')) {
-          const input = document.getElementById('f_image')
-          const dt = new DataTransfer()
-          dt.items.add(file)
-          input.files = dt.files
-          previewRequestImage(input)
-        }
-      })
-    }
   }, 200)
 }
 
@@ -1947,39 +1912,16 @@ async function updateAutoApproveHint() {
 
 // ─── Image upload helpers ───
 function previewRequestImage(input) {
-  const file = input.files[0]
-  if (!file) return
-  if (file.size > 5 * 1024 * 1024) { showToast('error','Too Large','Image must be under 5MB.'); input.value = ''; return }
-  const url = URL.createObjectURL(file)
-  const preview = document.getElementById('imagePreview')
-  const wrap = document.getElementById('imagePreviewWrap')
-  const uploadWrap = document.getElementById('imageUploadWrap')
-  if (preview) preview.src = url
-  if (wrap) wrap.style.display = 'block'
-  if (uploadWrap) uploadWrap.style.display = 'none'
+  // Legacy — no longer used (image upload is now per-item via attachItemImage)
 }
 
 function removeRequestImage() {
-  const input = document.getElementById('f_image')
-  const preview = document.getElementById('imagePreview')
-  const wrap = document.getElementById('imagePreviewWrap')
-  const uploadWrap = document.getElementById('imageUploadWrap')
-  if (input) input.value = ''
-  if (preview) preview.src = ''
-  if (wrap) wrap.style.display = 'none'
-  if (uploadWrap) uploadWrap.style.display = ''
+  // Legacy — no longer used (image upload is now per-item)
 }
 
 async function uploadRequestImage(requestNo) {
-  const input = document.getElementById('f_image')
-  if (!input || !input.files[0]) return null
-  const file = input.files[0]
-  const ext = file.name.split('.').pop()
-  const path = 'csr-requests/' + requestNo + '-' + Date.now() + '.' + ext
-  const { data, error } = await SB.storage.from('asset-photos').upload(path, file, { contentType: file.type, upsert: false })
-  if (error) { console.warn('Image upload failed:', error.message); return null }
-  const { data: urlData } = SB.storage.from('asset-photos').getPublicUrl(path)
-  return urlData.publicUrl
+  // Legacy — kept for any direct attachment_url save
+  return null
 }
 
 function switchReqType(t) {
@@ -2167,14 +2109,61 @@ function buildItemRows() {
       html += '<option value="' + c + '"' + (row.category===c?' selected':'') + '>' + c + '</option>'
     })
     html += '</select></td>'
+
+    // Per-item image cell
+    html += '<td style="text-align:center;padding:4px 6px;">'
+    if (row.image_preview) {
+      // Has preview — show thumbnail + remove button
+      html += '<div style="position:relative;display:inline-block;">'
+      html += '<img src="' + row.image_preview + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--bdr2);display:block;cursor:pointer;" onclick="viewItemImage(\'' + row.image_preview + '\')" title="Click to enlarge">'
+      html += '<button onclick="removeItemImage(' + row.id + ')" style="position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:var(--red);color:#fff;border:none;cursor:pointer;font-size:9px;padding:0;line-height:16px;text-align:center;">✕</button>'
+      html += '</div>'
+    } else {
+      // No image — show upload button
+      html += '<label style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px dashed var(--bdr2);background:var(--surf2);" title="Attach image for this item">'
+      html += '📷'
+      html += '<input type="file" accept="image/*" style="display:none;" onchange="attachItemImage(' + row.id + ',this)">'
+      html += '</label>'
+    }
+    html += '</td>'
+
     html += '<td><button class="remove-row" onclick="removeItemRow(' + row.id + ')" ' + (state.itemRows.length<=1?'disabled':'') + '>✕</button></td>'
     html += '</tr>'
   })
   return html
 }
 
+function attachItemImage(rowId, input) {
+  const file = input.files[0]
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) { showToast('error','Too Large','Image must be under 5MB.'); return }
+  const row = state.itemRows.find(r => r.id === rowId)
+  if (!row) return
+  row.image_file = file
+  row.image_preview = URL.createObjectURL(file)
+  document.getElementById('itemsBody').innerHTML = buildItemRows()
+}
+
+function removeItemImage(rowId) {
+  const row = state.itemRows.find(r => r.id === rowId)
+  if (!row) return
+  row.image_file = null
+  row.image_preview = null
+  document.getElementById('itemsBody').innerHTML = buildItemRows()
+}
+
+function viewItemImage(src) {
+  // Show full-size in confirm modal
+  document.getElementById('confirmTitle').textContent = '🖼️ Item Image'
+  document.getElementById('confirmMsg').innerHTML = '<img src="' + src + '" style="max-width:100%;border-radius:10px;">'
+  document.getElementById('confirmOkBtn').style.display = 'none'
+  document.querySelector('#confirmModal .modal-footer .btn-ghost').textContent = 'Close'
+  openModal('confirmModal')
+  setTimeout(() => { document.getElementById('confirmOkBtn').style.display = '' }, 100)
+}
+
 function addItemRow() {
-  state.itemRows.push({ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'consumable' })
+  state.itemRows.push({ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'consumable', image_file:null, image_preview:null })
   document.getElementById('itemsBody').innerHTML = buildItemRows()
 }
 
@@ -2275,7 +2264,25 @@ async function saveRequest(action) {
         estimated_cost: Number(item.estimated_cost) || 0,
         category: item.category
       }))
-      await SB.from('request_items').insert(itemsPayload)
+      const { data: insertedItems } = await SB.from('request_items').insert(itemsPayload).select()
+
+      // Upload per-item images
+      if (insertedItems) {
+        for (let i = 0; i < validItems.length; i++) {
+          const itemRow = validItems[i]
+          const insertedItem = insertedItems[i]
+          if (itemRow.image_file && insertedItem) {
+            const ext = itemRow.image_file.name.split('.').pop()
+            const path = 'csr-items/' + req.request_no + '-item-' + (i+1) + '-' + Date.now() + '.' + ext
+            const { error: upErr } = await SB.storage.from('asset-photos')
+              .upload(path, itemRow.image_file, { contentType: itemRow.image_file.type, upsert: false })
+            if (!upErr) {
+              const { data: urlData } = SB.storage.from('asset-photos').getPublicUrl(path)
+              await SB.from('request_items').update({ image_url: urlData.publicUrl }).eq('id', insertedItem.id)
+            }
+          }
+        }
+      }
     }
 
     // DISPOSAL ONLY — generate disposal certificate automatically
@@ -5059,7 +5066,7 @@ async function renderDerp() {
   if (['requester','dept_head','supply_officer','admin'].includes(role)) {
     // DERP category buttons with tooltips
     const derpTooltipStyle = 'position:relative;display:inline-block;'
-    const tooltipStyle = 'visibility:hidden;opacity:0;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--surf1);border:1px solid var(--bdr2);border-radius:10px;padding:10px 14px;width:260px;z-index:100;box-shadow:var(--shadow2);transition:opacity .15s,visibility .15s;pointer-events:none;text-align:left;'
+    const tooltipStyle = 'visibility:hidden;opacity:0;position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--surf1);border:1px solid var(--bdr2);border-radius:10px;padding:10px 14px;width:260px;z-index:100;box-shadow:var(--shadow2);transition:opacity .15s,visibility .15s;pointer-events:none;text-align:left;'
     const tooltipShowStyle = 'visibility:visible;opacity:1;'
 
     Object.entries(DERP_CATEGORIES).forEach(([key, cat]) => {
