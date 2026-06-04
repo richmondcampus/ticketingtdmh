@@ -325,7 +325,7 @@ tr:hover td{background:var(--surf2);}
 .items-table-wrap{border:1px solid var(--bdr2);border-radius:10px;overflow:hidden;margin-bottom:10px;}
 .items-table{width:100%;border-collapse:collapse;}
 .items-table th{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;padding:8px 10px;background:var(--surf2);border-bottom:1px solid var(--bdr);}
-.items-table td{padding:6px 8px;border-bottom:1px solid var(--bdr);}
+.items-table td{padding:3px 4px;border-bottom:1px solid var(--bdr);}.items-table td input,.items-table td select{font-size:12px;padding:4px 5px;}.items-table td input[type="number"]{text-align:right;}
 .items-table tr:last-child td{border-bottom:none;}
 .items-table input,.items-table select{
   width:100%;padding:5px 8px;background:transparent;
@@ -1863,7 +1863,7 @@ function renderNewRequestForm(reqType) {
   html += '<div class="field"><label>Items Requested</label>'
   html += '<div class="items-table-wrap">'
   html += '<table class="items-table"><thead><tr>'
-  html += '<th style="width:28%">Item Name</th><th style="width:18%">Description</th><th style="width:7%">Qty</th><th style="width:7%">Unit</th><th style="width:9%">Est. Cost</th><th style="width:13%">Category</th><th style="width:13%">Photo</th><th style="width:5%"></th>'
+  html += '<th style="width:28%">Item Name</th><th style="width:15%">Description</th><th style="width:5%">Qty</th><th style="width:8%">Unit</th><th style="width:10%">Cost (₱)</th><th style="width:10%">Category</th><th style="width:8%">Photo</th><th style="width:4%"></th>'
   html += '</tr></thead><tbody id="itemsBody">'
   html += buildItemRows()
   html += '</tbody></table></div>'
@@ -2145,8 +2145,8 @@ function buildItemRows() {
     html += ' oninput="updateItemRow(' + row.id + ',\'item_name\',this.value);scheduleSmartPrice(' + row.id + ',this.value)"></td>'
     html += '<td><input type="text" placeholder="Description" value="' + (row.item_description||'') + '" oninput="updateItemRow(' + row.id + ',\'item_description\',this.value)"></td>'
     html += '<td><input type="number" min="1" value="' + (row.quantity||1) + '" oninput="updateItemRow(' + row.id + ',\'quantity\',this.value);recomputeItemTotal(' + row.id + ')"></td>'
-    html += '<td><select onchange="updateItemRow(' + row.id + ',\'unit\',this.value);clearItemPrice(' + row.id + ',this.value)">'
-    ;['pcs','box','ream','liters','sets','kg','meters','rolls','packs'].forEach(u => {
+    html += '<td><select onchange="updateItemRow(' + row.id + ',\'unit\',this.value);clearItemPrice(' + row.id + ',this.value)" style="font-size:12px;padding:4px 2px;">'
+    ;['pcs','box','ream','liters','sets','kg','meters','rolls','packs','bottles'].forEach(u => {
       html += '<option value="' + u + '"' + (row.unit===u?' selected':'') + '>' + u + '</option>'
     })
     html += '</select></td>'
@@ -2155,17 +2155,18 @@ function buildItemRows() {
     const total = unitPrice * (Number(row.quantity) || 1)
     html += '<td style="position:relative;">'
     html += '<input type="number" min="0" placeholder="0" value="' + (total || '') + '"'
-    html += ' style="' + costStyle + '" title="' + (costTitle || 'Enter estimated cost') + '"'
+    html += ' style="' + costStyle + ';font-size:12px;" title="' + (costTitle || 'Enter estimated cost') + '"'
     html += ' oninput="onCostManualEdit(' + row.id + ',this.value)">'
     if (row.price_loading) {
-      html += '<span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:11px;">⏳</span>'
+      html += '<span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:10px;">⏳</span>'
     } else if (sourceIcon && unitPrice > 0) {
-      html += '<span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:12px;" title="' + costTitle + '">' + sourceIcon + '</span>'
+      html += '<span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:11px;" title="' + costTitle + '">' + sourceIcon + '</span>'
     }
     html += '</td>'
-    html += '<td><select onchange="updateItemRow(' + row.id + ',\'category\',this.value)">'
-    ;['consumable','equipment','it_hardware','medical','office','maintenance_material'].forEach(c => {
-      html += '<option value="' + c + '"' + (row.category===c?' selected':'') + '>' + c + '</option>'
+    html += '<td><select onchange="updateItemRow(' + row.id + ',\'category\',this.value)" style="font-size:12px;padding:4px 2px;">'
+    const catLabels = { consumable:'Consumable', equipment:'Equipment', it_hardware:'IT', medical:'Medical', office:'Office', maintenance_material:'Maint.' }
+    Object.entries(catLabels).forEach(([v, l]) => {
+      html += '<option value="' + v + '"' + (row.category===v?' selected':'') + '>' + l + '</option>'
     })
     html += '</select></td>'
     // Per-item image cell
@@ -2234,38 +2235,38 @@ function scheduleSmartPrice(rowId, itemName) {
 
 async function fetchSmartPrice(rowId, itemName) {
   const row = state.itemRows.find(r => r.id === rowId)
-  if (!row || Number(row.estimated_cost) > 0) return // don\'t overwrite manual entry
+  if (!row || row.manually_edited) return
   row.price_loading = true
   document.getElementById('itemsBody').innerHTML = buildItemRows()
   try {
     const { data: { session } } = await SB.auth.getSession()
-    if (!session) return
+    if (!session) { row.price_loading = false; return }
     const res = await fetch(SUPA_URL + '/functions/v1/estimate-item-price', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
       body: JSON.stringify({ items: [{ item_name: itemName }] })
     })
     const data = await res.json()
+    // Extract result — AI returns key matching item_name (may vary slightly)
+    const results = data?.results || {}
+    const result = results[itemName] ||
+                   Object.values(results).find(v => v && v.price > 0)
+
+    const r = state.itemRows.find(r => r.id === rowId)
+    if (!r) return
+
     if (result && result.price > 0) {
-      const r = state.itemRows.find(r => r.id === rowId)
-      // Update if: no cost yet, OR cost came from AI (not manually typed)
-      if (r && (!Number(r.estimated_cost) || r.price_source === 'ai_estimate' || r.price_source === null && !r.manually_edited)) {
-        const qty = Number(r.quantity) || 1
-        r.unit_price = result.price
-        r.estimated_cost = result.price * qty
-        r.price_source = result.source
-        r.price_loading = false
-        r.manually_edited = false
-        document.getElementById('itemsBody').innerHTML = buildItemRows()
-        updateAutoApproveHint()
-      } else {
-        const r2 = state.itemRows.find(r => r.id === rowId)
-        if (r2) { r2.price_loading = false; document.getElementById('itemsBody').innerHTML = buildItemRows() }
-      }
+      const qty = Number(r.quantity) || 1
+      r.unit_price = result.price
+      r.estimated_cost = result.price * qty
+      r.price_source = result.source
+      r.price_loading = false
+      r.manually_edited = false
     } else {
-      const r = state.itemRows.find(r => r.id === rowId)
-      if (r) { r.price_loading = false; document.getElementById('itemsBody').innerHTML = buildItemRows() }
+      r.price_loading = false
     }
+    document.getElementById('itemsBody').innerHTML = buildItemRows()
+    updateAutoApproveHint()
   } catch(e) {
     const r = state.itemRows.find(r => r.id === rowId)
     if (r) { r.price_loading = false; document.getElementById('itemsBody').innerHTML = buildItemRows() }
