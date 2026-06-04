@@ -2549,6 +2549,109 @@ async function submitRequest(id) {
   })
 }
 
+// ═══════════════════════════════════════════
+// PURCHASE ORDERS LIST
+// ═══════════════════════════════════════════
+async function renderPurchaseOrders() {
+  const content = document.getElementById('mainContent')
+  content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
+
+  const [posRes, reqsRes] = await Promise.all([
+    SB.from('purchase_orders').select('*').order('created_at', { ascending: false }),
+    SB.from('requests').select('id,request_no,purpose').eq('status','approved')
+  ])
+  poState.pos = posRes.data || []
+  const approvedReqs = reqsRes.data || []
+
+  let html = '<div class="page-header"><h2>🛒 Purchase Orders</h2>'
+  html += '<div style="display:flex;gap:8px;">'
+  if (approvedReqs.length > 0) {
+    html += '<button class="btn btn-primary" onclick="openNewPOModal(null)">＋ New PO</button>'
+  }
+  html += '</div></div>'
+
+  // Stats strip
+  const total = poState.pos.length
+  const draft = poState.pos.filter(p => p.status === 'draft').length
+  const sent = poState.pos.filter(p => p.status === 'sent').length
+  const delivered = poState.pos.filter(p => ['delivered','partial_delivery'].includes(p.status)).length
+  const issued = poState.pos.filter(p => p.status === 'issued').length
+  html += '<div class="stat-grid" style="margin-bottom:20px;">'
+  html += '<div class="stat-card"><div class="stat-label">📋 Total POs</div><div class="stat-value">' + total + '</div></div>'
+  html += '<div class="stat-card"><div class="stat-label">📝 Draft</div><div class="stat-value" style="color:var(--txt2);">' + draft + '</div></div>'
+  html += '<div class="stat-card"><div class="stat-label">📤 Sent</div><div class="stat-value" style="color:var(--accent);">' + sent + '</div></div>'
+  html += '<div class="stat-card"><div class="stat-label">📦 Delivered</div><div class="stat-value" style="color:var(--amber);">' + delivered + '</div></div>'
+  html += '<div class="stat-card"><div class="stat-label">✅ Issued</div><div class="stat-value" style="color:var(--green);">' + issued + '</div></div>'
+  html += '</div>'
+
+  if (poState.pos.length === 0) {
+    html += '<div class="empty-state"><div class="empty-icon">🛒</div><h3>No purchase orders yet</h3>'
+    html += '<p>Approved requests will appear here for PO creation.</p>'
+    if (approvedReqs.length > 0) {
+      html += '<button class="btn btn-primary" style="margin-top:12px;" onclick="openNewPOModal(null)">＋ Create First PO</button>'
+    }
+    html += '</div>'
+  } else {
+    // Filter bar
+    html += '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">'
+    ;['all','draft','sent','partial_delivery','delivered','issued','cancelled'].forEach(s => {
+      const cnt = s === 'all' ? poState.pos.length : poState.pos.filter(p => p.status === s).length
+      if (cnt === 0 && s !== 'all') return
+      const active = (poState.filterStatus || 'all') === s
+      html += '<button onclick="filterPOs(\'' + s + '\')" style="padding:5px 12px;border-radius:20px;border:1px solid ' + (active ? 'var(--accent)' : 'var(--bdr2)') + ';background:' + (active ? 'var(--accent-a)' : 'transparent') + ';color:' + (active ? 'var(--accent)' : 'var(--txt2)') + ';cursor:pointer;font-family:inherit;font-size:12px;">'
+      html += (s === 'all' ? 'All' : s.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase())) + ' (' + cnt + ')</button>'
+    })
+    html += '</div>'
+
+    const filtered = (poState.filterStatus && poState.filterStatus !== 'all')
+      ? poState.pos.filter(p => p.status === poState.filterStatus)
+      : poState.pos
+
+    // Table
+    html += '<div class="table-wrap"><table><thead><tr>'
+    html += '<th>PO Number</th><th>Supplier</th><th>Items</th><th>Total</th><th>Status</th><th>Expected</th><th>Created</th><th></th>'
+    html += '</tr></thead><tbody>'
+    for (const po of filtered) {
+      const statusColors = { draft:'var(--txt2)', sent:'var(--accent)', partial_delivery:'var(--amber)', delivered:'var(--green)', issued:'var(--green)', cancelled:'var(--red)' }
+      const statusLabels = { draft:'Draft', sent:'Sent', partial_delivery:'Partial', delivered:'Delivered', issued:'Issued', cancelled:'Cancelled' }
+      html += '<tr onclick="viewPO(\'' + po.id + '\')" style="cursor:pointer;">'
+      html += '<td class="td-mono">' + (po.po_number || '—') + '</td>'
+      html += '<td style="font-size:13px;">' + (po.supplier_name || '—') + '</td>'
+      html += '<td style="font-size:12px;color:var(--txt2);">' + (po.item_count || '—') + ' item(s)</td>'
+      html += '<td style="font-weight:600;">₱' + Number(po.total_amount || 0).toLocaleString() + '</td>'
+      html += '<td><span style="font-size:11px;padding:3px 9px;border-radius:20px;background:' + (statusColors[po.status] || 'var(--txt2)') + '18;color:' + (statusColors[po.status] || 'var(--txt2)') + ';">' + (statusLabels[po.status] || po.status) + '</span></td>'
+      html += '<td style="font-size:12px;color:var(--txt2);">' + (po.expected_delivery_date ? formatDate(po.expected_delivery_date).split(',')[0] : '—') + '</td>'
+      html += '<td style="font-size:12px;color:var(--txt2);">' + formatDate(po.created_at) + '</td>'
+      html += '<td><div style="display:flex;gap:4px;">'
+      if (po.status === 'draft') html += '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();sendPO(\'' + po.id + '\')">📤 Send</button>'
+      if (['sent','partial_delivery'].includes(po.status)) html += '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openReceiveDelivery(\'' + po.id + '\')">📦 Receive</button>'
+      html += '</div></td>'
+      html += '</tr>'
+    }
+    html += '</tbody></table></div>'
+
+    // Mobile cards
+    html += '<div class="mobile-cards">'
+    for (const po of filtered) {
+      html += '<div style="background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;padding:14px;cursor:pointer;margin-bottom:8px;" onclick="viewPO(\'' + po.id + '\')">'
+      html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;">'
+      html += '<span class="td-mono" style="font-size:11px;">' + (po.po_number || '—') + '</span>'
+      html += '<span style="font-size:11px;font-weight:600;">₱' + Number(po.total_amount || 0).toLocaleString() + '</span>'
+      html += '</div>'
+      html += '<div style="font-size:13px;font-weight:600;">' + (po.supplier_name || 'No supplier') + '</div>'
+      html += '<div style="font-size:12px;color:var(--txt2);margin-top:4px;">' + formatDate(po.created_at) + '</div>'
+      html += '</div>'
+    }
+    html += '</div>'
+  }
+  content.innerHTML = html
+}
+
+function filterPOs(status) {
+  poState.filterStatus = status
+  renderPurchaseOrders()
+}
+
 async function markForPO(id) {
   confirm2('Mark this request as For PO (Purchase Order)?', async () => {
     const { error } = await SB.from('requests').update({ status: 'for_po' }).eq('id', id)
