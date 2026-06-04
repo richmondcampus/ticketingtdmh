@@ -992,7 +992,7 @@ function renderSidebarNav() {
   const nav = document.getElementById('sidebarNav')
   const items = [
     { id:'dashboard', icon:'📊', label:'Dashboard', roles:['requester','dept_head','supply_officer','purchasing_officer','admin','viewer'] },
-    { id:'my_requests', icon:'📋', label:'My Requests', roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
+    { id:'my_requests', icon:'📋', label: state.user?.csr_role === 'dept_head' ? 'Dept Requests' : 'My Requests', roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
     { id:'approval_queue', icon:'✅', label:'Approval Queue', roles:['dept_head','supply_officer','purchasing_officer','admin'], badge:'approval_count' },
     { id:'all_requests', icon:'🗂', label:'All Requests', roles:['supply_officer','admin'] },
     { id:'purchase_orders', icon:'🛒', label:'Purchase Orders', roles:['supply_officer','admin'] },
@@ -1172,7 +1172,11 @@ async function renderDashboard() {
   const content = document.getElementById('mainContent')
   await loadStats()
   const role = state.user.csr_role
-  const requests = await loadRequests(role === 'admin' || role === 'supply_officer' ? {} : { requested_by: state.user.id })
+  const requests = await loadRequests(
+    role === 'admin' || role === 'supply_officer' ? {} :
+    role === 'dept_head' ? { dept_id: state.user.dept_id } :
+    { requested_by: state.user.id }
+  )
   state.requests = requests
   state._dashView = state._dashView || 'list' // persist view toggle
 
@@ -1353,11 +1357,26 @@ function statCard(icon, label, value, sub, valClass) {
 async function renderMyRequests() {
   const content = document.getElementById('mainContent')
   const role = state.user.csr_role
-  const filter = ['admin','supply_officer'].includes(role) ? {} : { requested_by: state.user.id }
-  const requests = await loadRequests(filter)
+
+  let requests, title, subtitle
+  if (['admin','supply_officer'].includes(role)) {
+    requests = await loadRequests({})
+    title = 'All Requests'
+    subtitle = 'All requests in the system'
+  } else if (role === 'dept_head') {
+    // Dept head sees ALL requests from their department for monitoring
+    requests = await loadRequests({ dept_id: state.user.dept_id })
+    const dept = state.departments.find(d => d.id === state.user.dept_id)
+    title = '🏢 ' + (dept?.dept_name || 'Department') + ' Requests'
+    subtitle = 'All requests filed by your department — for monitoring and control'
+  } else {
+    requests = await loadRequests({ requested_by: state.user.id })
+    title = 'My Requests'
+    subtitle = 'Your submitted requests'
+  }
+
   state.requests = requests
-  renderRequestsTable(content, requests, 'My Requests',
-    ['admin','supply_officer'].includes(role) ? 'All requests in the system' : 'Your submitted requests')
+  renderRequestsTable(content, requests, title, subtitle)
 }
 
 async function renderAllRequests() {
@@ -2373,7 +2392,20 @@ async function saveRequest(action) {
       })
       if (autoApprove) {
         payload.status = 'approved'
-        payload.current_approval_level = 99 // marks as fully approved
+        payload.current_approval_level = 99
+      } else {
+        // If requester IS the dept head — skip Level 1, go straight to Supply Officer
+        const { data: deptInfo } = await SB.from('departments')
+          .select('dept_head_id, dept_oic_id')
+          .eq('id', payload.dept_id)
+          .maybeSingle()
+        const isOwnDeptHead = deptInfo && (
+          deptInfo.dept_head_id === state.user.id ||
+          deptInfo.dept_oic_id === state.user.id
+        )
+        if (isOwnDeptHead) {
+          payload.current_approval_level = 2 // skip to Supply Officer
+        }
       }
     }
 
@@ -2516,10 +2548,11 @@ async function saveRequest(action) {
 
     if (action === 'submit' && derpAction !== 'disposal_only' && derpAction !== 'repair_only') {
       if (wasAutoApproved) {
-        // Auto-approved — notify Supply Officer to decide: issue from stock or create PO
         await notifyApprovers({ ...req, dept_id: payload.dept_id }, 2)
+      } else if (payload.current_approval_level === 2) {
+        // Dept head filed own request — notify Supply Officer directly
+        await notifyApprovers(req, 2)
       } else {
-        // Normal flow — notify Dept Head first
         await notifyApprovers(req, 1)
       }
     }
