@@ -4403,63 +4403,242 @@ async function viewIssuance(id) {
   const { data: iss } = await SB.from('issuances').select('*').eq('id', id).single()
   if (!iss) return
   const { data: items } = await SB.from('issuance_items').select('*').eq('issuance_id', id)
-  const receiver = state.users.find(u => u.id === iss.received_by)
+  const req = iss.request_id ? state.requests?.find(r => r.id === iss.request_id) : null
+  const reqData = req || (await SB.from('requests').select('*').eq('id', iss.request_id).maybeSingle()).data
   const issuedBy = state.users.find(u => u.id === iss.issued_by)
+  const dept = reqData ? state.departments.find(d => d.id === reqData.dept_id) : null
   const role = state.user.csr_role
+  const isConfirmed = !!(iss.confirmed_at || iss.online_confirmed_at)
 
   document.getElementById('detailModalTitle').textContent = iss.issuance_no
 
   let body = ''
 
-  // Status banner
-  if (iss.confirmed_at) {
-    body += '<div style="background:var(--green-a);border:1px solid var(--green);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">'
-    body += '<span style="font-size:20px;">✅</span>'
-    body += '<div><div style="font-weight:600;color:var(--green);">Confirmed Receipt</div>'
-    body += '<div style="font-size:12px;color:var(--txt2);">By ' + (iss.confirmed_by_name || receiver?.full_name || '—') + ' · ' + formatDate(iss.confirmed_at) + ' · via ' + (iss.confirmation_method||'—').replace('_',' ') + '</div></div>'
-    body += '</div>'
-  } else if (iss.confirm_token) {
+  // ── Status banner ──
+  if (isConfirmed) {
+    const method = iss.confirmation_method || (iss.online_confirmed_at ? 'online_link' : 'photo')
+    const confirmedAt = iss.confirmed_at || iss.online_confirmed_at
+    const methodLabel = method === 'photo' ? '📷 Photo Proof' : method === 'online_link' ? '🔗 Online Confirmation' : '✅ Confirmed'
+    body += '<div style="background:var(--green-a);border:1px solid var(--green);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">'
+    body += '<span style="font-size:22px;">✅</span>'
+    body += '<div>'
+    body += '<div style="font-weight:600;color:var(--green);">Receipt Confirmed</div>'
+    body += '<div style="font-size:12px;color:var(--txt2);">' + methodLabel + ' · ' + formatDate(confirmedAt) + '</div>'
+    if (iss.receiver_name) body += '<div style="font-size:12px;color:var(--txt2);">Received by: <strong>' + iss.receiver_name + '</strong></div>'
+    body += '</div></div>'
+    // Show photo proof if available
+    if (iss.receipt_photo_url) {
+      body += '<div style="margin-bottom:16px;">'
+      body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">📷 Receipt Photo Proof</div>'
+      body += '<img src="' + iss.receipt_photo_url + '" style="max-width:100%;border-radius:10px;border:1px solid var(--bdr2);cursor:pointer;" onclick="window.open(\'' + iss.receipt_photo_url + '\',\'_blank\')" title="Click to view full size">'
+      body += '</div>'
+    }
+  } else {
     body += '<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:16px;">'
-    body += '<div style="font-weight:600;color:var(--amber);margin-bottom:4px;">⏳ Awaiting Receiver Confirmation</div>'
-    body += '<div style="font-size:12px;color:var(--txt2);">SMS sent to ' + (iss.sms_sent_to || '—') + ' · ' + (iss.sms_sent_at ? formatDate(iss.sms_sent_at) : '—') + '</div>'
-    body += '<div style="font-size:11px;color:var(--txt3);margin-top:4px;font-family:\'JetBrains Mono\',monospace;">Link: https://ittdmh.pro/csr?confirm=' + iss.confirm_token + '</div>'
+    body += '<div style="font-weight:600;color:var(--amber);">⏳ Awaiting Receipt Confirmation</div>'
+    body += '<div style="font-size:12px;color:var(--txt2);margin-top:4px;">Items have been prepared. Confirm receipt using one of the options below.</div>'
     body += '</div>'
   }
 
-  // Info
+  // ── Info row ──
   body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">'
-  body += infoField('Receiver', receiver ? receiver.full_name : '—')
-  body += infoField('Issued By', issuedBy ? issuedBy.full_name : '—')
-  body += infoField('Scenario', iss.scenario === 'from_stock' ? '📦 From Stock' : '🚚 After PO')
+  body += infoField('Request No.', reqData?.request_no || '—')
+  body += infoField('Department', dept?.dept_name || '—')
+  body += infoField('Issued By', issuedBy?.full_name || '—')
   body += infoField('Date Issued', formatDate(iss.issued_at))
+  body += infoField('Scenario', iss.scenario === 'from_stock' ? '📦 From Stock' : '🚚 After PO')
+  body += infoField('Purpose', reqData?.purpose || '—')
   body += '</div>'
 
-  // Items
-  body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Items Issued</div>'
-  body += '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item</th><th>Qty Issued</th><th>From Stock</th></tr></thead><tbody>'
-  ;(items||[]).forEach((item,i) => {
-    body += '<tr><td>' + (i+1) + '</td>'
-    body += '<td>' + (item.quantity_issued) + '</td>'
-    body += '<td>' + (item.from_stock ? '<span style="color:var(--green);font-size:12px;">✓ Yes</span>' : '—') + '</td></tr>'
-  })
-  body += '</tbody></table></div></div>'
+  // ── Items ──
+  if (items && items.length > 0) {
+    const reqItems = reqData ? (await SB.from('request_items').select('*').eq('request_id', reqData.id)).data || [] : []
+    body += '<div style="margin-bottom:16px;">'
+    body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Items Issued</div>'
+    body += '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Unit</th></tr></thead><tbody>'
+    items.forEach((item, i) => {
+      const ri = reqItems[i] || {}
+      body += '<tr><td>' + (i+1) + '</td>'
+      body += '<td>' + (ri.item_name || '—') + '</td>'
+      body += '<td>' + (item.quantity_issued || ri.quantity || '—') + '</td>'
+      body += '<td>' + (ri.unit || 'pcs') + '</td></tr>'
+    })
+    body += '</tbody></table></div></div>'
+  }
+
+  // ── Confirmation options (for supply officer, if not yet confirmed) ──
+  if (!isConfirmed && ['supply_officer','admin'].includes(role)) {
+    body += '<div style="border:1px solid var(--bdr2);border-radius:12px;overflow:hidden;margin-top:8px;">'
+    body += '<div style="padding:12px 16px;background:var(--surf2);font-size:12px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;">Confirm Receipt — Choose One</div>'
+
+    // Option 1: Photo
+    body += '<div style="padding:14px 16px;border-bottom:1px solid var(--bdr);">'
+    body += '<div style="display:flex;align-items:flex-start;gap:12px;">'
+    body += '<span style="font-size:24px;flex-shrink:0;">📷</span>'
+    body += '<div style="flex:1;">'
+    body += '<div style="font-size:13px;font-weight:600;margin-bottom:2px;">Take Photo with Receiver</div>'
+    body += '<div style="font-size:12px;color:var(--txt2);margin-bottom:10px;">Take a photo of the items together with the receiver as proof of receipt.</div>'
+    body += '<div style="display:flex;align-items:center;gap:8px;">'
+    body += '<input type="text" id="iss_receiver_name_photo" placeholder="Receiver\'s name *" style="flex:1;padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;">'
+    body += '</div>'
+    body += '<label style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:7px 14px;background:var(--accent-a);border:1px solid var(--accent-b);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--accent);">'
+    body += '📷 Take/Upload Photo'
+    body += '<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadReceiptPhoto(\'' + id + '\',this)">'
+    body += '</label>'
+    body += '<div id="issPhotoPreview_' + id + '" style="display:none;margin-top:8px;">'
+    body += '<img id="issPhotoImg_' + id + '" style="max-width:200px;max-height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--bdr2);">'
+    body += '<div style="margin-top:6px;display:flex;gap:6px;">'
+    body += '<button class="btn btn-success btn-sm" onclick="confirmWithPhoto(\'' + id + '\')">✅ Confirm with this photo</button>'
+    body += '<button class="btn btn-ghost btn-sm" onclick="clearIssPhoto(\'' + id + '\')">✕ Retake</button>'
+    body += '</div></div>'
+    body += '</div></div></div>'
+
+    // Option 2: Online Link
+    body += '<div style="padding:14px 16px;">'
+    body += '<div style="display:flex;align-items:flex-start;gap:12px;">'
+    body += '<span style="font-size:24px;flex-shrink:0;">🔗</span>'
+    body += '<div style="flex:1;">'
+    body += '<div style="font-size:13px;font-weight:600;margin-bottom:2px;">Send Confirmation Link</div>'
+    body += '<div style="font-size:12px;color:var(--txt2);margin-bottom:10px;">Send a link to the department — receiver clicks "✅ I Confirm Receipt".</div>'
+    if (iss.email_sent) {
+      body += '<div style="font-size:12px;color:var(--green);">✉️ Link already sent ' + (iss.email_sent_at ? '· ' + formatDate(iss.email_sent_at) : '') + '</div>'
+      body += '<button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="sendConfirmLink(\'' + id + '\',true)">Resend Link</button>'
+    } else {
+      body += '<button class="btn btn-ghost btn-sm" onclick="sendConfirmLink(\'' + id + '\',false)">✉️ Send Confirmation Link</button>'
+    }
+    body += '</div></div></div>'
+    body += '</div>'
+  }
 
   if (iss.notes) {
-    body += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;padding:10px 14px;font-size:13px;color:var(--txt2);">📝 ' + iss.notes + '</div>'
+    body += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:9px;padding:10px 14px;font-size:13px;color:var(--txt2);margin-top:12px;">📝 ' + iss.notes + '</div>'
   }
 
   document.getElementById('requestDetailBody').innerHTML = body
-
-  // Footer
-  let footer = '<button class="btn btn-ghost" onclick="closeModal(\'requestDetailModal\')">Close</button>'
-  if (!iss.confirmed_at && ['supply_officer','admin'].includes(role)) {
-    if (iss.sms_sent_to) {
-      footer += '<button class="btn btn-ghost btn-sm" onclick="resendIssuanceSMS(\'' + iss.id + '\')">📱 Resend SMS</button>'
-    }
-    footer += '<button class="btn btn-secondary" onclick="manualOverrideIssuance(\'' + iss.id + '\')">Manual Override</button>'
-  }
-  document.getElementById('requestDetailFooter').innerHTML = footer
+  document.getElementById('requestDetailFooter').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'requestDetailModal\')">Close</button>'
   openModal('requestDetailModal')
+}
+
+// ─── Photo upload & confirm ───
+let _issPhotoFile = null
+
+function uploadReceiptPhoto(issId, input) {
+  const file = input.files[0]
+  if (!file) return
+  if (file.size > 10 * 1024 * 1024) { showToast('error','Too Large','Max 10MB for photo.'); return }
+  _issPhotoFile = file
+  const url = URL.createObjectURL(file)
+  document.getElementById('issPhotoImg_' + issId).src = url
+  document.getElementById('issPhotoPreview_' + issId).style.display = 'block'
+}
+
+function clearIssPhoto(issId) {
+  _issPhotoFile = null
+  document.getElementById('issPhotoImg_' + issId).src = ''
+  document.getElementById('issPhotoPreview_' + issId).style.display = 'none'
+}
+
+async function confirmWithPhoto(issId) {
+  if (!_issPhotoFile) { showToast('error','No Photo','Please take or select a photo first.'); return }
+  const receiverName = document.getElementById('iss_receiver_name_photo')?.value.trim()
+  if (!receiverName) { showToast('error','Required','Please enter the receiver\'s name.'); return }
+
+  showToast('info','Uploading...','Saving photo proof...')
+  try {
+    const ext = _issPhotoFile.name.split('.').pop() || 'jpg'
+    const path = 'csr-issuances/' + issId + '-' + Date.now() + '.' + ext
+    const { error: upErr } = await SB.storage.from('asset-photos')
+      .upload(path, _issPhotoFile, { contentType: _issPhotoFile.type, upsert: false })
+    if (upErr) throw upErr
+
+    const { data: urlData } = SB.storage.from('asset-photos').getPublicUrl(path)
+
+    await SB.from('issuances').update({
+      confirmed_at: new Date().toISOString(),
+      confirmed_by_name: state.user.full_name,
+      confirmation_method: 'photo',
+      receipt_photo_url: urlData.publicUrl,
+      receiver_name: receiverName
+    }).eq('id', issId)
+
+    _issPhotoFile = null
+    showToast('success','Confirmed!','Receipt confirmed with photo proof.')
+    closeModal('requestDetailModal')
+    renderIssuance()
+  } catch(e) { showToast('error','Error', e.message) }
+}
+
+// ─── Online confirmation link ───
+async function sendConfirmLink(issId, resend = false) {
+  try {
+    // Generate unique token
+    const token = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2)
+    const confirmUrl = 'https://ittdmh.pro/csr?confirm=' + token
+
+    // Get issuance + request info
+    const { data: iss } = await SB.from('issuances').select('*').eq('id', issId).single()
+    const reqData = iss?.request_id ? (await SB.from('requests').select('*').eq('id', iss.request_id).single()).data : null
+    const dept = reqData ? state.departments.find(d => d.id === reqData.dept_id) : null
+    const deptHead = dept?.dept_head_id ? state.users.find(u => u.id === dept.dept_head_id) : null
+    const deptUser = reqData ? state.users.find(u => u.id === reqData.requested_by) : null
+
+    const emails = []
+    if (deptUser?.email) emails.push(deptUser.email)
+    if (deptHead?.email && deptHead.email !== deptUser?.email) emails.push(deptHead.email)
+
+    if (emails.length === 0) {
+      showToast('error','No Email','No email address on file for this department.')
+      return
+    }
+
+    // Save token to DB
+    await SB.from('issuances').update({ online_confirm_token: token }).eq('id', issId)
+
+    // Build email
+    const { data: issItems } = await SB.from('issuance_items').select('*').eq('issuance_id', issId)
+    const reqItemsRes = reqData ? await SB.from('request_items').select('*').eq('request_id', reqData.id) : { data: [] }
+    const reqItems = reqItemsRes.data || []
+
+    const itemRows = (issItems || []).map((item, i) => {
+      const ri = reqItems[i] || {}
+      return '<tr><td style="padding:6px 12px;border-bottom:1px solid #eee;">' + (i+1) + '</td>'
+        + '<td style="padding:6px 12px;border-bottom:1px solid #eee;">' + (ri.item_name || '—') + '</td>'
+        + '<td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:center;">' + (item.quantity_issued || ri.quantity || '—') + ' ' + (ri.unit || 'pcs') + '</td></tr>'
+    }).join('')
+
+    const html = '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;">'
+      + '<div style="background:#0f3460;padding:20px 24px;border-radius:8px 8px 0 0;">'
+      + '<h2 style="color:#fff;margin:0;font-size:18px;">📦 Confirm Your Receipt of Items</h2>'
+      + '<p style="color:rgba(255,255,255,.8);margin:4px 0 0;font-size:13px;">TDMH Central Supply Room</p>'
+      + '</div>'
+      + '<div style="background:#f8f9fa;padding:20px 24px;border:1px solid #e0e0e0;border-top:none;">'
+      + '<p>Dear <strong>' + (dept?.dept_name || 'Department') + '</strong>,</p>'
+      + '<p>The following items from your supply request have been prepared for pickup.</p>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;background:#fff;border:1px solid #ddd;">'
+      + '<thead><tr style="background:#e9ecef;"><th style="padding:8px 12px;text-align:left;">#</th><th style="padding:8px 12px;text-align:left;">Item</th><th style="padding:8px 12px;text-align:center;">Qty</th></tr></thead>'
+      + '<tbody>' + itemRows + '</tbody></table>'
+      + '<div style="text-align:center;margin:24px 0;">'
+      + '<a href="' + confirmUrl + '" style="display:inline-block;background:#16a766;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:700;">✅ I Confirm Receipt of Items</a>'
+      + '</div>'
+      + '<p style="font-size:12px;color:#999;text-align:center;">Issuance No: ' + (iss?.issuance_no || issId) + ' · ' + new Date().toLocaleDateString('en-PH', { dateStyle: 'long' }) + '</p>'
+      + '<p style="font-size:11px;color:#bbb;text-align:center;">If you did not receive these items, please contact the supply room immediately.</p>'
+      + '</div></div>'
+
+    for (const email of emails) {
+      await SB.functions.invoke('send-email', {
+        body: { to: email, subject: '📦 Please Confirm Receipt — ' + (iss?.issuance_no || issId), html }
+      })
+    }
+
+    await SB.from('issuances').update({
+      email_sent: true,
+      email_sent_at: new Date().toISOString()
+    }).eq('id', issId)
+
+    showToast('success', resend ? 'Resent!' : 'Sent!', 'Confirmation link sent to ' + emails.join(', '))
+    viewIssuance(issId) // refresh view
+  } catch(e) { showToast('error','Error', e.message); console.error(e) }
 }
 
 // ─────────────────────────────
@@ -4481,19 +4660,20 @@ async function checkConfirmToken() {
 
   // Fetch issuance by token
   const { data: iss, error } = await SB.from('issuances')
-    .select('*').eq('confirm_token', token).single()
+    .select('*').eq('online_confirm_token', token).maybeSingle()
 
   if (error || !iss) {
     confirmDiv.innerHTML = '<div style="font-size:48px;margin-bottom:16px;">❌</div><h2 style="font-family:\'Bricolage Grotesque\',sans-serif;margin-bottom:8px;">Invalid Link</h2><p style="color:var(--txt2);">This confirmation link is invalid or has expired.</p>'
     return true
   }
 
-  if (iss.confirmed_at) {
+  if (iss.confirmed_at || iss.online_confirmed_at) {
     confirmDiv.innerHTML = '<div style="font-size:48px;margin-bottom:16px;">✅</div><h2 style="font-family:\'Bricolage Grotesque\',sans-serif;margin-bottom:8px;">Already Confirmed</h2><p style="color:var(--txt2);">This issuance was already confirmed on ' + formatDate(iss.confirmed_at) + '.</p>'
     return true
   }
 
-  if (new Date(iss.confirm_token_expires_at) < new Date()) {
+  // Token does not expire — removed
+  if (false) {
     confirmDiv.innerHTML = '<div style="font-size:48px;margin-bottom:16px;">⏰</div><h2 style="font-family:\'Bricolage Grotesque\',sans-serif;margin-bottom:8px;">Link Expired</h2><p style="color:var(--txt2);">This confirmation link has expired. Please contact the Supply Room.</p>'
     return true
   }
@@ -4534,8 +4714,9 @@ async function submitConfirmation(token) {
     const { error } = await SB.from('issuances').update({
       confirmed_at: new Date().toISOString(),
       confirmed_by_name: name,
-      confirmation_method: 'sms_link'
-    }).eq('confirm_token', token)
+      confirmation_method: 'online_link',
+      online_confirmed_at: new Date().toISOString()
+    }).eq('online_confirm_token', token)
 
     if (error) throw error
 
