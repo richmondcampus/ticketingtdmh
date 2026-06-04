@@ -2701,6 +2701,153 @@ async function markForPO(id) {
 let approvalAction = null
 let approvalRequestId = null
 
+// ─── notifyApprovers ───
+async function notifyApprovers(req, level) {
+  try {
+    const levelLabel = { 1:'Dept Head', 2:'Supply Officer', 3:'Purchasing Officer' }
+    let approverIds = []
+
+    if (level === 1) {
+      // Notify ONLY the dept head + OIC of the requester's department
+      const { data: deptApprovers } = await SB.rpc('get_dept_approvers', { p_dept_id: req.dept_id })
+      approverIds = (deptApprovers || []).map(a => a.user_id).filter(Boolean)
+      // Fallback: notify all dept_head users if no dept head assigned
+      if (approverIds.length === 0) {
+        const fallback = state.users.filter(u => u.csr_role === 'dept_head' || u.csr_role === 'admin')
+        approverIds = fallback.map(u => u.id)
+      }
+    } else {
+      const roleMap = { 2:'supply_officer', 3:'purchasing_officer' }
+      approverIds = state.users
+        .filter(u => u.csr_role === roleMap[level] || u.csr_role === 'admin')
+        .map(u => u.id)
+    }
+
+    approverIds = [...new Set(approverIds)].filter(id => id !== req.requested_by)
+
+    for (const uid of approverIds) {
+      await SB.from('notifications').insert({
+        user_id: uid,
+        title: '📋 Approval Required — ' + req.request_no,
+        body: (levelLabel[level] || 'Approver') + ' action needed: ' + (req.purpose || req.request_type),
+        type: 'action_required',
+        source_system: 'csr',
+        source_ref_type: 'request',
+        source_ref_id: req.id
+      })
+    }
+  } catch(e) { console.warn('notifyApprovers error:', e) }
+}
+
+// ─── processApproval ───
+async function processApproval() {
+  const remarks = document.getElementById('approvalRemarks')?.value.trim() || ''
+  const role = state.user.csr_role
+  const level = roleApprovalLevel(role)
+
+  const { data: req } = await SB.from('requests').select('*').eq('id', approvalRequestId).single()
+  if (!req) { showToast('error','Error','Request not found.'); return }
+
+  const isAutoApproved = req.current_approval_level === 99
+
+  try {
+    // Insert approval record
+    await SB.from('approvals').insert({
+      request_id: req.id,
+      approver_id: state.user.id,
+      approver_role: role,
+      level: isAutoApproved ? 2 : level,
+      decision: approvalAction === 'approve' ? 'approved' : approvalAction === 'reject' ? 'rejected' : 'returned',
+      remarks,
+      decided_at: new Date().toISOString()
+    })
+
+    let newStatus = req.status
+    let newLevel = req.current_approval_level
+    let toastMsg = ''
+
+    if (approvalAction === 'approve') {
+      const fulfillChoice = document.querySelector('input[name="csr_fulfill"]:checked')?.value
+
+      if (isAutoApproved || ((level === 2) && fulfillChoice === 'issue_stock')) {
+        // Issue from stock directly
+        newStatus = 'issued'; newLevel = 2
+        toastMsg = '📦 Issued from stock — no PO needed.'
+
+        const { data: num } = await SB.rpc('generate_issuance_no')
+        const issNo = num || ('ISS-' + Date.now())
+        const token = Math.random().toString(36).substring(2, 14)
+        await SB.from('issuances').insert({
+          issuance_no: issNo, request_id: req.id,
+          issued_by: state.user.id, issued_at: new Date().toISOString(),
+          scenario: 'from_stock', prepared_by: state.user.id,
+          confirm_token: token,
+          confirm_token_expires_at: new Date(Date.now() + 72*3600000).toISOString(),
+          notes: 'Direct issuance from stock'
+        })
+        // Deduct from stock
+        const { data: reqItems } = await SB.from('request_items').select('*').eq('request_id', req.id)
+        for (const item of (reqItems || [])) {
+          const { data: stock } = await SB.from('stock_items').select('id,quantity_on_hand')
+            .ilike('item_name', '%' + item.item_name.substring(0, 12) + '%').gt('quantity_on_hand', 0).limit(1)
+          if (stock?.[0]) {
+            const newQty = Math.max(0, Number(stock[0].quantity_on_hand) - Number(item.quantity))
+            await SB.from('stock_items').update({ quantity_on_hand: newQty, last_updated: new Date().toISOString() }).eq('id', stock[0].id)
+          }
+        }
+        // Notify requester
+        if (req.requested_by) {
+          await SB.from('notifications').insert({ user_id: req.requested_by, title: '📦 Items Ready — ' + req.request_no, body: 'Your request has been fulfilled from stock. Items are ready for pickup.', type: 'success', source_system: 'csr', source_ref_id: req.id })
+        }
+
+      } else if (level === 1) {
+        newLevel = 2; newStatus = 'pending_approval'
+        toastMsg = '✅ Approved — forwarded to Supply Officer.'
+        await notifyApprovers(req, 2)
+      } else if (level === 2) {
+        // forward_purchasing
+        newLevel = 3; newStatus = 'pending_approval'
+        toastMsg = '✅ Forwarded to Purchasing Officer for PO.'
+        await notifyApprovers(req, 3)
+      } else {
+        newLevel = 3; newStatus = 'approved'
+        toastMsg = '✅ Fully approved — ready for Purchase Order.'
+      }
+
+    } else if (approvalAction === 'reject') {
+      newStatus = 'cancelled'; toastMsg = '❌ Request rejected.'
+    } else {
+      newStatus = 'draft'; newLevel = 1; toastMsg = '↩ Returned for revision.'
+    }
+
+    await SB.from('requests').update({
+      status: newStatus, current_approval_level: newLevel,
+      updated_at: new Date().toISOString()
+    }).eq('id', approvalRequestId)
+
+    // Notify requester
+    if (req.requested_by) {
+      const titles = {
+        approve: newStatus === 'approved' || newStatus === 'issued' ? '✅ Request Approved: ' + req.request_no : '📋 Approval Progress: ' + req.request_no,
+        reject: '❌ Request Rejected: ' + req.request_no,
+        return: '↩ Request Returned: ' + req.request_no
+      }
+      await SB.from('notifications').insert({
+        user_id: req.requested_by, title: titles[approvalAction],
+        body: remarks || toastMsg, type: approvalAction === 'approve' ? 'success' : approvalAction === 'reject' ? 'error' : 'warning',
+        source_system: 'csr', source_ref_type: 'request', source_ref_id: req.id
+      })
+    }
+
+    closeModal('approvalModal')
+    showToast('success', 'Done', toastMsg)
+    if (state.page === 'approval_queue') renderApprovalQueue()
+    else if (state.page === 'all_requests') renderAllRequests()
+    else if (state.page === 'dashboard') renderDashboard()
+
+  } catch(e) { showToast('error','Error', e.message); console.error(e) }
+}
+
 function openApprovalModal(reqId, action) {
   approvalAction = action
   approvalRequestId = reqId
