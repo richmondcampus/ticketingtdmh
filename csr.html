@@ -999,7 +999,7 @@ function renderSidebarNav() {
     { id:'approval_queue', icon:'✅', label:'Approval Queue', roles:['dept_head','supply_officer','purchasing_officer','admin'], badge:'approval_count' },
     { id:'all_requests', icon:'🗂', label:'All Requests', roles:['admin'] }, // admin only, supply_officer sees all via My Requests
     { id:'purchase_orders', icon:'🛒', label:'Purchase Orders', roles:['supply_officer','admin'] },
-    { id:'issuance', icon:'📤', label:'Issuance', roles:['supply_officer','admin'] },
+    { id:'issuance', icon:'📤', label:'Issuance', roles:['supply_officer','admin','dept_head'] },
     { id:'stock_inventory', icon:'🏪', label:'Stock Inventory', roles:['supply_officer','admin'] },
     { id:'derp', icon:'♻️', label:'DERP', roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
     { id:'reports', icon:'📈', label:'Reports', roles:['supply_officer','purchasing_officer','admin'] },
@@ -2109,20 +2109,23 @@ async function directIssueFromStock() {
     // Generate issuance
     const { data: issNum } = await SB.rpc('generate_issuance_no')
     const issNo = issNum || ('ISS-' + Date.now())
-    const token = generateToken()
 
     const { data: iss } = await SB.from('issuances').insert({
       issuance_no: issNo,
       request_id: req.id,
       issued_by: state.user.id,
-      received_by: null,
       issued_at: new Date().toISOString(),
       scenario: 'from_stock',
       prepared_by: state.user.id,
-      confirm_token: token,
-      confirm_token_expires_at: new Date(Date.now() + 72*3600000).toISOString(),
-      notes: 'Direct issuance — ' + purpose
+      confirmed_at: new Date().toISOString(), // auto-confirm
+      confirmed_by_name: state.user.full_name,
+      confirmation_method: 'auto',
+      notes: 'Direct issuance from stock',
+      email_sent: false
     }).select().single()
+
+    // Send email notification to dept + dept head
+    if (iss) sendIssuanceEmail(iss, req, items)
 
     // Deduct from stock + create issuance items
     for (const item of items) {
@@ -2273,6 +2276,52 @@ function onCostManualEdit(rowId, value) {
   row.manually_edited = true  // prevent AI from overwriting
   updateAutoApproveHint()
 }
+// ─── Issuance Email Notification ───
+async function sendIssuanceEmail(iss, req, items) {
+  try {
+    const dept = state.departments.find(d => d.id === req.dept_id)
+    const deptHead = dept?.dept_head_id ? state.users.find(u => u.id === dept.dept_head_id) : null
+    const deptUser = state.users.find(u => u.id === req.requested_by)
+
+    const emails = []
+    if (deptUser?.email) emails.push(deptUser.email)
+    if (deptHead?.email && deptHead.email !== deptUser?.email) emails.push(deptHead.email)
+    if (emails.length === 0) return
+
+    const itemList = (items || []).map(i => '• ' + i.item_name + ' — ' + i.quantity + ' ' + (i.unit||'pcs')).join('<br>')
+
+    const html = '<div style="font-family:sans-serif;max-width:600px;">'
+      + '<div style="background:#0f3460;color:#fff;padding:20px 24px;border-radius:8px 8px 0 0;">'
+      + '<h2 style="margin:0;font-size:18px;">📦 Items Ready for Pickup</h2>'
+      + '<p style="margin:4px 0 0;opacity:.8;font-size:13px;">TDMH Central Supply Room System</p>'
+      + '</div>'
+      + '<div style="background:#f8f9fa;padding:20px 24px;border:1px solid #e0e0e0;">'
+      + '<p>Dear <strong>' + (dept?.dept_name || 'Department') + '</strong>,</p>'
+      + '<p>Your supply request has been fulfilled. Items are ready for pickup at the supply room.</p>'
+      + '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;">'
+      + '<tr><td style="padding:6px 12px;background:#e9ecef;font-weight:600;width:40%;">Issuance No.</td><td style="padding:6px 12px;">' + iss.issuance_no + '</td></tr>'
+      + '<tr><td style="padding:6px 12px;background:#e9ecef;font-weight:600;">Request No.</td><td style="padding:6px 12px;">' + req.request_no + '</td></tr>'
+      + '<tr><td style="padding:6px 12px;background:#e9ecef;font-weight:600;">Purpose</td><td style="padding:6px 12px;">' + (req.purpose || '—') + '</td></tr>'
+      + '<tr><td style="padding:6px 12px;background:#e9ecef;font-weight:600;">Issued By</td><td style="padding:6px 12px;">' + (state.user.full_name || 'Supply Team') + '</td></tr>'
+      + '<tr><td style="padding:6px 12px;background:#e9ecef;font-weight:600;">Date</td><td style="padding:6px 12px;">' + new Date().toLocaleDateString('en-PH', { dateStyle: 'long' }) + '</td></tr>'
+      + '</table>'
+      + '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px 16px;margin-bottom:16px;">'
+      + '<strong style="font-size:12px;text-transform:uppercase;color:#666;">Items Issued</strong><br><br>'
+      + itemList
+      + '</div>'
+      + '<p style="font-size:12px;color:#666;">Please proceed to the supply room to receive your items. This is an auto-generated notification from TDMH CSR System.</p>'
+      + '</div></div>'
+
+    for (const email of emails) {
+      await SB.functions.invoke('send-email', {
+        body: { to: email, subject: '📦 Items Ready for Pickup — ' + iss.issuance_no, html }
+      })
+    }
+
+    await SB.from('issuances').update({ email_sent: true, email_sent_at: new Date().toISOString() }).eq('id', iss.id)
+  } catch(e) { console.warn('sendIssuanceEmail:', e) }
+}
+
 const _priceTimers = {}
 
 function scheduleSmartPrice(rowId, itemName) {
@@ -3904,28 +3953,49 @@ let issState = {
 async function renderIssuance() {
   const content = document.getElementById('mainContent')
   const role = state.user.csr_role
+  const isDeptHead = role === 'dept_head'
+
+  // Build issuances query — dept head sees only their dept's issuances
+  let issQuery = SB.from('issuances').select('*, requests!inner(dept_id, request_no, purpose)')
+    .order('issued_at', { ascending: false }).limit(100)
+
+  if (isDeptHead && state.user.dept_id) {
+    issQuery = issQuery.eq('requests.dept_id', state.user.dept_id)
+  }
 
   const [issRes, batchRes, pendingRes] = await Promise.all([
-    SB.from('issuances').select('*').order('issued_at', { ascending: false }).limit(50),
+    SB.from('issuances').select('*').order('issued_at', { ascending: false }).limit(100),
     SB.from('issuance_batches').select('*').order('created_at', { ascending: false }).limit(20),
     SB.from('requests').select('*')
       .in('status', ['approved','delivered'])
       .in('request_type', ['supply','purchase','issuance'])
       .order('created_at', { ascending: false })
   ])
-  issState.issuances = issRes.data || []
+
+  // For dept head — filter issuances by their dept's requests
+  let allIssuances = issRes.data || []
+  if (isDeptHead && state.user.dept_id) {
+    const deptRequestIds = state.requests
+      ?.filter(r => r.dept_id === state.user.dept_id)
+      .map(r => r.id) || []
+    allIssuances = allIssuances.filter(i => deptRequestIds.includes(i.request_id))
+  }
+
+  issState.issuances = allIssuances
   issState.batches = batchRes.data || []
   issState.pendingRequests = pendingRes.data || []
 
-  // Stats
-  const pending = issState.issuances.filter(i => !i.confirmed_at).length
-  const confirmed = issState.issuances.filter(i => i.confirmed_at).length
-  const today = issState.issuances.filter(i => {
+  // Stats — all are confirmed now (auto-confirm)
+  const confirmedCount = allIssuances.filter(i => i.confirmed_at).length
+  const today = allIssuances.filter(i => {
     return new Date(i.issued_at).toDateString() === new Date().toDateString()
   }).length
 
   let html = '<div class="page-header">'
-  html += '<div><h2>📤 Issuance</h2><p style="font-size:13px;color:var(--txt2);">Paperless item release with SMS confirmation</p></div>'
+  html += '<div><h2>📤 Issuance</h2>'
+  html += '<p style="font-size:13px;color:var(--txt2);">'
+  html += isDeptHead ? 'Items issued to your department' : 'Item release records'
+  html += '</p></div>'
   html += '<div class="page-header-actions">'
   if (['supply_officer','admin'].includes(role)) {
     html += '<button class="btn btn-ghost btn-sm" onclick="showIssView(\'batches\')">📦 Bulk Batches</button>'
@@ -3933,27 +4003,21 @@ async function renderIssuance() {
   }
   html += '</div></div>'
 
-  // Stats
+  // Stats — simplified (no more pending confirmation)
   html += '<div class="stat-grid" style="margin-bottom:20px;">'
-  html += statCard('⏳', 'Pending Confirmation', pending, 'SMS sent, awaiting receiver', 'stat-amber')
-  html += statCard('✅', 'Confirmed', confirmed, 'Digitally confirmed', 'stat-green')
-  html += statCard('📤', 'Issued Today', today, 'Issuances today', 'stat-blue')
-  html += statCard('📋', 'For Issuance', issState.pendingRequests.length, 'Approved requests', 'stat-accent')
+  html += statCard('✅', 'Total Issued', allIssuances.length, 'All issuances', 'stat-green')
+  html += statCard('📤', 'Today', today, 'Issued today', 'stat-blue')
+  if (!isDeptHead) {
+    html += statCard('📋', 'For Issuance', issState.pendingRequests.length, 'Approved requests pending', 'stat-accent')
+  }
   html += '</div>'
 
-  // Pending confirmation alert
-  const unconfirmed = issState.issuances.filter(i => !i.confirmed_at && i.confirm_token)
-  if (unconfirmed.length > 0) {
-    html += '<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">'
-    html += '<span style="color:var(--amber);font-size:13px;font-weight:600;">⚠️ ' + unconfirmed.length + ' issuance(s) pending receiver confirmation</span>'
-    html += '<button class="btn btn-ghost btn-sm" onclick="resendAllPending()">Resend SMS</button>'
-    html += '</div>'
-  }
-
   // Tabs
-  html += '<div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--bdr);padding-bottom:0;">'
+  html += '<div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--bdr);">'
   html += '<button onclick="filterIssTab(\'all\')" id="iss_tab_all" style="padding:8px 16px;border:none;background:transparent;color:var(--accent);border-bottom:2px solid var(--accent);cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;">All</button>'
-  html += '<button onclick="filterIssTab(\'pending\')" id="iss_tab_pending" style="padding:8px 16px;border:none;background:transparent;color:var(--txt2);cursor:pointer;font-family:inherit;font-size:13px;">Pending</button>'
+  if (!isDeptHead) {
+    html += '<button onclick="filterIssTab(\'pending\')" id="iss_tab_pending" style="padding:8px 16px;border:none;background:transparent;color:var(--txt2);cursor:pointer;font-family:inherit;font-size:13px;">Pending</button>'
+  }
   html += '<button onclick="filterIssTab(\'confirmed\')" id="iss_tab_confirmed" style="padding:8px 16px;border:none;background:transparent;color:var(--txt2);cursor:pointer;font-family:inherit;font-size:13px;">Confirmed</button>'
   html += '</div>'
 
@@ -3962,7 +4026,7 @@ async function renderIssuance() {
     html += '<div class="empty-state"><div class="empty-icon">📤</div><h3>No issuances yet</h3><p>Create an issuance from an approved CSR request.</p></div>'
   } else {
     html += '<div class="table-wrap"><table><thead><tr>'
-    html += '<th>Issuance No.</th><th>Receiver</th><th>Dept</th><th>Scenario</th><th>SMS Sent</th><th>Confirmed</th><th>Date</th><th></th>'
+    html += '<th>Issuance No.</th><th>Request No.</th><th>Department</th><th>Scenario</th><th>Email</th><th>Status</th><th>Date</th><th></th>'
     html += '</tr></thead><tbody id="issTableBody">'
     html += buildIssuanceRows(issState.issuances)
     html += '</tbody></table></div>'
@@ -3974,24 +4038,27 @@ async function renderIssuance() {
 function buildIssuanceRows(issuances) {
   let rows = ''
   for (const iss of issuances) {
-    const receiver = state.users.find(u => u.id === iss.received_by)
-    const dept = state.departments.find(d => d.id === iss.received_by)
+    const reqInfo = state.requests?.find(r => r.id === iss.request_id)
+    const dept = reqInfo ? state.departments.find(d => d.id === reqInfo.dept_id) : null
     const isConfirmed = !!iss.confirmed_at
-    const smsSent = !!iss.sms_sent_at
+    const isAuto = iss.confirmation_method === 'auto'
+    const emailSent = !!iss.email_sent
 
     rows += '<tr onclick="viewIssuance(\'' + iss.id + '\')" style="cursor:pointer;">'
     rows += '<td class="td-mono">' + iss.issuance_no + '</td>'
-    rows += '<td>' + (receiver ? receiver.full_name : (iss.confirmed_by_name || '—')) + '</td>'
-    rows += '<td style="color:var(--txt2);font-size:12px;">—</td>'
+    rows += '<td style="font-size:12px;color:var(--txt2);">' + (reqInfo?.request_no || '—') + '</td>'
+    rows += '<td style="font-size:12px;">' + (dept?.dept_name || '—') + '</td>'
     rows += '<td><span class="badge ' + (iss.scenario === 'from_stock' ? 'badge-approved' : 'badge-issued') + '">' + (iss.scenario === 'from_stock' ? '📦 From Stock' : '🚚 After PO') + '</span></td>'
-    rows += '<td>' + (smsSent ? '<span style="color:var(--green);font-size:12px;">✓ Sent</span>' : '<span style="color:var(--txt3);font-size:12px;">—</span>') + '</td>'
+    rows += '<td>' + (emailSent
+      ? '<span style="color:var(--green);font-size:12px;">✉️ Sent</span>'
+      : '<span style="color:var(--txt3);font-size:12px;">—</span>') + '</td>'
     rows += '<td>'
-    if (isConfirmed) {
+    if (isAuto) {
+      rows += '<span style="color:var(--green);font-size:12px;">✅ Auto</span>'
+    } else if (isConfirmed) {
       rows += '<span style="color:var(--green);font-size:12px;">✅ ' + formatDate(iss.confirmed_at) + '</span>'
-    } else if (iss.confirm_token) {
-      rows += '<span style="color:var(--amber);font-size:12px;">⏳ Pending</span>'
     } else {
-      rows += '<span style="color:var(--txt3);font-size:12px;">—</span>'
+      rows += '<span style="color:var(--amber);font-size:12px;">⏳ Pending</span>'
     }
     rows += '</td>'
     rows += '<td style="color:var(--txt2);">' + formatDate(iss.issued_at) + '</td>'
