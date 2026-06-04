@@ -1463,23 +1463,31 @@ async function renderApprovalQueue() {
   const content = document.getElementById('mainContent')
   const role = state.user.csr_role
   const level = roleApprovalLevel(role)
-  const requests = await loadRequests({ status: 'pending_approval' })
-  // Dept heads see only their department's requests
-  // Supply officers and above see all
+  const levelLabels = { 1:'Dept Head', 2:'Supply Officer', 3:'Purchasing Officer' }
+  const pendingRequests = await loadRequests({ status: 'pending_approval' })
+  const approvedPending = role === 'supply_officer' || role === 'admin'
+    ? await loadRequests({ status: 'approved' })
+    : []
+
+  // Auto-approved requests (level 99) are waiting for Supply Officer fulfillment
+  const autoApprovedPending = approvedPending.filter(r => r.current_approval_level === 99)
+
   let myQueue
   if (role === 'dept_head') {
-    myQueue = requests.filter(r =>
+    myQueue = pendingRequests.filter(r =>
       r.current_approval_level === level &&
       r.dept_id === state.user.dept_id
     )
   } else if (role === 'admin') {
-    myQueue = requests
+    myQueue = [...pendingRequests, ...autoApprovedPending]
   } else {
-    myQueue = requests.filter(r => r.current_approval_level === level)
+    myQueue = [
+      ...pendingRequests.filter(r => r.current_approval_level === level),
+      ...autoApprovedPending
+    ]
   }
   state.requests = myQueue
 
-  const levelLabels = { 1: 'Dept Head', 2: 'Supply Officer', 3: 'Purchasing Officer' }
 
   let html = '<div class="page-header">'
   html += '<div><h2>Approval Queue</h2>'
@@ -1524,12 +1532,17 @@ async function renderApprovalQueue() {
       html += '<td style="color:var(--txt2);">' + (dept ? dept.dept_name : '—') + '</td>'
       html += '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.purpose || '—') + '</td>'
       html += '<td><span class="badge badge-' + r.urgency + '">' + r.urgency.toUpperCase() + '</span></td>'
-      html += '<td><span style="font-size:11px;background:var(--accent-a);color:var(--accent);padding:2px 8px;border-radius:8px;">L' + lvl + ' — ' + lvlLabel + '</span></td>'
+      html += '<td><span style="font-size:11px;background:var(--accent-a);color:var(--accent);padding:2px 8px;border-radius:8px;">' + (r.current_approval_level === 99 ? '⚡ Auto-Approved' : 'L' + lvl + ' — ' + lvlLabel) + '</span></td>'
       html += '<td style="color:var(--txt2);white-space:nowrap;">' + formatDate(r.created_at) + '</td>'
       html += '<td><div style="display:flex;gap:5px;">'
-      html += '<button class="btn btn-success btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'approve\')">✅ Approve</button>'
-      html += '<button class="btn btn-ghost btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'return\')">↩ Return</button>'
-      html += '<button class="btn btn-danger btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'reject\')">❌ Reject</button>'
+      if (r.current_approval_level === 99 && ['supply_officer','admin'].includes(role)) {
+        // Auto-approved — show fulfillment options directly
+        html += '<button class="btn btn-success btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'approve\')">📦 Fulfill</button>'
+      } else {
+        html += '<button class="btn btn-success btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'approve\')">✅ Approve</button>'
+        html += '<button class="btn btn-ghost btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'return\')">↩ Return</button>'
+        html += '<button class="btn btn-danger btn-sm" onclick="openApprovalModal(\'' + r.id + '\',\'reject\')">❌ Reject</button>'
+      }
       html += '</div></td>'
       html += '</tr>'
     }
@@ -2493,17 +2506,22 @@ async function saveRequest(action) {
       disposal_only: '🗑️ Disposal recorded — no procurement needed.',
       repair_only: '🔧 Routed to Maintenance — no procurement needed.',
       with_replacement: wasAutoApproved
-        ? '⚡ Auto-approved (below threshold) — ready for PO.'
+        ? '⚡ Auto-approved — Supply Officer will fulfill from stock or PO.'
         : action === 'submit' ? 'Submitted for approval.' : 'Saved as draft.',
       null: wasAutoApproved
-        ? '⚡ Auto-approved (below threshold) — ready for PO.'
+        ? '⚡ Auto-approved — Supply Officer will fulfill from stock or PO.'
         : action === 'submit' ? 'Submitted for approval.' : 'Saved as draft.'
     }
     showToast('success', req.request_no, actionLabels[derpAction] || actionLabels['null'])
 
-    // Notify approver only if needs approval (not auto-approved, not disposal/repair-only)
-    if (action === 'submit' && !wasAutoApproved && derpAction !== 'disposal_only' && derpAction !== 'repair_only') {
-      notifyApprovers(req, 1)
+    if (action === 'submit' && derpAction !== 'disposal_only' && derpAction !== 'repair_only') {
+      if (wasAutoApproved) {
+        // Auto-approved — notify Supply Officer to decide: issue from stock or create PO
+        await notifyApprovers({ ...req, dept_id: payload.dept_id }, 2)
+      } else {
+        // Normal flow — notify Dept Head first
+        await notifyApprovers(req, 1)
+      }
     }
 
     // Reset source params
@@ -2552,48 +2570,40 @@ function openApprovalModal(reqId, action) {
   approvalRequestId = reqId
   const role = state.user.csr_role
   const level = roleApprovalLevel(role)
+  const req = state.requests.find(r => r.id === reqId)
+  const isAutoApproved = req?.current_approval_level === 99
 
   const titles = {
-    approve: 'Approve Request',
-    reject:  'Reject Request',
-    return:  'Return for Revision'
+    approve: isAutoApproved ? '📦 Fulfill Request' : 'Approve Request',
+    reject: 'Reject Request',
+    return: 'Return for Revision'
   }
   const descs = {
-    approve: level === 2
-      ? 'Choose how to fulfill this request:'
+    approve: (isAutoApproved || level === 2)
+      ? (isAutoApproved ? 'Auto-approved (below threshold). Choose how to fulfill:' : 'Choose how to fulfill this request:')
       : 'You are approving this request. It will proceed to the next approval level.',
-    reject:  'You are rejecting this request. The requester will be notified. This cannot be undone.',
-    return:  'You are returning this request to the requester for revision. Please provide remarks.'
+    reject: 'You are rejecting this request. The requester will be notified. This cannot be undone.',
+    return: 'You are returning this request to the requester for revision. Please provide remarks.'
   }
 
   document.getElementById('approvalModalTitle').textContent = titles[action]
   document.getElementById('approvalModalDesc').innerHTML = descs[action]
 
-  // Level 2 (Supply Officer) approving — show fulfillment options
   const optionWrap = document.getElementById('approvalOptionWrap') ||
-    (() => {
-      const d = document.createElement('div')
-      d.id = 'approvalOptionWrap'
-      document.getElementById('approvalModalDesc').after(d)
-      return d
-    })()
+    (() => { const d = document.createElement('div'); d.id = 'approvalOptionWrap'; document.getElementById('approvalModalDesc').after(d); return d })()
 
-  if (action === 'approve' && level === 2) {
+  if (action === 'approve' && (level === 2 || isAutoApproved)) {
     optionWrap.innerHTML =
       '<div style="display:flex;flex-direction:column;gap:8px;margin:12px 0;">' +
         '<label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;cursor:pointer;">' +
           '<input type="radio" name="csr_fulfill" value="issue_stock" checked style="margin-top:2px;accent-color:var(--green);">' +
-          '<div>' +
-            '<div style="font-size:13px;font-weight:600;">📦 Issue from Stock</div>' +
-            '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">Items are available in stock. Issue directly — no need to purchase.</div>' +
-          '</div>' +
+          '<div><div style="font-size:13px;font-weight:600;">📦 Issue from Stock</div>' +
+          '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">Items available in stock — issue directly, no PO needed.</div></div>' +
         '</label>' +
         '<label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;cursor:pointer;">' +
           '<input type="radio" name="csr_fulfill" value="forward_purchasing" style="margin-top:2px;accent-color:var(--accent);">' +
-          '<div>' +
-            '<div style="font-size:13px;font-weight:600;">💰 Forward to Purchasing Officer</div>' +
-            '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">Items need to be purchased. Forward for PO creation.</div>' +
-          '</div>' +
+          '<div><div style="font-size:13px;font-weight:600;">💰 Forward to Purchasing Officer</div>' +
+          '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">Items need to be purchased — forward for PO creation.</div></div>' +
         '</label>' +
       '</div>'
   } else {
@@ -2606,300 +2616,13 @@ function openApprovalModal(reqId, action) {
   const footer = document.getElementById('approvalModalFooter')
   const btnClass = action === 'approve' ? 'btn-success' : action === 'reject' ? 'btn-danger' : 'btn-secondary'
   footer.innerHTML =
-    '<button class="btn btn-ghost" onclick="closeModal(\'approvalModal\')">Cancel</button>' +
+    '<button class="btn btn-ghost" onclick="closeModal(&quot;approvalModal&quot;)">Cancel</button>' +
     '<button class="btn ' + btnClass + '" onclick="processApproval()">Confirm</button>'
 
   closeModal('requestDetailModal')
   openModal('approvalModal')
 }
 
-async function processApproval() {
-  const remarks = document.getElementById('approvalRemarks').value.trim()
-  if ((approvalAction === 'reject' || approvalAction === 'return') && !remarks) {
-    showToast('error', 'Required', 'Please enter remarks for this action.')
-    return
-  }
-  try {
-    const req = (await SB.from('requests').select('*').eq('id', approvalRequestId).single()).data
-    const role = state.user.csr_role
-    const level = role === 'admin' ? req.current_approval_level : roleApprovalLevel(role)
-
-    // Insert approval record
-    await SB.from('approvals').insert({
-      request_id: approvalRequestId,
-      approver_id: state.user.id,
-      approver_role: role,
-      level,
-      decision: approvalAction === 'approve' ? 'approved' : approvalAction === 'reject' ? 'rejected' : 'returned',
-      remarks,
-      decided_at: new Date().toISOString()
-    })
-
-    // ── 3-LEVEL APPROVAL FLOW ──
-    // Level 1: Dept Head       → approve → Level 2 (Supply Officer)
-    // Level 2: Supply Officer  → approve → Level 3 (Purchasing Officer)
-    // Level 3: Purchasing Off  → approve → Fully approved, ready for PO
-    let newStatus = req.status
-    let newLevel = req.current_approval_level
-    let toastMsg = ''
-
-    if (approvalAction === 'approve') {
-      // Check if Level 2 (Supply Officer) chose to issue from stock
-      const fulfillChoice = document.querySelector('input[name="csr_fulfill"]:checked')?.value
-
-      if (level === 2 && fulfillChoice === 'issue_stock') {
-        // ── ISSUE FROM STOCK ──
-        // Skip Level 3 entirely — CSR handles it directly
-        newStatus = 'issued'
-        newLevel = 2
-        toastMsg = '📦 Issued from stock — no PO needed.'
-
-        // Auto-generate issuance record
-        const { data: num } = await SB.rpc('generate_issuance_no')
-        const issNo = num || ('ISS-' + Date.now())
-        const token = Math.random().toString(36).substring(2, 14)
-        await SB.from('issuances').insert({
-          issuance_no: issNo,
-          request_id: req.id,
-          issued_by: state.user.id,
-          issued_at: new Date().toISOString(),
-          scenario: 'from_stock',
-          prepared_by: state.user.id,
-          confirm_token: token,
-          confirm_token_expires_at: new Date(Date.now() + 72*3600000).toISOString(),
-          notes: 'Direct issuance from stock — approved by Supply Officer'
-        })
-
-        // Load request items and deduct from stock
-        const { data: reqItems } = await SB.from('request_items').select('*').eq('request_id', req.id)
-        for (const item of (reqItems || [])) {
-          const { data: stockItems } = await SB.from('stock_items')
-            .select('id,quantity_on_hand,unit')
-            .ilike('item_name', '%' + item.item_name.substring(0, 15) + '%')
-            .eq('is_active', true)
-            .order('quantity_on_hand', { ascending: false })
-            .limit(1)
-          if (stockItems?.[0]) {
-            const s = stockItems[0]
-            const newQty = Math.max(0, Number(s.quantity_on_hand) - Number(item.quantity))
-            await SB.from('stock_items').update({
-              quantity_on_hand: newQty,
-              last_updated: new Date().toISOString()
-            }).eq('id', s.id)
-            await SB.from('stock_movements').insert({
-              stock_item_id: s.id,
-              movement_type: 'issue',
-              quantity: -Number(item.quantity),
-              quantity_before: Number(s.quantity_on_hand),
-              quantity_after: newQty,
-              performed_by: state.user.id,
-              remarks: 'Issued from stock — ' + req.request_no,
-              reference_type: 'csr_request',
-              reference_id: req.id
-            })
-          }
-        }
-
-        // Notify requester via in-app notification + email
-        if (req.requested_by) {
-          const confirmUrl = 'https://ittdmh.pro/csr?confirm=' + token
-          await SB.from('notifications').insert({
-            user_id: req.requested_by,
-            title: '📦 Items Ready for Pickup — ' + req.request_no,
-            body: 'Your request has been fulfilled from stock. Items are ready for pickup. Please confirm receipt.',
-            type: 'action_required',
-            source_system: 'csr',
-            source_ref_type: 'request',
-            source_ref_id: req.id,
-            action_url: confirmUrl
-          })
-        }
-
-      } else if (level === 1) {
-        newLevel = 2; newStatus = 'pending_approval'
-        toastMsg = '✅ Dept Head approved — forwarded to Supply Officer.'
-        await notifyApprovers(req, 2)
-      } else if (level === 2) {
-        // forward_purchasing (default)
-        newLevel = 3; newStatus = 'pending_approval'
-        toastMsg = '✅ Forwarded to Purchasing Officer for PO creation.'
-        await notifyApprovers(req, 3)
-      } else {
-        newLevel = 3; newStatus = 'approved'
-        toastMsg = '✅ Fully approved — ready for Purchase Order.'
-      }
-    } else if (approvalAction === 'reject') {
-      newStatus = 'cancelled'
-      toastMsg = '❌ Request rejected.'
-    } else {
-      newStatus = 'draft'; newLevel = 1
-      toastMsg = '↩ Returned for revision.'
-    }
-
-    await SB.from('requests').update({
-      status: newStatus, current_approval_level: newLevel,
-      updated_at: new Date().toISOString()
-    }).eq('id', approvalRequestId)
-
-    // Notify requester
-    if (req.requested_by) {
-      const titles = {
-        approve: newStatus === 'approved' ? '✅ Request Fully Approved: ' + req.request_no : '📋 Approval Progress: ' + req.request_no,
-        reject: '❌ Request Rejected: ' + req.request_no,
-        return: '↩ Request Returned: ' + req.request_no
-      }
-      await SB.from('notifications').insert({
-        user_id: req.requested_by,
-        title: titles[approvalAction],
-        body: remarks || (newStatus === 'approved' ? 'Your request has been approved by all levels.' : toastMsg),
-        type: approvalAction === 'approve' ? 'success' : approvalAction === 'reject' ? 'error' : 'warning',
-        source_system: 'csr', source_ref_type: 'request', source_ref_id: req.id
-      })
-    }
-
-    closeModal('approvalModal')
-    showToast('success', 'Done', toastMsg)
-    if (state.page === 'approval_queue') renderApprovalQueue()
-    else if (state.page === 'all_requests') renderAllRequests()
-    else if (state.page === 'dashboard') renderDashboard()
-
-  } catch(e) {
-    showToast('error', 'Error', e.message)
-    console.error(e)
-  }
-}
-
-async function notifyApprovers(req, level) {
-  try {
-    const levelLabel = { 1:'Dept Head', 2:'Supply Officer', 3:'Purchasing Officer' }
-    const roleMap = { 2:'supply_officer', 3:'purchasing_officer' }
-
-    let approverIds = []
-
-    if (level === 1) {
-      // Level 1 — notify ONLY the dept head + OIC of the requester's department
-      const { data: deptApprovers } = await SB.rpc('get_dept_approvers', { p_dept_id: req.dept_id })
-      approverIds = (deptApprovers || []).map(a => a.user_id).filter(Boolean)
-
-      // Fallback: if dept has no head assigned, notify all dept_head role users
-      if (approverIds.length === 0) {
-        const fallback = state.users.filter(u => u.csr_role === 'dept_head' || u.csr_role === 'admin')
-        approverIds = fallback.map(u => u.id)
-      }
-    } else {
-      // Level 2/3 — notify by role (supply_officer, purchasing_officer)
-      const role = roleMap[level]
-      approverIds = state.users
-        .filter(u => u.csr_role === role || u.csr_role === 'admin')
-        .map(u => u.id)
-    }
-
-    // Remove duplicates and requester
-    approverIds = [...new Set(approverIds)].filter(id => id !== req.requested_by)
-
-    for (const uid of approverIds) {
-      await SB.from('notifications').insert({
-        user_id: uid,
-        title: '📋 Approval Required — ' + req.request_no,
-        body: (levelLabel[level] || 'Approver') + ' action needed: ' + (req.purpose || req.request_type),
-        type: 'action_required',
-        source_system: 'csr',
-        source_ref_type: 'request',
-        source_ref_id: req.id
-      })
-    }
-  } catch(e) { console.warn('notifyApprovers error:', e) }
-}
-
-// ═══════════════════════════════════════════
-// PLACEHOLDER PAGES
-// ═══════════════════════════════════════════
-// ═══════════════════════════════════════════
-// PURCHASE ORDERS MODULE
-// ═══════════════════════════════════════════
-let poState = {
-  pos: [], suppliers: [], canvasses: [],
-  view: 'po_list' // 'po_list' | 'canvass_list' | 'suppliers'
-}
-
-const PO_STATUS_LABELS = {
-  draft:            'Draft',
-  sent:             'Sent to Supplier',
-  partial_delivery: 'Partial Delivery',
-  delivered:        'Fully Delivered',
-  issued:           'Issued to Dept',
-  cancelled:        'Cancelled'
-}
-
-// Visual step progression for PO
-const PO_STEPS = [
-  { status: 'draft',            icon: '📝', label: 'Draft' },
-  { status: 'sent',             icon: '📤', label: 'Sent to Supplier' },
-  { status: 'delivered',        icon: '📦', label: 'Delivered' },
-  { status: 'issued',           icon: '✅', label: 'Issued' },
-]
-
-const PO_STEP_ORDER = { draft:0, sent:1, partial_delivery:1.5, delivered:2, issued:3, cancelled:-1 }
-
-async function renderPurchaseOrders() {
-  const content = document.getElementById('mainContent')
-  const role = state.user.csr_role
-
-  const [posRes, suppRes] = await Promise.all([
-    SB.from('purchase_orders').select('*').order('created_at', { ascending: false }),
-    SB.from('suppliers').select('*').eq('is_active', true).order('name')
-  ])
-  poState.pos = posRes.data || []
-  poState.suppliers = suppRes.data || []
-
-  // Stats
-  const draft = poState.pos.filter(p => p.status === 'draft').length
-  const sent = poState.pos.filter(p => p.status === 'sent' || p.status === 'sent').length
-  const pending = poState.pos.filter(p => p.status === 'partial').length
-  const totalSpend = poState.pos.filter(p => p.status === 'delivered')
-    .reduce((s, p) => s + Number(p.total_amount || 0), 0)
-
-  let html = '<div class="page-header">'
-  html += '<div><h2>🛒 Purchase Orders</h2><p style="font-size:13px;color:var(--txt2);">PO management, canvassing, and delivery tracking</p></div>'
-  html += '<div class="page-header-actions">'
-  if (['supply_officer','admin'].includes(role)) {
-    html += '<button class="btn btn-ghost btn-sm" onclick="showPOView(\'canvass_list\')">📋 Canvass Sheets</button>'
-    html += '<button class="btn btn-ghost btn-sm" onclick="showPOView(\'suppliers\')">🏢 Suppliers</button>'
-    html += '<button class="btn btn-primary" onclick="openNewPOModal()">＋ New PO</button>'
-  }
-  html += '</div></div>'
-
-  // Stats
-  html += '<div class="stat-grid" style="margin-bottom:20px;">'
-  html += statCard('📝', 'Draft POs', draft, 'Not yet sent', 'stat-accent')
-  html += statCard('📤', 'Sent / Active', sent, 'Awaiting delivery', 'stat-blue')
-  html += statCard('🚚', 'Partial Delivery', pending, 'Awaiting completion', 'stat-amber')
-  html += statCard('💰', 'Total Spend (YTD)', '₱' + totalSpend.toLocaleString(), 'Fully delivered POs', 'stat-green')
-  html += '</div>'
-
-  // Filter bar
-  html += '<div class="filter-bar" style="margin-bottom:16px;">'
-  html += '<select id="poStatusFilter" onchange="filterPOTable()">'
-  html += '<option value="">All Status</option>'
-  Object.entries(PO_STATUS_LABELS).forEach(([k,v]) => {
-    html += '<option value="' + k + '">' + v + '</option>'
-  })
-  html += '</select>'
-  html += '<input type="text" id="poSearch" placeholder="🔍 Search PO number or supplier..." oninput="filterPOTable()" style="min-width:240px;">'
-  html += '</div>'
-
-  if (poState.pos.length === 0) {
-    html += '<div class="empty-state"><div class="empty-icon">🛒</div><h3>No Purchase Orders yet</h3><p>Create a PO from an approved CSR request or manually.</p></div>'
-  } else {
-    html += '<div class="table-wrap"><table><thead><tr>'
-    html += '<th>PO Number</th><th>Supplier</th><th>Linked CSR</th><th>Amount</th><th>Expected Delivery</th><th>Status</th><th>Date</th><th></th>'
-    html += '</tr></thead><tbody id="poTableBody">'
-    html += buildPORows(poState.pos)
-    html += '</tbody></table></div>'
-  }
-
-  content.innerHTML = html
-}
 
 function buildPORows(pos) {
   let rows = ''
@@ -5357,69 +5080,73 @@ function openDerpModal(category) {
   const dept = state.departments.find(d => d.id === state.user.dept_id)
 
   state.sourceType = 'derp'
-  state.itemRows = [{ id: Date.now(), item_name:'', item_description:'', quantity:1, unit:'pcs', estimated_cost:0, category:'equipment', image_file:null, image_preview:null }]
+  state.itemRows = []
 
-  document.getElementById('newRequestTitle').textContent = cat.icon + ' New ' + cat.label + ' Request'
+  document.getElementById('newRequestTitle').textContent = cat.icon + ' ' + cat.label
 
   let html = ''
 
   // Category badge
-  html += '<div style="padding:10px 14px;background:' + cat.color + '18;border:1px solid ' + cat.color + '44;border-radius:10px;font-size:13px;margin-bottom:16px;">'
+  html += '<div style="padding:8px 14px;background:' + cat.color + '18;border:1px solid ' + cat.color + '44;border-radius:10px;font-size:13px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">'
   html += '<strong style="color:' + cat.color + ';">' + cat.icon + ' ' + cat.label + '</strong>'
-  html += ' <span style="color:var(--txt2);">· SLA: ' + cat.sla + ' hours evaluation target</span>'
-  if (dept) html += '<div style="font-size:12px;color:var(--txt2);margin-top:3px;">🏢 Filing from: <strong>' + dept.dept_name + '</strong></div>'
+  if (dept) html += '<span style="font-size:12px;color:var(--txt2);">🏢 ' + dept.dept_name + '</span>'
   html += '</div>'
 
-  // Hidden dept + urgency row
   html += '<input type="hidden" id="f_dept" value="' + (state.user.dept_id || '') + '">'
-  html += '<div class="field"><label>Urgency</label><select id="f_urgency">'
-  ;['routine','urgent','emergency'].forEach(u => {
-    html += '<option value="' + u + '">' + u.charAt(0).toUpperCase() + u.slice(1) + '</option>'
-  })
-  html += '</select></div>'
+  html += '<input type="hidden" id="f_urgency" value="routine">'
 
-  // Asset description
-  html += '<div class="field"><label>Equipment / Asset Description <span style="color:var(--red);">*</span></label>'
-  html += '<input type="text" id="f_asset_desc" placeholder="e.g. Dell Latitude 5420, Printer HP LaserJet, AC Unit Room 301..."></div>'
+  // ── 5 FIELDS ONLY for requester ──
+  html += '<div class="field"><label>Equipment / Item <span style="color:var(--red);">*</span></label>'
+  html += '<input type="text" id="f_asset_desc" placeholder="e.g. Laptop, Printer, Air Conditioner, ECG Machine..."></div>'
 
-  // Condition (simplified — requester knows if bad or not)
-  html += '<div class="field"><label>Asset Condition</label><select id="f_condition">'
-  ;[['poor','Poor — Still working but degraded'],['beyond_repair','Beyond Repair'],['obsolete','Obsolete / Outdated'],['end_of_life','End of Life']].forEach(([v,l]) => {
-    html += '<option value="' + v + '">' + l + '</option>'
-  })
-  html += '</select></div>'
+  html += '<div class="field-row">'
+  html += '<div class="field"><label>Brand</label>'
+  html += '<input type="text" id="f_brand" placeholder="e.g. Dell, HP, Carrier, Mindray"></div>'
+  html += '<div class="field"><label>Serial / Control No.</label>'
+  html += '<input type="text" id="f_serial" placeholder="e.g. SN-2024-001"></div>'
+  html += '</div>'
 
-  // Problem description
-  html += '<div class="field"><label>What\'s the problem? <span style="color:var(--red);">*</span></label>'
-  html += '<textarea id="f_purpose" placeholder="Describe what\'s wrong, how it affects your work, history of repairs if any..." rows="3"></textarea></div>'
+  html += '<div class="field"><label>Defect / Problem <span style="color:var(--red);">*</span></label>'
+  html += '<textarea id="f_purpose" placeholder="Describe the defect or problem clearly..." rows="3"></textarea></div>'
 
-  // Recommendation
-  html += '<div class="field"><label>Your Initial Recommendation</label>'
-  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">'
-  html += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;flex:1;">'
-  html += '<input type="radio" name="f_recommendation" value="for_repair" checked> 🔧 Repair</label>'
-  html += '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;cursor:pointer;font-size:13px;flex:1;">'
-  html += '<input type="radio" name="f_recommendation" value="for_replacement"> 🔄 Replace</label>'
+  // Photo upload
+  html += '<div class="field"><label>Photo <span style="font-size:11px;font-weight:400;color:var(--txt3);">optional</span></label>'
+  html += '<div id="derpPhotoWrap" style="border:2px dashed var(--bdr2);border-radius:10px;padding:14px;text-align:center;cursor:pointer;background:var(--surf2);" onclick="document.getElementById(\'f_derp_photo\').click()">'
+  html += '<div style="font-size:22px;margin-bottom:4px;">📷</div>'
+  html += '<div style="font-size:12px;color:var(--txt2);">Click to attach photo of the defective equipment</div>'
+  html += '</div>'
+  html += '<input type="file" id="f_derp_photo" accept="image/*" style="display:none;" onchange="previewDerpPhoto(this)">'
+  html += '<div id="derpPhotoPreview" style="display:none;margin-top:8px;position:relative;">'
+  html += '<img id="derpPhotoImg" style="max-width:100%;max-height:180px;object-fit:contain;border-radius:8px;border:1px solid var(--bdr2);">'
+  html += '<button onclick="removeDerpPhoto()" style="position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:var(--red);color:#fff;border:none;cursor:pointer;font-size:11px;">✕</button>'
   html += '</div></div>'
 
-  // Warranty — CSR/Purchasing/Inventory only
+  // Evaluator fields — collapsed section
   if (isEvaluator) {
-    html += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-bottom:14px;">'
-    html += '<div style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">📋 Evaluator Fields</div>'
+    html += '<details style="margin-top:8px;"><summary style="font-size:12px;font-weight:600;color:var(--txt2);cursor:pointer;padding:8px 0;">📋 Evaluator Fields (optional)</summary>'
+    html += '<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;margin-top:8px;">'
     html += '<div class="field-row">'
+    html += '<div class="field"><label>Asset Condition</label><select id="f_condition">'
+    ;[['poor','Poor'],['beyond_repair','Beyond Repair'],['obsolete','Obsolete'],['end_of_life','End of Life']].forEach(([v,l]) => {
+      html += '<option value="' + v + '">' + l + '</option>'
+    })
+    html += '</select></div>'
     html += '<div class="field"><label>Warranty Status</label><select id="f_warranty">'
     ;[['unknown','Unknown'],['in_warranty','In Warranty'],['out_of_warranty','Out of Warranty']].forEach(([v,l]) => {
       html += '<option value="' + v + '">' + l + '</option>'
     })
     html += '</select></div>'
-    html += '<div class="field"><label>Condition Notes</label>'
-    html += '<input type="text" id="f_condition_notes" placeholder="History of repairs, observations..."></div>'
     html += '</div>'
-    // Checklist — evaluator only
+    html += '<div class="field"><label>Recommendation</label>'
+    html += '<div style="display:flex;gap:8px;">'
+    html += '<label style="display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(--surf1);border:1px solid var(--bdr2);border-radius:8px;cursor:pointer;font-size:13px;flex:1;">'
+    html += '<input type="radio" name="f_recommendation" value="for_repair" checked> 🔧 Repair</label>'
+    html += '<label style="display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(--surf1);border:1px solid var(--bdr2);border-radius:8px;cursor:pointer;font-size:13px;flex:1;">'
+    html += '<input type="radio" name="f_recommendation" value="for_replacement"> 🔄 Replace</label>'
+    html += '</div></div>'
     const checklist = DERP_CHECKLISTS[category] || []
     if (checklist.length) {
-      html += '<div style="margin-top:8px;">'
-      html += '<div style="font-size:11px;font-weight:600;color:var(--txt2);margin-bottom:8px;">Evaluation Checklist</div>'
+      html += '<div style="margin-top:8px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);margin-bottom:8px;">Evaluation Checklist</div>'
       checklist.forEach((item, i) => {
         html += '<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;cursor:pointer;">'
         html += '<input type="checkbox" id="chk_' + i + '" style="accent-color:var(--accent);"> ' + item
@@ -5427,19 +5154,8 @@ function openDerpModal(category) {
       })
       html += '</div>'
     }
-    html += '</div>'
+    html += '</div></details>'
   }
-
-  // Items (optional — only if parts/replacement needed)
-  html += '<div class="field">'
-  html += '<label>Items Needed <span style="font-size:11px;font-weight:400;color:var(--txt3);">(optional — leave empty if just requesting evaluation)</span></label>'
-  html += '<div class="items-table-wrap"><table class="items-table"><thead><tr>'
-  html += '<th>Item</th><th>Description</th><th>Qty</th><th>Unit</th><th>Est. Cost</th><th>Photo</th><th></th>'
-  html += '</tr></thead><tbody id="itemsBody">'
-  html += buildItemRows()
-  html += '</tbody></table></div>'
-  html += '<button class="btn btn-ghost btn-sm" onclick="addItemRow()" style="margin-top:8px;">＋ Add Item</button>'
-  html += '</div>'
 
   document.getElementById('newRequestBody').innerHTML = html
   document.getElementById('newRequestBody').dataset.derpCategory = category
@@ -5447,29 +5163,44 @@ function openDerpModal(category) {
 
   document.querySelector('#newRequestModal .modal-footer').innerHTML =
     '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
-    '<button class="btn btn-secondary" onclick="saveDerpRequest(\'draft\')">Save Draft</button>' +
     '<button class="btn btn-primary" onclick="saveDerpRequest(\'submit\')">Submit DERP</button>'
 
   openModal('newRequestModal')
+}
+
+function previewDerpPhoto(input) {
+  const file = input.files[0]
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) { showToast('error','Too Large','Max 5MB.'); input.value = ''; return }
+  document.getElementById('derpPhotoImg').src = URL.createObjectURL(file)
+  document.getElementById('derpPhotoPreview').style.display = 'block'
+  document.getElementById('derpPhotoWrap').style.display = 'none'
+}
+
+function removeDerpPhoto() {
+  document.getElementById('f_derp_photo').value = ''
+  document.getElementById('derpPhotoImg').src = ''
+  document.getElementById('derpPhotoPreview').style.display = 'none'
+  document.getElementById('derpPhotoWrap').style.display = ''
 }
 
 async function saveDerpRequest(action) {
   const body = document.getElementById('newRequestBody')
   const category = body.dataset.derpCategory
   const slaHours = parseInt(body.dataset.derpSla) || 48
-  const dept = document.getElementById('f_dept').value || state.user.dept_id
-  const urgency = document.getElementById('f_urgency').value
-  const purpose = document.getElementById('f_purpose').value.trim()
-  const assetDesc = document.getElementById('f_asset_desc').value.trim()
-  const condition = document.getElementById('f_condition').value
-  const conditionNotes = document.getElementById('f_condition_notes')?.value.trim() || ''
+  const dept = document.getElementById('f_dept')?.value || state.user.dept_id
+  const urgency = 'routine'
+  const assetDesc = document.getElementById('f_asset_desc')?.value.trim() || ''
+  const brand = document.getElementById('f_brand')?.value.trim() || ''
+  const serial = document.getElementById('f_serial')?.value.trim() || ''
+  const purpose = document.getElementById('f_purpose')?.value.trim() || ''
+  const condition = document.getElementById('f_condition')?.value || 'poor'
   const warranty = document.getElementById('f_warranty')?.value || 'unknown'
-  const loanerNeeded = false // removed from requester form
-  const recommendation = document.querySelector('input[name="f_recommendation"]:checked')
-  const recValue = recommendation ? recommendation.value : 'for_repair'
+  const recValue = document.querySelector('input[name="f_recommendation"]:checked')?.value || 'for_repair'
+  const fullDesc = assetDesc + (brand ? ' | Brand: ' + brand : '') + (serial ? ' | S/N: ' + serial : '')
 
-  if (!assetDesc) { showToast('error', 'Validation', 'Please describe the equipment.'); return }
-  if (action === 'submit' && !purpose) { showToast('error', 'Validation', 'Please describe the problem.'); return }
+  if (!assetDesc) { showToast('error', 'Required', 'Please describe the equipment.'); return }
+  if (!purpose) { showToast('error', 'Required', 'Please describe the defect or problem.'); return }
 
   try {
     const { data: numData } = await SB.rpc('generate_request_no')
@@ -5498,7 +5229,7 @@ async function saveDerpRequest(action) {
       source_system: 'manual',
       derp_category: category,
       asset_condition: condition || 'poor',
-      asset_condition_notes: assetDesc + (conditionNotes ? ' — ' + conditionNotes : ''),
+      asset_condition_notes: fullDesc,
       derp_warranty_status: warranty,
       derp_loaner_needed: loanerNeeded,
       derp_repeat_flag: repeatFlag,
@@ -5508,6 +5239,15 @@ async function saveDerpRequest(action) {
 
     const { data: req, error } = await SB.from('requests').insert(payload).select().single()
     if (error) throw error
+
+    // Upload DERP photo
+    const photoInput = document.getElementById('f_derp_photo')
+    if (photoInput?.files[0]) {
+      const file = photoInput.files[0]
+      const path = 'derp/' + requestNo + '-' + Date.now() + '.' + file.name.split('.').pop()
+      const { error: upErr } = await SB.storage.from('asset-photos').upload(path, file, { contentType: file.type })
+      if (!upErr) { const { data: ud } = SB.storage.from('asset-photos').getPublicUrl(path); await SB.from('requests').update({ attachment_url: ud.publicUrl }).eq('id', req.id) }
+    }
 
     // Insert items if any
     const validItems = state.itemRows.filter(r => r.item_name && r.item_name.trim())
