@@ -5590,6 +5590,16 @@ async function openTemplatesModal() {
 }
 
 async function openSaveTemplateModal() {
+  // Ensure drivers and vehicles are loaded
+  if (!_drivers.length || !_vehicles.length) {
+    const [{ data: drvs }, { data: vehs }] = await Promise.all([
+      SB.from('drivers').select('*').neq('status','off-duty').order('full_name'),
+      SB.from('vehicles').select('*').neq('status','maintenance').order('name')
+    ])
+    if (drvs) _drivers = drvs
+    if (vehs) _vehicles = vehs
+  }
+
   openMO('Save Trip Template',
     `<div class="fg"><label class="fl">Template Name *</label><input class="fi" id="tmplName" placeholder="e.g. Monthly DOH Report Delivery"></div>
      <div class="fr">
