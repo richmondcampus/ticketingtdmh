@@ -6363,7 +6363,7 @@ async function cancelMaint(id) {
 // TRIP TEMPLATES PAGE
 // ════════════════════════════════════════════════
 async function renderTemplates() {
-  const { data } = await SB.from('trip_templates').select('*').order('name')
+  const { data } = await SB.from('trip_templates').select('*').eq('is_active', true).order('name')
   const T = data || []
   const isAdmin = ['admin','approver_admin'].includes(currentProfile?.role)
 
