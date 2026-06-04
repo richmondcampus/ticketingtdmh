@@ -1744,7 +1744,7 @@ function openNewRequestModal(type) {
     '<button class="btn btn-secondary" onclick="saveRequest(\'draft\')">Save Draft</button>' +
     '<button class="btn btn-primary" onclick="saveRequest(\'submit\')">Submit Request</button>'
   // Also clear userId dataset to prevent edit mode
-  document.getElementById('newRequestBody').dataset.userId = ''
+  // userId is managed in userModalBody, not here
 
   const reqType = type || state.sourceType || 'supply'
   renderNewRequestForm(reqType)
@@ -6283,12 +6283,11 @@ function renderSettings() {
   html += '<h2>⚙️ Settings</h2>'
   html += '</div>'
 
-  // Tabs
+  // Tabs — Departments moved into Users sub-tabs
   const tabs = [
-    { id:'users', icon:'👥', label:'Users' },
-    { id:'departments', icon:'🏢', label:'Departments' },
-    { id:'locations', icon:'📍', label:'Stock Locations' },
-    { id:'thresholds', icon:'💰', label:'Approval Thresholds' },
+    { id:'users',       icon:'👥', label:'Users & Departments' },
+    { id:'locations',   icon:'📍', label:'Stock Locations' },
+    { id:'thresholds',  icon:'💰', label:'Approval Thresholds' },
     { id:'preferences', icon:'🔔', label:'Preferences' },
   ]
 
@@ -6315,7 +6314,6 @@ async function renderSettingsTab(tab) {
   if (!el) return
 
   if (tab === 'users') await renderUsersSettings(el)
-  else if (tab === 'departments') await renderDeptSettings(el)
   else if (tab === 'locations') await renderLocationsSettings(el)
   else if (tab === 'thresholds') await renderThresholdsSettings(el)
   else if (tab === 'preferences') await renderPreferencesSettings(el)
@@ -6449,8 +6447,8 @@ async function renderUsersSettings(el) {
 
 function switchUserTab(tab) {
   window._userSettingsTab = tab
-  const el = document.getElementById('settingsUsersContainer')
-  if (el) renderUsersSettings(el)
+  // Re-render the users settings container
+  renderSettingsTab('users')
 }
 
 function filterUsersTable(query) {
@@ -6701,19 +6699,21 @@ async function executeBulkImport() {
 
 function openAddUserModal() {
   document.getElementById('userModalTitle').textContent = '👤 Add New User'
-  document.getElementById('newRequestBody').dataset.userId = ''
+  document.getElementById('userModalBody').dataset.userId = ''
   renderUserForm(null)
   document.getElementById('userModalOkBtn').textContent = 'Create User'
+  document.getElementById('userModalOkBtn').onclick = saveUser  // always reset
   openModal('userModal')
 }
 
 function openEditUserModal(userId) {
   document.getElementById('userModalTitle').textContent = '✎ Edit User'
-  document.getElementById('newRequestBody').dataset.userId = userId
+  document.getElementById('userModalBody').dataset.userId = userId
   SB.from('users').select('*').eq('id', userId).single().then(({ data }) => {
     if (data) renderUserForm(data)
   })
   document.getElementById('userModalOkBtn').textContent = 'Update User'
+  document.getElementById('userModalOkBtn').onclick = saveUser  // always reset
   openModal('userModal')
 }
 
@@ -6777,7 +6777,7 @@ async function saveUser() {
   const phone = document.getElementById('u_phone').value.trim()
   const email = document.getElementById('u_email').value.trim()
   const password = document.getElementById('u_password')?.value
-  const userId = document.getElementById('newRequestBody').dataset.userId
+  const userId = document.getElementById('userModalBody').dataset.userId
 
   if (!name) { showToast('error','Validation','Full name is required.'); return }
   if (!empNo) { showToast('error','Validation','Employee No. is required.'); return }
