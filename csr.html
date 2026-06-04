@@ -992,9 +992,12 @@ function renderSidebarNav() {
   const nav = document.getElementById('sidebarNav')
   const items = [
     { id:'dashboard', icon:'📊', label:'Dashboard', roles:['requester','dept_head','supply_officer','purchasing_officer','admin','viewer'] },
-    { id:'my_requests', icon:'📋', label: state.user?.csr_role === 'dept_head' ? 'Dept Requests' : 'My Requests', roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
+    { id:'my_requests', icon:'📋',
+      label: state.user?.csr_role === 'dept_head' ? '🏢 Dept Requests' :
+             ['supply_officer','admin'].includes(state.user?.csr_role) ? '🗂 All Requests' : '📋 My Requests',
+      roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
     { id:'approval_queue', icon:'✅', label:'Approval Queue', roles:['dept_head','supply_officer','purchasing_officer','admin'], badge:'approval_count' },
-    { id:'all_requests', icon:'🗂', label:'All Requests', roles:['supply_officer','admin'] },
+    { id:'all_requests', icon:'🗂', label:'All Requests', roles:['admin'] }, // admin only, supply_officer sees all via My Requests
     { id:'purchase_orders', icon:'🛒', label:'Purchase Orders', roles:['supply_officer','admin'] },
     { id:'issuance', icon:'📤', label:'Issuance', roles:['supply_officer','admin'] },
     { id:'stock_inventory', icon:'🏪', label:'Stock Inventory', roles:['supply_officer','admin'] },
@@ -1361,8 +1364,8 @@ async function renderMyRequests() {
   let requests, title, subtitle
   if (['admin','supply_officer'].includes(role)) {
     requests = await loadRequests({})
-    title = 'All Requests'
-    subtitle = 'All requests in the system'
+    title = '🗂 All Requests'
+    subtitle = 'Complete view of all requests across all departments'
   } else if (role === 'dept_head') {
     // Dept head sees ALL requests from their department for monitoring
     requests = await loadRequests({ dept_id: state.user.dept_id })
@@ -1707,8 +1710,14 @@ async function viewRequest(id) {
     footer += '<button class="btn btn-ghost" onclick="openApprovalModal(\'' + req.id + '\',\'return\')">Return</button>'
     footer += '<button class="btn btn-danger" onclick="openApprovalModal(\'' + req.id + '\',\'reject\')">Reject</button>'
   }
-  if (req.status === 'approved' && ['supply_officer','admin'].includes(role)) {
-    footer += '<button class="btn btn-primary" onclick="markForPO(\'' + req.id + '\')">Create PO →</button>'
+  // Auto-approved (level 99) — Supply Officer needs to choose fulfillment
+  if (req.status === 'approved' && req.current_approval_level === 99 && ['supply_officer','admin'].includes(role)) {
+    footer += '<button class="btn btn-success" onclick="openApprovalModal(\'' + req.id + '\',\'approve\')">📦 Fulfill Request</button>'
+  }
+  // Fully approved (level 3) — Supply Officer can choose: issue from stock OR create PO
+  else if (req.status === 'approved' && req.current_approval_level !== 99 && ['supply_officer','admin'].includes(role)) {
+    footer += '<button class="btn btn-secondary" onclick="openApprovalModal(\'' + req.id + '\',\'approve\')">📦 Issue from Stock</button>'
+    footer += '<button class="btn btn-primary" onclick="markForPO(\'' + req.id + '\')">💰 Create PO →</button>'
   }
   document.getElementById('requestDetailFooter').innerHTML = footer
   openModal('requestDetailModal')
@@ -1786,14 +1795,16 @@ function openNewRequestModal(type) {
 function renderNewRequestForm(reqType) {
   const role = state.user.csr_role
 
-  // Requester: always supply, no type selector
-  if (role === 'requester') reqType = 'supply'
+  // Only admin can choose type — everyone else files supply requests
+  if (role !== 'admin') reqType = 'supply'
 
   document.getElementById('newRequestTitle').textContent = reqType === 'derp' ? '♻️ DERP Request' : '＋ New ' + reqType.charAt(0).toUpperCase() + reqType.slice(1) + ' Request'
   let html = ''
 
-  // Type selector — hidden for requesters, they only file supply requests
-  if (role !== 'requester') {
+  // Type selector — only admin can choose type freely
+  // supply_officer sees supply only (they can issue from stock, no need for type)
+  // requester always gets supply
+  if (role === 'admin') {
     html += '<div class="field"><label>Request Type</label>'
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
     ;['supply','purchase','derp'].forEach(t => {
@@ -1802,9 +1813,14 @@ function renderNewRequestForm(reqType) {
     })
     html += '</div></div>'
   } else {
-    // Requester — show a simple info label instead
+    // Non-admin — show context-appropriate info
+    const infoMsg = role === 'supply_officer'
+      ? '📋 Supply Request — you can issue from stock or forward to purchasing after submission.'
+      : role === 'dept_head'
+      ? '📋 Supply Request — as dept head, your request goes directly to Supply Officer.'
+      : '📋 Supply Request — will be reviewed by your department head and supply team.'
     html += '<div style="background:var(--accent-a);border:1px solid var(--accent-b);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--txt2);margin-bottom:14px;">'
-    html += '📋 Supply Request — your request will be reviewed by your department head and the supply team.'
+    html += infoMsg
     html += '</div>'
   }
 
@@ -2355,10 +2371,10 @@ async function saveRequest(action) {
   const dept = document.getElementById('f_dept') ? document.getElementById('f_dept').value : state.user.dept_id
   const urgency = document.getElementById('f_urgency') ? document.getElementById('f_urgency').value : 'routine'
   const purpose = document.getElementById('f_purpose') ? document.getElementById('f_purpose').value.trim() : ''
-  // Requesters can only file supply requests — server-side enforcement
-  const reqType = state.user.csr_role === 'requester'
-    ? 'supply'
-    : (state.sourceType || 'supply')
+  // Only admin can choose different request types
+  const reqType = state.user.csr_role === 'admin'
+    ? (state.sourceType || 'supply')
+    : 'supply'
   // Validate items
   const validItems = state.itemRows.filter(r => r.item_name && r.item_name.trim())
   if (validItems.length === 0) { showToast('error', 'Validation', 'Please add at least one item.'); return }
@@ -6298,6 +6314,7 @@ async function exportReportsCSV() {
 // SETTINGS MODULE
 // ═══════════════════════════════════════════
 let settingsState = { tab: 'users' }
+let poState = { pos: [], filterStatus: 'all' }
 
 function renderSettings() {
   const content = document.getElementById('mainContent')
