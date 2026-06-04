@@ -4128,6 +4128,9 @@ async function openAssignModal(id, ticketNo, vtype) {
        <div id="drvConflictWarn" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#92400e;margin-top:5px">
          ⚠ This driver already has a trip at that time. You can still assign — consider pooling both trips for efficiency.
        </div>
+       <button type="button" onclick="openAddRelieverModal('asDrv')" style="margin-top:6px;font-size:11px;color:var(--pri);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">
+         + Add reliever / temporary driver
+       </button>
      </div>
          ${avD.length === 0 ? '<option disabled>No available drivers at this time</option>' : ''}
        </select>
@@ -5620,6 +5623,27 @@ async function openSaveTemplateModal() {
          + Add Passenger
        </button>
      </div>
+     <!-- Default Driver + Vehicle (optional, always visible) -->
+     <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:10px">
+       <div style="font-size:11.5px;font-weight:700;color:var(--text2);margin-bottom:10px">
+         Default Driver & Vehicle
+         <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:6px">— optional, approver can change per trip</span>
+       </div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Default Driver</label>
+           <select class="fs" id="tmplDefaultDriver">
+             <option value="">-- No default (assign per trip) --</option>
+             ${(_drivers||[]).filter(d=>d.status!=='off-duty').map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.driver_type}</option>`).join('')}
+           </select>
+         </div>
+         <div class="fg"><label class="fl">Default Vehicle</label>
+           <select class="fs" id="tmplDefaultVehicle">
+             <option value="">-- No default (assign per trip) --</option>
+             ${(_vehicles||[]).filter(v=>v.status!=='maintenance').map(v=>`<option value="${v.id}|${v.plate}|${v.name||v.type}">${v.plate} — ${v.name||v.type}</option>`).join('')}
+           </select>
+         </div>
+       </div>
+     </div>
      <div style="border-top:1px solid var(--border);margin:14px 0"></div>
      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
        <input type="checkbox" id="tmplRecurring" style="width:15px;height:15px;accent-color:var(--pri)" onchange="toggleRecurringFields()">
@@ -5661,27 +5685,6 @@ async function openSaveTemplateModal() {
          </div>
        </div>
 
-       <!-- Default Driver + Vehicle (optional, editable any time) -->
-       <div style="border-top:1px solid var(--border);margin:13px 0 10px;padding-top:10px">
-         <div style="font-size:11.5px;font-weight:700;color:var(--text2);margin-bottom:10px">
-           Default Driver & Vehicle
-           <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:6px">— optional, approver can change per trip</span>
-         </div>
-         <div class="fr">
-           <div class="fg"><label class="fl">Default Driver</label>
-             <select class="fs" id="tmplDefaultDriver">
-               <option value="">-- No default (assign per trip) --</option>
-               ${(_drivers||[]).filter(d=>d.status!=='off-duty').map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.driver_type}</option>`).join('')}
-             </select>
-           </div>
-           <div class="fg"><label class="fl">Default Vehicle</label>
-             <select class="fs" id="tmplDefaultVehicle">
-               <option value="">-- No default (assign per trip) --</option>
-               ${(_vehicles||[]).filter(v=>v.status!=='maintenance').map(v=>`<option value="${v.id}|${v.plate}|${v.name||v.type}">${v.plate} — ${v.name||v.type}</option>`).join('')}
-             </select>
-           </div>
-         </div>
-       </div>
        <div class="fg"><label class="fl">End Date <span style="font-weight:400;font-size:10px;color:var(--text3)">(leave blank = indefinite)</span></label>
          <input class="fi" type="date" id="tmplRecurEnd">
        </div>
@@ -6538,11 +6541,11 @@ async function renderDrivers() {
       <td><div style="display:flex;align-items:center;gap:7px">
         <div style="width:30px;height:30px;border-radius:50%;background:${d.driver_type==='ambulance'?'var(--red-s)':d.driver_type==='both'?'var(--purple-s)':'var(--green-s)'};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${d.driver_type==='ambulance'?'var(--red)':d.driver_type==='both'?'var(--purple)':'var(--green)'}">${ini(d.full_name)}</div>
         <div>
-          <div style="font-weight:700;font-size:12.5px">${d.full_name}</div>
+          <div style="font-weight:700;font-size:12.5px">${d.full_name}${d.is_reliever?'<span style="background:#fef9eb;color:#92400e;border:1px solid #fde68a;border-radius:20px;padding:1px 6px;font-size:9px;font-weight:700;margin-left:5px">RELIEVER</span>':''}</div>
           ${d.user&&d.user.department?`<div style="font-size:10px;color:var(--text3)">${d.user.department}</div>`:''}
         </div>
       </div></td>
-      <td>${d.user&&d.user.username?`<span style="font-family:monospace;font-size:11px;background:var(--bg);padding:2px 7px;border-radius:6px;color:var(--pri)">${d.user.username}</span>`:'<span style="color:var(--red);font-size:10px;font-weight:600">⚠ No account</span>'}</td>
+      <td>${d.user&&d.user.username?`<span style="font-family:monospace;font-size:11px;background:var(--bg);padding:2px 7px;border-radius:6px;color:var(--pri)">${d.user.username}</span>`:d.is_reliever?'<span style="color:var(--text3);font-size:10px">No account (reliever)</span>':'<span style="color:var(--red);font-size:10px;font-weight:600">⚠ No account</span>'}</td>
       <td>${d.license_no?chip(d.license_no):'<span style="color:var(--text3);font-size:11px">—</span>'}</td>
       <td style="font-size:11px">${d.license_type||'—'}</td>
       <td>${driverTypeBadge(d.driver_type||'regular')}</td>
@@ -6550,10 +6553,83 @@ async function renderDrivers() {
       <td style="font-size:11px">${d.shift||'—'}</td>
       <td style="font-size:11px">${d.phone||'—'}</td>
       <td>${badge(d.status||'available')}</td>
-      <td><button class="tbl-act" onclick="openEditDriver('${d.id}')">Edit</button></td>
+      <td>
+        <button class="tbl-act" onclick="openEditDriver('${d.id}')">Edit</button>
+        ${d.is_reliever?`<button class="tbl-act tbl-act-red" onclick="removeReliever('${d.id}','${d.full_name.replace(/'/g,"\\'")}')">Remove</button>`:''}
+      </td>
     </tr>`).join('')}
     </tbody></table>
   </div>`
+}
+
+function openAddRelieverModal(targetSelectId) {
+  openMO('+ Add Reliever / Temporary Driver',
+    `<div class="info info-blue" style="margin-bottom:12px;font-size:12px">
+       For temporary or reliever drivers who don't have a system account.<br>
+       They will appear in driver lists while their status is active.
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Full Name *</label><input class="fi" id="rlvName" placeholder="e.g. Juan dela Cruz"></div>
+       <div class="fg"><label class="fl">Driver Type *</label>
+         <select class="fs" id="rlvType">
+           <option value="regular">🚙 Regular</option>
+           <option value="ambulance">🚑 Ambulance</option>
+           <option value="both">⚡ All Types</option>
+         </select>
+       </div>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Phone</label><input class="fi" id="rlvPhone" placeholder="09XXXXXXXXX"></div>
+       <div class="fg"><label class="fl">License No.</label><input class="fi" id="rlvLic" placeholder="Optional"></div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="rlvBtn" onclick="doAddReliever('${targetSelectId}')">Add & Select Driver</button>`,
+    { confirmClose: true }
+  )
+}
+
+async function doAddReliever(targetSelectId) {
+  const name = document.getElementById('rlvName')?.value.trim()
+  if (!name) { alert('Full name is required.'); return }
+  const btn = document.getElementById('rlvBtn'); btn.disabled=true; btn.textContent='Adding...'
+  const driverType = document.getElementById('rlvType')?.value || 'regular'
+  const phone      = document.getElementById('rlvPhone')?.value.trim() || null
+  const licNo      = document.getElementById('rlvLic')?.value.trim() || null
+
+  const { data, error } = await SB.from('drivers').insert({
+    full_name:   name,
+    driver_type: driverType,
+    phone:       phone,
+    license_no:  licNo,
+    status:      'available',
+    is_reliever: true
+  }).select().single()
+
+  if (error) { alert('Error: ' + error.message); btn.disabled=false; btn.textContent='Add & Select Driver'; return }
+
+  // Add to the target select dropdown and auto-select
+  const sel = document.getElementById(targetSelectId)
+  if (sel) {
+    const opt = document.createElement('option')
+    opt.value = `${data.id}|${data.full_name}`
+    opt.text  = `${data.full_name} · ${driverType} (Reliever)`
+    opt.selected = true
+    sel.appendChild(opt)
+  }
+
+  // Refresh _drivers cache
+  const { data: drivers } = await SB.from('drivers').select('*').order('full_name')
+  _drivers = drivers || []
+
+  await addAudit(null, null, '👤 Reliever Driver Added', `${name} added as reliever driver by ${currentProfile?.full_name}`)
+  closeMO()
+  alert(`✅ ${name} added as reliever driver and selected.`)
+}
+
+async function removeReliever(id, name) {
+  if (!confirm(`Remove reliever driver "${name}"?\n\nThis will permanently delete their profile. Any trips they were assigned to will retain their name for records.`)) return
+  await SB.from('drivers').delete().eq('id', id).eq('is_reliever', true)
+  renderDrivers()
 }
 
 async function openAddDriver() {
