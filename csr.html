@@ -2223,7 +2223,7 @@ async function directIssueFromStock() {
     if (state.page === 'dashboard') renderDashboard()
     else showPage('all_requests')
 
-  } catch(e) { showToast('error','Error', e.message); console.error(e) }
+  } catch(e) { if (handleSupabaseError(e, 'action')) return; showToast('error','Error', e.message); console.error(e) }
 }
 
 function buildItemRows() {
@@ -2678,12 +2678,11 @@ async function saveRequest(action) {
     else if (state.page === 'my_requests') renderMyRequests()
 
   } catch(e) {
+    if (handleSupabaseError(e, 'saveRequest')) return
     showToast('error', 'Error', e.message || 'Failed to save request.')
     console.error(e)
   }
 }
-
-async function submitRequest(id) {
   confirm2('Submit this request for approval?', async () => {
     const { error } = await SB.from('requests').update({ status: 'pending_approval', current_approval_level: 1 }).eq('id', id)
     if (error) { showToast('error', 'Error', error.message); return }
@@ -2957,7 +2956,7 @@ async function processApproval() {
     else if (state.page === 'all_requests') renderAllRequests()
     else if (state.page === 'dashboard') renderDashboard()
 
-  } catch(e) { showToast('error','Error', e.message); console.error(e) }
+  } catch(e) { if (handleSupabaseError(e, 'action')) return; showToast('error','Error', e.message); console.error(e) }
 }
 
 function openApprovalModal(reqId, action) {
@@ -4434,7 +4433,7 @@ async function saveIssuance() {
     closeModal('newRequestModal')
     showToast('success', 'Issued ✅', issuanceNo + (phone ? ' — SMS sent to ' + phone : '') )
     renderIssuance()
-  } catch(e) { showToast('error','Error', e.message); console.error(e) }
+  } catch(e) { if (handleSupabaseError(e, 'action')) return; showToast('error','Error', e.message); console.error(e) }
 }
 
 function generateToken() {
@@ -4685,7 +4684,7 @@ async function sendConfirmLink(issId, resend = false) {
 
     showToast('success', resend ? 'Resent!' : 'Sent!', 'Confirmation link sent to ' + emails.join(', '))
     viewIssuance(issId) // refresh view
-  } catch(e) { showToast('error','Error', e.message); console.error(e) }
+  } catch(e) { if (handleSupabaseError(e, 'action')) return; showToast('error','Error', e.message); console.error(e) }
 }
 
 // ─────────────────────────────
@@ -7840,6 +7839,23 @@ async function tryRefreshSession() {
     console.warn('[Auth] Session refresh failed:', e.message)
     return false
   }
+}
+
+// ─── Session-aware error handler ───
+// Pag permission denied o JWT error → show re-login banner agad
+function handleSupabaseError(error, context) {
+  if (!error) return false
+  const msg = error.message || error.code || ''
+  const isAuthError = msg.includes('permission denied') ||
+    msg.includes('JWT') || msg.includes('invalid') ||
+    msg.includes('row-level security') || error.code === '42501' ||
+    error.status === 403 || error.status === 401
+  if (isAuthError) {
+    console.warn('Auth error detected in', context, '— triggering re-login:', msg)
+    handleSessionExpired()
+    return true
+  }
+  return false
 }
 
 function handleSessionExpired() {
