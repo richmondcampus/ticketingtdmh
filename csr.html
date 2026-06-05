@@ -1170,6 +1170,8 @@ function roleApprovalLevel(role) {
 }
 
 function canApprove(req, role) {
+  // DERP requests are handled by IT or Maintenance team — CSR cannot approve/reject
+  if (req.request_type === 'derp') return false
   if (role === 'admin') return true
   const level = roleApprovalLevel(role)
   if (!level) return false // requester, viewer, etc. — never can approve
@@ -1692,11 +1694,35 @@ async function viewRequest(id) {
     body += '</div></div>'
   }
 
-  // Source badge
+  // Source badge — enhanced for IT/Maintenance auto-generated requests
   if (req.source_system && req.source_system !== 'manual') {
     body += '<div style="margin-bottom:16px;">'
-    const refLabel = req.source_ref_text || (req.source_ref_id ? req.source_ref_id.substring(0,8) + '...' : '')
-    body += '<span class="source-badge">🔗 Linked from ' + req.source_system.charAt(0).toUpperCase() + req.source_system.slice(1) + ' — ' + (refLabel ? 'Ref: ' + refLabel : '') + '</span>'
+    const srcLabel = { it: 'IT Helpdesk 🖥️', maintenance: 'Maintenance Hub 🔧', derp: 'DERP System ♻️', csr: 'CSR', inventory: 'Inventory' }
+    const src = srcLabel[req.source_system] || req.source_system
+
+    if (req.source_system === 'it' || req.source_system === 'maintenance') {
+      // Auto-generated from IT/Maintenance ticket — show action guidance
+      const isReplacement = req.purpose && req.purpose.includes('Replacement')
+      const isParts = req.purpose && req.purpose.includes('Parts request')
+      const icon = isReplacement ? '🛒' : '🔧'
+      const label = isReplacement ? 'Replacement Request' : 'Parts Request'
+      body += '<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;">'
+      body += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+      body += '<span style="font-size:18px;">' + icon + '</span>'
+      body += '<strong style="font-size:13px;color:var(--amber);">Auto-generated ' + label + ' from ' + src + '</strong>'
+      body += '</div>'
+      body += '<div style="font-size:12px;color:var(--txt2);margin-bottom:6px;">' + (req.purpose || '') + '</div>'
+      if (['supply_officer','admin'].includes(role)) {
+        body += '<div style="font-size:12px;color:var(--txt2);">👆 <strong>Action required:</strong> '
+        body += isReplacement
+          ? 'Check stock first — if available, issue from stock. Otherwise, create a Purchase Order.'
+          : 'Check if parts are available in stock. If yes, issue directly. If no, create a PO.'
+        body += '</div>'
+      }
+      body += '</div>'
+    } else {
+      body += '<span class="source-badge">🔗 Linked from ' + src + '</span>'
+    }
     body += '</div>'
   }
 
@@ -1741,6 +1767,15 @@ async function viewRequest(id) {
 
   // DERP fields
   if (req.request_type === 'derp') {
+    // Show forwarding status banner
+    const categoryLabel = { it: 'IT Helpdesk 🖥️', gsd: 'Maintenance Hub 🏥', maintenance: 'Maintenance Hub 🔧' }
+    const forwardedTo = categoryLabel[req.derp_category] || 'IT/Maintenance'
+    body += '<div style="background:var(--accent-a);border:1px solid var(--accent-b);border-radius:10px;padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">'
+    body += '<span style="font-size:20px;">🔗</span>'
+    body += '<div><div style="font-size:13px;font-weight:600;color:var(--accent);">Forwarded to ' + forwardedTo + '</div>'
+    body += '<div style="font-size:12px;color:var(--txt2);">Assessment and resolution is handled by the ' + forwardedTo.replace(/[🖥️🏥🔧]/g,'').trim() + ' team. This is view-only in CSR.</div>'
+    body += '</div></div>'
+
     body += '<div style="margin-bottom:16px;background:var(--violet-a);border:1px solid var(--violet);border-radius:10px;padding:14px;">'
     body += '<div style="font-size:12px;font-weight:600;color:var(--violet);margin-bottom:8px;">♻️ DERP Details</div>'
     body += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
@@ -5879,8 +5914,11 @@ async function saveDerpRequest(action) {
     if (repeatFlag) msg += ' ⚠️ Repeat offender flagged — same asset previously reported.'
     showToast('success', 'DERP Submitted', msg)
 
-    // Notify evaluator
-    if (action === 'submit') notifyDerpEvaluators(req, category)
+    // Auto-forward to IT Helpdesk or Maintenance based on category
+    if (action === 'submit') {
+      await autoCreateDerpTicket(req, category)
+      notifyDerpEvaluators(req, category)
+    }
 
     if (state.page === 'derp') renderDerp()
     else if (state.page === 'dashboard') renderDashboard()
@@ -5891,8 +5929,84 @@ async function saveDerpRequest(action) {
   }
 }
 
-// ─────────────────────────────
-// DERP DETAIL VIEW
+// ─── Auto-create ticket from DERP ───
+async function autoCreateDerpTicket(req, category) {
+  try {
+    const dept = state.departments.find(d => d.id === req.dept_id)
+    const requester = state.users.find(u => u.id === req.requested_by)
+    const subject = `[DERP ${req.request_no}] ${req.asset_condition_notes || req.purpose || 'Equipment Issue'}`
+    const description = [
+      'Auto-forwarded from DERP System',
+      '───────────────────────────────',
+      'DERP Request : ' + req.request_no,
+      'Department   : ' + (dept?.dept_name || '—'),
+      'Filed by     : ' + (requester?.full_name || '—'),
+      'Condition    : ' + (req.asset_condition || '—'),
+      'Description  : ' + (req.asset_condition_notes || req.purpose || '—'),
+    ].join('\n')
+
+    let ticketId = null
+
+    if (category === 'it') {
+      // Create IT Helpdesk ticket
+      const { data: cat } = await SB.from('it_categories')
+        .select('id').eq('slug', 'hardware').maybeSingle()
+
+      const itTicketNo = 'IT-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-6)
+      const { data: ticket, error } = await SB.from('it_tickets').insert({
+        id: itTicketNo,
+        subject,
+        description,
+        category_id: cat?.id || null,
+        priority: req.urgency === 'emergency' ? 'critical' : req.urgency === 'urgent' ? 'high' : 'medium',
+        status: 'open',
+        requester_id: req.requested_by,
+        dept_id: req.dept_id,
+        source_system: 'derp',
+        source_ref_id: req.id,
+        attachment_urls: req.attachment_url ? [req.attachment_url] : null
+      }).select().single()
+      if (!error && ticket) ticketId = ticket.id
+
+    } else {
+      // Create Maintenance ticket (for GSD-DERP and Maintenance-DERP)
+      const maintCat = category === 'gsd' ? 'equipment' : 'equipment'
+      const maintTicketNo = 'TKT-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-6)
+      const { data: ticket, error } = await SB.from('maint_tickets').insert({
+        id: maintTicketNo,
+        title: subject,
+        description,
+        dept_id: req.dept_id,
+        dept_name: dept?.dept_name || null,
+        category: maintCat,
+        priority: req.urgency === 'emergency' ? 'emergency' : req.urgency === 'urgent' ? 'urgent' : 'normal',
+        status: 'open',
+        submitted_by: req.requested_by,
+        source_system: 'derp',
+        source_ref_id: req.id,
+        ticket_subtype: 'repair'
+      }).select().single()
+      if (!error && ticket) ticketId = ticket.id
+    }
+
+    if (ticketId) {
+      // Save cross-reference link
+      await SB.from('cross_references').insert({
+        source_system: 'csr',
+        source_id: req.id,
+        target_system: category === 'it' ? 'it' : 'maintenance',
+        target_id: req.id, // using req.id as proxy since target is text ID
+        relationship: 'triggered_by'
+      })
+
+      const label = category === 'it' ? 'IT Helpdesk' : 'Maintenance Hub'
+      showToast('info', '🔗 Forwarded to ' + label, 'Ticket ' + ticketId + ' created automatically.')
+    }
+  } catch(e) {
+    console.warn('autoCreateDerpTicket error:', e)
+    // Non-critical — DERP was already saved, ticket creation is best-effort
+  }
+}
 // ─────────────────────────────
 async function viewDerp(id) {
   const { data: req } = await SB.from('requests').select('*').eq('id', id).single()
@@ -7621,7 +7735,8 @@ document.getElementById('loginPass').addEventListener('keydown', e => {
   if (isConfirmPage) return
 
   // Check for existing Supabase Auth session first
-  const { data: { session: authSession } } = await SB.auth.getSession()
+  let { data: { session: authSession } } = await SB.auth.getSession()
+
   if (authSession) {
     // Valid Supabase session — load profile
     const { data: profile } = await SB
