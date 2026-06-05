@@ -2974,7 +2974,10 @@ async function processApproval() {
     if (approvalAction === 'approve') {
       const fulfillChoice = document.querySelector('input[name="csr_fulfill"]:checked')?.value
 
-      if (isAutoApproved || ((level === 2) && fulfillChoice === 'issue_stock')) {
+      // Issue from stock — only if explicitly chosen OR auto-approved with issue_stock selected
+      const shouldIssueFromStock = fulfillChoice === 'issue_stock' && (level === 2 || isAutoApproved)
+
+      if (shouldIssueFromStock) {
         // Issue from stock directly
         newStatus = 'issued'; newLevel = 2
         toastMsg = '📦 Issued from stock — no PO needed.'
@@ -3009,8 +3012,8 @@ async function processApproval() {
         newLevel = 2; newStatus = 'pending_approval'
         toastMsg = '✅ Approved — forwarded to Supply Officer.'
         await notifyApprovers(req, 2)
-      } else if (level === 2) {
-        // forward_purchasing
+      } else if (level === 2 || isAutoApproved) {
+        // Forward to Purchasing Officer for PO creation
         newLevel = 3; newStatus = 'pending_approval'
         toastMsg = '✅ Forwarded to Purchasing Officer for PO.'
         await notifyApprovers(req, 3)
