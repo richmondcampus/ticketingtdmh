@@ -2683,6 +2683,8 @@ async function saveRequest(action) {
     console.error(e)
   }
 }
+
+async function submitRequest(id) {
   confirm2('Submit this request for approval?', async () => {
     const { error } = await SB.from('requests').update({ status: 'pending_approval', current_approval_level: 1 }).eq('id', id)
     if (error) { showToast('error', 'Error', error.message); return }
