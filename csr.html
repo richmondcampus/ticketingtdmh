@@ -1038,19 +1038,42 @@ function renderSidebarNav() {
   const role = state.user.csr_role
   const nav = document.getElementById('sidebarNav')
   const items = [
-    { id:'dashboard', icon:'📊', label:'Dashboard', roles:['requester','dept_head','supply_officer','purchasing_officer','admin','viewer'] },
-    { id:'my_requests', icon:'📋',
-      label: state.user?.csr_role === 'dept_head' ? '🏢 Dept Requests' :
-             ['supply_officer','admin'].includes(state.user?.csr_role) ? '🗂 All Requests' : '📋 My Requests',
-      roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
-    { id:'approval_queue', icon:'✅', label:'Approval Queue', roles:['dept_head','supply_officer','purchasing_officer','admin'], badge:'approval_count' },
-    { id:'all_requests', icon:'🗂', label:'All Requests', roles:['admin'] }, // admin only, supply_officer sees all via My Requests
-    { id:'purchase_orders', icon:'🛒', label:'Purchase Orders', roles:['supply_officer','purchasing_officer','admin'] },
-    { id:'issuance', icon:'📤', label:'Issuance', roles:['supply_officer','admin','dept_head'] },
-    { id:'stock_inventory', icon:'🏪', label:'Stock Inventory', roles:['supply_officer','admin'] },
-    { id:'derp', icon:'♻️', label:'DERP', roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
-    { id:'reports', icon:'📈', label:'Reports', roles:['supply_officer','purchasing_officer','admin'] },
-    { id:'settings', icon:'⚙️', label:'Settings', roles:['admin'] },
+    // ── Nav items — role-based visibility ──
+  { id:'dashboard',       icon:'📊', label:'Dashboard',
+    roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
+
+  // My Requests / Dept Requests / All Requests — label changes by role
+  { id:'my_requests', icon:'📋',
+    label: state.user?.csr_role === 'dept_head' ? '🏢 Dept Requests' :
+           ['supply_officer','admin'].includes(state.user?.csr_role) ? '🗂 All Requests' : '📋 My Requests',
+    roles:['requester','dept_head','supply_officer','admin'] },
+
+  // Approval Queue — only roles that actually approve
+  { id:'approval_queue',  icon:'✅', label:'Approval Queue',
+    roles:['dept_head','supply_officer','purchasing_officer','admin'], badge:'approval_count' },
+
+  // All Requests — hidden, merged into My Requests for supply_officer/admin
+  { id:'all_requests', icon:'🗂', label:'All Requests', roles:[] },
+
+  // Purchase Orders — purchasing_officer + admin only
+  { id:'purchase_orders', icon:'🛒', label:'Purchase Orders',
+    roles:['purchasing_officer','admin'] },
+
+  // Issuance — supply_officer (fulfills), dept_head (sees received), admin
+  { id:'issuance',        icon:'📤', label:'Issuance',
+    roles:['supply_officer','admin','dept_head'] },
+
+  // Stock Inventory — supply_officer + admin
+  { id:'stock_inventory', icon:'🏪', label:'Stock Inventory',
+    roles:['supply_officer','admin'] },
+
+  // DERP — everyone except purchasing_officer (not relevant to them)
+  { id:'derp',            icon:'♻️', label:'DERP',
+    roles:['requester','dept_head','supply_officer','admin'] },
+
+  // Reports — admin only
+  { id:'reports',         icon:'📈', label:'Reports',    roles:['admin'] },
+  { id:'settings',        icon:'⚙️', label:'Settings',   roles:['admin'] },
   ]
   let html = ''
   html += '<div class="nav-section">'
@@ -1544,57 +1567,77 @@ async function renderApprovalQueue() {
   const role = state.user.csr_role
   const level = roleApprovalLevel(role)
   const levelLabels = { 1:'Dept Head', 2:'Supply Officer', 3:'Purchasing Officer' }
+
+  // Load only relevant requests per role — no cross-level noise
   const pendingRequests = await loadRequests({ status: 'pending_approval' })
-  const approvedPending = role === 'supply_officer' || role === 'admin'
+  const approvedPending = ['supply_officer','admin'].includes(role)
     ? await loadRequests({ status: 'approved' })
     : []
-
-  // Auto-approved requests (level 99) are waiting for Supply Officer fulfillment
-  const autoApprovedPending = approvedPending.filter(r => r.current_approval_level === 99)
+  const autoApprovedPending = approvedPending.filter(r => r.current_approval_level === 99 && r.request_type !== 'derp')
 
   let myQueue
   if (role === 'dept_head') {
+    // Dept head: only their dept's requests at Level 1 (excluding their own)
     myQueue = pendingRequests.filter(r =>
-      r.current_approval_level === level &&
-      r.dept_id === state.user.dept_id
+      r.current_approval_level === 1 &&
+      r.dept_id === state.user.dept_id &&
+      r.requested_by !== state.user.id &&
+      r.request_type !== 'derp'
     )
-  } else if (role === 'admin') {
-    myQueue = [...pendingRequests, ...autoApprovedPending]
-  } else {
+  } else if (role === 'supply_officer') {
+    // Supply officer: Level 2 approvals + auto-approved fulfillments
     myQueue = [
-      ...pendingRequests.filter(r => r.current_approval_level === level),
+      ...pendingRequests.filter(r => r.current_approval_level === 2 && r.request_type !== 'derp'),
       ...autoApprovedPending
     ]
+  } else if (role === 'purchasing_officer') {
+    // Purchasing officer: Level 3 approvals only
+    myQueue = pendingRequests.filter(r => r.current_approval_level === 3 && r.request_type !== 'derp')
+  } else if (role === 'admin') {
+    myQueue = [
+      ...pendingRequests.filter(r => r.request_type !== 'derp'),
+      ...autoApprovedPending
+    ]
+  } else {
+    myQueue = []
   }
   state.requests = myQueue
 
+  const roleIcon = { dept_head:'🏢', supply_officer:'📋', purchasing_officer:'💰', admin:'⚙️' }
+  const roleTitle = { dept_head:'Dept Head Approvals', supply_officer:'Supply Fulfillment Queue', purchasing_officer:'Purchasing Approvals', admin:'All Pending Approvals' }
 
   let html = '<div class="page-header">'
-  html += '<div><h2>Approval Queue</h2>'
+  html += '<div>'
+  html += '<h2>' + (roleIcon[role]||'✅') + ' ' + (roleTitle[role]||'Approval Queue') + '</h2>'
   html += '<p style="font-size:13px;color:var(--txt2);">'
-  html += myQueue.length + ' request(s) waiting for your approval'
-  if (role !== 'admin') html += ' <span style="background:var(--accent-a);color:var(--accent);padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">You are: ' + (levelLabels[level] || role) + ' — Level ' + level + '</span>'
+  if (myQueue.length === 0) {
+    html += '✅ All caught up — no pending actions'
+  } else {
+    html += '<span style="background:var(--red-a);color:var(--red);padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">' + myQueue.length + ' action(s) needed</span>'
+  }
   html += '</p></div></div>'
 
-  // Approval flow visual
-  html += '<div style="display:flex;align-items:center;gap:0;margin-bottom:20px;background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;overflow:hidden;">'
-  const steps = [
-    { level: 1, label: '1. Dept Head', icon: '🏢' },
-    { level: 2, label: '2. Supply Officer', icon: '📋' },
-    { level: 3, label: '3. Purchasing Officer', icon: '💰' },
-  ]
-  steps.forEach((step, i) => {
-    const isActive = level === step.level || role === 'admin'
-    const bg = isActive ? 'var(--accent-a)' : 'var(--surf2)'
-    const color = isActive ? 'var(--accent)' : 'var(--txt3)'
-    const border = isActive ? 'border-left:2px solid var(--accent);' : ''
-    html += '<div style="flex:1;padding:12px 16px;background:' + bg + ';' + border + '">'
-    html += '<div style="font-size:16px;margin-bottom:2px;">' + step.icon + '</div>'
-    html += '<div style="font-size:12px;font-weight:600;color:' + color + ';">' + step.label + '</div>'
+  // Approval flow indicator — show user's position
+  if (role !== 'admin') {
+    html += '<div style="display:flex;align-items:center;gap:0;margin-bottom:20px;background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;overflow:hidden;">'
+    const steps = [
+      { level: 1, label: '1. Dept Head',           icon: '🏢' },
+      { level: 2, label: '2. Supply Officer',        icon: '📋' },
+      { level: 3, label: '3. Purchasing Officer',    icon: '💰' },
+    ]
+    steps.forEach((step, i) => {
+      const isActive = level === step.level
+      const bg = isActive ? 'var(--accent-a)' : 'var(--surf2)'
+      const color = isActive ? 'var(--accent)' : 'var(--txt3)'
+      const border = isActive ? 'border-left:2px solid var(--accent);' : ''
+      html += '<div style="flex:1;padding:12px 16px;background:' + bg + ';' + border + '">'
+      html += '<div style="font-size:16px;margin-bottom:2px;">' + step.icon + '</div>'
+      html += '<div style="font-size:12px;font-weight:600;color:' + color + ';">' + step.label + (isActive ? ' ← You' : '') + '</div>'
+      html += '</div>'
+      if (i < steps.length - 1) html += '<div style="width:1px;background:var(--bdr);"></div>'
+    })
     html += '</div>'
-    if (i < steps.length - 1) html += '<div style="width:1px;background:var(--bdr);"></div>'
-  })
-  html += '</div>'
+  }
 
   if (myQueue.length === 0) {
     html += '<div class="empty-state"><div class="empty-icon">✅</div><h3>All clear!</h3><p>No requests pending your approval right now.</p></div>'
