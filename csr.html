@@ -1169,11 +1169,14 @@ async function loadStats() {
   try {
     const uid = state.user.id
     const role = state.user.csr_role
+    const approvalLevel = roleApprovalLevel(role)
     const [myPending, approvalQueue, allPending, lowStock] = await Promise.all([
       SB.from('requests').select('id', { count: 'exact', head: true }).eq('requested_by', uid).in('status', ['draft','pending_approval']),
-      (role === 'dept_head' || role === 'supply_officer' || role === 'purchasing_officer' || role === 'admin')
-        ? SB.from('requests').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval').eq('current_approval_level', roleApprovalLevel(role))
-        : { count: 0 },
+      (approvalLevel !== null)
+        ? SB.from('requests').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval').eq('current_approval_level', approvalLevel).neq('request_type','derp')
+        : role === 'admin'
+          ? SB.from('requests').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval').neq('request_type','derp')
+          : { count: 0 },
       SB.from('requests').select('id', { count: 'exact', head: true }).in('status', ['pending_approval','approved','for_po','ordered']),
       SB.from('stock_items').select('id', { count: 'exact', head: true }).lte('quantity_on_hand', 0)
     ])
@@ -2785,6 +2788,7 @@ async function submitRequest(id) {
 // ═══════════════════════════════════════════
 async function renderPurchaseOrders() {
   const content = document.getElementById('mainContent')
+  const role = state.user.csr_role
   content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
 
   const [posRes, reqsRes] = await Promise.all([
