@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Jakari Travel and Tours — Philippine Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy: #1B2A6B;
+  --navy-light: #2A3F8F;
+  --navy-dark: #0F1A42;
+  --gold: #F5A623;
+  --gold-dark: #D4891A;
+  --orange: #E8640A;
+  --white: #FFFFFF;
+  --off-white: #F8F7F4;
+  --text: #1a1a2e;
+  --text-muted: #6B7280;
+  --border: rgba(0,0,0,0.08);
+  --radius: 12px;
+  --radius-lg: 20px;
+}
+
+html { scroll-behavior: smooth; }
+body { font-family: 'DM Sans', sans-serif; background: var(--off-white); color: var(--text); line-height: 1.6; }
+
+/* ===== NAVBAR ===== */
+.navbar {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(15, 26, 66, 0.97);
+  backdrop-filter: blur(12px);
+  padding: 0 48px;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 64px;
+  border-bottom: 1px solid rgba(245,166,35,0.15);
+}
+.nav-brand { display: flex; align-items: center; gap: 12px; }
+.nav-logo-circle {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--gold);
+  display: flex; align-items: center; justify-content: center;
+}
+.nav-logo-circle i { font-size: 20px; color: var(--navy-dark); }
+.nav-brand-text { color: #fff; }
+.nav-brand-text .main { font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 600; }
+.nav-brand-text .sub { font-size: 10px; color: rgba(245,166,35,0.8); letter-spacing: 0.05em; }
+.nav-links { display: flex; align-items: center; gap: 32px; }
+.nav-links a { color: rgba(255,255,255,0.7); font-size: 14px; text-decoration: none; transition: color 0.2s; cursor: pointer; }
+.nav-links a:hover { color: var(--gold); }
+.nav-cta {
+  background: var(--gold); color: var(--navy-dark);
+  padding: 9px 22px; border-radius: 30px;
+  font-size: 14px; font-weight: 600; text-decoration: none;
+  transition: background 0.2s, transform 0.15s;
+  cursor: pointer; border: none;
+}
+.nav-cta:hover { background: var(--gold-dark); transform: translateY(-1px); }
+
+/* ===== HERO ===== */
+.hero {
+  background: var(--navy-dark);
+  min-height: 92vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center;
+  padding: 80px 24px 60px;
+  position: relative; overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(27,42,107,0.9) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 20% 80%, rgba(245,166,35,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 80% 60%, rgba(232,100,10,0.08) 0%, transparent 50%);
+}
+.hero-dots {
+  position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(245,166,35,0.15) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.4;
+}
+.hero-content { position: relative; z-index: 1; max-width: 720px; }
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(245,166,35,0.15); border: 1px solid rgba(245,166,35,0.35);
+  color: var(--gold); font-size: 12px; font-weight: 500;
+  padding: 6px 16px; border-radius: 30px; margin-bottom: 28px;
+  letter-spacing: 0.04em;
+}
+.hero h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(36px, 6vw, 64px);
+  font-weight: 700; color: #fff;
+  line-height: 1.15; margin-bottom: 20px;
+}
+.hero h1 .accent { color: var(--gold); font-style: italic; }
+.hero-sub { color: rgba(255,255,255,0.6); font-size: 17px; margin-bottom: 40px; max-width: 480px; margin-left: auto; margin-right: auto; }
+.hero-search {
+  background: rgba(255,255,255,0.97);
+  border-radius: 60px;
+  padding: 8px 8px 8px 24px;
+  display: flex; align-items: center; gap: 12px;
+  max-width: 520px; margin: 0 auto 48px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.hero-search i { font-size: 18px; color: var(--text-muted); }
+.hero-search input { flex: 1; border: none; outline: none; font-family: 'DM Sans', sans-serif; font-size: 15px; color: var(--text); background: transparent; }
+.hero-search input::placeholder { color: #aaa; }
+.search-btn {
+  background: var(--navy); color: #fff;
+  border: none; padding: 10px 24px; border-radius: 50px;
+  font-size: 14px; font-weight: 500; cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: background 0.2s;
+}
+.search-btn:hover { background: var(--navy-light); }
+.hero-stats { display: flex; justify-content: center; gap: 48px; }
+.hero-stat { text-align: center; }
+.hero-stat .num { font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 700; color: var(--gold); }
+.hero-stat .lbl { font-size: 12px; color: rgba(255,255,255,0.5); letter-spacing: 0.05em; }
+.hero-divider { width: 1px; background: rgba(255,255,255,0.15); height: 40px; align-self: center; }
+
+/* ===== SECTIONS ===== */
+.section { padding: 80px 48px; }
+.section-alt { background: #fff; }
+.section-dark { background: var(--navy-dark); }
+.section-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+  color: var(--gold); text-transform: uppercase; margin-bottom: 10px;
+}
+.section-title { font-family: 'Playfair Display', serif; font-size: clamp(26px, 3vw, 38px); font-weight: 700; color: var(--text); line-height: 1.2; }
+.section-title-light { color: #fff; }
+.section-subtitle { font-size: 16px; color: var(--text-muted); margin-top: 10px; max-width: 500px; }
+.section-header { margin-bottom: 48px; }
+.section-header-row { display: flex; justify-content: space-between; align-items: flex-end; }
+.see-all { font-size: 13px; color: var(--navy); font-weight: 500; cursor: pointer; text-decoration: none; display: flex; align-items: center; gap: 4px; }
+.see-all:hover { color: var(--gold); }
+
+/* ===== PACKAGES ===== */
+.packages-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.pkg-card {
+  background: #fff; border-radius: var(--radius-lg);
+  overflow: hidden; border: 1px solid var(--border);
+  transition: transform 0.25s, box-shadow 0.25s;
+  cursor: pointer;
+}
+.pkg-card:hover { transform: translateY(-6px); box-shadow: 0 24px 60px rgba(27,42,107,0.12); }
+.pkg-thumb {
+  height: 180px; display: flex; align-items: center; justify-content: center;
+  font-size: 56px; position: relative; overflow: hidden;
+}
+.pkg-thumb.palawan { background: linear-gradient(135deg, #87CEEB, #1E90FF); }
+.pkg-thumb.boracay { background: linear-gradient(135deg, #FFD700, #FF8C00); }
+.pkg-thumb.siargao { background: linear-gradient(135deg, #3CB371, #006400); }
+.pkg-thumb.bohol { background: linear-gradient(135deg, #DEB887, #8B4513); }
+.pkg-thumb.batanes { background: linear-gradient(135deg, #708090, #2F4F4F); }
+.pkg-thumb.cebu { background: linear-gradient(135deg, #40E0D0, #008080); }
+.pkg-badge {
+  position: absolute; top: 12px; left: 12px;
+  background: rgba(0,0,0,0.55); color: #fff;
+  font-size: 11px; padding: 3px 10px; border-radius: 20px; backdrop-filter: blur(4px);
+}
+.pkg-body { padding: 20px; }
+.pkg-name { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.pkg-meta { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.pkg-meta i { font-size: 14px; vertical-align: -2px; }
+.pkg-includes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.incl-chip {
+  font-size: 11px; padding: 3px 10px; border-radius: 20px;
+  background: rgba(27,42,107,0.07); color: var(--navy); border: 1px solid rgba(27,42,107,0.12);
+}
+.pkg-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 14px; border-top: 1px solid var(--border); }
+.pkg-price .from { font-size: 11px; color: var(--text-muted); }
+.pkg-price .amount { font-size: 22px; font-weight: 700; color: var(--navy); line-height: 1; }
+.pkg-price .per { font-size: 11px; color: var(--text-muted); }
+.pkg-inquire {
+  background: var(--navy); color: #fff;
+  border: none; padding: 9px 20px; border-radius: 30px;
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: background 0.2s;
+}
+.pkg-inquire:hover { background: var(--gold); color: var(--navy-dark); }
+
+/* ===== WHY US ===== */
+.why-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+.why-card {
+  background: var(--off-white); border-radius: var(--radius-lg);
+  padding: 28px 20px; text-align: center;
+  border: 1px solid var(--border);
+  transition: transform 0.2s, border-color 0.2s;
+}
+.why-card:hover { transform: translateY(-4px); border-color: rgba(245,166,35,0.4); }
+.why-icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: rgba(27,42,107,0.08);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px; font-size: 24px; color: var(--navy);
+}
+.why-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.why-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+/* ===== INQUIRY + CHAT ===== */
+.contact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.inq-card {
+  background: #fff; border-radius: var(--radius-lg);
+  border: 1px solid var(--border); padding: 32px;
+}
+.inq-card h3 { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+.inq-card .inq-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 24px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.form-group label { font-size: 12px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.04em; }
+.form-group input,
+.form-group select,
+.form-group textarea {
+  border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 10px 14px;
+  font-size: 14px; font-family: 'DM Sans', sans-serif;
+  color: var(--text); background: var(--off-white);
+  outline: none; transition: border-color 0.2s;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus { border-color: var(--navy); background: #fff; }
+.form-group textarea { resize: none; height: 90px; }
+.inq-submit {
+  width: 100%; background: var(--navy); color: #fff;
+  border: none; padding: 13px; border-radius: 10px;
+  font-size: 15px; font-weight: 500; cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: background 0.2s;
+}
+.inq-submit:hover { background: var(--navy-light); }
+
+/* ===== CHAT PANEL ===== */
+.chat-card {
+  background: #fff; border-radius: var(--radius-lg);
+  border: 1px solid var(--border); overflow: hidden;
+  display: flex; flex-direction: column; height: 100%; min-height: 500px;
+}
+.chat-header {
+  background: var(--navy); padding: 16px 20px;
+  display: flex; align-items: center; gap: 12px;
+}
+.chat-agent-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--gold); display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: var(--navy-dark);
+}
+.chat-agent-info .name { color: #fff; font-size: 14px; font-weight: 500; }
+.chat-agent-info .status { font-size: 11px; color: rgba(255,255,255,0.6); display: flex; align-items: center; gap: 5px; margin-top: 1px; }
+.online-dot { width: 7px; height: 7px; background: #4CAF50; border-radius: 50%; display: inline-block; }
+.chat-msgs { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: var(--off-white); }
+.msg { max-width: 78%; }
+.msg.agent { align-self: flex-start; }
+.msg.user { align-self: flex-end; }
+.msg-bubble { padding: 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.5; }
+.msg.agent .msg-bubble { background: #fff; border: 1px solid var(--border); color: var(--text); border-radius: 4px 16px 16px 16px; }
+.msg.user .msg-bubble { background: var(--navy); color: #fff; border-radius: 16px 16px 4px 16px; }
+.msg-time { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+.msg.user .msg-time { text-align: right; }
+.chat-typing { display: flex; align-items: center; gap: 4px; padding: 10px 14px; }
+.typing-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); animation: bounce 1.2s infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+.chat-input-area { display: flex; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--border); background: #fff; }
+.chat-input-area input {
+  flex: 1; border: 1.5px solid var(--border); border-radius: 30px;
+  padding: 9px 16px; font-size: 13px; font-family: 'DM Sans', sans-serif;
+  outline: none; background: var(--off-white);
+  transition: border-color 0.2s;
+}
+.chat-input-area input:focus { border-color: var(--navy); }
+.chat-send-btn {
+  background: var(--navy); color: #fff;
+  border: none; width: 40px; height: 40px; border-radius: 50%;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 17px; transition: background 0.2s;
+}
+.chat-send-btn:hover { background: var(--gold); color: var(--navy-dark); }
+
+/* ===== FAQ ===== */
+.faq-list { display: flex; flex-direction: column; gap: 12px; max-width: 760px; margin: 0 auto; }
+.faq-item {
+  background: #fff; border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.faq-q {
+  padding: 18px 22px; display: flex; justify-content: space-between; align-items: center;
+  cursor: pointer; font-size: 15px; font-weight: 500; color: var(--text);
+  transition: background 0.15s;
+}
+.faq-q:hover { background: var(--off-white); }
+.faq-q .faq-icon { font-size: 18px; color: var(--navy); flex-shrink: 0; transition: transform 0.25s; }
+.faq-q.open .faq-icon { transform: rotate(45deg); }
+.faq-a { padding: 0 22px 18px; font-size: 14px; color: var(--text-muted); line-height: 1.7; display: none; }
+.faq-a.open { display: block; }
+
+/* ===== PORTAL ===== */
+.portal-wrap { display: grid; grid-template-columns: 1fr 1.2fr; gap: 40px; align-items: start; }
+.portal-login-cards { display: flex; flex-direction: column; gap: 20px; }
+.login-card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-lg); padding: 28px;
+}
+.login-card .role-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; padding: 4px 12px; border-radius: 20px;
+  margin-bottom: 14px; font-weight: 600; letter-spacing: 0.04em;
+}
+.tag-manager { background: rgba(245,166,35,0.2); color: var(--gold); border: 1px solid rgba(245,166,35,0.35); }
+.tag-staff { background: rgba(100,140,255,0.15); color: #7B9FE8; border: 1px solid rgba(100,140,255,0.25); }
+.login-card h4 { color: #fff; font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+.login-card p { color: rgba(255,255,255,0.45); font-size: 13px; margin-bottom: 18px; }
+.login-input {
+  width: 100%; background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.15); border-radius: 10px;
+  padding: 10px 14px; font-size: 14px; font-family: 'DM Sans', sans-serif;
+  color: #fff; margin-bottom: 10px; outline: none;
+  transition: border-color 0.2s;
+}
+.login-input:focus { border-color: var(--gold); }
+.login-input::placeholder { color: rgba(255,255,255,0.3); }
+.login-btn {
+  width: 100%; padding: 11px; border-radius: 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  font-family: 'DM Sans', sans-serif; margin-top: 4px;
+  transition: all 0.2s; border: none;
+}
+.btn-manager { background: var(--gold); color: var(--navy-dark); }
+.btn-manager:hover { background: var(--gold-dark); }
+.btn-staff { background: rgba(255,255,255,0.08); color: #7B9FE8; border: 1px solid rgba(100,140,255,0.3) !important; }
+.btn-staff:hover { background: rgba(100,140,255,0.15); }
+
+/* ===== DASHBOARD PREVIEW ===== */
+.dash-preview {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-lg); padding: 24px;
+}
+.dash-preview-label { font-size: 11px; color: rgba(255,255,255,0.35); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 20px; }
+.dash-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+.ds-card { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 14px 16px; }
+.ds-val { font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 700; color: var(--gold); }
+.ds-lbl { font-size: 11px; color: rgba(255,255,255,0.45); margin-top: 2px; }
+.dash-inq-label { font-size: 11px; color: rgba(255,255,255,0.35); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; }
+.inq-rows { display: flex; flex-direction: column; gap: 8px; }
+.inq-row {
+  background: rgba(255,255,255,0.06); border-radius: 10px;
+  padding: 12px 14px; display: flex; align-items: center; justify-content: space-between;
+}
+.inq-row-info .inq-name { color: rgba(255,255,255,0.85); font-size: 13px; font-weight: 500; }
+.inq-row-info .inq-dest { color: rgba(255,255,255,0.4); font-size: 11px; margin-top: 2px; }
+.status-pill { font-size: 10px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+.s-new { background: rgba(245,166,35,0.2); color: var(--gold); }
+.s-ongoing { background: rgba(76,175,80,0.15); color: #81C784; }
+.s-done { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.4); }
+
+/* ===== APPOINTMENTS ===== */
+.appt-section { background: var(--off-white); }
+.appt-card {
+  background: #fff; border-radius: var(--radius-lg);
+  border: 1px solid var(--border); padding: 32px;
+  max-width: 600px; margin: 0 auto;
+}
+.appt-steps { display: flex; gap: 0; margin-bottom: 32px; }
+.step { flex: 1; text-align: center; position: relative; }
+.step::after { content: ''; position: absolute; top: 18px; left: 50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.step:last-child::after { display: none; }
+.step-num {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--navy); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600; margin: 0 auto 8px;
+  position: relative; z-index: 1;
+}
+.step.inactive .step-num { background: var(--border); color: var(--text-muted); }
+.step-lbl { font-size: 11px; color: var(--text-muted); }
+
+/* ===== FOOTER ===== */
+.footer {
+  background: var(--navy-dark); padding: 48px 48px 24px;
+}
+.footer-top { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 40px; margin-bottom: 40px; }
+.footer-brand-block { }
+.footer-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.footer-logo .circle { width: 36px; height: 36px; background: var(--gold); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.footer-logo .circle i { font-size: 18px; color: var(--navy-dark); }
+.footer-logo .brand-name { font-family: 'Playfair Display', serif; color: #fff; font-size: 16px; font-weight: 600; }
+.footer-tagline { font-size: 13px; color: rgba(255,255,255,0.45); font-style: italic; margin-bottom: 16px; }
+.footer-contact-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(255,255,255,0.55); margin-bottom: 6px; }
+.footer-contact-item i { font-size: 15px; color: var(--gold); }
+.footer-col h5 { color: rgba(255,255,255,0.6); font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 16px; }
+.footer-col a { display: block; color: rgba(255,255,255,0.5); font-size: 13px; margin-bottom: 8px; text-decoration: none; cursor: pointer; transition: color 0.2s; }
+.footer-col a:hover { color: var(--gold); }
+.footer-bottom { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; display: flex; justify-content: space-between; align-items: center; }
+.footer-copy { font-size: 12px; color: rgba(255,255,255,0.3); }
+.footer-social { display: flex; gap: 12px; }
+.social-btn {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.5); font-size: 16px; cursor: pointer;
+  transition: all 0.2s; text-decoration: none;
+}
+.social-btn:hover { background: var(--gold); color: var(--navy-dark); border-color: var(--gold); }
+
+/* ===== FLOAT CHAT ===== */
+.float-chat {
+  position: fixed; bottom: 28px; right: 28px; z-index: 999;
+}
+.float-btn {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--navy); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; color: #fff;
+  box-shadow: 0 8px 30px rgba(27,42,107,0.35);
+  transition: transform 0.2s, background 0.2s;
+}
+.float-btn:hover { transform: scale(1.1); background: var(--gold); color: var(--navy-dark); }
+.float-badge {
+  position: absolute; top: -2px; right: -2px;
+  background: var(--orange); color: #fff;
+  width: 20px; height: 20px; border-radius: 50%;
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid #fff;
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+.fade-up { animation: fadeUp 0.6s ease both; }
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.2s; }
+.delay-3 { animation-delay: 0.3s; }
+.delay-4 { animation-delay: 0.4s; }
+
+@media (max-width: 768px) {
+  .navbar { padding: 0 20px; }
+  .nav-links { display: none; }
+  .section { padding: 48px 20px; }
+  .packages-grid, .why-grid, .contact-grid, .portal-wrap, .footer-top { grid-template-columns: 1fr; }
+  .form-row { grid-template-columns: 1fr; }
+  .hero-stats { gap: 24px; }
+  .hero-divider { display: none; }
+  .footer { padding: 40px 20px 20px; }
+  .footer-bottom { flex-direction: column; gap: 12px; text-align: center; }
+  .appt-card { padding: 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <div class="nav-logo-circle"><i class="ti ti-plane-departure"></i></div>
+    <div class="nav-brand-text">
+      <div class="main">Jakari Travel and Tours</div>
+      <div class="sub">Philippine Explorer · SM Center Angono</div>
+    </div>
+  </div>
+  <div class="nav-links">
+    <a href="#packages">Packages</a>
+    <a href="#contact">Inquire</a>
+    <a href="#faq">FAQ</a>
+    <a href="#portal">Staff portal</a>
+    <button class="nav-cta" onclick="document.getElementById('contact').scrollIntoView({behavior:'smooth'})">Book now</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-dots"></div>
+  <div class="hero-content">
+    <div class="hero-badge fade-up"><i class="ti ti-map-pin" style="font-size:13px;"></i> SM Center Angono, Rizal</div>
+    <h1 class="fade-up delay-1">Unforgettable<br /><span class="accent">Journeys</span> Await</h1>
+    <p class="hero-sub fade-up delay-2">Book your dream trip across the Philippines and beyond. Expert-curated packages, best price guarantee.</p>
+    <div class="hero-search fade-up delay-3">
+      <i class="ti ti-search"></i>
+      <input placeholder="Where do you want to go?" />
+      <button class="search-btn">Search trips</button>
+    </div>
+    <div class="hero-stats fade-up delay-4">
+      <div class="hero-stat"><div class="num">500+</div><div class="lbl">Happy travelers</div></div>
+      <div class="hero-divider"></div>
+      <div class="hero-stat"><div class="num">50+</div><div class="lbl">Destinations</div></div>
+      <div class="hero-divider"></div>
+      <div class="hero-stat"><div class="num">5★</div><div class="lbl">Rated service</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- PACKAGES -->
+<section class="section section-alt" id="packages">
+  <div class="section-header">
+    <div class="section-header-row">
+      <div>
+        <div class="section-label">Featured destinations</div>
+        <h2 class="section-title">Popular tour packages</h2>
+        <p class="section-subtitle">Handpicked trips with best-value inclusions — flights, hotel, and tours in one.</p>
+      </div>
+      <a class="see-all">View all packages <i class="ti ti-arrow-right"></i></a>
+    </div>
+  </div>
+  <div class="packages-grid">
+    <div class="pkg-card">
+      <div class="pkg-thumb palawan">
+        <div class="pkg-badge">Bestseller</div>
+        <i class="ti ti-sailboat" style="font-size:56px;color:rgba(255,255,255,0.9);"></i>
+      </div>
+      <div class="pkg-body">
+        <div class="pkg-name">Palawan Island Escape</div>
+        <div class="pkg-meta"><i class="ti ti-clock"></i> 4 days 3 nights &nbsp;·&nbsp; <i class="ti ti-users"></i> 2–10 pax</div>
+        <div class="pkg-includes">
+          <span class="incl-chip">Airfare</span>
+          <span class="incl-chip">Hotel</span>
+          <span class="incl-chip">Island hopping</span>
+          <span class="incl-chip">Transfers</span>
+        </div>
+        <div class="pkg-footer">
+          <div class="pkg-price"><div class="from">Starts at</div><div class="amount">₱8,500</div><div class="per">/person</div></div>
+          <button class="pkg-inquire">Inquire now</button>
+        </div>
+      </div>
+    </div>
+    <div class="pkg-card">
+      <div class="pkg-thumb boracay">
+        <div class="pkg-badge">Popular</div>
+        <i class="ti ti-umbrella" style="font-size:56px;color:rgba(255,255,255,0.9);"></i>
+      </div>
+      <div class="pkg-body">
+        <div class="pkg-name">Boracay White Beach</div>
+        <div class="pkg-meta"><i class="ti ti-clock"></i> 3 days 2 nights &nbsp;·&nbsp; <i class="ti ti-users"></i> 2–8 pax</div>
+        <div class="pkg-includes">
+          <span class="incl-chip">Airfare</span>
+          <span class="incl-chip">Hotel</span>
+          <span class="incl-chip">Beach tour</span>
+        </div>
+        <div class="pkg-footer">
+          <div class="pkg-price"><div class="from">Starts at</div><div class="amount">₱6,200</div><div class="per">/person</div></div>
+          <button class="pkg-inquire">Inquire now</button>
+        </div>
+      </div>
+    </div>
+    <div class="pkg-card">
+      <div class="pkg-thumb siargao">
+        <div class="pkg-badge">New</div>
+        <i class="ti ti-wave-sine" style="font-size:56px;color:rgba(255,255,255,0.9);"></i>
+      </div>
+      <div class="pkg-body">
+        <div class="pkg-name">Siargao Surf & Chill</div>
+        <div class="pkg-meta"><i class="ti ti-clock"></i> 5 days 4 nights &nbsp;·&nbsp; <i class="ti ti-users"></i> 2–6 pax</div>
+        <div class="pkg-includes">
+          <span class="incl-chip">Airfare</span>
+          <span class="incl-chip">Hotel</span>
+          <span class="incl-chip">Surf lessons</span>
+          <span class="incl-chip">Island tour</span>
+        </div>
+        <div class="pkg-footer">
+          <div class="pkg-price"><div class="from">Starts at</div><div class="amount">₱9,800</div><div class="per">/person</div></div>
+          <button class="pkg-inquire">Inquire now</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY US -->
+<section class="section">
+  <div class="section-header" style="text-align:center;">
+    <div class="section-label" style="text-align:center;">Why Jakari?</div>
+    <h2 class="section-title" style="text-align:center;">Your travel, our passion</h2>
+  </div>
+  <div class="why-grid">
+    <div class="why-card">
+      <div class="why-icon"><i class="ti ti-shield-check"></i></div>
+      <div class="why-title">DOT-accredited partner</div>
+      <div class="why-desc">Authorized Philippine Explorer agent — licensed, trusted, and compliant.</div>
+    </div>
+    <div class="why-card">
+      <div class="why-icon"><i class="ti ti-headset"></i></div>
+      <div class="why-title">Live chat support</div>
+      <div class="why-desc">Talk to a real travel expert on our website — no bots, just helpful people.</div>
+    </div>
+    <div class="why-card">
+      <div class="why-icon"><i class="ti ti-pig-money"></i></div>
+      <div class="why-title">Best price guarantee</div>
+      <div class="why-desc">We match competitor prices. You get the best deal, always.</div>
+    </div>
+    <div class="why-card">
+      <div class="why-icon"><i class="ti ti-map-2"></i></div>
+      <div class="why-title">Personalized packages</div>
+      <div class="why-desc">Custom itineraries for families, barkadas, couples, and corporate groups.</div>
+    </div>
+  </div>
+</section>
+
+<!-- INQUIRY + CHAT -->
+<section class="section section-alt" id="contact">
+  <div class="section-header">
+    <div class="section-label">Get in touch</div>
+    <h2 class="section-title">Ready to plan your trip?</h2>
+    <p class="section-subtitle">Send us an inquiry or chat with our team right now.</p>
+  </div>
+  <div class="contact-grid">
+    <!-- FORM -->
+    <div class="inq-card">
+      <h3>Send an inquiry</h3>
+      <p class="inq-sub">Fill in the form and we'll get back to you within 1 hour.</p>
+      <div class="form-row">
+        <div class="form-group"><label>Full name</label><input placeholder="Juan dela Cruz" /></div>
+        <div class="form-group"><label>Contact number</label><input placeholder="09XX XXX XXXX" /></div>
+      </div>
+      <div class="form-group"><label>Email address</label><input placeholder="juan@email.com" /></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Destination</label>
+          <select>
+            <option value="">Select destination</option>
+            <option>Palawan</option><option>Boracay</option><option>Siargao</option>
+            <option>Bohol</option><option>Batanes</option><option>Cebu</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Preferred travel date</label><input type="date" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Number of travelers</label>
+          <select><option>1 person</option><option>2 persons</option><option>3-5 persons</option><option>6-10 persons</option><option>10+ persons</option></select>
+        </div>
+        <div class="form-group">
+          <label>Budget range</label>
+          <select><option>Below ₱5,000</option><option>₱5,000–₱10,000</option><option>₱10,000–₱20,000</option><option>₱20,000+</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label>Message / special requests</label><textarea placeholder="Tell us more about your dream trip — accommodation preferences, activities, dietary needs, etc."></textarea></div>
+      <button class="inq-submit"><i class="ti ti-send" style="font-size:16px;"></i> Send inquiry</button>
+    </div>
+
+    <!-- CHAT -->
+    <div class="chat-card">
+      <div class="chat-header">
+        <div class="chat-agent-avatar"><i class="ti ti-headset"></i></div>
+        <div class="chat-agent-info">
+          <div class="name">Jakari Support Team</div>
+          <div class="status"><span class="online-dot"></span> Online — typically replies in minutes</div>
+        </div>
+      </div>
+      <div class="chat-msgs" id="chatMsgs">
+        <div class="msg agent">
+          <div class="msg-bubble">Hi! Welcome to Jakari Travel and Tours 👋<br/>How can we help you plan your next trip today?</div>
+          <div class="msg-time">Now</div>
+        </div>
+        <div class="msg user">
+          <div class="msg-bubble">Magkano yung Palawan package para sa 2 pax?</div>
+          <div class="msg-time">Now</div>
+        </div>
+        <div class="msg agent">
+          <div class="msg-bubble">Our Palawan Island Escape starts at ₱8,500 per person — 4 days 3 nights with airfare, hotel, island hopping, and transfers. For 2 pax that's ₱17,000 all-in! 🌴</div>
+          <div class="msg-time">Now</div>
+        </div>
+        <div class="msg user">
+          <div class="msg-bubble">Pwede ba yung July? Available pa ba?</div>
+          <div class="msg-time">Now</div>
+        </div>
+        <div class="msg agent">
+          <div class="msg-bubble">Great news — July slots are still open! Which weekend works for you? I can check exact availability right away. 🗓️</div>
+          <div class="msg-time">Now</div>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <input id="chatInput" placeholder="Type your message here..." onkeydown="if(event.key==='Enter')sendChat()" />
+        <button class="chat-send-btn" onclick="sendChat()"><i class="ti ti-send"></i></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- APPOINTMENT BOOKING -->
+<section class="section appt-section">
+  <div class="section-header" style="text-align:center;">
+    <div class="section-label" style="text-align:center;">Book an appointment</div>
+    <h2 class="section-title" style="text-align:center;">Schedule a consultation</h2>
+    <p class="section-subtitle" style="margin:10px auto 0;">Prefer to talk? Book a free 15-minute call with our travel experts.</p>
+  </div>
+  <div class="appt-card">
+    <div class="appt-steps">
+      <div class="step"><div class="step-num">1</div><div class="step-lbl">Pick a date</div></div>
+      <div class="step inactive"><div class="step-num">2</div><div class="step-lbl">Choose time</div></div>
+      <div class="step inactive"><div class="step-num">3</div><div class="step-lbl">Your details</div></div>
+      <div class="step inactive"><div class="step-num">4</div><div class="step-lbl">Confirm</div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Preferred date</label><input type="date" /></div>
+      <div class="form-group">
+        <label>Preferred time</label>
+        <select>
+          <option>9:00 AM</option><option>10:00 AM</option><option>11:00 AM</option>
+          <option>1:00 PM</option><option>2:00 PM</option><option>3:00 PM</option><option>4:00 PM</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Full name</label><input placeholder="Juan dela Cruz" /></div>
+      <div class="form-group"><label>Contact number</label><input placeholder="09XX XXX XXXX" /></div>
+    </div>
+    <div class="form-group">
+      <label>Topic</label>
+      <select>
+        <option>General inquiry about packages</option>
+        <option>Custom/group tour planning</option>
+        <option>International travel assistance</option>
+        <option>Visa requirements</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <button class="inq-submit" style="margin-top:8px;"><i class="ti ti-calendar-check" style="font-size:16px;"></i> Book appointment</button>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section section-alt" id="faq">
+  <div class="section-header" style="text-align:center;">
+    <div class="section-label" style="text-align:center;">FAQ</div>
+    <h2 class="section-title" style="text-align:center;">Frequently asked questions</h2>
+  </div>
+  <div class="faq-list">
+    <div class="faq-item">
+      <div class="faq-q" onclick="toggleFaq(this)">How do I book a package? <i class="ti ti-plus faq-icon"></i></div>
+      <div class="faq-a">You can book online by sending us an inquiry through this website's form or live chat. You can also visit us in person at SM Center Angono, Rizal. Our team will respond within 1 hour during business hours.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q" onclick="toggleFaq(this)">What payment methods do you accept? <i class="ti ti-plus faq-icon"></i></div>
+      <div class="faq-a">We accept GCash, Maya, bank transfer (BDO, BPI, Metrobank), credit/debit card via online payment link, and cash payment at our branch inside SM Center Angono.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q" onclick="toggleFaq(this)">Can I customize a travel package? <i class="ti ti-plus faq-icon"></i></div>
+      <div class="faq-a">Absolutely! We specialize in tailor-made packages for barkadas, families, couples, and corporate groups. Just send us your preferred destination, dates, number of travelers, and budget through the inquiry form.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q" onclick="toggleFaq(this)">Do you assist with visa applications? <i class="ti ti-plus faq-icon"></i></div>
+      <div class="faq-a">Yes, we provide visa application guidance and document preparation assistance for international destinations. Please inquire directly so our team can advise based on your specific destination.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q" onclick="toggleFaq(this)">Is Jakari Travel and Tours accredited? <i class="ti ti-plus faq-icon"></i></div>
+      <div class="faq-a">Yes! Jakari Travel and Tours is an authorized Philippine Explorer partner operating at SM Center Angono, Rizal. We operate with full compliance with DOT regulations.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q" onclick="toggleFaq(this)">What is your cancellation policy? <i class="ti ti-plus faq-icon"></i></div>
+      <div class="faq-a">Cancellations made 30+ days before travel are eligible for a full refund or rebooking. Cancellations within 15–29 days incur a 25% fee. Within 14 days, a 50% fee applies. Please read our full terms or inquire for specific package policies.</div>
+    </div>
+  </div>
+</section>
+
+<!-- STAFF PORTAL -->
+<section class="section section-dark" id="portal">
+  <div class="section-header">
+    <div class="section-label" style="color:rgba(245,166,35,0.7);">Authorized access only</div>
+    <h2 class="section-title section-title-light">Staff portal</h2>
+    <p class="section-subtitle" style="color:rgba(255,255,255,0.4);">For Jakari team members only. Manage inquiries, chats, and bookings.</p>
+  </div>
+  <div class="portal-wrap">
+    <div class="portal-login-cards">
+      <div class="login-card">
+        <span class="role-tag tag-manager"><i class="ti ti-crown" style="font-size:12px;"></i> Manager</span>
+        <h4>Manager login</h4>
+        <p>Full access — manage all inquiries, staff accounts, reports, and analytics.</p>
+        <input class="login-input" type="email" placeholder="manager@jakari.com" />
+        <input class="login-input" type="password" placeholder="Password" />
+        <button class="login-btn btn-manager">Sign in as manager <i class="ti ti-arrow-right" style="font-size:14px;vertical-align:-2px;"></i></button>
+      </div>
+      <div class="login-card">
+        <span class="role-tag tag-staff"><i class="ti ti-users" style="font-size:12px;"></i> Staff</span>
+        <h4>Staff login</h4>
+        <p>Handle incoming inquiries, respond to live chats, and update booking status.</p>
+        <input class="login-input" type="email" placeholder="staff@jakari.com" />
+        <input class="login-input" type="password" placeholder="Password" />
+        <button class="login-btn btn-staff">Sign in as staff <i class="ti ti-arrow-right" style="font-size:14px;vertical-align:-2px;"></i></button>
+      </div>
+    </div>
+    <div class="dash-preview">
+      <div class="dash-preview-label"><i class="ti ti-layout-dashboard" style="font-size:12px;vertical-align:-1px;margin-right:4px;"></i>Manager dashboard — preview</div>
+      <div class="dash-stats-grid">
+        <div class="ds-card"><div class="ds-val">24</div><div class="ds-lbl">New inquiries</div></div>
+        <div class="ds-card"><div class="ds-val">8</div><div class="ds-lbl">Active chats</div></div>
+        <div class="ds-card"><div class="ds-val">156</div><div class="ds-lbl">This month</div></div>
+        <div class="ds-card"><div class="ds-val">92%</div><div class="ds-lbl">Response rate</div></div>
+      </div>
+      <div class="dash-inq-label"><i class="ti ti-inbox" style="font-size:12px;vertical-align:-1px;margin-right:4px;"></i>Recent inquiries</div>
+      <div class="inq-rows">
+        <div class="inq-row">
+          <div class="inq-row-info"><div class="inq-name">Maria Santos</div><div class="inq-dest"><i class="ti ti-map-pin" style="font-size:11px;"></i> Palawan · Jul 15 · 2 pax</div></div>
+          <span class="status-pill s-new">New</span>
+        </div>
+        <div class="inq-row">
+          <div class="inq-row-info"><div class="inq-name">Carlo Reyes</div><div class="inq-dest"><i class="ti ti-map-pin" style="font-size:11px;"></i> Siargao · Aug 2 · 4 pax</div></div>
+          <span class="status-pill s-ongoing">Ongoing</span>
+        </div>
+        <div class="inq-row">
+          <div class="inq-row-info"><div class="inq-name">Liza Mendoza</div><div class="inq-dest"><i class="ti ti-map-pin" style="font-size:11px;"></i> Boracay · Jun 28 · 3 pax</div></div>
+          <span class="status-pill s-done">Booked</span>
+        </div>
+        <div class="inq-row">
+          <div class="inq-row-info"><div class="inq-name">Ryan Buenaventura</div><div class="inq-dest"><i class="ti ti-map-pin" style="font-size:11px;"></i> Bohol · Aug 10 · 6 pax</div></div>
+          <span class="status-pill s-new">New</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-top">
+    <div class="footer-brand-block">
+      <div class="footer-logo">
+        <div class="circle"><i class="ti ti-plane-departure" style="font-size:18px;color:var(--navy-dark);"></i></div>
+        <div class="brand-name">Jakari Travel and Tours</div>
+      </div>
+      <div class="footer-tagline">"Unforgettable Journeys Await"</div>
+      <div class="footer-contact-item"><i class="ti ti-map-pin"></i> SM Center Angono, Rizal, Philippines</div>
+      <div class="footer-contact-item"><i class="ti ti-phone"></i> +63 9XX XXX XXXX</div>
+      <div class="footer-contact-item"><i class="ti ti-mail"></i> info@jakaritravel.com</div>
+      <div class="footer-contact-item"><i class="ti ti-clock"></i> Mon–Sat, 9AM–6PM</div>
+    </div>
+    <div class="footer-col">
+      <h5>Packages</h5>
+      <a>Palawan Island Escape</a>
+      <a>Boracay White Beach</a>
+      <a>Siargao Surf & Chill</a>
+      <a>Bohol Adventure</a>
+      <a>Batanes Explorer</a>
+      <a>View all destinations</a>
+    </div>
+    <div class="footer-col">
+      <h5>Services</h5>
+      <a>Tour packages</a>
+      <a>Airfare booking</a>
+      <a>Hotel reservations</a>
+      <a>Visa assistance</a>
+      <a>Corporate travel</a>
+      <a>Group bookings</a>
+    </div>
+    <div class="footer-col">
+      <h5>Company</h5>
+      <a>About us</a>
+      <a>Philippine Explorer</a>
+      <a>Testimonials</a>
+      <a>Terms & conditions</a>
+      <a>Privacy policy</a>
+      <a href="#portal">Staff portal</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div class="footer-copy">© 2025 Jakari Travel and Tours · Philippine Explorer Partner · SM Center Angono, Rizal</div>
+    <div class="footer-social">
+      <a class="social-btn"><i class="ti ti-brand-facebook"></i></a>
+      <a class="social-btn"><i class="ti ti-brand-instagram"></i></a>
+      <a class="social-btn"><i class="ti ti-brand-tiktok"></i></a>
+      <a class="social-btn"><i class="ti ti-brand-messenger"></i></a>
+    </div>
+  </div>
+</footer>
+
+<!-- FLOATING CHAT BUTTON -->
+<div class="float-chat">
+  <div class="float-badge">3</div>
+  <button class="float-btn" onclick="document.getElementById('contact').scrollIntoView({behavior:'smooth'})">
+    <i class="ti ti-message-circle"></i>
+  </button>
+</div>
+
+<script>
+function toggleFaq(el) {
+  const isOpen = el.classList.contains('open');
+  document.querySelectorAll('.faq-q').forEach(q => {
+    q.classList.remove('open');
+    q.nextElementSibling.classList.remove('open');
+  });
+  if (!isOpen) {
+    el.classList.add('open');
+    el.nextElementSibling.classList.add('open');
+  }
+}
+
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msgs = document.getElementById('chatMsgs');
+  const text = input.value.trim();
+  if (!text) return;
+  const userMsg = document.createElement('div');
+  userMsg.className = 'msg user';
+  userMsg.innerHTML = `<div class="msg-bubble">${text}</div><div class="msg-time">Now</div>`;
+  msgs.appendChild(userMsg);
+  input.value = '';
+  msgs.scrollTop = msgs.scrollHeight;
+  setTimeout(() => {
+    const typing = document.createElement('div');
+    typing.className = 'msg agent';
+    typing.innerHTML = `<div class="msg-bubble"><div class="chat-typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>`;
+    msgs.appendChild(typing);
+    msgs.scrollTop = msgs.scrollHeight;
+    setTimeout(() => {
+      typing.remove();
+      const replies = [
+        "Thanks for your message! One of our travel experts will assist you shortly. 😊",
+        "Great question! Let me check that for you right away.",
+        "Of course! We'd love to help you plan that trip. Can you share your preferred dates?",
+        "We have excellent options for that! Our team will get back to you within a few minutes.",
+        "That sounds like a wonderful trip idea! Let me get you the details. 🌏"
+      ];
+      const agentMsg = document.createElement('div');
+      agentMsg.className = 'msg agent';
+      agentMsg.innerHTML = `<div class="msg-bubble">${replies[Math.floor(Math.random()*replies.length)]}</div><div class="msg-time">Now</div>`;
+      msgs.appendChild(agentMsg);
+      msgs.scrollTop = msgs.scrollHeight;
+    }, 1800);
+  }, 500);
+}
+</script>
+</body>
+</html>
