@@ -1046,7 +1046,7 @@ function renderSidebarNav() {
   { id:'my_requests', icon:'📋',
     label: state.user?.csr_role === 'dept_head' ? '🏢 Dept Requests' :
            ['supply_officer','admin'].includes(state.user?.csr_role) ? '🗂 All Requests' : '📋 My Requests',
-    roles:['requester','dept_head','supply_officer','admin'] },
+    roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
 
   // Approval Queue — only roles that actually approve
   { id:'approval_queue',  icon:'✅', label:'Approval Queue',
@@ -1451,14 +1451,14 @@ async function renderMyRequests() {
     title = '🗂 All Requests'
     subtitle = 'Complete view of all requests across all departments'
   } else if (role === 'dept_head') {
-    // Dept head sees ALL requests from their department for monitoring
     requests = await loadRequests({ dept_id: state.user.dept_id })
     const dept = state.departments.find(d => d.id === state.user.dept_id)
     title = '🏢 ' + (dept?.dept_name || 'Department') + ' Requests'
     subtitle = 'All requests filed by your department — for monitoring and control'
   } else {
+    // requester, purchasing_officer — sarili lang makikita
     requests = await loadRequests({ requested_by: state.user.id })
-    title = 'My Requests'
+    title = '📋 My Requests'
     subtitle = 'Your submitted requests'
   }
 
