@@ -1045,7 +1045,7 @@ function renderSidebarNav() {
       roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
     { id:'approval_queue', icon:'✅', label:'Approval Queue', roles:['dept_head','supply_officer','purchasing_officer','admin'], badge:'approval_count' },
     { id:'all_requests', icon:'🗂', label:'All Requests', roles:['admin'] }, // admin only, supply_officer sees all via My Requests
-    { id:'purchase_orders', icon:'🛒', label:'Purchase Orders', roles:['supply_officer','admin'] },
+    { id:'purchase_orders', icon:'🛒', label:'Purchase Orders', roles:['supply_officer','purchasing_officer','admin'] },
     { id:'issuance', icon:'📤', label:'Issuance', roles:['supply_officer','admin','dept_head'] },
     { id:'stock_inventory', icon:'🏪', label:'Stock Inventory', roles:['supply_officer','admin'] },
     { id:'derp', icon:'♻️', label:'DERP', roles:['requester','dept_head','supply_officer','purchasing_officer','admin'] },
@@ -1761,8 +1761,11 @@ async function viewRequest(id) {
   body += '</div>'
 
   // Approval stepper
-  body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">Approval Status</div>'
-  body += buildApprovalStepper(req, approvals)
+  if (req.request_type !== 'derp') {
+    body += '<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">Approval Status</div>'
+    body += buildApprovalStepper(req, approvals)
+    body += '</div>'
+  }
   body += '</div>'
 
   // DERP fields
@@ -1801,14 +1804,14 @@ async function viewRequest(id) {
     footer += '<button class="btn btn-ghost" onclick="openApprovalModal(\'' + req.id + '\',\'return\')">Return</button>'
     footer += '<button class="btn btn-danger" onclick="openApprovalModal(\'' + req.id + '\',\'reject\')">Reject</button>'
   }
-  // Auto-approved (level 99) — Supply Officer needs to choose fulfillment
-  if (req.status === 'approved' && req.current_approval_level === 99 && ['supply_officer','admin'].includes(role)) {
+  // Auto-approved (level 99) — Supply Officer needs to choose fulfillment (SUPPLY/PURCHASE only)
+  if (req.request_type !== 'derp' && req.status === 'approved' && req.current_approval_level === 99 && ['supply_officer','admin'].includes(role)) {
     footer += '<button class="btn btn-success" onclick="openApprovalModal(\'' + req.id + '\',\'approve\')">📦 Fulfill Request</button>'
   }
-  // Fully approved (level 3) — Supply Officer can choose: issue from stock OR create PO
-  else if (req.status === 'approved' && req.current_approval_level !== 99 && ['supply_officer','admin'].includes(role)) {
+  // Fully approved (level 3) — Supply Officer can choose: issue from stock OR create PO (SUPPLY/PURCHASE only)
+  else if (req.request_type !== 'derp' && req.status === 'approved' && req.current_approval_level !== 99 && ['supply_officer','admin'].includes(role)) {
     footer += '<button class="btn btn-secondary" onclick="openApprovalModal(\'' + req.id + '\',\'approve\')">📦 Issue from Stock</button>'
-    footer += '<button class="btn btn-primary" onclick="markForPO(\'' + req.id + '\')">💰 Create PO →</button>'
+    footer += ['purchasing_officer','admin'].includes(role) ? '<button class="btn btn-primary" onclick="markForPO(\'' + req.id + '\')">💰 Create PO →</button>' : '<button class="btn btn-ghost" onclick="markForPO(\'' + req.id + '\')">💰 Forward for PO</button>'
   }
   document.getElementById('requestDetailFooter').innerHTML = footer
   openModal('requestDetailModal')
@@ -2748,10 +2751,13 @@ async function renderPurchaseOrders() {
   poState.pos = posRes.data || []
   const approvedReqs = reqsRes.data || []
 
+  const canCreatePO = ['purchasing_officer','admin'].includes(role)
   let html = '<div class="page-header"><h2>🛒 Purchase Orders</h2>'
-  html += '<div style="display:flex;gap:8px;">'
-  if (approvedReqs.length > 0) {
+  html += '<div style="display:flex;align-items:center;gap:8px;">'
+  if (canCreatePO && approvedReqs.length > 0) {
     html += '<button class="btn btn-primary" onclick="openNewPOModal(null)">＋ New PO</button>'
+  } else if (!canCreatePO) {
+    html += '<div style="font-size:12px;color:var(--txt2);padding:6px 12px;background:var(--surf2);border-radius:8px;">👁 View only — PO creation handled by Purchasing Officer</div>'
   }
   html += '</div></div>'
 
@@ -2772,7 +2778,7 @@ async function renderPurchaseOrders() {
   if (poState.pos.length === 0) {
     html += '<div class="empty-state"><div class="empty-icon">🛒</div><h3>No purchase orders yet</h3>'
     html += '<p>Approved requests will appear here for PO creation.</p>'
-    if (approvedReqs.length > 0) {
+    if (canCreatePO && approvedReqs.length > 0) {
       html += '<button class="btn btn-primary" style="margin-top:12px;" onclick="openNewPOModal(null)">＋ Create First PO</button>'
     }
     html += '</div>'
@@ -5869,8 +5875,8 @@ async function saveDerpRequest(action) {
       requested_by: state.user.id,
       urgency,
       purpose,
-      status: action === 'submit' ? 'pending_approval' : 'draft',
-      current_approval_level: 1,
+      status: action === 'submit' ? 'pending_evaluation' : 'draft',
+      current_approval_level: 0, // DERP has no CSR approval — handled by IT/Maintenance
       source_system: 'manual',
       derp_category: category,
       asset_condition: condition || 'poor',
@@ -6088,8 +6094,8 @@ async function viewDerp(id) {
     }
   } else {
     body += '<div style="color:var(--txt2);font-size:13px;">Pending evaluation by ' + (cat.dept || 'assigned department') + '</div>'
-    // Evaluation form for evaluator
-    if (['admin','supply_officer'].includes(role) ||
+    // Evaluation form — only admin and assigned evaluator (not supply_officer)
+    if (role === 'admin' ||
        (role === 'dept_head' && req.derp_evaluator_id === state.user.id)) {
       body += '<div style="margin-top:14px;border-top:1px solid var(--bdr);padding-top:14px;">'
       body += '<div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:10px;">Complete Evaluation</div>'
@@ -7630,16 +7636,28 @@ function renderNotifications() {
 // UTILITIES
 // ═══════════════════════════════════════════
 function formatStatus(s) {
-  const map = { draft:'Draft', pending_approval:'Pending Approval', approved:'Approved',
-    for_po:'For PO', ordered:'Ordered', delivered:'Delivered', issued:'Issued', cancelled:'Cancelled' }
-  return map[s] || s
+  const map = {
+    draft:'Draft', pending_approval:'Pending Approval',
+    pending_evaluation:'Pending Evaluation', under_evaluation:'Under Evaluation',
+    approved:'Approved', for_po:'For PO', ordered:'Ordered',
+    delivered:'Delivered', issued:'Issued', cancelled:'Cancelled',
+    for_repair:'For Repair', repair_in_progress:'Repair In Progress',
+    repair_completed:'Repair Completed', for_replacement:'For Replacement',
+    closed:'Closed', csr_triggered:'CSR Triggered'
+  }
+  return map[s] || (s ? s.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase()) : '—')
 }
 
 function statusBadge(s) {
   const classes = {
-    draft:'badge-draft', pending_approval:'badge-pending', approved:'badge-approved',
-    for_po:'badge-for_po', ordered:'badge-ordered', delivered:'badge-delivered',
-    issued:'badge-issued', cancelled:'badge-cancelled'
+    draft:'badge-draft', pending_approval:'badge-pending',
+    pending_evaluation:'badge-pending', under_evaluation:'badge-pending',
+    approved:'badge-approved', for_po:'badge-for_po',
+    ordered:'badge-ordered', delivered:'badge-delivered',
+    issued:'badge-issued', cancelled:'badge-cancelled',
+    for_repair:'badge-pending', repair_in_progress:'badge-pending',
+    repair_completed:'badge-approved', for_replacement:'badge-for_po',
+    closed:'badge-issued', csr_triggered:'badge-draft'
   }
   return '<span class="badge ' + (classes[s]||'badge-draft') + '">' + formatStatus(s) + '</span>'
 }
