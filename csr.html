@@ -509,6 +509,28 @@ tr:hover td{background:var(--surf2);}
 
   /* Stat value smaller */
   .stat-value{font-size:22px!important;}
+
+  /* Touch-friendly buttons */
+  .btn{min-height:40px;}
+  .btn-sm{min-height:32px;}
+
+  /* Items table scroll */
+  .items-table{min-width:540px;}
+
+  /* Kanban horizontal scroll */
+  .csr-kanban{padding-bottom:20px;}
+
+  /* DERP photo buttons */
+  .field label[style*="flex:1"]{min-height:56px;}
+}
+
+@media(max-width:400px){
+  .stat-grid{grid-template-columns:1fr 1fr;}
+  .stat-card{padding:10px 12px;}
+  .stat-value{font-size:20px!important;}
+  .modal-footer .btn{font-size:12px;padding:8px 10px;}
+  .page-header h2{font-size:16px;}
+  h2{font-size:16px!important;}
 }
 .hamburger{
   display:none;width:34px;height:34px;border-radius:9px;
@@ -5656,17 +5678,25 @@ function openDerpModal(category) {
   html += '<div class="field"><label>Defect / Problem <span style="color:var(--red);">*</span></label>'
   html += '<textarea id="f_purpose" placeholder="Describe the defect or problem clearly..." rows="3"></textarea></div>'
 
-  // Photo upload
-  html += '<div class="field"><label>Photo <span style="font-size:11px;font-weight:400;color:var(--txt3);">optional</span></label>'
-  html += '<div id="derpPhotoWrap" style="border:2px dashed var(--bdr2);border-radius:10px;padding:14px;text-align:center;cursor:pointer;background:var(--surf2);" onclick="document.getElementById(\'f_derp_photo\').click()">'
-  html += '<div style="font-size:22px;margin-bottom:4px;">📷</div>'
-  html += '<div style="font-size:12px;color:var(--txt2);">Click to attach photo of the defective equipment</div>'
+  // Photo upload — both camera and file upload options
+  html += '<div class="field"><label>Photo <span style="font-size:11px;font-weight:400;color:var(--txt3);">optional — attach photo of the defective equipment</span></label>'
+  html += '<div style="display:flex;gap:8px;margin-bottom:10px;">'
+  // Camera button
+  html += '<label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--surf2);border:1px dashed var(--bdr2);border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;">'
+  html += '📷 Take Photo'
+  html += '<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="previewDerpPhoto(this)">'
+  html += '</label>'
+  // Upload button
+  html += '<label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--surf2);border:1px dashed var(--bdr2);border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;">'
+  html += '🖼️ Upload File'
+  html += '<input type="file" accept="image/*" style="display:none;" onchange="previewDerpPhoto(this)">'
+  html += '</label>'
   html += '</div>'
-  html += '<input type="file" id="f_derp_photo" accept="image/*" style="display:none;" onchange="previewDerpPhoto(this)">'
-  html += '<div id="derpPhotoPreview" style="display:none;margin-top:8px;position:relative;">'
-  html += '<img id="derpPhotoImg" style="max-width:100%;max-height:180px;object-fit:contain;border-radius:8px;border:1px solid var(--bdr2);">'
-  html += '<button onclick="removeDerpPhoto()" style="position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:var(--red);color:#fff;border:none;cursor:pointer;font-size:11px;">✕</button>'
-  html += '</div></div>'
+  html += '<div id="derpPhotoPreview" style="display:none;position:relative;">'
+  html += '<img id="derpPhotoImg" style="max-width:100%;max-height:200px;object-fit:contain;border-radius:10px;border:1px solid var(--bdr2);">'
+  html += '<button onclick="removeDerpPhoto()" style="position:absolute;top:6px;right:6px;width:24px;height:24px;border-radius:50%;background:var(--red);color:#fff;border:none;cursor:pointer;font-size:12px;">✕</button>'
+  html += '</div>'
+  html += '</div>'
 
   // Evaluator fields — collapsed section
   if (isEvaluator) {
@@ -5718,17 +5748,20 @@ function openDerpModal(category) {
 function previewDerpPhoto(input) {
   const file = input.files[0]
   if (!file) return
-  if (file.size > 5 * 1024 * 1024) { showToast('error','Too Large','Max 5MB.'); input.value = ''; return }
+  if (file.size > 10 * 1024 * 1024) { showToast('error','Too Large','Max 10MB.'); input.value = ''; return }
+  // Store file reference for later upload
+  window._derpPhotoFile = file
+  window._derpPhotoInput = input
   document.getElementById('derpPhotoImg').src = URL.createObjectURL(file)
   document.getElementById('derpPhotoPreview').style.display = 'block'
-  document.getElementById('derpPhotoWrap').style.display = 'none'
 }
 
 function removeDerpPhoto() {
-  document.getElementById('f_derp_photo').value = ''
+  if (window._derpPhotoInput) window._derpPhotoInput.value = ''
+  window._derpPhotoFile = null
+  window._derpPhotoInput = null
   document.getElementById('derpPhotoImg').src = ''
   document.getElementById('derpPhotoPreview').style.display = 'none'
-  document.getElementById('derpPhotoWrap').style.display = ''
 }
 
 async function saveDerpRequest(action) {
@@ -5778,7 +5811,6 @@ async function saveDerpRequest(action) {
       asset_condition: condition || 'poor',
       asset_condition_notes: fullDesc,
       derp_warranty_status: warranty,
-      derp_loaner_needed: loanerNeeded,
       derp_repeat_flag: repeatFlag,
       derp_sla_hours: slaHours,
       disposal_action: null
@@ -5787,13 +5819,13 @@ async function saveDerpRequest(action) {
     const { data: req, error } = await SB.from('requests').insert(payload).select().single()
     if (error) throw error
 
-    // Upload DERP photo
-    const photoInput = document.getElementById('f_derp_photo')
-    if (photoInput?.files[0]) {
-      const file = photoInput.files[0]
-      const path = 'derp/' + requestNo + '-' + Date.now() + '.' + file.name.split('.').pop()
-      const { error: upErr } = await SB.storage.from('asset-photos').upload(path, file, { contentType: file.type })
+    // Upload DERP photo (from either camera or file upload)
+    const photoFile = window._derpPhotoFile
+    if (photoFile) {
+      const path = 'derp/' + requestNo + '-' + Date.now() + '.' + (photoFile.name.split('.').pop() || 'jpg')
+      const { error: upErr } = await SB.storage.from('asset-photos').upload(path, photoFile, { contentType: photoFile.type })
       if (!upErr) { const { data: ud } = SB.storage.from('asset-photos').getPublicUrl(path); await SB.from('requests').update({ attachment_url: ud.publicUrl }).eq('id', req.id) }
+      window._derpPhotoFile = null
     }
 
     // Insert items if any
