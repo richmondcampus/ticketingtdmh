@@ -7619,7 +7619,7 @@ document.getElementById('loginPass').addEventListener('keydown', e => {
   // Check for existing Supabase Auth session first
   const { data: { session: authSession } } = await SB.auth.getSession()
   if (authSession) {
-    // Auth session — IT Helpdesk pattern: users.id = auth.uid()
+    // Valid Supabase session — load profile
     const { data: profile } = await SB
       .from('users').select('*')
       .eq('auth_id', authSession.user.id).eq('is_active', true).maybeSingle()
@@ -7643,14 +7643,11 @@ document.getElementById('loginPass').addEventListener('keydown', e => {
     }
   }
 
-  // Fallback to localStorage session (cross-system share)
-  const session = getSession()
-  if (session) {
-    await bootApp(session)
-    return
-  }
-
-  // No session — show login
+  // No valid Supabase auth session — must login regardless of custom session
+  // (custom session has no JWT so all API calls would be anon/unauthorized)
+  clearSession()
+  document.getElementById('loginScreen').style.display = 'flex'
+  document.getElementById('appShell').style.display = 'none'
 })()
 
 // ═══════════════════════════════════
