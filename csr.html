@@ -1166,7 +1166,16 @@ async function loadStats() {
 
 function roleApprovalLevel(role) {
   const map = { dept_head: 1, supply_officer: 2, purchasing_officer: 3 }
-  return map[role] || 1
+  return map[role] ?? null // null for requester and non-approver roles
+}
+
+function canApprove(req, role) {
+  if (role === 'admin') return true
+  const level = roleApprovalLevel(role)
+  if (!level) return false // requester, viewer, etc. — never can approve
+  // Dept head cannot approve their own request
+  if (role === 'dept_head' && req.requested_by === state.user.id) return false
+  return req.current_approval_level === level
 }
 
 // ═══════════════════════════════════════════
@@ -1770,11 +1779,6 @@ async function viewRequest(id) {
   openModal('requestDetailModal')
 }
 
-function canApprove(req, role) {
-  if (role === 'admin') return true
-  const level = roleApprovalLevel(role)
-  return req.current_approval_level === level
-}
 
 function buildApprovalStepper(req, approvals) {
   const steps = [
