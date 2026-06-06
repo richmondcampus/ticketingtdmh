@@ -3370,7 +3370,22 @@ async function openNewPOModal(requestId) {
   html += '</select></div>'
   html += '<div class="field"><label>Payment Terms</label>'
   html += '<select id="po_terms">'
-  ;['COD','Net 7','Net 15','Net 30','50% DP / 50% upon delivery'].forEach(t => {
+  ;[
+    'COD — Cash on Delivery',
+    'COP — Check on Pickup',
+    'Check — 100% Upon Delivery',
+    'Check — 50% DP / 50% Upon Delivery',
+    'Check — 30% DP / 70% Upon Delivery',
+    'Net 7 — Pay within 7 days',
+    'Net 15 — Pay within 15 days',
+    'Net 30 — Pay within 30 days',
+    'Net 60 — Pay within 60 days',
+    '2/10 Net 30 — 2% discount if paid in 10 days',
+    'Monthly Billing',
+    'Consignment',
+    'Letter of Credit (LC)',
+    'Bank Transfer — Upon Invoice',
+  ].forEach(t => {
     html += '<option>' + t + '</option>'
   })
   html += '</select></div>'
@@ -3473,8 +3488,22 @@ function fillSupplierDetails(suppId) {
   const el = document.getElementById('supplier_details')
   if (!el) return
   if (suppId === 'new') {
-    el.style.display = 'none'
-    openAddSupplierInline()
+    el.style.display = 'block'
+    el.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:10px;">＋ New Supplier</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="field"><label>Supplier Name *</label><input type="text" id="new_supp_name" placeholder="e.g. ABC Trading"></div>
+        <div class="field"><label>Contact Person</label><input type="text" id="new_supp_contact" placeholder="Full name"></div>
+        <div class="field"><label>Phone</label><input type="text" id="new_supp_phone" placeholder="09XX-XXX-XXXX"></div>
+        <div class="field"><label>Email</label><input type="text" id="new_supp_email" placeholder="supplier@email.com"></div>
+        <div class="field"><label>Address</label><input type="text" id="new_supp_address" placeholder="Business address"></div>
+        <div class="field"><label>TIN</label><input type="text" id="new_supp_tin" placeholder="000-000-000-000"></div>
+      </div>
+      <div style="margin-top:8px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="new_supp_accredited"> PhilGEPS / Hospital Accredited Supplier
+        </label>
+      </div>`
     return
   }
   const s = poState.suppliers.find(sup => sup.id === suppId)
@@ -3497,7 +3526,28 @@ async function savePO(action) {
   const csrId = document.getElementById('po_csr').value
   const validItems = state.itemRows.filter(r => r.item_name && r.item_name.trim())
 
-  if (!suppId || suppId === 'new') { showToast('error', 'Validation', 'Please select a supplier.'); return }
+  if (!suppId) { showToast('error', 'Validation', 'Please select a supplier.'); return }
+
+  let finalSuppId = suppId
+  if (suppId === 'new') {
+    // Save new supplier first
+    const newName = document.getElementById('new_supp_name')?.value.trim()
+    if (!newName) { showToast('error', 'Validation', 'Please enter a supplier name.'); return }
+    const { data: newSupp, error: suppErr } = await SB.from('suppliers').insert({
+      name: newName,
+      contact_person: document.getElementById('new_supp_contact')?.value.trim() || null,
+      phone: document.getElementById('new_supp_phone')?.value.trim() || null,
+      email: document.getElementById('new_supp_email')?.value.trim() || null,
+      address: document.getElementById('new_supp_address')?.value.trim() || null,
+      tin: document.getElementById('new_supp_tin')?.value.trim() || null,
+      is_accredited: document.getElementById('new_supp_accredited')?.checked || false,
+      is_active: true
+    }).select().single()
+    if (suppErr) { showToast('error', 'Error', 'Failed to save supplier: ' + suppErr.message); return }
+    finalSuppId = newSupp.id
+    // Add to poState for future use
+    poState.suppliers.push(newSupp)
+  }
   if (validItems.length === 0) { showToast('error', 'Validation', 'Please add at least one item.'); return }
 
   const supplier = poState.suppliers.find(s => s.id === suppId)
@@ -3510,7 +3560,7 @@ async function savePO(action) {
     const { data: po, error } = await SB.from('purchase_orders').insert({
       po_number: poNumber,
       request_id: csrId || null,
-      supplier_id: suppId,
+      supplier_id: finalSuppId,
       supplier_name: supplier ? supplier.name : '',
       supplier_contact: supplier ? (supplier.phone || '') : '',
       total_amount: total,
