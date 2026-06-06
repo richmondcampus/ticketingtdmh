@@ -1087,6 +1087,12 @@ function renderSidebarNav() {
     if (item.id === 'approval_queue' && state.stats.approval_count > 0) {
       html += '<span class="nav-badge">' + state.stats.approval_count + '</span>'
     }
+    if (item.id === 'issuance' && state.stats.issuance_pending > 0) {
+      html += '<span class="nav-badge">' + state.stats.issuance_pending + '</span>'
+    }
+    if (item.id === 'purchase_orders' && state.stats.po_pending > 0) {
+      html += '<span class="nav-badge">' + state.stats.po_pending + '</span>'
+    }
     html += '</div>'
   }
   html += '</div>'
@@ -1189,7 +1195,18 @@ async function loadStats() {
           .eq('status', 'approved').eq('current_approval_level', 99).neq('request_type','derp')
       : Promise.resolve({ count: 0 })
 
-    const [myPending, approvalQueue, autoApproved, allPending, lowStock] = await Promise.all([
+    // Issuance pending — unconfirmed issuances (supply_officer + dept_head)
+    const issuancePendingQuery = ['supply_officer','admin','dept_head'].includes(role)
+      ? SB.from('issuances').select('id', { count: 'exact', head: true }).is('confirmed_at', null)
+      : Promise.resolve({ count: 0 })
+
+    // PO pending — for_po requests with no PO yet + draft POs (purchasing_officer + admin)
+    const poPendingQuery = ['purchasing_officer','admin'].includes(role)
+      ? SB.from('requests').select('id', { count: 'exact', head: true })
+          .eq('status', 'for_po').neq('request_type', 'derp')
+      : Promise.resolve({ count: 0 })
+
+    const [myPending, approvalQueue, autoApproved, allPending, lowStock, issuancePending, poPending] = await Promise.all([
       SB.from('requests').select('id', { count: 'exact', head: true })
         .eq('requested_by', uid).in('status', ['draft','pending_approval']),
       approvalQueueQuery,
@@ -1197,14 +1214,18 @@ async function loadStats() {
       SB.from('requests').select('id', { count: 'exact', head: true })
         .in('status', ['pending_approval','approved','for_po','ordered']),
       SB.from('stock_items').select('id', { count: 'exact', head: true })
-        .lte('quantity_on_hand', 0)
+        .lte('quantity_on_hand', 0),
+      issuancePendingQuery,
+      poPendingQuery
     ])
 
     state.stats = {
       my_pending: myPending.count || 0,
       approval_count: (approvalQueue.count || 0) + (autoApproved.count || 0),
       all_pending: allPending.count || 0,
-      low_stock: lowStock.count || 0
+      low_stock: lowStock.count || 0,
+      issuance_pending: issuancePending.count || 0,
+      po_pending: poPending.count || 0
     }
     renderSidebarNav()
   } catch(e) { console.error('loadStats', e) }
@@ -2873,6 +2894,17 @@ async function renderPurchaseOrders() {
   html += '<div class="stat-card"><div class="stat-label">✅ Issued</div><div class="stat-value" style="color:var(--green);">' + issued + '</div></div>'
   html += '</div>'
 
+  // Alert banner — requests waiting for PO creation
+  if (canCreatePO && approvedReqs.length > 0) {
+    html += '<div style="background:var(--accent-a);border:1px solid var(--accent-b);border-radius:10px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">'
+    html += '<div style="display:flex;align-items:center;gap:10px;">'
+    html += '<span style="font-size:18px;">🛒</span>'
+    html += '<span style="font-size:13px;color:var(--accent);font-weight:600;">' + approvedReqs.length + ' approved request(s) waiting for Purchase Order</span>'
+    html += '</div>'
+    html += '<button class="btn btn-primary btn-sm" onclick="openNewPOModal(null)">＋ Create PO</button>'
+    html += '</div>'
+  }
+
   if (poState.pos.length === 0) {
     html += '<div class="empty-state"><div class="empty-icon">🛒</div><h3>No purchase orders yet</h3>'
     html += '<p>Approved requests will appear here for PO creation.</p>'
@@ -4266,14 +4298,26 @@ async function renderIssuance() {
   }
   html += '</div></div>'
 
-  // Stats — simplified (no more pending confirmation)
+  // Stats
+  const pendingConfirmCount = allIssuances.filter(i => !i.confirmed_at).length
   html += '<div class="stat-grid" style="margin-bottom:20px;">'
+  if (pendingConfirmCount > 0 && !isDeptHead) {
+    html += statCard('⏳', 'Pending Confirmation', pendingConfirmCount, 'Awaiting receipt confirmation', 'stat-amber')
+  }
   html += statCard('✅', 'Total Issued', allIssuances.length, 'All issuances', 'stat-green')
   html += statCard('📤', 'Today', today, 'Issued today', 'stat-blue')
   if (!isDeptHead) {
     html += statCard('📋', 'For Issuance', issState.pendingRequests.length, 'Approved requests pending', 'stat-accent')
   }
   html += '</div>'
+
+  // Alert banner if pending confirmations
+  if (pendingConfirmCount > 0 && !isDeptHead) {
+    html += '<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">'
+    html += '<span style="font-size:18px;">⏳</span>'
+    html += '<span style="font-size:13px;color:var(--amber);font-weight:600;">' + pendingConfirmCount + ' issuance(s) awaiting receipt confirmation — photo or online link needed.</span>'
+    html += '</div>'
+  }
 
   // Tabs
   html += '<div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--bdr);">'
