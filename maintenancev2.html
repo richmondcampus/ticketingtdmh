@@ -621,6 +621,7 @@ async function loadDepartments() {
 async function loadTickets(filter = {}) {
   let q = SB.from('maint_tickets').select('*').order('created_at', { ascending: false })
   if (filter.submitted_by) q = q.eq('submitted_by', filter.submitted_by)
+  if (filter.dept_id) q = q.eq('dept_id', filter.dept_id)
   if (filter.status) q = q.eq('status', filter.status)
   if (filter.claimed_by) q = q.eq('claimed_by', filter.claimed_by)
   const { data } = await q
@@ -650,11 +651,19 @@ function subscribeTickets() {
 // ═══════════════════════════════════
 async function renderDashboard() {
   const content = document.getElementById('mainContent')
-  const tickets = await loadTickets()
+  const role = S.user.maintenance_role
+
+  // Requester — dept tickets lang (para makita kung kamusta ang sariling dept)
+  // Technician/supervisor/admin — lahat
+  let tickets
+  if (role === 'requester') {
+    tickets = await loadTickets({ dept_id: S.user.dept_id })
+  } else {
+    tickets = await loadTickets()
+  }
   S.tickets = tickets
   // Run SLA escalation check silently
   checkMaintSLAEscalation().catch(() => {})
-  const role = S.user.maintenance_role
 
   const open = tickets.filter(t => t.status === 'open').length
   const claimed = tickets.filter(t => ['claimed','in_progress'].includes(t.status)).length
@@ -754,11 +763,20 @@ function formatStatus(s) {
 async function renderMyTickets() {
   const role = S.user.maintenance_role
   let filter = {}
-  if (['technician','supervisor'].includes(role)) filter.claimed_by = S.user.id
-  else filter.submitted_by = S.user.id
+  let title = 'My Tickets'
+  if (['technician','supervisor'].includes(role)) {
+    filter.claimed_by = S.user.id
+  } else if (role === 'requester') {
+    // Requester — dept tickets lang, hindi lahat
+    filter.dept_id = S.user.dept_id
+    const dept = S.departments.find(d => d.id === S.user.dept_id)
+    title = '🏢 ' + (dept?.dept_name || 'Dept') + ' Tickets'
+  } else {
+    filter.submitted_by = S.user.id
+  }
   const tickets = await loadTickets(filter)
   S.tickets = tickets
-  renderTicketsList(tickets, 'My Tickets')
+  renderTicketsList(tickets, title)
 }
 
 async function renderAllTickets() {
