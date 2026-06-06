@@ -2931,9 +2931,11 @@ async function renderIncomingDeliveries() {
       html += '</div>'
       html += '</div>'
 
-      // Action button
+      // Action button — Supply Officer only can receive
       html += '<div style="flex-shrink:0;">'
-      html += '<button class="btn btn-success" onclick="openReceiveDelivery(\'' + po.id + '\')">📦 Receive</button>'
+      if (['supply_officer','admin'].includes(role)) {
+        html += '<button class="btn btn-success" onclick="openReceiveDelivery(\'' + po.id + '\')">📦 Receive</button>'
+      }
       html += '</div>'
       html += '</div></div>'
     })
@@ -3070,8 +3072,8 @@ async function renderPurchaseOrders() {
       html += '<td style="font-size:12px;color:var(--txt2);">' + (po.expected_delivery_date ? formatDate(po.expected_delivery_date).split(',')[0] : '—') + '</td>'
       html += '<td style="font-size:12px;color:var(--txt2);">' + formatDate(po.created_at) + '</td>'
       html += '<td><div style="display:flex;gap:4px;">'
-      if (po.status === 'draft') html += '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();sendPO(\'' + po.id + '\')">📤 Send</button>'
-      if (['sent','partial_delivery'].includes(po.status)) html += '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openReceiveDelivery(\'' + po.id + '\')">📦 Receive</button>'
+      if (po.status === 'draft' && ['purchasing_officer','admin'].includes(role)) html += '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();sendPO(\'' + po.id + '\')">📤 Send</button>'
+      if (['sent','partial_delivery'].includes(po.status) && ['supply_officer','admin'].includes(role)) html += '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openReceiveDelivery(\'' + po.id + '\')">📦 Receive</button>'
       html += '</div></td>'
       html += '</tr>'
     }
@@ -3229,13 +3231,10 @@ async function processApproval() {
         await notifyApprovers(req, 3)
 
       } else if (level === 3) {
-        // Purchasing Officer approved — auto-create PO draft
+        // Purchasing Officer approved — update status and notify
         newLevel = 3; newStatus = 'for_po'
-        toastMsg = '✅ Approved — PO draft created.'
-
-        // Auto-create PO draft
-        const poNo = await autoCreatePODraft(req)
-        if (poNo) toastMsg = '✅ Approved — PO draft ' + poNo + ' created. Ready for finalizing.'
+        toastMsg = '✅ Approved — Purchasing Officer notified to create PO.'
+        await autoCreatePODraft(req) // just notifies, doesn't auto-create PO
 
       } else {
         newLevel = 3; newStatus = 'for_po'
@@ -3277,57 +3276,24 @@ async function processApproval() {
   } catch(e) { if (handleSupabaseError(e, 'action')) return; showToast('error','Error', e.message); console.error(e) }
 }
 
-// ─── Auto-create PO Draft when Purchasing Officer approves ───
+// ─── Notify Purchasing Officer when Level 3 approved ───
+// Don't auto-create PO — Purchasing Officer creates it with proper supplier info
 async function autoCreatePODraft(req) {
   try {
-    const { data: poNumData } = await SB.rpc('generate_po_number')
-    const poNo = poNumData || ('PO-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-5))
-
-    // Get request items for PO line items
-    const { data: reqItems } = await SB.from('request_items').select('*').eq('request_id', req.id)
-
-    // Create PO draft
-    const { data: po, error } = await SB.from('purchase_orders').insert({
-      po_number: poNo,
-      request_id: req.id,
-      status: 'draft',
-      total_amount: (reqItems || []).reduce((sum, i) => sum + (Number(i.estimated_cost) * Number(i.quantity)), 0),
-      created_by: state.user.id,
-      notes: 'Auto-generated from approved request ' + req.request_no,
-      payment_terms: 'COD',
-      po_date: new Date().toISOString().split('T')[0]
-    }).select().single()
-
-    if (error) throw error
-
-    // Insert PO line items
-    if (reqItems?.length > 0 && po) {
-      await SB.from('po_items').insert(reqItems.map(item => ({
-        po_id: po.id,
-        request_item_id: item.id,
-        item_name: item.item_name,
-        description: item.item_description || null,
-        quantity: item.quantity,
-        unit: item.unit || 'pcs',
-        unit_price: Number(item.estimated_cost) || 0
-      })))
-    }
-
-    // Notify purchasing officers to finalize the PO
+    // Just notify purchasing officers to create the PO
     const purchasers = state.users.filter(u => u.csr_role === 'purchasing_officer' && u.is_active !== false)
     for (const p of purchasers) {
       await SB.from('notifications').insert({
         user_id: p.id,
-        title: '🛒 PO Draft Ready — ' + poNo,
-        body: 'Purchase Order draft created for ' + req.request_no + '. Please review and finalize.',
+        title: '🛒 New PO Required — ' + req.request_no,
+        body: 'Request approved — please create a Purchase Order for: ' + (req.purpose || req.request_type),
         type: 'action_required',
         source_system: 'csr',
-        source_ref_type: 'purchase_order',
-        source_ref_id: po.id
+        source_ref_type: 'request',
+        source_ref_id: req.id
       })
     }
-
-    return poNo
+    return null // No PO number — Purchasing Officer will create manually
   } catch(e) {
     console.warn('autoCreatePODraft error:', e)
     return null
