@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TDMH — Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+[data-theme="dark"]{
+  --bg:#080e14;--surf1:#0d1520;--surf2:#111d2b;--surf3:#162235;--surf4:#1b2940;
+  --bdr:rgba(255,255,255,0.06);--bdr2:rgba(255,255,255,0.11);
+  --txt:#e2edf8;--txt2:#5f8099;--txt3:#324f66;
+  --shadow:0 2px 20px rgba(0,0,0,0.55);--shadow2:0 8px 32px rgba(0,0,0,0.6);
+  --accent:#4d9fff;--accent-a:rgba(77,159,255,0.12);--accent-b:rgba(77,159,255,0.22);
+  --red:#f04060;--red-a:rgba(240,64,96,0.12);
+  --amber:#f0a500;--amber-a:rgba(240,165,0,0.12);
+  --green:#22c55e;--green-a:rgba(34,197,94,0.12);
+  --violet:#a070ff;--violet-a:rgba(160,112,255,0.12);
+  --blue:#4d9fff;--blue-a:rgba(77,159,255,0.12);
+}
+[data-theme="light"]{
+  --bg:#f0f5fb;--surf1:#fff;--surf2:#f7fafd;--surf3:#edf3fa;--surf4:#e3ecf5;
+  --bdr:rgba(0,0,0,0.07);--bdr2:rgba(0,0,0,0.13);
+  --txt:#0c1e2e;--txt2:#4a6a80;--txt3:#9ab8cc;
+  --shadow:0 2px 16px rgba(0,0,0,0.08);--shadow2:0 8px 28px rgba(0,0,0,0.12);
+  --accent:#2070d0;--accent-a:rgba(32,112,208,0.10);--accent-b:rgba(32,112,208,0.20);
+  --red:#d03050;--red-a:rgba(208,48,80,0.09);
+  --amber:#c07800;--amber-a:rgba(192,120,0,0.10);
+  --green:#16a34a;--green-a:rgba(22,163,74,0.10);
+  --violet:#7040d0;--violet-a:rgba(112,64,208,0.09);
+  --blue:#2070d0;--blue-a:rgba(32,112,208,0.09);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+*{transition:background-color .2s,border-color .2s,color .15s;}
+.btn,.badge,.toast{transition:none!important;}
+html,body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;font-size:14px;line-height:1.55;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:var(--surf4);border-radius:2px;}
+h1,h2,h3,h4{font-family:'Bricolage Grotesque',sans-serif;}
+
+/* LOGIN */
+#loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;
+  background-image:radial-gradient(ellipse at 20% 50%,rgba(77,159,255,0.05) 0%,transparent 60%);}
+.login-card{width:100%;max-width:400px;background:var(--surf1);border:1px solid var(--bdr2);border-radius:20px;padding:40px;box-shadow:var(--shadow2);}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:32px;}
+.login-logo-mark{width:44px;height:44px;background:var(--accent-a);border:1px solid var(--accent-b);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;}
+.login-logo-text h1{font-size:18px;font-weight:700;}
+.login-logo-text p{font-size:12px;color:var(--txt2);}
+.form-group{margin-bottom:16px;}
+.form-group label{display:block;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;}
+.form-group input{width:100%;padding:10px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;color:var(--txt);font-family:inherit;font-size:14px;outline:none;}
+.form-group input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-a);}
+.login-err{background:var(--red-a);border:1px solid var(--red);color:var(--red);padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:16px;display:none;}
+
+/* APP */
+#appShell{display:none;height:100vh;overflow:hidden;}
+.shell{display:flex;height:100vh;}
+.sidebar{width:240px;min-width:240px;background:var(--surf1);border-right:1px solid var(--bdr);display:flex;flex-direction:column;height:100vh;flex-shrink:0;}
+.sidebar-logo{padding:20px 18px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--bdr);}
+.sidebar-logo-mark{width:34px;height:34px;background:var(--accent-a);border:1px solid var(--accent-b);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.sidebar-logo-text h2{font-size:13px;font-weight:700;}
+.sidebar-logo-text p{font-size:11px;color:var(--txt2);}
+.sidebar-nav{flex:1;overflow-y:auto;padding:10px;}
+.nav-section{font-size:10px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:1px;padding:8px 10px 4px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;color:var(--txt2);font-size:13px;font-weight:500;margin-bottom:2px;}
+.nav-item:hover{background:var(--surf3);color:var(--txt);}
+.nav-item.active{background:var(--accent-a);color:var(--accent);border:1px solid var(--accent-b);}
+.nav-icon{font-size:15px;width:18px;text-align:center;flex-shrink:0;}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;border-radius:20px;padding:1px 7px;font-size:10px;font-weight:700;}
+.sidebar-footer{padding:12px;border-top:1px solid var(--bdr);}
+.user-chip{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surf2);border-radius:10px;border:1px solid var(--bdr);cursor:pointer;}
+.user-chip:hover{background:var(--surf3);}
+.user-avatar{width:30px;height:30px;border-radius:8px;background:var(--accent-a);border:1px solid var(--accent-b);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0;}
+.user-info{overflow:hidden;flex:1;}
+.user-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.user-role{font-size:10px;color:var(--txt2);}
+.topbar{height:56px;background:var(--surf1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;}
+.topbar-title{font-family:'Bricolage Grotesque',sans-serif;font-size:16px;font-weight:700;flex:1;}
+.icon-btn{width:34px;height:34px;border-radius:9px;background:var(--surf2);border:1px solid var(--bdr2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:var(--txt2);}
+.icon-btn:hover{background:var(--surf3);}
+.main{display:flex;flex-direction:column;flex:1;overflow:hidden;}
+.content{flex:1;overflow-y:auto;padding:24px;}
+.hamburger{display:none;width:34px;height:34px;border-radius:9px;background:var(--surf2);border:1px solid var(--bdr2);align-items:center;justify-content:center;cursor:pointer;font-size:16px;}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:10px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border:none;}
+.btn:active{transform:scale(.97);}
+.btn-primary{background:var(--accent);color:#fff;}.btn-primary:hover{opacity:.88;}
+.btn-secondary{background:var(--surf3);color:var(--txt);border:1px solid var(--bdr2);}
+.btn-ghost{background:transparent;color:var(--txt2);border:1px solid var(--bdr2);}.btn-ghost:hover{background:var(--surf3);}
+.btn-danger{background:var(--red-a);color:var(--red);border:1px solid var(--red);}
+.btn-success{background:var(--green-a);color:var(--green);border:1px solid var(--green);}
+.btn-full{width:100%;}.btn-sm{padding:6px 12px;font-size:12px;border-radius:8px;}.btn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* CARDS & STATS */
+.card{background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;padding:20px;}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px;}
+.stat-card{background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;padding:18px 20px;cursor:pointer;}
+.stat-card:hover{border-color:var(--bdr2);box-shadow:var(--shadow);}
+.stat-label{font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+.stat-value{font-family:'Bricolage Grotesque',sans-serif;font-size:28px;font-weight:700;}
+.stat-sub{font-size:11px;color:var(--txt2);margin-top:4px;}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;}
+.badge-open,.badge-pending{background:var(--accent-a);color:var(--accent);}.badge-open::before,.badge-pending::before{background:var(--accent);}
+.badge-in_progress{background:var(--amber-a);color:var(--amber);}.badge-in_progress::before{background:var(--amber);}
+.badge-resolved,.badge-issued,.badge-active{background:var(--green-a);color:var(--green);}.badge-resolved::before,.badge-issued::before,.badge-active::before{background:var(--green);}
+.badge-critical{background:var(--red-a);color:var(--red);animation:pulse .8s infinite;}.badge-critical::before{background:var(--red);}
+.badge-closed{background:var(--surf3);color:var(--txt3);}.badge-closed::before{background:var(--txt3);}
+.badge-urgent{background:var(--red-a);color:var(--red);}.badge-urgent::before{background:var(--red);}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.5;}}
+
+/* TABLE */
+.table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--bdr);}
+table{width:100%;border-collapse:collapse;background:var(--surf1);}
+th{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);padding:10px 14px;text-align:left;background:var(--surf2);border-bottom:1px solid var(--bdr);white-space:nowrap;}
+td{padding:11px 14px;border-bottom:1px solid var(--bdr);font-size:13px;vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--surf2);}
+.td-mono{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);}
+
+/* MODALS */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;opacity:0;pointer-events:none;transition:opacity .2s!important;}
+.modal-overlay.open{opacity:1;pointer-events:all;}
+.modal{background:var(--surf1);border:1px solid var(--bdr2);border-radius:18px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow2);transform:translateY(12px);transition:transform .2s!important;}
+.modal-overlay.open .modal{transform:translateY(0);}
+.modal-lg{max-width:820px;}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px 0;}
+.modal-header h3{font-size:17px;font-weight:700;}
+.modal-close{width:28px;height:28px;border-radius:7px;background:var(--surf3);border:none;cursor:pointer;font-size:16px;color:var(--txt2);display:flex;align-items:center;justify-content:center;}
+.modal-body{padding:20px 24px;}
+.modal-footer{display:flex;justify-content:flex-end;gap:10px;padding:16px 24px;border-top:1px solid var(--bdr);flex-wrap:wrap;}
+.modal-footer .btn{min-width:100px;}
+
+/* FORMS */
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:11px;font-weight:600;color:var(--txt2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;}
+.field input,.field select,.field textarea{width:100%;padding:9px 13px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;color:var(--txt);font-family:inherit;font-size:13px;outline:none;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-a);}
+.field textarea{resize:vertical;min-height:80px;}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+
+/* MY WORK */
+.work-section{margin-bottom:24px;}
+.work-section h3{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.work-item{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;cursor:pointer;margin-bottom:8px;}
+.work-item:hover{border-color:var(--bdr2);}
+.work-item.urgent{border-left:3px solid var(--red);}
+.work-item.high{border-left:3px solid var(--amber);}
+.work-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.work-title{font-size:13px;font-weight:600;margin-bottom:2px;}
+.work-meta{font-size:11px;color:var(--txt2);}
+
+/* CHARTS */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
+.chart-wrap{background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;padding:18px;}
+.chart-title{font-size:13px;font-weight:600;margin-bottom:14px;color:var(--txt2);}
+canvas{max-height:220px;}
+
+/* SEARCH */
+.search-bar{display:flex;gap:10px;margin-bottom:20px;}
+.search-bar input{flex:1;padding:10px 14px;background:var(--surf1);border:1px solid var(--bdr2);border-radius:10px;color:var(--txt);font-family:inherit;font-size:14px;outline:none;}
+.search-bar input:focus{border-color:var(--accent);}
+.search-result-item{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;cursor:pointer;margin-bottom:8px;}
+.search-result-item:hover{border-color:var(--accent-b);background:var(--accent-a);}
+.search-type-chip{font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;flex-shrink:0;}
+
+/* BUDGET BARS */
+.budget-bar-wrap{margin-bottom:14px;}
+.budget-bar-header{display:flex;justify-content:space-between;margin-bottom:5px;font-size:12px;}
+.budget-track{height:8px;background:var(--surf3);border-radius:4px;overflow:hidden;}
+.budget-fill{height:100%;border-radius:4px;transition:width .5s;}
+
+/* PAGE */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;}
+.page-header h2{font-size:20px;font-weight:700;}
+.empty-state{text-align:center;padding:40px 20px;color:var(--txt2);}
+.empty-state .empty-icon{font-size:36px;margin-bottom:10px;}
+
+/* HANDOVER */
+.handover-card{background:var(--surf1);border:1px solid var(--bdr);border-radius:14px;padding:16px;margin-bottom:10px;cursor:pointer;}
+.handover-card:hover{border-color:var(--bdr2);}
+.handover-card.urgent{border-left:3px solid var(--red);}
+
+/* TOAST */
+#toastContainer{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
+.toast{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:12px;background:var(--surf1);border:1px solid var(--bdr2);box-shadow:var(--shadow2);min-width:260px;max-width:340px;animation:toastIn .25s ease;}
+@keyframes toastIn{from{transform:translateX(20px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+.toast-title{font-size:13px;font-weight:600;margin-bottom:2px;}
+.toast-body{font-size:12px;color:var(--txt2);}
+
+/* STARS */
+.stars{display:flex;gap:4px;}
+.star{font-size:22px;cursor:pointer;}
+.star:hover{transform:scale(1.2);}
+
+@media(max-width:768px){
+  .sidebar{position:fixed;left:-100%;top:0;bottom:0;z-index:100;transition:left .25s ease!important;}
+  .sidebar.open{left:0;}
+  .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;}
+  .sidebar.open~.sidebar-overlay{display:block;}
+  .content{padding:14px;}
+  .hamburger{display:flex!important;}
+  .chart-grid,.field-row{grid-template-columns:1fr;}
+  .stat-grid{grid-template-columns:1fr 1fr;}
+  .modal-overlay{padding:0;align-items:flex-end;}
+  .modal{border-radius:18px 18px 0 0;max-height:92vh;max-width:100%!important;}
+  .modal-footer{flex-wrap:wrap;}
+  .modal-footer .btn{flex:1;}
+  #toastContainer{left:10px;right:10px;top:auto;bottom:16px;}
+  .toast{min-width:unset;max-width:100%;}
+}
+</style>
+</head>
+<body>
+<div id="toastContainer"></div>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-mark">🏥</div>
+      <div class="login-logo-text">
+        <h1>TDMH Command Center</h1>
+        <p>Unified cross-system hub</p>
+      </div>
+    </div>
+    <h2 style="font-size:22px;font-weight:700;margin-bottom:6px;">Welcome back</h2>
+    <p style="color:var(--txt2);font-size:13px;margin-bottom:24px;">Sign in with your employee credentials</p>
+    <div class="login-err" id="loginErr"></div>
+    <div class="form-group">
+      <label>Employee No. or Email</label>
+      <input type="text" id="loginEmpNo" placeholder="EMP-001 or you@tdmh.com" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-full" id="loginBtn" onclick="doLogin()">Sign In</button>
+    <div style="text-align:center;margin-top:12px;">
+      <a href="https://ittdmh.pro/reset?from=hub" style="font-size:12px;color:var(--txt2);text-decoration:none;">Forgot password?</a>
+    </div>
+    <p style="font-size:11px;color:var(--txt3);text-align:center;margin-top:16px;">Taytay Doctors Multispecialty Hospital</p>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appShell">
+  <div class="shell">
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-mark">🏥</div>
+        <div class="sidebar-logo-text">
+          <h2>Command Center</h2>
+          <p>TDMH · All Systems</p>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">My Work</div>
+        <div class="nav-item active" onclick="showPage('my_work')" id="nav_my_work"><span class="nav-icon">🎯</span>My Work</div>
+        <div class="nav-item" onclick="showPage('notifications')" id="nav_notifications"><span class="nav-icon">🔔</span>Notifications<span class="nav-badge" id="notifNavBadge" style="display:none;">0</span></div>
+        <div class="nav-section">Operations</div>
+        <div class="nav-item" onclick="showPage('dept_view')" id="nav_dept_view"><span class="nav-icon">🏢</span>Department View</div>
+        <div class="nav-item" onclick="showPage('handover')" id="nav_handover"><span class="nav-icon">🔄</span>Shift Handover</div>
+        <div class="nav-item" onclick="showPage('search')" id="nav_search"><span class="nav-icon">🔍</span>Global Search</div>
+        <div class="nav-item" onclick="showPage('audit_trail')" id="nav_audit_trail"><span class="nav-icon">📋</span>Audit Trail</div>
+        <div class="nav-section">Analytics</div>
+        <div class="nav-item" onclick="showPage('reports')" id="nav_reports"><span class="nav-icon">📊</span>Management Reports</div>
+        <div class="nav-item" onclick="showPage('budget')" id="nav_budget"><span class="nav-icon">💰</span>Budget Tracking</div>
+        <div class="nav-item" onclick="showPage('room_view')" id="nav_room_view"><span class="nav-icon">📍</span>Room / Location</div>
+        <div class="nav-section">Systems</div>
+        <div class="nav-item" onclick="goSystem('csr')" id="nav_csr"><span class="nav-icon">📋</span>CSR System ↗</div>
+        <div class="nav-item" onclick="goSystem('maintenance')" id="nav_maintenance"><span class="nav-icon">🔧</span>Maintenance ↗</div>
+        <div class="nav-item" onclick="goSystem('it')" id="nav_it"><span class="nav-icon">🖥️</span>IT Helpdesk ↗</div>
+        <div class="nav-item" onclick="goSystem('inventory')" id="nav_inventory"><span class="nav-icon">🏷️</span>Asset Inventory ↗</div>
+        <div class="nav-item" onclick="goSystem('scan')" id="nav_scan"><span class="nav-icon">📷</span>Scan & Request ↗</div>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-chip" onclick="confirm2('Sign out?',doLogout)">
+          <div class="user-avatar" id="userAvatar">--</div>
+          <div class="user-info">
+            <div class="user-name" id="userName">Loading...</div>
+            <div class="user-role" id="userRoleLabel">--</div>
+          </div>
+          <span style="font-size:10px;color:var(--txt3);">⏻</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+    <div class="main">
+      <div class="topbar">
+        <button class="hamburger" onclick="toggleSidebar()">☰</button>
+        <div class="topbar-title" id="topbarTitle">My Work</div>
+        <div style="display:flex;gap:8px;">
+          <div class="icon-btn" onclick="showPage('search')" title="Global Search">🔍</div>
+          <div class="icon-btn" onclick="showPage('notifications')" id="notifBell" style="position:relative;">🔔<span id="notifBadge" style="display:none;position:absolute;top:-3px;right:-3px;background:var(--red);color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;"></span></div>
+          <div class="icon-btn" onclick="toggleTheme()">🌙</div>
+        </div>
+      </div>
+      <div class="content" id="mainContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- GENERIC MODAL -->
+<div class="modal-overlay" id="mainModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 id="modalTitle">Detail</h3>
+      <button class="modal-close" onclick="closeModal('mainModal')">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter">
+      <button class="btn btn-ghost" onclick="closeModal('mainModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h3 id="confirmTitle">Confirm</h3>
+      <button class="modal-close" onclick="closeModal('confirmModal')">✕</button>
+    </div>
+    <div class="modal-body"><div id="confirmMsg" style="color:var(--txt2);font-size:14px;"></div></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="btn btn-primary" id="confirmOkBtn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPA_URL = 'https://zcyhwdulizorgngayxya.supabase.co'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjeWh3ZHVsaXpvcmduZ2F5eHlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNjU0NTgsImV4cCI6MjA5NDg0MTQ1OH0.xLdKGNqjNZNRfjAf5NmXGig1GyTbQZAmbZiKokpgAhUo'
+const SB = supabase.createClient(SUPA_URL, SUPA_KEY)
+const SYSTEMS = {
+  csr:'https://ittdmh.pro/csr', maintenance:'https://ittdmh.pro/maintenance',
+  it:'https://ittdmh.pro/it', inventory:'https://ittdmh.pro/inventory', scan:'https://ittdmh.pro/scan'
+}
+
+let S = { user:null, page:'my_work', departments:[], users:[], charts:{} }
+
+// ═══ AUTH ═══
+function getSession(){ try{return JSON.parse(localStorage.getItem('tdmh_session'))}catch{return null} }
+function setSession(d){ localStorage.setItem('tdmh_session',JSON.stringify(d)) }
+function clearSession(){ localStorage.removeItem('tdmh_session') }
+function storeAuthSession(authData, profile){
+  const s = {
+    id:profile.id, auth_id:authData.user.id,
+    employee_no:profile.employee_no, full_name:profile.full_name,
+    dept_id:profile.dept_id, phone:profile.phone, email:profile.email,
+    csr_role:profile.csr_role, maintenance_role:profile.maintenance_role,
+    it_role:profile.it_role, inventory_role:profile.inventory_role,
+    access_token:authData.session?.access_token,
+    refresh_token:authData.session?.refresh_token
+  }
+  setSession(s); return s
+}
+
+async function doLogin(){
+  const empNo=document.getElementById('loginEmpNo').value.trim()
+  const pass=document.getElementById('loginPass').value.trim()
+  const btn=document.getElementById('loginBtn')
+  document.getElementById('loginErr').style.display='none'
+  if(!empNo||!pass){showLoginErr('Please enter credentials.');return}
+  btn.disabled=true;btn.textContent='Signing in...'
+  try{
+    const email=empNo.includes('@')?empNo.toLowerCase():empNo.toLowerCase().replace(/[^a-z0-9]/g,'-')+'@tdmh.local'
+    const{data:authData,error}=await SB.auth.signInWithPassword({email,password:pass})
+    if(error||!authData.user){showLoginErr('Invalid credentials.');return}
+    const{data:profile}=await SB.from('users').select('*').eq('id',authData.user.id).eq('is_active',true).single()
+    if(!profile){showLoginErr('Account not found.');await SB.auth.signOut();return}
+    const anyRole=profile.csr_role||profile.maintenance_role||profile.it_role||profile.inventory_role
+    if(!anyRole){showLoginErr('No system access. Contact IT.');await SB.auth.signOut();return}
+    const session=storeAuthSession(authData,profile)
+    await bootApp(session)
+  }catch(e){showLoginErr('Connection error.')}
+  finally{btn.disabled=false;btn.textContent='Sign In'}
+}
+function showLoginErr(msg){const el=document.getElementById('loginErr');el.textContent=msg;el.style.display='block'}
+async function doLogout(){await SB.auth.signOut();clearSession();document.getElementById('appShell').style.display='none';document.getElementById('loginScreen').style.display='flex'}
+
+// ═══ BOOT ═══
+async function bootApp(session){
+  S.user=session
+  document.getElementById('loginScreen').style.display='none'
+  document.getElementById('appShell').style.display='block'
+  const initials=session.full_name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()
+  document.getElementById('userAvatar').textContent=initials
+  document.getElementById('userName').textContent=session.full_name
+  const roles=[session.csr_role,session.maintenance_role,session.it_role,session.inventory_role].filter(Boolean)
+  document.getElementById('userRoleLabel').textContent=roles.join(' · ')
+  const[{data:depts},{data:users}]=await Promise.all([
+    SB.from('departments').select('*').eq('is_active',true).order('dept_name'),
+    SB.from('users').select('id,full_name,employee_no,dept_id,csr_role,maintenance_role,it_role,inventory_role').eq('is_active',true)
+  ])
+  S.departments=depts||[]
+  S.users=users||[]
+  subscribeNotifications()
+  loadNotifCount()
+  showPage('my_work')
+}
+
+// ═══ NAV ═══
+const PAGE_TITLES={my_work:'🎯 My Work',notifications:'🔔 Notifications',dept_view:'🏢 Department View',handover:'🔄 Shift Handover',search:'🔍 Global Search',audit_trail:'📋 Audit Trail',reports:'📊 Management Reports',budget:'💰 Budget Tracking',room_view:'📍 Room / Location'}
+function showPage(page){
+  S.page=page
+  document.getElementById('topbarTitle').textContent=PAGE_TITLES[page]||page
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'))
+  const nav=document.getElementById('nav_'+page)
+  if(nav)nav.classList.add('active')
+  closeSidebar()
+  const content=document.getElementById('mainContent')
+  content.innerHTML='<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading...</p></div>'
+  // Destroy old charts
+  Object.values(S.charts).forEach(c=>{try{c.destroy()}catch(e){}})
+  S.charts={}
+  const pages={my_work:renderMyWork,notifications:renderNotifications,dept_view:renderDeptView,handover:renderHandover,search:renderSearch,audit_trail:renderAuditTrail,reports:renderReports,budget:renderBudget,room_view:renderRoomView}
+  if(pages[page])pages[page]()
+}
+function goSystem(key){window.open(SYSTEMS[key],'_blank')}
+
+// ═══════════════════════════════════
+// 1. MY WORK
+// ═══════════════════════════════════
+async function renderMyWork(){
+  const content=document.getElementById('mainContent')
+  const u=S.user
+  const now=new Date()
+
+  // Load all pending items for this user across systems
+  const[maintRes,itRes,csrRes,notifRes,handoverRes]=await Promise.all([
+    u.maintenance_role?SB.from('maint_tickets').select('id,title,status,priority,created_at,dept_name').or('submitted_by.eq.'+u.id+',claimed_by.eq.'+u.id).not('status','in','("closed","cancelled")').order('created_at',{ascending:false}).limit(10):{data:[]},
+    u.it_role?SB.from('it_tickets').select('id,subject,status,priority,created_at,dept_id').or('requester_id.eq.'+u.id+',assigned_to.eq.'+u.id).not('status','in','("closed","cancelled")').order('created_at',{ascending:false}).limit(10):{data:[]},
+    u.csr_role?SB.from('requests').select('id,request_no,request_type,status,urgency,purpose,created_at').eq('requested_by',u.id).not('status','in','("issued","cancelled")').order('created_at',{ascending:false}).limit(10):{data:[]},
+    SB.from('notifications').select('*').eq('user_id',u.id).eq('is_read',false).order('created_at',{ascending:false}).limit(5),
+    SB.from('shift_handover_notes').select('*').eq('received_by',u.id).is('received_at',null).order('created_at',{ascending:false}).limit(3)
+  ])
+
+  const maintTickets=maintRes.data||[]
+  const itTickets=itRes.data||[]
+  const csrRequests=csrRes.data||[]
+  const unreadNotifs=notifRes.data||[]
+  const pendingHandovers=handoverRes.data||[]
+
+  const totalPending=maintTickets.length+itTickets.length+csrRequests.length
+  const critical=maintTickets.filter(t=>t.priority==='emergency'||t.priority==='urgent').length+
+                 itTickets.filter(t=>t.priority==='critical'||t.priority==='high').length
+
+  let html='<div class="page-header"><h2>👋 Kamusta, '+u.full_name.split(' ')[0]+'</h2>'
+  html+='<div style="font-size:13px;color:var(--txt2);">'+now.toLocaleDateString('en-PH',{weekday:'long',month:'long',day:'numeric',year:'numeric'})+'</div></div>'
+
+  // Alert banners
+  if(critical>0){
+    html+='<div style="background:var(--red-a);border:1px solid var(--red);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">'
+    html+='<span style="font-size:20px;">🚨</span><strong style="color:var(--red);">'+critical+' urgent/critical item(s) need your attention</strong></div>'
+  }
+  if(pendingHandovers.length>0){
+    html+='<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">'
+    html+='<span style="color:var(--amber);">🔄 <strong>'+pendingHandovers.length+' shift handover note(s)</strong> pending your acknowledgment</span>'
+    html+='<button class="btn btn-ghost btn-sm" onclick="showPage(\'handover\')">View →</button></div>'
+  }
+
+  // Stats
+  html+='<div class="stat-grid">'
+  html+=sC('📋','CSR Requests',csrRequests.length,'Active','var(--accent)')
+  html+=sC('🔧','Maint. Tickets',maintTickets.length,'Open','var(--amber)')
+  html+=sC('🖥️','IT Tickets',itTickets.length,'Open','var(--blue,var(--accent))')
+  html+=sC('🔔','Unread Notifs',unreadNotifs.length,'Alerts','var(--red)')
+  html+='</div>'
+
+  // Maintenance items
+  if(maintTickets.length>0){
+    html+='<div class="work-section"><h3>🔧 Maintenance Tickets</h3>'
+    maintTickets.forEach(t=>{
+      const age=Math.floor((now-new Date(t.created_at))/3600000)
+      html+='<div class="work-item '+(t.priority==='emergency'||t.priority==='urgent'?t.priority:'')+'" onclick="window.open(SYSTEMS.maintenance,\'_blank\')">'
+      html+='<div class="work-icon" style="background:var(--amber-a);">🔧</div>'
+      html+='<div style="flex:1;min-width:0;">'
+      html+='<div class="work-title">'+t.id+' — '+t.title+'</div>'
+      html+='<div class="work-meta">'+t.dept_name+' · '+age+'h ago</div></div>'
+      html+='<span class="badge badge-'+t.status+'">'+t.status.replace('_',' ')+'</span></div>'
+    })
+    html+='</div>'
+  }
+
+  // IT items
+  if(itTickets.length>0){
+    html+='<div class="work-section"><h3>🖥️ IT Tickets</h3>'
+    itTickets.forEach(t=>{
+      const dept=S.departments.find(d=>d.id===t.dept_id)
+      const age=Math.floor((now-new Date(t.created_at))/3600000)
+      html+='<div class="work-item '+(t.priority==='critical'||t.priority==='high'?t.priority:'')+'" onclick="window.open(SYSTEMS.it,\'_blank\')">'
+      html+='<div class="work-icon" style="background:var(--accent-a);">🖥️</div>'
+      html+='<div style="flex:1;min-width:0;">'
+      html+='<div class="work-title">'+t.id+' — '+t.subject+'</div>'
+      html+='<div class="work-meta">'+(dept?dept.dept_name:'—')+' · '+age+'h ago</div></div>'
+      html+='<span class="badge badge-'+t.priority+'">'+t.priority+'</span></div>'
+    })
+    html+='</div>'
+  }
+
+  // CSR items
+  if(csrRequests.length>0){
+    html+='<div class="work-section"><h3>📋 CSR Requests</h3>'
+    csrRequests.forEach(r=>{
+      const age=Math.floor((now-new Date(r.created_at))/3600000)
+      html+='<div class="work-item '+(r.urgency==='emergency'||r.urgency==='urgent'?r.urgency:'')+'" onclick="window.open(SYSTEMS.csr,\'_blank\')">'
+      html+='<div class="work-icon" style="background:var(--green-a);">📋</div>'
+      html+='<div style="flex:1;min-width:0;">'
+      html+='<div class="work-title">'+r.request_no+' — '+(r.purpose||r.request_type)+'</div>'
+      html+='<div class="work-meta">'+r.request_type.toUpperCase()+' · '+age+'h ago</div></div>'
+      html+='<span class="badge badge-'+r.status+'">'+r.status.replace('_',' ')+'</span></div>'
+    })
+    html+='</div>'
+  }
+
+  if(totalPending===0){
+    html+='<div class="empty-state"><div class="empty-icon">🎉</div><h3>All clear!</h3><p>No pending items across all systems.</p></div>'
+  }
+
+  content.innerHTML=html
+}
+
+// ═══════════════════════════════════
+// 2. NOTIFICATIONS
+// ═══════════════════════════════════
+async function renderNotifications(){
+  const content=document.getElementById('mainContent')
+  const{data}=await SB.from('notifications').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(50)
+  const all=data||[]
+
+  // Mark all as read
+  await SB.from('notifications').update({is_read:true}).eq('user_id',S.user.id).eq('is_read',false)
+  updateNotifBadge(0)
+
+  const icons={info:'ℹ️',warning:'⚠️',success:'✅',error:'❌',action_required:'🔔'}
+  const sysIcons={csr:'📋',maintenance:'🔧',it:'🖥️',inventory:'🏷️',system:'🏥'}
+  const sysColors={csr:'var(--green)',maintenance:'var(--amber)',it:'var(--accent)',inventory:'var(--violet)',system:'var(--txt2)'}
+
+  let html='<div class="page-header"><h2>🔔 Notifications</h2>'
+  html+='<button class="btn btn-ghost btn-sm" onclick="clearAllNotifs()">Clear All</button></div>'
+
+  if(all.length===0){
+    html+='<div class="empty-state"><div class="empty-icon">🔔</div><h3>No notifications</h3><p>You\'re all caught up!</p></div>'
+  } else {
+    html+='<div style="display:flex;flex-direction:column;gap:8px;">'
+    all.forEach(n=>{
+      const ago=Math.floor((Date.now()-new Date(n.created_at))/60000)
+      const timeStr=ago<60?ago+'m ago':ago<1440?Math.floor(ago/60)+'h ago':Math.floor(ago/1440)+'d ago'
+      html+='<div style="display:flex;gap:12px;padding:14px;background:var(--surf1);border:1px solid '+(n.is_read?'var(--bdr)':'var(--bdr2)')+';border-radius:12px;'+(n.action_url?'cursor:pointer;':'')+(n.is_read?'opacity:.7':'')+'" '
+      if(n.action_url)html+='onclick="window.open(\''+n.action_url+'\',\'_blank\')"'
+      html+='>'
+      html+='<div style="font-size:20px;flex-shrink:0;">'+(icons[n.type]||'ℹ️')+'</div>'
+      html+='<div style="flex:1;min-width:0;">'
+      html+='<div style="font-size:13px;font-weight:600;margin-bottom:2px;">'+n.title+'</div>'
+      if(n.body)html+='<div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">'+n.body+'</div>'
+      html+='<div style="font-size:11px;color:var(--txt3);display:flex;gap:10px;">'
+      html+='<span>'+(sysIcons[n.source_system]||'')+'</span><span>'+timeStr+'</span>'
+      if(n.action_url)html+='<span style="color:var(--accent);">View →</span>'
+      html+='</div></div></div>'
+    })
+    html+='</div>'
+  }
+  content.innerHTML=html
+}
+
+async function clearAllNotifs(){
+  await SB.from('notifications').delete().eq('user_id',S.user.id)
+  showToast('success','Cleared','All notifications cleared.')
+  showPage('notifications')
+}
+
+// ═══════════════════════════════════
+// 3. DEPARTMENT VIEW
+// ═══════════════════════════════════
+async function renderDeptView(){
+  const content=document.getElementById('mainContent')
+  // Admin can see all depts, others see their own
+  const isAdmin=S.user.csr_role==='admin'||S.user.maintenance_role==='admin'||S.user.it_role==='admin'||S.user.inventory_role==='admin'
+  const depts=isAdmin?S.departments:S.departments.filter(d=>d.id===S.user.dept_id)
+
+  let html='<div class="page-header"><h2>🏢 Department View</h2>'
+  if(!isAdmin)html+='<span style="font-size:12px;color:var(--txt2);">Showing your department only</span>'
+  html+='</div>'
+
+  for(const dept of depts){
+    // Load counts for this dept
+    const[maintRes,itRes,csrRes,assetRes]=await Promise.all([
+      SB.from('maint_tickets').select('id,status,priority').eq('dept_id',dept.id).not('status','in','("closed","cancelled")'),
+      SB.from('it_tickets').select('id,status,priority').eq('dept_id',dept.id).not('status','in','("closed","cancelled")'),
+      SB.from('requests').select('id,status,urgency').eq('dept_id',dept.id).not('status','in','("issued","cancelled")'),
+      SB.from('assets').select('id,status').eq('dept_id',dept.id).eq('is_active',true)
+    ])
+    const maint=maintRes.data||[]
+    const it=itRes.data||[]
+    const csr=csrRes.data||[]
+    const assets=assetRes.data||[]
+    const critical=maint.filter(t=>['emergency','urgent'].includes(t.priority)).length+
+                   it.filter(t=>['critical','high'].includes(t.priority)).length
+
+    html+='<div class="card" style="margin-bottom:14px;">'
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    html+='<div><div style="font-size:16px;font-weight:700;">🏢 '+dept.dept_name+'</div>'
+    if(dept.dept_code)html+='<div style="font-size:11px;color:var(--txt2);">'+dept.dept_code+'</div>'
+    html+='</div>'
+    if(critical>0)html+='<span class="badge badge-critical">⚠️ '+critical+' critical</span>'
+    html+='</div>'
+    html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">'
+    html+=deptStat('🔧',maint.length,'Maint.','var(--amber)')
+    html+=deptStat('🖥️',it.length,'IT','var(--accent)')
+    html+=deptStat('📋',csr.length,'CSR','var(--green)')
+    html+=deptStat('🏷️',assets.length,'Assets','var(--violet)')
+    html+='</div>'
+    // Show critical items
+    const critItems=[...maint.filter(t=>['emergency','urgent'].includes(t.priority)),...it.filter(t=>['critical','high'].includes(t.priority))]
+    if(critItems.length>0){
+      html+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--bdr);">'
+      html+='<div style="font-size:11px;font-weight:600;color:var(--red);margin-bottom:8px;">⚠️ CRITICAL ITEMS</div>'
+      critItems.slice(0,3).forEach(t=>{
+        html+='<div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">• '+t.id+' — '+t.status+'</div>'
+      })
+      html+='</div>'
+    }
+    html+='</div>'
+  }
+  content.innerHTML=html
+}
+function deptStat(icon,count,label,color){
+  return '<div style="background:var(--surf2);border-radius:9px;padding:10px;text-align:center;">'
+    +'<div style="font-size:18px;font-weight:700;color:'+color+';">'+count+'</div>'
+    +'<div style="font-size:11px;color:var(--txt2);">'+icon+' '+label+'</div></div>'
+}
+
+// ═══════════════════════════════════
+// 4. SHIFT HANDOVER
+// ═══════════════════════════════════
+async function renderHandover(){
+  const content=document.getElementById('mainContent')
+  const{data}=await SB.from('shift_handover_notes').select('*').order('created_at',{ascending:false}).limit(30)
+  const all=data||[]
+  const pending=all.filter(n=>!n.received_at&&n.received_by===S.user.id)
+
+  let html='<div class="page-header"><h2>🔄 Shift Handover</h2>'
+  html+='<button class="btn btn-primary" onclick="openHandoverForm()">✍️ Write Handover Note</button></div>'
+
+  if(pending.length>0){
+    html+='<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:16px;">'
+    html+='<strong style="color:var(--amber);">🔄 '+pending.length+' handover note(s) pending your acknowledgment</strong></div>'
+  }
+
+  if(all.length===0){
+    html+='<div class="empty-state"><div class="empty-icon">🔄</div><h3>No handover notes yet</h3></div>'
+  } else {
+    html+='<div style="display:flex;flex-direction:column;gap:8px;">'
+    all.forEach(n=>{
+      const writer=S.users.find(u=>u.id===n.written_by)
+      const receiver=S.users.find(u=>u.id===n.received_by)
+      const dept=S.departments.find(d=>d.id===n.dept_id)
+      const isPending=!n.received_at&&n.received_by===S.user.id
+      html+='<div class="handover-card'+(n.is_urgent?' urgent':'')+'" onclick="viewHandover(\''+n.id+'\')">'
+      html+='<div style="display:flex;justify-content:space-between;margin-bottom:8px;">'
+      html+='<div style="display:flex;gap:8px;align-items:center;">'
+      html+='<span style="font-size:13px;font-weight:600;">'+SHIFT_ICONS[n.shift_type||'morning']+' '+(n.shift_type||'').replace(/\b\w/g,l=>l.toUpperCase())+' Shift</span>'
+      if(n.is_urgent)html+='<span class="badge badge-critical">URGENT</span>'
+      if(isPending)html+='<span class="badge badge-pending">⏳ Needs Acknowledgment</span>'
+      html+='</div>'
+      html+='<span style="font-size:11px;color:var(--txt2);">'+formatDate(n.created_at)+'</span>'
+      html+='</div>'
+      html+='<div style="font-size:12px;color:var(--txt2);margin-bottom:6px;">From: '+( writer?writer.full_name:'—')+' → To: '+(receiver?receiver.full_name:'—')+'</div>'
+      html+='<div style="font-size:13px;">'+(n.notes||'').substring(0,120)+(n.notes?.length>120?'...':'')+'</div>'
+      if(dept)html+='<div style="font-size:11px;color:var(--txt3);margin-top:6px;">🏢 '+dept.dept_name+'</div>'
+      html+='</div>'
+    })
+    html+='</div>'
+  }
+  content.innerHTML=html
+}
+
+const SHIFT_ICONS={morning:'☀️',afternoon:'🌤️',night:'🌙',relief:'🔄'}
+
+function openHandoverForm(){
+  document.getElementById('modalTitle').textContent='✍️ Write Shift Handover Note'
+  const shiftOpts=['morning','afternoon','night','relief']
+  let html='<div class="field-row">'
+  html+='<div class="field"><label>Department</label><select id="h_dept"><option value="">— Select —</option>'
+  S.departments.forEach(d=>{const sel=d.id===S.user.dept_id?' selected':'';html+='<option value="'+d.id+'"'+sel+'>'+d.dept_name+'</option>'})
+  html+='</select></div>'
+  html+='<div class="field"><label>Shift</label><select id="h_shift">'
+  shiftOpts.forEach(s=>{html+='<option value="'+s+'">'+SHIFT_ICONS[s]+' '+s.replace(/\b\w/g,l=>l.toUpperCase())+'</option>'})
+  html+='</select></div></div>'
+  html+='<div class="field"><label>Hand Over To (Receiver)</label><select id="h_receiver"><option value="">— Select —</option>'
+  S.users.forEach(u=>{html+='<option value="'+u.id+'">'+u.full_name+'</option>'})
+  html+='</select></div>'
+  html+='<div class="field"><label>Notes *</label><textarea id="h_notes" rows="5" placeholder="Write handover notes here — pending tasks, ongoing issues, important events during your shift..."></textarea></div>'
+  html+='<div class="field"><label>Urgent?</label>'
+  html+='<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="h_urgent" style="width:16px;height:16px;accent-color:var(--red);"> <span style="font-size:13px;">Mark as urgent</span></label></div>'
+  document.getElementById('modalBody').innerHTML=html
+  document.getElementById('modalFooter').innerHTML=
+    '<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Cancel</button>'+
+    '<button class="btn btn-primary" onclick="saveHandover()">📤 Submit Handover</button>'
+  openModal('mainModal')
+}
+
+async function saveHandover(){
+  const notes=document.getElementById('h_notes')?.value.trim()
+  const deptId=document.getElementById('h_dept')?.value
+  const shift=document.getElementById('h_shift')?.value
+  const receiverId=document.getElementById('h_receiver')?.value
+  const urgent=document.getElementById('h_urgent')?.checked
+  if(!notes){showToast('error','Required','Please write handover notes.');return}
+  await SB.from('shift_handover_notes').insert({
+    dept_id:deptId||null,shift_type:shift||'morning',
+    written_by:S.user.id,received_by:receiverId||null,
+    notes,is_urgent:urgent||false,shift_date:new Date().toISOString().split('T')[0]
+  })
+  // Notify receiver
+  if(receiverId){
+    await SB.from('notifications').insert({
+      user_id:receiverId,title:'🔄 Shift Handover from '+S.user.full_name,
+      body:notes.substring(0,80)+'...',
+      type:urgent?'action_required':'info',source_system:'system'
+    })
+  }
+  closeModal('mainModal')
+  showToast('success','Handover Submitted','Receiver has been notified.')
+  showPage('handover')
+}
+
+async function viewHandover(id){
+  const{data:n}=await SB.from('shift_handover_notes').select('*').eq('id',id).single()
+  if(!n)return
+  const writer=S.users.find(u=>u.id===n.written_by)
+  const receiver=S.users.find(u=>u.id===n.received_by)
+  const dept=S.departments.find(d=>d.id===n.dept_id)
+  const isPending=!n.received_at&&n.received_by===S.user.id
+  document.getElementById('modalTitle').textContent=SHIFT_ICONS[n.shift_type||'morning']+' Handover Note'
+  let body='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
+  body+=iF('From',writer?writer.full_name:'—')
+  body+=iF('To',receiver?receiver.full_name:'—')
+  body+=iF('Shift',(n.shift_type||'').replace(/\b\w/g,l=>l.toUpperCase()))
+  body+=iF('Date',formatDate(n.created_at))
+  body+=iF('Department',dept?dept.dept_name:'—')
+  body+=iF('Status',n.received_at?'✅ Acknowledged':'⏳ Pending')
+  body+='</div>'
+  if(n.is_urgent)body+='<div style="background:var(--red-a);border:1px solid var(--red);border-radius:8px;padding:8px 12px;margin-bottom:12px;color:var(--red);font-weight:600;">⚠️ URGENT</div>'
+  body+='<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;white-space:pre-wrap;font-size:13px;">'+n.notes+'</div>'
+  document.getElementById('modalBody').innerHTML=body
+  let footer='<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Close</button>'
+  if(isPending)footer+='<button class="btn btn-success" onclick="acknowledgeHandover(\''+id+'\')">✅ Acknowledge</button>'
+  document.getElementById('modalFooter').innerHTML=footer
+  openModal('mainModal')
+}
+
+async function acknowledgeHandover(id){
+  await SB.from('shift_handover_notes').update({received_at:new Date().toISOString()}).eq('id',id)
+  closeModal('mainModal')
+  showToast('success','Acknowledged','Handover note acknowledged.')
+  showPage('handover')
+}
+
+// ═══════════════════════════════════
+// 5. GLOBAL SEARCH
+// ═══════════════════════════════════
+function renderSearch(){
+  const content=document.getElementById('mainContent')
+  content.innerHTML=`
+    <div class="page-header"><h2>🔍 Global Search</h2></div>
+    <div class="search-bar">
+      <input type="text" id="globalSearch" placeholder="Search tickets, assets, requests, employees..." autocomplete="off" onkeydown="if(event.key==='Enter')doGlobalSearch()">
+      <button class="btn btn-primary" onclick="doGlobalSearch()">Search</button>
+    </div>
+    <div id="searchResults"></div>
+  `
+  setTimeout(()=>document.getElementById('globalSearch')?.focus(),100)
+}
+
+async function doGlobalSearch(){
+  const q=document.getElementById('globalSearch')?.value.trim()
+  if(!q||q.length<2){showToast('warning','Too Short','Enter at least 2 characters.');return}
+  const results=document.getElementById('searchResults')
+  results.innerHTML='<div style="text-align:center;padding:20px;color:var(--txt2);">🔍 Searching...</div>'
+
+  const[maintRes,itRes,csrRes,assetRes,userRes]=await Promise.all([
+    SB.from('maint_tickets').select('id,title,status,priority,dept_name,created_at').or('id.ilike.%'+q+'%,title.ilike.%'+q+'%').limit(5),
+    SB.from('it_tickets').select('id,subject,status,priority,created_at').or('id.ilike.%'+q+'%,subject.ilike.%'+q+'%').limit(5),
+    SB.from('requests').select('id,request_no,request_type,status,purpose,created_at').or('request_no.ilike.%'+q+'%,purpose.ilike.%'+q+'%').limit(5),
+    SB.from('assets').select('id,asset_no,asset_name,status,location,created_at').or('asset_no.ilike.%'+q+'%,asset_name.ilike.%'+q+'%,serial_no.ilike.%'+q+'%').limit(5),
+    SB.from('users').select('id,full_name,employee_no,dept_id').or('full_name.ilike.%'+q+'%,employee_no.ilike.%'+q+'%').limit(5)
+  ])
+
+  const allResults=[
+    ...(maintRes.data||[]).map(r=>({type:'maintenance',icon:'🔧',color:'var(--amber)',id:r.id,title:r.id+' — '+r.title,sub:r.dept_name+' · '+r.status,url:SYSTEMS.maintenance})),
+    ...(itRes.data||[]).map(r=>({type:'it',icon:'🖥️',color:'var(--accent)',id:r.id,title:r.id+' — '+r.subject,sub:r.status,url:SYSTEMS.it})),
+    ...(csrRes.data||[]).map(r=>({type:'csr',icon:'📋',color:'var(--green)',id:r.id,title:r.request_no+' — '+(r.purpose||r.request_type),sub:r.status,url:SYSTEMS.csr})),
+    ...(assetRes.data||[]).map(r=>({type:'asset',icon:'🏷️',color:'var(--violet)',id:r.id,title:r.asset_no+' — '+r.asset_name,sub:(r.location||'No location')+' · '+r.status,url:SYSTEMS.inventory})),
+    ...(userRes.data||[]).map(r=>({type:'user',icon:'👤',color:'var(--txt2)',id:r.id,title:r.full_name,sub:r.employee_no,url:null}))
+  ]
+
+  if(allResults.length===0){
+    results.innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div><h3>No results for "'+q+'"</h3><p>Try a different search term.</p></div>'
+    return
+  }
+
+  const typeLabels={maintenance:'Maintenance',it:'IT Ticket',csr:'CSR Request',asset:'Asset',user:'Employee'}
+  const typeColors={maintenance:'var(--amber-a)',it:'var(--accent-a)',csr:'var(--green-a)',asset:'var(--violet-a)',user:'var(--surf3)'}
+  const typeTextColors={maintenance:'var(--amber)',it:'var(--accent)',csr:'var(--green)',asset:'var(--violet)',user:'var(--txt2)'}
+
+  let html='<div style="font-size:12px;color:var(--txt2);margin-bottom:10px;">'+allResults.length+' result(s) for "'+q+'"</div>'
+  html+='<div style="display:flex;flex-direction:column;gap:8px;">'
+  allResults.forEach(r=>{
+    html+='<div class="search-result-item" onclick="'+(r.url?'window.open(\''+r.url+'\',\'_blank\')':'')+'">'
+    html+='<div style="font-size:20px;">'+r.icon+'</div>'
+    html+='<div style="flex:1;min-width:0;">'
+    html+='<div style="font-size:13px;font-weight:600;">'+r.title+'</div>'
+    html+='<div style="font-size:11px;color:var(--txt2);">'+r.sub+'</div></div>'
+    html+='<span class="search-type-chip" style="background:'+typeColors[r.type]+';color:'+typeTextColors[r.type]+';">'+typeLabels[r.type]+'</span>'
+    if(r.url)html+='<span style="color:var(--txt3);font-size:12px;">↗</span>'
+    html+='</div>'
+  })
+  html+='</div>'
+  results.innerHTML=html
+}
+
+// ═══════════════════════════════════
+// 6. AUDIT TRAIL
+// ═══════════════════════════════════
+async function renderAuditTrail(){
+  const content=document.getElementById('mainContent')
+  // Load recent activity across all systems
+  const[assetHist,maintNotes,itReplies]=await Promise.all([
+    SB.from('asset_history').select('*').order('created_at',{ascending:false}).limit(20),
+    SB.from('maint_ticket_notes').select('*').order('created_at',{ascending:false}).limit(20),
+    SB.from('it_ticket_replies').select('*').order('created_at',{ascending:false}).limit(20)
+  ])
+
+  // Merge and sort by date
+  const all=[
+    ...(assetHist.data||[]).map(h=>({type:'asset',icon:'🏷️',title:h.action.replace(/_/g,' '),sub:'Asset: '+(h.to_value||h.notes||''),by:h.performed_by,date:h.created_at,ref:h.asset_id})),
+    ...(maintNotes.data||[]).map(n=>({type:'maintenance',icon:'🔧',title:'Maintenance Note',sub:n.note?.substring(0,60),by:n.user_id,date:n.created_at,ref:n.ticket_id})),
+    ...(itReplies.data||[]).map(r=>({type:'it',icon:'🖥️',title:r.is_internal?'Internal Note':'Reply',sub:r.body?.substring(0,60),by:r.author_id,date:r.created_at,ref:r.ticket_id}))
+  ].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,40)
+
+  const typeColors={asset:'var(--violet-a)',maintenance:'var(--amber-a)',it:'var(--accent-a)'}
+
+  let html='<div class="page-header"><h2>📋 Audit Trail</h2><span style="font-size:12px;color:var(--txt2);">Recent activity across all systems</span></div>'
+  html+='<div style="display:flex;flex-direction:column;gap:6px;">'
+  all.forEach(a=>{
+    const user=S.users.find(u=>u.id===a.by)
+    html+='<div style="display:flex;gap:10px;padding:10px 14px;background:var(--surf1);border:1px solid var(--bdr);border-radius:10px;align-items:center;">'
+    html+='<div style="width:30px;height:30px;border-radius:8px;background:'+typeColors[a.type]+';display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">'+a.icon+'</div>'
+    html+='<div style="flex:1;min-width:0;">'
+    html+='<div style="font-size:13px;font-weight:600;">'+a.title+'</div>'
+    if(a.sub)html+='<div style="font-size:12px;color:var(--txt2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+a.sub+'</div>'
+    html+='</div>'
+    html+='<div style="text-align:right;flex-shrink:0;">'
+    html+='<div style="font-size:11px;color:var(--txt2);">'+(user?user.full_name.split(' ')[0]:'System')+'</div>'
+    html+='<div style="font-size:10px;color:var(--txt3);">'+formatDate(a.date)+'</div>'
+    html+='</div></div>'
+  })
+  if(all.length===0)html+='<div class="empty-state"><div class="empty-icon">📋</div><h3>No activity yet</h3></div>'
+  html+='</div>'
+  content.innerHTML=html
+}
+
+// ═══════════════════════════════════
+// 7. MANAGEMENT REPORTS
+// ═══════════════════════════════════
+async function renderReports(){
+  const content=document.getElementById('mainContent')
+  content.innerHTML='<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading reports...</p></div>'
+
+  const now=new Date()
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString()
+  const lastMonthStart=new Date(now.getFullYear(),now.getMonth()-1,1).toISOString()
+  const lastMonthEnd=new Date(now.getFullYear(),now.getMonth(),0).toISOString()
+
+  const[maintRes,itRes,csrRes,assetRes,stockRes]=await Promise.all([
+    SB.from('maint_tickets').select('id,status,priority,category,created_at,resolved_at'),
+    SB.from('it_tickets').select('id,status,priority,category_id,created_at,resolved_at,rating'),
+    SB.from('requests').select('id,status,request_type,urgency,created_at,dept_id'),
+    SB.from('assets').select('id,status,category_id,acquisition_cost'),
+    SB.from('stock_items').select('id,quantity_on_hand,reorder_level,item_name')
+  ])
+
+  const maint=maintRes.data||[]
+  const it=itRes.data||[]
+  const csr=csrRes.data||[]
+  const assets=assetRes.data||[]
+  const stock=stockRes.data||[]
+
+  // This month
+  const maintThisMonth=maint.filter(t=>t.created_at>=monthStart)
+  const itThisMonth=it.filter(t=>t.created_at>=monthStart)
+  const csrThisMonth=csr.filter(t=>t.created_at>=monthStart)
+
+  // Resolution rates
+  const maintResolved=maint.filter(t=>['resolved','closed'].includes(t.status)).length
+  const itResolved=it.filter(t=>['resolved','closed'].includes(t.status)).length
+
+  // Avg IT rating
+  const rated=it.filter(t=>t.rating)
+  const avgRating=rated.length>0?(rated.reduce((s,t)=>s+t.rating,0)/rated.length).toFixed(1):'—'
+
+  // Low stock
+  const lowStock=stock.filter(s=>s.quantity_on_hand<=s.reorder_level).length
+
+  // Total asset value
+  const totalAssetValue=assets.reduce((s,a)=>s+Number(a.acquisition_cost||0),0)
+
+  let html='<div class="page-header"><h2>📊 Management Reports</h2>'
+  html+='<span style="font-size:12px;color:var(--txt2);">'+now.toLocaleDateString('en-PH',{month:'long',year:'numeric'})+'</span></div>'
+
+  // KPI Summary
+  html+='<div class="stat-grid">'
+  html+=sC('🔧','Maint. This Month',maintThisMonth.length,'Tickets filed','var(--amber)')
+  html+=sC('🖥️','IT This Month',itThisMonth.length,'Tickets filed','var(--accent)')
+  html+=sC('📋','CSR This Month',csrThisMonth.length,'Requests filed','var(--green)')
+  html+=sC('⭐','Avg IT Rating',avgRating+'/5','User satisfaction','var(--amber)')
+  html+=sC('✅','Maint. Resolved',maint.length>0?Math.round(maintResolved/maint.length*100)+'%':'—','All time','var(--green)')
+  html+=sC('⚠️','Low Stock Items',lowStock,'Need reorder','var(--red)')
+  html+='</div>'
+
+  // Charts
+  html+='<div class="chart-grid">'
+
+  // Ticket status breakdown
+  html+='<div class="chart-wrap"><div class="chart-title">🔧 Maintenance by Category</div><canvas id="chartMaintCat"></canvas></div>'
+  html+='<div class="chart-wrap"><div class="chart-title">🖥️ IT Tickets by Status</div><canvas id="chartITStatus"></canvas></div>'
+
+  // CSR by dept
+  html+='<div class="chart-wrap"><div class="chart-title">📋 CSR Requests by Type</div><canvas id="chartCSRType"></canvas></div>'
+
+  // Asset by status
+  html+='<div class="chart-wrap"><div class="chart-title">🏷️ Assets by Status</div><canvas id="chartAssetStatus"></canvas></div>'
+
+  html+='</div>'
+
+  // Dept performance table
+  html+='<div class="card"><div style="font-size:13px;font-weight:600;margin-bottom:14px;">🏢 Department Activity This Month</div>'
+  html+='<div class="table-wrap"><table><thead><tr><th>Department</th><th>Maint. Tickets</th><th>IT Tickets</th><th>CSR Requests</th><th>Total</th></tr></thead><tbody>'
+  S.departments.forEach(dept=>{
+    const dm=maintThisMonth.filter(t=>t.dept_id===dept.id||t.dept_name===dept.dept_name).length
+    const di=itThisMonth.filter(t=>t.dept_id===dept.id).length
+    const dc=csrThisMonth.filter(t=>t.dept_id===dept.id).length
+    const total=dm+di+dc
+    if(total===0)return
+    html+='<tr><td><strong>'+dept.dept_name+'</strong></td>'
+    html+='<td style="color:var(--amber);">'+dm+'</td>'
+    html+='<td style="color:var(--accent);">'+di+'</td>'
+    html+='<td style="color:var(--green);">'+dc+'</td>'
+    html+='<td><strong>'+total+'</strong></td></tr>'
+  })
+  html+='</tbody></table></div></div>'
+
+  content.innerHTML=html
+
+  // Render charts
+  setTimeout(()=>{
+    // Maint by category
+    const maintCats={}
+    maint.forEach(t=>{maintCats[t.category||'other']=(maintCats[t.category||'other']||0)+1})
+    renderDoughnut('chartMaintCat',Object.keys(maintCats),Object.values(maintCats))
+
+    // IT by status
+    const itStatuses={}
+    it.forEach(t=>{itStatuses[t.status||'open']=(itStatuses[t.status||'open']||0)+1})
+    renderDoughnut('chartITStatus',Object.keys(itStatuses),Object.values(itStatuses))
+
+    // CSR by type
+    const csrTypes={}
+    csr.forEach(r=>{csrTypes[r.request_type||'supply']=(csrTypes[r.request_type||'supply']||0)+1})
+    renderBar('chartCSRType',Object.keys(csrTypes),Object.values(csrTypes))
+
+    // Assets by status
+    const assetStatuses={}
+    assets.forEach(a=>{assetStatuses[a.status||'active']=(assetStatuses[a.status||'active']||0)+1})
+    renderDoughnut('chartAssetStatus',Object.keys(assetStatuses),Object.values(assetStatuses))
+  },200)
+}
+
+function renderDoughnut(canvasId,labels,data){
+  const ctx=document.getElementById(canvasId)?.getContext('2d')
+  if(!ctx)return
+  const colors=['#4d9fff','#f0a500','#22c55e','#f04060','#a070ff','#5f8099','#36c98e']
+  const chart=new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors.slice(0,data.length),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{color:'var(--txt2)',font:{size:11},boxWidth:10,padding:10}}}}})
+  S.charts[canvasId]=chart
+}
+
+function renderBar(canvasId,labels,data){
+  const ctx=document.getElementById(canvasId)?.getContext('2d')
+  if(!ctx)return
+  const chart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{data,backgroundColor:'rgba(77,159,255,0.7)',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'var(--txt2)',font:{size:11}}},y:{ticks:{color:'var(--txt2)',font:{size:11}},grid:{color:'var(--bdr)'}}}}})
+  S.charts[canvasId]=chart
+}
+
+// ═══════════════════════════════════
+// 8. BUDGET TRACKING
+// ═══════════════════════════════════
+async function renderBudget(){
+  const content=document.getElementById('mainContent')
+  const now=new Date()
+  const yr=now.getFullYear()
+  const mo=now.getMonth()+1
+
+  const[budgetRes,spendRes]=await Promise.all([
+    SB.from('dept_budgets').select('*').eq('budget_year',yr),
+    SB.from('requests').select('request_items(estimated_cost,actual_cost),dept_id,request_type').not('status','in','("draft","cancelled")')
+  ])
+  const budgets=budgetRes.data||[]
+  const spends=spendRes.data||[]
+
+  // Compute spend per dept
+  const deptSpend={}
+  spends.forEach(r=>{
+    if(!r.dept_id)return
+    const items=r.request_items||[]
+    const total=items.reduce((s,i)=>s+Number(i.actual_cost||i.estimated_cost||0),0)
+    deptSpend[r.dept_id]=(deptSpend[r.dept_id]||0)+total
+  })
+
+  let html='<div class="page-header"><h2>💰 Budget Tracking</h2><button class="btn btn-primary btn-sm" onclick="openBudgetForm()">＋ Set Budget</button></div>'
+
+  if(budgets.length===0&&Object.keys(deptSpend).length===0){
+    html+='<div class="empty-state"><div class="empty-icon">💰</div><h3>No budget data yet</h3><p>Set department budgets to start tracking.</p></div>'
+  } else {
+    const allDepts=[...new Set([...budgets.map(b=>b.dept_id),...Object.keys(deptSpend)])]
+    allDepts.forEach(deptId=>{
+      const dept=S.departments.find(d=>d.id===deptId)
+      if(!dept)return
+      const deptBudgets=budgets.filter(b=>b.dept_id===deptId)
+      const totalBudget=deptBudgets.reduce((s,b)=>s+Number(b.total_budget||0),0)
+      const spent=deptSpend[deptId]||0
+      const pct=totalBudget>0?Math.min(100,Math.round(spent/totalBudget*100)):0
+      const color=pct>=90?'var(--red)':pct>=70?'var(--amber)':'var(--green)'
+
+      html+='<div class="card" style="margin-bottom:12px;">'
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+      html+='<div style="font-weight:600;">🏢 '+dept.dept_name+'</div>'
+      html+='<div style="font-size:12px;color:var(--txt2);">₱'+spent.toLocaleString()+' / ₱'+totalBudget.toLocaleString()+'</div>'
+      html+='</div>'
+      if(totalBudget>0){
+        html+='<div class="budget-track"><div class="budget-fill" style="width:'+pct+'%;background:'+color+';"></div></div>'
+        html+='<div style="font-size:11px;color:'+color+';margin-top:4px;">'+pct+'% utilized</div>'
+      } else {
+        html+='<div style="font-size:12px;color:var(--txt3);">No budget set — ₱'+spent.toLocaleString()+' spent</div>'
+      }
+      html+='</div>'
+    })
+  }
+  content.innerHTML=html
+}
+
+function openBudgetForm(){
+  document.getElementById('modalTitle').textContent='💰 Set Department Budget'
+  let html='<div class="field"><label>Department</label><select id="b_dept"><option value="">— Select —</option>'
+  S.departments.forEach(d=>{html+='<option value="'+d.id+'">'+d.dept_name+'</option>'})
+  html+='</select></div>'
+  html+='<div class="field-row">'
+  html+='<div class="field"><label>Year</label><input type="number" id="b_year" value="'+new Date().getFullYear()+'" min="2024"></div>'
+  html+='<div class="field"><label>Category</label><select id="b_cat">'
+  ;['general','supplies','equipment','maintenance','it','other'].forEach(c=>{html+='<option value="'+c+'">'+c.charAt(0).toUpperCase()+c.slice(1)+'</option>'})
+  html+='</select></div></div>'
+  html+='<div class="field"><label>Total Budget (₱)</label><input type="number" id="b_amount" placeholder="0" min="0"></div>'
+  html+='<div class="field"><label>Notes</label><input type="text" id="b_notes" placeholder="Optional"></div>'
+  document.getElementById('modalBody').innerHTML=html
+  document.getElementById('modalFooter').innerHTML=
+    '<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Cancel</button>'+
+    '<button class="btn btn-primary" onclick="saveBudget()">Save Budget</button>'
+  openModal('mainModal')
+}
+
+async function saveBudget(){
+  const deptId=document.getElementById('b_dept')?.value
+  const yr=Number(document.getElementById('b_year')?.value)
+  const cat=document.getElementById('b_cat')?.value
+  const amount=Number(document.getElementById('b_amount')?.value)
+  if(!deptId){showToast('error','Required','Please select a department.');return}
+  await SB.from('dept_budgets').upsert({
+    dept_id:deptId,budget_year:yr,category:cat||'general',
+    total_budget:amount,created_by:S.user.id
+  },{onConflict:'dept_id,budget_year,budget_month,category'})
+  closeModal('mainModal')
+  showToast('success','Budget Saved','Department budget updated.')
+  showPage('budget')
+}
+
+// ═══════════════════════════════════
+// 9. ROOM / LOCATION VIEW
+// ═══════════════════════════════════
+async function renderRoomView(){
+  const content=document.getElementById('mainContent')
+  const{data:locations}=await SB.from('locations').select('*').eq('is_active',true).order('name')
+  const locs=locations||[]
+
+  let html='<div class="page-header"><h2>📍 Room / Location View</h2>'
+  if(S.user.inventory_role||S.user.it_role){
+    html+='<button class="btn btn-primary btn-sm" onclick="openLocationForm()">＋ Add Location</button>'
+  }
+  html+='</div>'
+
+  if(locs.length===0){
+    html+='<div class="empty-state"><div class="empty-icon">📍</div><h3>No locations registered yet</h3>'
+    html+='<p>Add rooms and locations to track asset placements.</p></div>'
+  } else {
+    // Load assets per location
+    const{data:assets}=await SB.from('assets').select('id,asset_no,asset_name,status,location_id').eq('is_active',true)
+    const assetsByLoc={}
+    ;(assets||[]).forEach(a=>{
+      if(a.location_id){assetsByLoc[a.location_id]=(assetsByLoc[a.location_id]||[]);assetsByLoc[a.location_id].push(a)}
+    })
+
+    html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">'
+    locs.forEach(loc=>{
+      const dept=S.departments.find(d=>d.id===loc.dept_id)
+      const locAssets=assetsByLoc[loc.id]||[]
+      const underRepair=locAssets.filter(a=>a.status==='under_repair').length
+      html+='<div class="card" style="cursor:pointer;" onclick="viewLocation(\''+loc.id+'\')">'
+      html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">'
+      html+='<div>'
+      html+='<div style="font-size:15px;font-weight:700;">📍 '+loc.name+'</div>'
+      html+='<div style="font-size:11px;color:var(--txt3);font-family:monospace;">'+loc.code+'</div>'
+      html+='</div>'
+      if(underRepair>0)html+='<span class="badge badge-in_progress">'+underRepair+' in repair</span>'
+      html+='</div>'
+      if(dept)html+='<div style="font-size:12px;color:var(--txt2);margin-bottom:8px;">🏢 '+dept.dept_name+'</div>'
+      if(loc.floor)html+='<div style="font-size:12px;color:var(--txt2);margin-bottom:8px;">🏗 Floor '+loc.floor+'</div>'
+      html+='<div style="font-size:13px;font-weight:600;color:var(--accent);">'+locAssets.length+' assets</div>'
+      html+='</div>'
+    })
+    html+='</div>'
+  }
+  content.innerHTML=html
+}
+
+async function viewLocation(locId){
+  const{data:loc}=await SB.from('locations').select('*').eq('id',locId).single()
+  const{data:assets}=await SB.from('assets').select('*').eq('location_id',locId).eq('is_active',true)
+  if(!loc)return
+  const dept=S.departments.find(d=>d.id===loc.dept_id)
+  document.getElementById('modalTitle').textContent='📍 '+loc.name
+  let body='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
+  body+=iF('Location Code','<span style="font-family:monospace;">'+loc.code+'</span>')
+  body+=iF('Department',dept?dept.dept_name:'—')
+  body+=iF('Floor',loc.floor||'—')
+  body+=iF('Building',loc.building||'Main')
+  body+='</div>'
+  if(loc.description)body+='<p style="font-size:13px;color:var(--txt2);margin-bottom:16px;">'+loc.description+'</p>'
+  body+='<div style="font-size:12px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Assets in this Location ('+( assets?.length||0)+')</div>'
+  if(!assets||assets.length===0){
+    body+='<div style="color:var(--txt3);font-size:13px;">No assets assigned to this location.</div>'
+  } else {
+    body+='<div class="table-wrap"><table><thead><tr><th>Asset No.</th><th>Name</th><th>Status</th></tr></thead><tbody>'
+    assets.forEach(a=>{
+      body+='<tr><td class="td-mono">'+a.asset_no+'</td><td>'+a.asset_name+'</td>'
+      body+='<td><span class="badge badge-'+a.status+'">'+a.status+'</span></td></tr>'
+    })
+    body+='</tbody></table></div>'
+  }
+  document.getElementById('modalBody').innerHTML=body
+  document.getElementById('modalFooter').innerHTML='<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Close</button>'
+  openModal('mainModal')
+}
+
+function openLocationForm(){
+  document.getElementById('modalTitle').textContent='📍 Add Location / Room'
+  let html='<div class="field"><label>Room / Location Name *</label><input type="text" id="l_name" placeholder="e.g. Room 301, ICU, OR 1"></div>'
+  html+='<div class="field-row">'
+  html+='<div class="field"><label>Floor</label><input type="text" id="l_floor" placeholder="3rd, Ground, etc."></div>'
+  html+='<div class="field"><label>Building</label><input type="text" id="l_building" value="Main"></div>'
+  html+='</div>'
+  html+='<div class="field"><label>Department</label><select id="l_dept"><option value="">— Select —</option>'
+  S.departments.forEach(d=>{html+='<option value="'+d.id+'">'+d.dept_name+'</option>'})
+  html+='</select></div>'
+  html+='<div class="field"><label>Description</label><textarea id="l_desc" rows="2" placeholder="Optional description"></textarea></div>'
+  document.getElementById('modalBody').innerHTML=html
+  document.getElementById('modalFooter').innerHTML=
+    '<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Cancel</button>'+
+    '<button class="btn btn-primary" onclick="saveLocation()">Add Location</button>'
+  openModal('mainModal')
+}
+
+async function saveLocation(){
+  const name=document.getElementById('l_name')?.value.trim()
+  if(!name){showToast('error','Required','Please enter a location name.');return}
+  const code='LOC-'+name.replace(/[^A-Z0-9]/gi,'').toUpperCase().substring(0,8)+'-'+Date.now().toString().slice(-4)
+  await SB.from('locations').insert({
+    name,code,
+    floor:document.getElementById('l_floor')?.value.trim()||null,
+    building:document.getElementById('l_building')?.value.trim()||'Main',
+    dept_id:document.getElementById('l_dept')?.value||null,
+    description:document.getElementById('l_desc')?.value.trim()||null,
+    qr_code:code
+  })
+  closeModal('mainModal')
+  showToast('success','Location Added','📍 '+name+' added.')
+  showPage('room_view')
+}
+
+// ═══════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════
+async function loadNotifCount(){
+  const{data}=await SB.from('notifications').select('id').eq('user_id',S.user.id).eq('is_read',false)
+  const count=(data||[]).length
+  updateNotifBadge(count)
+}
+
+function updateNotifBadge(count){
+  const badge=document.getElementById('notifBadge')
+  const navBadge=document.getElementById('notifNavBadge')
+  if(badge){badge.textContent=count>9?'9+':count;badge.style.display=count>0?'flex':'none'}
+  if(navBadge){navBadge.textContent=count>9?'9+':count;navBadge.style.display=count>0?'':'none'}
+}
+
+function subscribeNotifications(){
+  SB.channel('hub-notif-'+S.user.id)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+S.user.id},(payload)=>{
+      showToast('info',payload.new.title,payload.new.body||'')
+      loadNotifCount()
+    }).subscribe()
+}
+
+// ═══════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════
+function sC(icon,label,val,sub,color){
+  return '<div class="stat-card"><div class="stat-label">'+icon+' '+label+'</div><div class="stat-value" style="color:'+color+';">'+val+'</div><div class="stat-sub">'+sub+'</div></div>'
+}
+function iF(label,value){
+  return '<div><div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">'+label+'</div><div style="font-size:13px;">'+value+'</div></div>'
+}
+function formatDate(iso){
+  if(!iso)return'—'
+  return new Date(iso).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'})
+}
+function toggleTheme(){
+  const t=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'
+  document.documentElement.setAttribute('data-theme',t)
+  localStorage.setItem('tdmh_theme',t)
+}
+function openModal(id){document.getElementById(id).classList.add('open')}
+function closeModal(id){document.getElementById(id).classList.remove('open')}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open')}
+function showToast(type,title,body){
+  const c=document.getElementById('toastContainer')
+  const icons={success:'✅',error:'❌',info:'ℹ️',warning:'⚠️'}
+  const el=document.createElement('div')
+  el.className='toast'
+  el.innerHTML='<div style="font-size:16px;flex-shrink:0;">'+(icons[type]||'ℹ️')+'</div><div><div class="toast-title">'+title+'</div><div class="toast-body">'+body+'</div></div>'
+  c.appendChild(el)
+  setTimeout(()=>{el.style.opacity='0';el.style.transition='all .3s';setTimeout(()=>el.remove(),300)},3500)
+}
+function confirm2(msg,onOk){
+  document.getElementById('confirmTitle').textContent='Confirm'
+  document.getElementById('confirmMsg').textContent=msg
+  document.getElementById('confirmOkBtn').onclick=()=>{closeModal('confirmModal');onOk()}
+  openModal('confirmModal')
+}
+document.querySelectorAll('.modal-overlay').forEach(o=>{o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')})})
+document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()})
+
+// ═══ INIT ═══
+;(async function init(){
+  const savedTheme=localStorage.getItem('tdmh_theme')||'dark'
+  document.documentElement.setAttribute('data-theme',savedTheme)
+  const stored=getSession()
+  if(stored&&stored.access_token&&stored.refresh_token){
+    try{
+      const{data:{session:restored},error}=await SB.auth.setSession({access_token:stored.access_token,refresh_token:stored.refresh_token})
+      if(restored&&!error){
+        const{data:profile}=await SB.from('users').select('*').eq('id',restored.user.id).eq('is_active',true).single()
+        const anyRole=profile&&(profile.csr_role||profile.maintenance_role||profile.it_role||profile.inventory_role)
+        if(anyRole){const s=storeAuthSession({user:restored.user,session:restored},profile);await bootApp(s);return}
+      }
+    }catch(e){}
+  }
+  const{data:{session:authSession}}=await SB.auth.getSession()
+  if(authSession){
+    const{data:profile}=await SB.from('users').select('*').eq('id',authSession.user.id).eq('is_active',true).single()
+    const anyRole=profile&&(profile.csr_role||profile.maintenance_role||profile.it_role||profile.inventory_role)
+    if(anyRole){const s=storeAuthSession({user:authSession.user,session:authSession},profile);await bootApp(s);return}
+  }
+  clearSession()
+})()
+
+// ═══════════════════════════════════
+// SESSION EXPIRY HANDLING
+// ═══════════════════════════════════
+let _sessionRefreshTimer = null
+
+// Wrap every Supabase call — if 401, try refresh first
+async function sbGuard(fn) {
+  try {
+    const result = await fn()
+    // Check if result indicates auth error
+    if (result?.error?.status === 401 || result?.error?.message?.includes('JWT')) {
+      const refreshed = await tryRefreshSession()
+      if (refreshed) return await fn()
+      else handleSessionExpired()
+    }
+    return result
+  } catch(e) {
+    if (e.status === 401 || e.message?.includes('JWT') || e.message?.includes('token')) {
+      const refreshed = await tryRefreshSession()
+      if (refreshed) return await fn()
+      else handleSessionExpired()
+    }
+    throw e
+  }
+}
+
+async function tryRefreshSession() {
+  try {
+    const { data: { session }, error } = await SB.auth.refreshSession()
+    if (error || !session) return false
+    // Update stored tokens
+    const stored = getSession()
+    if (stored) {
+      stored.access_token = session.access_token
+      stored.refresh_token = session.refresh_token
+      stored.expires_at = session.expires_at
+      setSession(stored)
+    }
+    console.log('[Auth] Session refreshed successfully')
+    return true
+  } catch(e) {
+    console.warn('[Auth] Session refresh failed:', e.message)
+    return false
+  }
+}
+
+function handleSessionExpired() {
+  // Show non-intrusive banner instead of redirect
+  const existing = document.getElementById('sessionExpiredBanner')
+  if (existing) return
+  const banner = document.createElement('div')
+  banner.id = 'sessionExpiredBanner'
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--red);color:#fff;padding:12px 20px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(0,0,0,0.4);'
+  banner.innerHTML = '<span>⚠️ Session expired — your login has timed out.</span>' +
+    '<div style="display:flex;gap:8px;">' +
+    '<button onclick="reLoginInPlace()" style="padding:6px 14px;background:#fff;color:var(--red);border:none;border-radius:7px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;">Re-login</button>' +
+    '<button onclick="document.getElementById(&quot;sessionExpiredBanner&quot;).remove()" style="padding:6px 10px;background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:7px;font-family:inherit;font-size:12px;cursor:pointer;">✕</button>' +
+    '</div>'
+  document.body.prepend(banner)
+}
+
+async function reLoginInPlace() {
+  // Show a mini re-auth modal without losing page state
+  document.getElementById('sessionExpiredBanner')?.remove()
+  const stored = getSession()
+  const empNo = stored?.employee_no || stored?.email || ''
+
+  const overlay = document.createElement('div')
+  overlay.id = 'reLoginOverlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;'
+  overlay.innerHTML = '<div style="background:var(--surf1);border:1px solid var(--bdr2);border-radius:18px;padding:28px;width:100%;max-width:380px;box-shadow:0 12px 40px rgba(0,0,0,0.6);">' +
+    '<h3 style="font-size:18px;font-weight:700;margin-bottom:6px;font-family:sans-serif;">🔐 Re-authenticate</h3>' +
+    '<p style="font-size:13px;color:var(--txt2);margin-bottom:20px;">Your session expired. Enter your password to continue — your current page will not be lost.</p>' +
+    '<div style="margin-bottom:12px;"><input type="text" id="reLoginEmp" value="' + empNo + '" placeholder="Employee No. or Email" style="width:100%;padding:10px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;color:var(--txt);font-family:inherit;font-size:14px;outline:none;margin-bottom:10px;">' +
+    '<input type="password" id="reLoginPass" placeholder="Password" style="width:100%;padding:10px 14px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:10px;color:var(--txt);font-family:inherit;font-size:14px;outline:none;"></div>' +
+    '<div id="reLoginErr" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none;"></div>' +
+    '<div style="display:flex;gap:8px;">' +
+    '<button onclick="submitReLogin()" style="flex:1;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;">Continue</button>' +
+    '<button onclick="doLogout()" style="padding:10px 16px;background:var(--surf2);color:var(--txt2);border:1px solid var(--bdr2);border-radius:10px;font-family:inherit;font-size:13px;cursor:pointer;">Sign Out</button>' +
+    '</div></div>'
+  document.body.appendChild(overlay)
+  setTimeout(() => { const rp = document.getElementById('reLoginPass'); if(rp){ rp.focus(); rp.addEventListener('keydown', e => { if(e.key==='Enter') submitReLogin() }) } }, 100)
+}
+
+async function submitReLogin() {
+  const emp = document.getElementById('reLoginEmp')?.value.trim()
+  const pass = document.getElementById('reLoginPass')?.value
+  const errEl = document.getElementById('reLoginErr')
+  if (!pass) { errEl.textContent = 'Please enter your password.'; errEl.style.display = 'block'; return }
+  const email = emp.includes('@') ? emp.toLowerCase() : emp.toLowerCase().replace(/[^a-z0-9]/g,'-')+'@tdmh.local'
+  try {
+    const { data: authData, error } = await SB.auth.signInWithPassword({ email, password: pass })
+    if (error || !authData.user) { errEl.textContent = 'Invalid credentials.'; errEl.style.display = 'block'; return }
+    // Refresh stored session tokens
+    const stored = getSession()
+    if (stored) {
+      stored.access_token = authData.session.access_token
+      stored.refresh_token = authData.session.refresh_token
+      setSession(stored)
+    }
+    document.getElementById('reLoginOverlay')?.remove()
+    showToast('success', '✅ Session Restored', 'You can continue where you left off.')
+  } catch(e) {
+    errEl.textContent = 'Connection error. Try again.'
+    errEl.style.display = 'block'
+  }
+}
+
+// Auto-refresh session 5 minutes before expiry
+function scheduleSessionRefresh() {
+  if (_sessionRefreshTimer) clearTimeout(_sessionRefreshTimer)
+  const stored = getSession()
+  if (!stored?.expires_at) return
+  const expiresAt = new Date(stored.expires_at * 1000)
+  const refreshAt = new Date(expiresAt.getTime() - 5 * 60 * 1000) // 5 min before
+  const msUntilRefresh = refreshAt.getTime() - Date.now()
+  if (msUntilRefresh <= 0) {
+    tryRefreshSession().then(ok => { if (ok) scheduleSessionRefresh() })
+    return
+  }
+  _sessionRefreshTimer = setTimeout(async () => {
+    const ok = await tryRefreshSession()
+    if (ok) scheduleSessionRefresh()
+    else handleSessionExpired()
+  }, msUntilRefresh)
+  console.log('[Auth] Session refresh scheduled in', Math.round(msUntilRefresh/60000), 'minutes')
+}
+
+// Listen for Supabase auth state changes
+SB.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESHED' && session) {
+    const stored = getSession()
+    if (stored) {
+      stored.access_token = session.access_token
+      stored.refresh_token = session.refresh_token
+      stored.expires_at = session.expires_at
+      setSession(stored)
+      scheduleSessionRefresh()
+    }
+  }
+  if (event === 'SIGNED_OUT') {
+    document.getElementById('reLoginOverlay')?.remove()
+  }
+})
+</script>
+</body>
+</html>
