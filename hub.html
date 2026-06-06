@@ -411,6 +411,14 @@ async function doLogin(){
 
     if(authError||!authData?.user){showLoginErr('Invalid credentials.');return}
 
+    // Explicitly set the session in Supabase client
+    if(authData.session){
+      await SB.auth.setSession({
+        access_token: authData.session.access_token,
+        refresh_token: authData.session.refresh_token
+      })
+    }
+
     // Find profile using auth_id (primary) or via aliases
     let profile = null
     const {data:p1} = await SB.from('users').select('*').eq('auth_id',authData.user.id).eq('is_active',true).maybeSingle()
