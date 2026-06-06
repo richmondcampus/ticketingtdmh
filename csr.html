@@ -2873,6 +2873,7 @@ async function submitRequest(id) {
 // ═══════════════════════════════════════════
 async function renderIncomingDeliveries() {
   const content = document.getElementById('mainContent')
+  const role = state.user.csr_role
   content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
 
   const [posRes, receivedRes] = await Promise.all([
