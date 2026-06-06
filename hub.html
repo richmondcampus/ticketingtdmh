@@ -397,16 +397,46 @@ async function doLogin(){
   if(!empNo||!pass){showLoginErr('Please enter credentials.');return}
   btn.disabled=true;btn.textContent='Signing in...'
   try{
+    // Try primary email format first
     const email=empNo.includes('@')?empNo.toLowerCase():empNo.toLowerCase().replace(/[^a-z0-9]/g,'-')+'@tdmh.local'
-    const{data:authData,error}=await SB.auth.signInWithPassword({email,password:pass})
-    if(error||!authData.user){showLoginErr('Invalid credentials.');return}
-    const{data:profile}=await SB.from('users').select('*').eq('auth_id',authData.user.id).eq('is_active',true).maybeSingle()
+    let authData, authError
+    const res1 = await SB.auth.signInWithPassword({email, password:pass})
+    authData = res1.data; authError = res1.error
+
+    // Fallback: try admin email format
+    if(authError && !empNo.includes('@')){
+      const res2 = await SB.auth.signInWithPassword({email: empNo+'@tdmh.com', password:pass})
+      if(!res2.error){ authData = res2.data; authError = null }
+    }
+
+    if(authError||!authData?.user){showLoginErr('Invalid credentials.');return}
+
+    // Find profile using auth_id (primary) or via aliases
+    let profile = null
+    const {data:p1} = await SB.from('users').select('*').eq('auth_id',authData.user.id).eq('is_active',true).maybeSingle()
+    profile = p1
+
+    if(!profile){
+      // Try email_auth_id
+      const {data:p2} = await SB.from('users').select('*').eq('email_auth_id',authData.user.id).eq('is_active',true).maybeSingle()
+      profile = p2
+    }
+
+    if(!profile){
+      // Try user_auth_aliases
+      const {data:alias} = await SB.from('user_auth_aliases').select('primary_user_id').eq('alias_auth_id',authData.user.id).maybeSingle()
+      if(alias){
+        const {data:p3} = await SB.from('users').select('*').eq('id',alias.primary_user_id).eq('is_active',true).maybeSingle()
+        profile = p3
+      }
+    }
+
     if(!profile){showLoginErr('Account not found.');await SB.auth.signOut();return}
     const anyRole=profile.csr_role||profile.maintenance_role||profile.it_role||profile.inventory_role
     if(!anyRole){showLoginErr('No system access. Contact IT.');await SB.auth.signOut();return}
     const session=storeAuthSession(authData,profile)
     await bootApp(session)
-  }catch(e){showLoginErr('Connection error.')}
+  }catch(e){console.error(e);showLoginErr('Connection error: '+e.message)}
   finally{btn.disabled=false;btn.textContent='Sign In'}
 }
 function showLoginErr(msg){const el=document.getElementById('loginErr');el.textContent=msg;el.style.display='block'}
