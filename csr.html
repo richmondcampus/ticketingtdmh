@@ -3333,20 +3333,26 @@ function showPOView(view) {
 async function openNewPOModal(requestId) {
   document.getElementById('newRequestTitle').textContent = '🛒 New Purchase Order'
 
-  // Load approved requests without PO
-  const { data: approvedReqs } = await SB.from('requests')
-    .select('id,request_no,purpose,dept_id')
-    .eq('status', 'approved')
-    .eq('request_type', 'purchase')
-    .order('created_at', { ascending: false })
+  // Load for_po requests and suppliers in parallel
+  const [reqsRes, suppRes] = await Promise.all([
+    SB.from('requests')
+      .select('id,request_no,purpose,dept_id')
+      .eq('status', 'for_po')
+      .neq('request_type', 'derp')
+      .order('created_at', { ascending: false }),
+    SB.from('suppliers').select('*').eq('is_active', true).order('name')
+  ])
+
+  const approvedReqs = reqsRes.data || []
+  poState.suppliers = suppRes.data || []
 
   let html = ''
 
-  // Link to CSR
+  // Link to CSR Request
   html += '<div class="field"><label>Linked CSR Request (optional)</label>'
   html += '<select id="po_csr" onchange="loadCSRItemsForPO(this.value)">'
   html += '<option value="">— Standalone PO (no linked request) —</option>'
-  ;(approvedReqs || []).forEach(r => {
+  approvedReqs.forEach(r => {
     const sel = r.id === requestId ? ' selected' : ''
     html += '<option value="' + r.id + '"' + sel + '>' + r.request_no + ' — ' + (r.purpose || '') + '</option>'
   })
