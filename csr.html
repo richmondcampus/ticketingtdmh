@@ -1195,9 +1195,12 @@ async function loadStats() {
           .eq('status', 'approved').eq('current_approval_level', 99).neq('request_type','derp')
       : Promise.resolve({ count: 0 })
 
-    // Issuance pending — unconfirmed issuances (supply_officer + dept_head)
+    // Issuance pending — unconfirmed issuances + incoming POs to receive
     const issuancePendingQuery = ['supply_officer','admin','dept_head'].includes(role)
-      ? SB.from('issuances').select('id', { count: 'exact', head: true }).is('confirmed_at', null)
+      ? Promise.all([
+          SB.from('issuances').select('id', { count: 'exact', head: true }).is('confirmed_at', null),
+          SB.from('purchase_orders').select('id', { count: 'exact', head: true }).in('status', ['sent','partial_delivery'])
+        ]).then(([iss, pos]) => ({ count: (iss.count || 0) + (pos.count || 0) }))
       : Promise.resolve({ count: 0 })
 
     // PO pending — for_po requests needing a PO (purchasing_officer + admin)
@@ -3608,6 +3611,16 @@ async function savePO(action) {
 // ─────────────────────────────
 // PO DETAIL VIEW
 // ─────────────────────────────
+// ─── PO Lifecycle Steps ───
+const PO_STEPS = [
+  { status: 'draft',            label: 'Draft',      icon: '📝' },
+  { status: 'sent',             label: 'Sent',        icon: '📤' },
+  { status: 'partial_delivery', label: 'Partial',     icon: '📦' },
+  { status: 'received',         label: 'Received',    icon: '✅' },
+  { status: 'issued',           label: 'Issued',      icon: '🏢' },
+]
+const PO_STEP_ORDER = { draft:0, sent:1, partial_delivery:2, delivered:2, received:3, issued:4, cancelled:0 }
+
 async function viewPO(id) {
   const { data: po } = await SB.from('purchase_orders').select('*').eq('id', id).single()
   if (!po) return
@@ -3686,27 +3699,151 @@ async function viewPO(id) {
     body += '📝 ' + po.notes + '</div>'
   }
 
-  document.getElementById('requestDetailBody').innerHTML = body
-
-  // Footer
+  // Footer — role-based per PO status
   let footer = '<button class="btn btn-ghost" onclick="closeModal(\'requestDetailModal\')">Close</button>'
-  if (['supply_officer','admin'].includes(role)) {
+
+  if (['purchasing_officer','admin'].includes(role)) {
     if (po.status === 'draft') {
-      footer += '<button class="btn btn-secondary" onclick="openPOSendOptions(\'' + po.id + '\')">📤 Send PO</button>'
+      footer += '<button class="btn btn-secondary" onclick="openPOSendOptions(\'' + po.id + '\')">📤 Send to Supplier</button>'
     }
-    if (['sent','partial_delivery','partial'].includes(po.status)) {
+  }
+
+  if (['supply_officer','admin'].includes(role)) {
+    if (['sent','partial_delivery'].includes(po.status)) {
       footer += '<button class="btn btn-success" onclick="openReceiveDelivery(\'' + po.id + '\')">📦 Receive Delivery</button>'
     }
-    if (['delivered','partial_delivery'].includes(po.status) && !po.delivery_rating) {
-      footer += '<button class="btn btn-secondary" onclick="openSupplierRating(\'' + po.id + '\')">⭐ Rate Supplier</button>'
+    if (po.status === 'received') {
+      // Items received — supply officer needs to issue to dept
+      footer += '<button class="btn btn-primary" onclick="openIssueFromPO(\'' + po.id + '\')">📤 Issue to Department</button>'
     }
-    footer += '<button class="btn btn-primary" onclick="printPO(\'' + po.id + '\')">🖨️ Print</button>'
+  }
+
+  if (['supply_officer','admin','purchasing_officer'].includes(role)) {
+    if (['delivered','received'].includes(po.status) && !po.delivery_rating) {
+      footer += '<button class="btn btn-ghost" onclick="openSupplierRating(\'' + po.id + '\')">⭐ Rate Supplier</button>'
+    }
+    footer += '<button class="btn btn-ghost" onclick="printPO(\'' + po.id + '\')">🖨️ Print</button>'
   }
   document.getElementById('requestDetailFooter').innerHTML = footer
   openModal('requestDetailModal')
 }
 
-// ─── Feature 10: Supplier Performance Rating ───
+// ─── Issue items from PO delivery to department ───
+async function openIssueFromPO(poId) {
+  const { data: po } = await SB.from('purchase_orders').select('*').eq('id', poId).single()
+  const { data: items } = await SB.from('po_items').select('*').eq('po_id', poId)
+  const req = po?.request_id ? (await SB.from('requests').select('*').eq('id', po.request_id).single()).data : null
+  const dept = req ? state.departments.find(d => d.id === req.dept_id) : null
+
+  document.getElementById('newRequestTitle').textContent = '📤 Issue to Department — ' + po.po_number
+
+  let html = '<div style="background:var(--accent-a);border:1px solid var(--accent-b);border-radius:10px;padding:12px 16px;margin-bottom:14px;">'
+  html += '<div style="font-size:13px;font-weight:600;">Issuing items to: <strong>' + (dept?.dept_name || 'Department') + '</strong></div>'
+  if (req) html += '<div style="font-size:12px;color:var(--txt2);margin-top:2px;">For request: ' + req.request_no + ' — ' + (req.purpose || '') + '</div>'
+  html += '</div>'
+
+  html += '<div class="table-wrap" style="margin-bottom:14px;"><table><thead><tr>'
+  html += '<th>Item</th><th>Ordered</th><th>Received</th><th>Issuing</th><th>Unit</th>'
+  html += '</tr></thead><tbody>'
+  ;(items||[]).forEach(item => {
+    const available = Number(item.quantity_received || item.quantity)
+    html += '<tr>'
+    html += '<td><strong>' + item.item_name + '</strong></td>'
+    html += '<td>' + item.quantity + '</td>'
+    html += '<td style="color:var(--green);">' + available + '</td>'
+    html += '<td><input type="number" id="iss_' + item.id + '" min="0" max="' + available + '" value="' + available + '" style="width:70px;padding:5px 8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:6px;color:var(--txt);"></td>'
+    html += '<td>' + (item.unit || 'pcs') + '</td>'
+    html += '</tr>'
+  })
+  html += '</tbody></table></div>'
+
+  html += '<div class="field"><label>Receiver\'s Name</label>'
+  html += '<input type="text" id="iss_receiver" placeholder="Name of person receiving the items" style="width:100%;padding:8px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;"></div>'
+
+  html += '<div class="field" style="margin-top:12px;"><label>Confirmation Method</label>'
+  html += '<div style="display:flex;gap:8px;margin-top:6px;">'
+  html += '<label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;cursor:pointer;font-size:13px;">'
+  html += '<input type="radio" name="iss_confirm" value="photo" checked style="accent-color:var(--accent);"> 📷 Take Photo</label>'
+  html += '<label style="flex:1;display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;cursor:pointer;font-size:13px;">'
+  html += '<input type="radio" name="iss_confirm" value="link" style="accent-color:var(--accent);"> 🔗 Send Confirmation Link</label>'
+  html += '</div></div>'
+
+  document.getElementById('newRequestBody').innerHTML = html
+  document.getElementById('newRequestBody').dataset.poId = poId
+  document.getElementById('newRequestBody').dataset.items = JSON.stringify(items||[])
+  document.getElementById('newRequestBody').dataset.reqId = req?.id || ''
+
+  document.querySelector('#newRequestModal .modal-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closeModal(\'newRequestModal\')">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="confirmIssueFromPO()">📤 Confirm Issuance</button>'
+
+  closeModal('requestDetailModal')
+  openModal('newRequestModal')
+}
+
+async function confirmIssueFromPO() {
+  const poId = document.getElementById('newRequestBody').dataset.poId
+  const reqId = document.getElementById('newRequestBody').dataset.reqId
+  const items = JSON.parse(document.getElementById('newRequestBody').dataset.items || '[]')
+  const receiver = document.getElementById('iss_receiver')?.value.trim()
+  const confirmMethod = document.querySelector('input[name="iss_confirm"]:checked')?.value || 'photo'
+
+  if (!receiver) { showToast('error', 'Required', 'Please enter the receiver\'s name.'); return }
+
+  try {
+    // Get or create issuance linked to this PO
+    const { data: existing } = await SB.from('issuances').select('id,issuance_no').eq('po_id', poId).maybeSingle()
+
+    let issId = existing?.id
+    let issNo = existing?.issuance_no
+
+    if (!issId) {
+      const { data: num } = await SB.rpc('generate_issuance_no')
+      issNo = num || ('ISS-' + Date.now())
+      const { data: newIss } = await SB.from('issuances').insert({
+        issuance_no: issNo,
+        request_id: reqId || null,
+        po_id: poId,
+        issued_by: state.user.id,
+        issued_at: new Date().toISOString(),
+        scenario: 'after_po',
+        prepared_by: state.user.id,
+        receiver_name: receiver
+      }).select().single()
+      issId = newIss?.id
+    } else {
+      await SB.from('issuances').update({ receiver_name: receiver }).eq('id', issId)
+    }
+
+    // Insert issuance items
+    const issItems = items.map(item => ({
+      issuance_id: issId,
+      quantity_issued: Number(document.getElementById('iss_' + item.id)?.value || item.quantity_received || item.quantity),
+    })).filter(i => i.quantity_issued > 0)
+
+    if (issItems.length > 0) {
+      await SB.from('issuance_items').insert(issItems)
+    }
+
+    // Update PO status to issued
+    await SB.from('purchase_orders').update({ status: 'issued' }).eq('id', poId)
+
+    // Update request status to issued
+    if (reqId) {
+      await SB.from('requests').update({ status: 'issued', updated_at: new Date().toISOString() }).eq('id', reqId)
+    }
+
+    closeModal('newRequestModal')
+    showToast('success', '✅ Issued!', 'Items issued to department — ' + issNo + '. Awaiting ' + (confirmMethod === 'photo' ? 'photo proof' : 'online confirmation') + '.')
+
+    // Open issuance detail for confirmation step
+    if (issId) {
+      setTimeout(() => viewIssuance(issId), 500)
+    }
+    loadStats()
+    renderIssuance()
+  } catch(e) { if (handleSupabaseError(e, 'confirmIssueFromPO')) return; showToast('error', 'Error', e.message) }
+}
 function openSupplierRating(poId) {
   document.getElementById('approvalModalTitle').textContent = '⭐ Rate Supplier Performance'
   document.getElementById('approvalModalDesc').innerHTML =
@@ -3957,24 +4094,47 @@ async function confirmReceiveDelivery() {
 
     if (!anyReceived) { showToast('error', 'Validation', 'Please enter at least one quantity received.'); return }
 
-    // Update PO status
-    const newStatus = allDelivered ? 'delivered' : 'partial'
+    // Update PO status — received = supply officer confirmed physical receipt
+    const newStatus = allDelivered ? 'received' : 'partial_delivery'
     await SB.from('purchase_orders').update({
       status: newStatus,
-      actual_delivery: new Date().toISOString().split('T')[0],
-      received_by: state.user.id
+      received_at: new Date().toISOString(),
+      received_by: state.user.id,
+      delivery_notes: [dr, remarks].filter(Boolean).join(' — ') || null
     }).eq('id', poId)
 
-    // If linked to CSR — update CSR status
-    const { data: po } = await SB.from('purchase_orders').select('request_id').eq('id', poId).single()
-    if (po.request_id && allDelivered) {
-      await SB.from('requests').update({ status: 'delivered' }).eq('id', po.request_id)
+    // Trigger: DB trigger fn_po_received_to_issuance will notify supply officers
+    // and update request status to 'delivered'
+
+    // If fully received — auto-create issuance record for supply officer to complete
+    if (allDelivered) {
+      const { data: po } = await SB.from('purchase_orders').select('*').eq('id', poId).single()
+      if (po?.request_id) {
+        const { data: issNum } = await SB.rpc('generate_issuance_no')
+        const issNo = issNum || ('ISS-' + Date.now())
+        await SB.from('issuances').insert({
+          issuance_no: issNo,
+          request_id: po.request_id,
+          po_id: poId,
+          issued_by: state.user.id,
+          issued_at: new Date().toISOString(),
+          scenario: 'after_po',
+          prepared_by: state.user.id,
+          notes: 'Auto-created after PO delivery — ' + po.po_number + (dr ? ' | DR: ' + dr : '')
+        })
+        // Update request status to delivered (in case trigger didn't fire)
+        await SB.from('requests').update({ status: 'delivered' }).eq('id', po.request_id)
+      }
     }
 
     closeModal('newRequestModal')
-    showToast('success', 'Delivery Confirmed', allDelivered ? 'Full delivery received — PO complete.' : 'Partial delivery recorded.')
+    showToast('success', '📦 Delivery Confirmed',
+      allDelivered
+        ? 'Full delivery received — issuance created. Supply Officer can now issue to dept.'
+        : 'Partial delivery recorded. Receive remaining items when available.')
     renderPurchaseOrders()
-  } catch(e) { showToast('error', 'Error', e.message) }
+    loadStats()
+  } catch(e) { if (handleSupabaseError(e, 'confirmReceiveDelivery')) return; showToast('error', 'Error', e.message) }
 }
 
 // ─────────────────────────────
@@ -4322,22 +4482,21 @@ async function renderIssuance() {
   const content = document.getElementById('mainContent')
   const role = state.user.csr_role
   const isDeptHead = role === 'dept_head'
+  const isSupplyOfficer = ['supply_officer','admin'].includes(role)
 
-  // Build issuances query — dept head sees only their dept's issuances
-  let issQuery = SB.from('issuances').select('*, requests!inner(dept_id, request_no, purpose)')
-    .order('issued_at', { ascending: false }).limit(100)
-
-  if (isDeptHead && state.user.dept_id) {
-    issQuery = issQuery.eq('requests.dept_id', state.user.dept_id)
-  }
-
-  const [issRes, batchRes, pendingRes] = await Promise.all([
+  const [issRes, batchRes, pendingRes, incomingRes] = await Promise.all([
     SB.from('issuances').select('*').order('issued_at', { ascending: false }).limit(100),
     SB.from('issuance_batches').select('*').order('created_at', { ascending: false }).limit(20),
     SB.from('requests').select('*')
       .in('status', ['approved','delivered'])
       .in('request_type', ['supply','purchase','issuance'])
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false }),
+    // Incoming deliveries — POs that are sent/partial and need to be received
+    isSupplyOfficer
+      ? SB.from('purchase_orders').select('*, requests(request_no, purpose, dept_id)')
+          .in('status', ['sent','partial_delivery'])
+          .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [] })
   ])
 
   // For dept head — filter issuances by their dept's requests
@@ -4352,8 +4511,9 @@ async function renderIssuance() {
   issState.issuances = allIssuances
   issState.batches = batchRes.data || []
   issState.pendingRequests = pendingRes.data || []
+  const incomingPOs = incomingRes.data || []
 
-  // Stats — all are confirmed now (auto-confirm)
+  // Stats
   const confirmedCount = allIssuances.filter(i => i.confirmed_at).length
   const today = allIssuances.filter(i => {
     return new Date(i.issued_at).toDateString() === new Date().toDateString()
@@ -4400,6 +4560,41 @@ async function renderIssuance() {
   }
   html += '<button onclick="filterIssTab(\'confirmed\')" id="iss_tab_confirmed" style="padding:8px 16px;border:none;background:transparent;color:var(--txt2);cursor:pointer;font-family:inherit;font-size:13px;">Confirmed</button>'
   html += '</div>'
+
+  // ── Incoming Deliveries (Supply Officer only) ──
+  if (isSupplyOfficer && incomingPOs.length > 0) {
+    html += '<div style="margin-bottom:20px;">'
+    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
+    html += '<div style="font-size:13px;font-weight:700;color:var(--amber);">📦 Incoming Deliveries</div>'
+    html += '<span style="background:var(--amber);color:#fff;border-radius:20px;padding:1px 10px;font-size:11px;font-weight:700;">' + incomingPOs.length + '</span>'
+    html += '<div style="font-size:12px;color:var(--txt2);">POs waiting to be received at supply room</div>'
+    html += '</div>'
+    html += '<div style="display:flex;flex-direction:column;gap:6px;">'
+    incomingPOs.forEach(po => {
+      const req = po.requests
+      const dept = req ? state.departments.find(d => d.id === req.dept_id) : null
+      const isPartial = po.status === 'partial_delivery'
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surf1);border:1px solid ' + (isPartial ? 'var(--amber)' : 'var(--bdr2)') + ';border-radius:10px;padding:10px 14px;">'
+      html += '<div style="display:flex;align-items:center;gap:12px;">'
+      html += '<span style="font-size:20px;">' + (isPartial ? '📦' : '🚚') + '</span>'
+      html += '<div>'
+      html += '<div style="font-size:13px;font-weight:600;">' + po.po_number + (isPartial ? ' <span style="font-size:11px;color:var(--amber);">Partial</span>' : '') + '</div>'
+      html += '<div style="font-size:12px;color:var(--txt2);">'
+      if (req) html += (req.purpose || req.request_no) + ' · '
+      html += (dept?.dept_name || '—') + ' · '
+      html += (po.payment_terms || '') + '</div>'
+      if (po.expected_delivery) {
+        const overdue = new Date(po.expected_delivery) < new Date()
+        html += '<div style="font-size:11px;color:' + (overdue ? 'var(--red)' : 'var(--txt3)') + ';">Expected: ' + formatDate(po.expected_delivery) + (overdue ? ' ⚠️ Overdue' : '') + '</div>'
+      }
+      html += '</div></div>'
+      html += '<button class="btn btn-success btn-sm" onclick="openReceiveDelivery(\'' + po.id + '\')">📦 Receive</button>'
+      html += '</div>'
+    })
+    html += '</div></div>'
+
+    html += '<hr style="border:none;border-top:1px solid var(--bdr);margin-bottom:20px;">'
+  }
 
   // Issuance list
   if (issState.issuances.length === 0) {
