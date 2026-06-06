@@ -1060,6 +1060,9 @@ function renderSidebarNav() {
     roles:['purchasing_officer','admin'] },
 
   // Issuance — supply_officer (fulfills), dept_head (sees received), admin
+  { id:'incoming_deliveries', icon:'📦', label:'Incoming Deliveries',
+    roles:['supply_officer','admin'] },
+
   { id:'issuance',        icon:'📤', label:'Issuance',
     roles:['supply_officer','admin','dept_head'] },
 
@@ -1087,6 +1090,9 @@ function renderSidebarNav() {
     if (item.id === 'approval_queue' && state.stats.approval_count > 0) {
       html += '<span class="nav-badge">' + state.stats.approval_count + '</span>'
     }
+    if (item.id === 'incoming_deliveries' && state.stats.incoming_delivery_count > 0) {
+      html += '<span class="nav-badge">' + state.stats.incoming_delivery_count + '</span>'
+    }
     if (item.id === 'issuance' && state.stats.issuance_pending > 0) {
       html += '<span class="nav-badge">' + state.stats.issuance_pending + '</span>'
     }
@@ -1105,7 +1111,7 @@ function renderSidebarNav() {
 const PAGE_TITLES = {
   dashboard:'Dashboard', my_requests:'My Requests', approval_queue:'Approval Queue',
   all_requests:'All Requests', purchase_orders:'Purchase Orders',
-  issuance:'Issuance', stock_inventory:'Stock Inventory', derp:'DERP',
+  incoming_deliveries:'Incoming Deliveries', issuance:'Issuance', stock_inventory:'Stock Inventory', derp:'DERP',
   reports:'Reports', settings:'Settings', notifications:'Notifications', new_request:'New Request'
 }
 
@@ -1122,7 +1128,7 @@ function showPage(page) {
   const pages = {
     dashboard: renderDashboard, my_requests: renderMyRequests,
     approval_queue: renderApprovalQueue, all_requests: renderAllRequests,
-    purchase_orders: renderPurchaseOrders, issuance: renderIssuance,
+    purchase_orders: renderPurchaseOrders, incoming_deliveries: renderIncomingDeliveries, issuance: renderIssuance,
     stock_inventory: renderStockInventory, derp: renderDerp,
     reports: renderReports, settings: renderSettings,
     notifications: renderNotifications, new_request: openNewRequestModal
@@ -1195,12 +1201,14 @@ async function loadStats() {
           .eq('status', 'approved').eq('current_approval_level', 99).neq('request_type','derp')
       : Promise.resolve({ count: 0 })
 
-    // Issuance pending — unconfirmed issuances + incoming POs to receive
+    // Issuance pending — unconfirmed issuances only
     const issuancePendingQuery = ['supply_officer','admin','dept_head'].includes(role)
-      ? Promise.all([
-          SB.from('issuances').select('id', { count: 'exact', head: true }).is('confirmed_at', null),
-          SB.from('purchase_orders').select('id', { count: 'exact', head: true }).in('status', ['sent','partial_delivery'])
-        ]).then(([iss, pos]) => ({ count: (iss.count || 0) + (pos.count || 0) }))
+      ? SB.from('issuances').select('id', { count: 'exact', head: true }).is('confirmed_at', null)
+      : Promise.resolve({ count: 0 })
+
+    // Incoming deliveries — POs waiting to be received
+    const incomingDeliveryQuery = ['supply_officer','admin'].includes(role)
+      ? SB.from('purchase_orders').select('id', { count: 'exact', head: true }).in('status', ['sent','partial_delivery'])
       : Promise.resolve({ count: 0 })
 
     // PO pending — for_po requests needing a PO (purchasing_officer + admin)
@@ -1209,7 +1217,7 @@ async function loadStats() {
           .eq('status', 'for_po').neq('request_type', 'derp')
       : Promise.resolve({ count: 0 })
 
-    const [myPending, approvalQueue, autoApproved, allPending, lowStock, issuancePending, poPending] = await Promise.all([
+    const [myPending, approvalQueue, autoApproved, allPending, lowStock, issuancePending, poPending, incomingDelivery] = await Promise.all([
       SB.from('requests').select('id', { count: 'exact', head: true })
         .eq('requested_by', uid).in('status', ['draft','pending_approval']),
       approvalQueueQuery,
@@ -1219,7 +1227,8 @@ async function loadStats() {
       SB.from('stock_items').select('id', { count: 'exact', head: true })
         .lte('quantity_on_hand', 0),
       issuancePendingQuery,
-      poPendingQuery
+      poPendingQuery,
+      incomingDeliveryQuery
     ])
 
     state.stats = {
@@ -1228,7 +1237,8 @@ async function loadStats() {
       all_pending: allPending.count || 0,
       low_stock: lowStock.count || 0,
       issuance_pending: issuancePending.count || 0,
-      po_pending: poPending.count || 0
+      po_pending: poPending.count || 0,
+      incoming_delivery_count: incomingDelivery.count || 0
     }
     renderSidebarNav()
   } catch(e) { console.error('loadStats', e) }
@@ -2859,7 +2869,103 @@ async function submitRequest(id) {
 }
 
 // ═══════════════════════════════════════════
-// PURCHASE ORDERS LIST
+// INCOMING DELIVERIES
+// ═══════════════════════════════════════════
+async function renderIncomingDeliveries() {
+  const content = document.getElementById('mainContent')
+  content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
+
+  const [posRes, receivedRes] = await Promise.all([
+    SB.from('purchase_orders').select('*, requests(request_no, purpose, dept_id, urgency)')
+      .in('status', ['sent','partial_delivery'])
+      .order('created_at', { ascending: false }),
+    SB.from('purchase_orders').select('*, requests(request_no, purpose, dept_id)')
+      .eq('status', 'received')
+      .is('issued_at', null)
+      .order('received_at', { ascending: false })
+  ])
+
+  const incoming = posRes.data || []
+  const pendingIssue = receivedRes.data || []
+
+  let html = '<div class="page-header">'
+  html += '<div><h2>📦 Incoming Deliveries</h2>'
+  html += '<p style="font-size:13px;color:var(--txt2);">POs sent to supplier — receive items when they arrive</p>'
+  html += '</div></div>'
+
+  // ── Pending Receipt (sent/partial) ──
+  html += '<div style="margin-bottom:24px;">'
+  html += '<div style="font-size:12px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">⏳ Waiting for Delivery (' + incoming.length + ')</div>'
+  if (incoming.length === 0) {
+    html += '<div style="background:var(--surf2);border:1px dashed var(--bdr2);border-radius:12px;padding:24px;text-align:center;color:var(--txt3);font-size:13px;">No pending deliveries — all POs received ✅</div>'
+  } else {
+    incoming.forEach(po => {
+      const req = po.requests
+      const dept = req ? state.departments.find(d => d.id === req.dept_id) : null
+      const isPartial = po.status === 'partial_delivery'
+      const overdue = po.expected_delivery && new Date(po.expected_delivery) < new Date()
+      const supplier = poState.suppliers?.find(s => s.id === po.supplier_id)
+
+      html += '<div style="background:var(--surf1);border:1px solid ' + (overdue ? 'var(--red)' : isPartial ? 'var(--amber)' : 'var(--bdr2)') + ';border-radius:12px;padding:14px 16px;margin-bottom:8px;">'
+      html += '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">'
+      html += '<div style="flex:1;">'
+
+      // Header
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+      html += '<span style="font-size:20px;">' + (isPartial ? '📦' : '🚚') + '</span>'
+      html += '<div>'
+      html += '<div style="font-size:14px;font-weight:700;">' + po.po_number
+      if (isPartial) html += ' <span style="font-size:11px;background:var(--amber-a);color:var(--amber);padding:2px 8px;border-radius:6px;">Partial Delivery</span>'
+      html += '</div>'
+      html += '<div style="font-size:12px;color:var(--txt2);">' + (supplier?.name || 'Supplier') + '</div>'
+      html += '</div></div>'
+
+      // Details grid
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;">'
+      html += '<div><span style="color:var(--txt3);">Request</span><br><strong>' + (req?.request_no || '—') + '</strong></div>'
+      html += '<div><span style="color:var(--txt3);">Department</span><br><strong>' + (dept?.dept_name || '—') + '</strong></div>'
+      html += '<div><span style="color:var(--txt3);">Expected</span><br><strong style="color:' + (overdue ? 'var(--red)' : 'inherit') + ';">' + (po.expected_delivery ? formatDate(po.expected_delivery).split(',')[0] : '—') + (overdue ? ' ⚠️' : '') + '</strong></div>'
+      html += '<div><span style="color:var(--txt3);">Terms</span><br><strong>' + (po.payment_terms || '—') + '</strong></div>'
+      html += '<div><span style="color:var(--txt3);">Total</span><br><strong style="color:var(--accent);">₱' + Number(po.total_amount || 0).toLocaleString() + '</strong></div>'
+      html += '<div><span style="color:var(--txt3);">Purpose</span><br><strong>' + (req?.purpose?.substring(0, 30) || '—') + '</strong></div>'
+      html += '</div>'
+      html += '</div>'
+
+      // Action button
+      html += '<div style="flex-shrink:0;">'
+      html += '<button class="btn btn-success" onclick="openReceiveDelivery(\'' + po.id + '\')">📦 Receive</button>'
+      html += '</div>'
+      html += '</div></div>'
+    })
+  }
+  html += '</div>'
+
+  // ── Received, pending issuance ──
+  if (pendingIssue.length > 0) {
+    html += '<div style="margin-bottom:24px;">'
+    html += '<div style="font-size:12px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">✅ Received — Ready to Issue (' + pendingIssue.length + ')</div>'
+    pendingIssue.forEach(po => {
+      const req = po.requests
+      const dept = req ? state.departments.find(d => d.id === req.dept_id) : null
+      html += '<div style="background:var(--green-a);border:1px solid var(--green);border-radius:12px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;">'
+      html += '<div>'
+      html += '<div style="font-size:14px;font-weight:700;margin-bottom:4px;">✅ ' + po.po_number + '</div>'
+      html += '<div style="font-size:12px;color:var(--txt2);">' + (req?.request_no || '—') + ' · ' + (dept?.dept_name || '—') + '</div>'
+      html += '<div style="font-size:12px;color:var(--green);margin-top:2px;">Items received — please issue to department</div>'
+      html += '</div>'
+      html += '<button class="btn btn-primary" onclick="openIssueFromPO(\'' + po.id + '\')">📤 Issue to Dept</button>'
+      html += '</div>'
+    })
+    html += '</div>'
+  }
+
+  content.innerHTML = html
+  // Load suppliers for receive modal
+  if (!poState.suppliers?.length) {
+    const { data } = await SB.from('suppliers').select('*').eq('is_active', true)
+    poState.suppliers = data || []
+  }
+}
 // ═══════════════════════════════════════════
 async function renderPurchaseOrders() {
   const content = document.getElementById('mainContent')
@@ -4484,19 +4590,13 @@ async function renderIssuance() {
   const isDeptHead = role === 'dept_head'
   const isSupplyOfficer = ['supply_officer','admin'].includes(role)
 
-  const [issRes, batchRes, pendingRes, incomingRes] = await Promise.all([
+  const [issRes, batchRes, pendingRes] = await Promise.all([
     SB.from('issuances').select('*').order('issued_at', { ascending: false }).limit(100),
     SB.from('issuance_batches').select('*').order('created_at', { ascending: false }).limit(20),
     SB.from('requests').select('*')
       .in('status', ['approved','delivered'])
       .in('request_type', ['supply','purchase','issuance'])
-      .order('created_at', { ascending: false }),
-    // Incoming deliveries — POs that are sent/partial and need to be received
-    isSupplyOfficer
-      ? SB.from('purchase_orders').select('*, requests(request_no, purpose, dept_id)')
-          .in('status', ['sent','partial_delivery'])
-          .order('created_at', { ascending: false })
-      : Promise.resolve({ data: [] })
+      .order('created_at', { ascending: false })
   ])
 
   // For dept head — filter issuances by their dept's requests
@@ -4511,7 +4611,6 @@ async function renderIssuance() {
   issState.issuances = allIssuances
   issState.batches = batchRes.data || []
   issState.pendingRequests = pendingRes.data || []
-  const incomingPOs = incomingRes.data || []
 
   // Stats
   const confirmedCount = allIssuances.filter(i => i.confirmed_at).length
@@ -4560,41 +4659,6 @@ async function renderIssuance() {
   }
   html += '<button onclick="filterIssTab(\'confirmed\')" id="iss_tab_confirmed" style="padding:8px 16px;border:none;background:transparent;color:var(--txt2);cursor:pointer;font-family:inherit;font-size:13px;">Confirmed</button>'
   html += '</div>'
-
-  // ── Incoming Deliveries (Supply Officer only) ──
-  if (isSupplyOfficer && incomingPOs.length > 0) {
-    html += '<div style="margin-bottom:20px;">'
-    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
-    html += '<div style="font-size:13px;font-weight:700;color:var(--amber);">📦 Incoming Deliveries</div>'
-    html += '<span style="background:var(--amber);color:#fff;border-radius:20px;padding:1px 10px;font-size:11px;font-weight:700;">' + incomingPOs.length + '</span>'
-    html += '<div style="font-size:12px;color:var(--txt2);">POs waiting to be received at supply room</div>'
-    html += '</div>'
-    html += '<div style="display:flex;flex-direction:column;gap:6px;">'
-    incomingPOs.forEach(po => {
-      const req = po.requests
-      const dept = req ? state.departments.find(d => d.id === req.dept_id) : null
-      const isPartial = po.status === 'partial_delivery'
-      html += '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surf1);border:1px solid ' + (isPartial ? 'var(--amber)' : 'var(--bdr2)') + ';border-radius:10px;padding:10px 14px;">'
-      html += '<div style="display:flex;align-items:center;gap:12px;">'
-      html += '<span style="font-size:20px;">' + (isPartial ? '📦' : '🚚') + '</span>'
-      html += '<div>'
-      html += '<div style="font-size:13px;font-weight:600;">' + po.po_number + (isPartial ? ' <span style="font-size:11px;color:var(--amber);">Partial</span>' : '') + '</div>'
-      html += '<div style="font-size:12px;color:var(--txt2);">'
-      if (req) html += (req.purpose || req.request_no) + ' · '
-      html += (dept?.dept_name || '—') + ' · '
-      html += (po.payment_terms || '') + '</div>'
-      if (po.expected_delivery) {
-        const overdue = new Date(po.expected_delivery) < new Date()
-        html += '<div style="font-size:11px;color:' + (overdue ? 'var(--red)' : 'var(--txt3)') + ';">Expected: ' + formatDate(po.expected_delivery) + (overdue ? ' ⚠️ Overdue' : '') + '</div>'
-      }
-      html += '</div></div>'
-      html += '<button class="btn btn-success btn-sm" onclick="openReceiveDelivery(\'' + po.id + '\')">📦 Receive</button>'
-      html += '</div>'
-    })
-    html += '</div></div>'
-
-    html += '<hr style="border:none;border-top:1px solid var(--bdr);margin-bottom:20px;">'
-  }
 
   // Issuance list
   if (issState.issuances.length === 0) {
@@ -7083,7 +7147,7 @@ async function renderReports() {
   html += '<div class="chart-title">Requests by Type (YTD)</div>'
   html += '<div class="bar-chart">'
   const typeColors = { supply:'var(--green)', purchase:'var(--blue)', issuance:'var(--violet)', derp:'var(--amber)' }
-  const typeLabels = { supply:'Supply', purchase:'Purchase', issuance:'Issuance', derp:'DERP' }
+  const typeLabels = { supply:'Supply', purchase:'Purchase', incoming_deliveries:'Incoming Deliveries', issuance:'Issuance', derp:'DERP' }
   const maxType = Math.max(...Object.values(typeMap), 1)
   Object.entries(typeMap).forEach(([type, count]) => {
     const pct = Math.round((count / maxType) * 100)
