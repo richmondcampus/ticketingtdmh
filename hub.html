@@ -375,7 +375,7 @@ async function doLogin(){
     const email=empNo.includes('@')?empNo.toLowerCase():empNo.toLowerCase().replace(/[^a-z0-9]/g,'-')+'@tdmh.local'
     const{data:authData,error}=await SB.auth.signInWithPassword({email,password:pass})
     if(error||!authData.user){showLoginErr('Invalid credentials.');return}
-    const{data:profile}=await SB.from('users').select('*').eq('id',authData.user.id).eq('is_active',true).single()
+    const{data:profile}=await SB.from('users').select('*').eq('auth_id',authData.user.id).eq('is_active',true).maybeSingle()
     if(!profile){showLoginErr('Account not found.');await SB.auth.signOut();return}
     const anyRole=profile.csr_role||profile.maintenance_role||profile.it_role||profile.inventory_role
     if(!anyRole){showLoginErr('No system access. Contact IT.');await SB.auth.signOut();return}
@@ -1277,7 +1277,7 @@ document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='
     try{
       const{data:{session:restored},error}=await SB.auth.setSession({access_token:stored.access_token,refresh_token:stored.refresh_token})
       if(restored&&!error){
-        const{data:profile}=await SB.from('users').select('*').eq('id',restored.user.id).eq('is_active',true).single()
+        const{data:profile}=await SB.from('users').select('*').eq('auth_id',restored.user.id).eq('is_active',true).maybeSingle()
         const anyRole=profile&&(profile.csr_role||profile.maintenance_role||profile.it_role||profile.inventory_role)
         if(anyRole){const s=storeAuthSession({user:restored.user,session:restored},profile);await bootApp(s);return}
       }
@@ -1285,7 +1285,7 @@ document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='
   }
   const{data:{session:authSession}}=await SB.auth.getSession()
   if(authSession){
-    const{data:profile}=await SB.from('users').select('*').eq('id',authSession.user.id).eq('is_active',true).single()
+    const{data:profile}=await SB.from('users').select('*').eq('auth_id',authSession.user.id).eq('is_active',true).maybeSingle()
     const anyRole=profile&&(profile.csr_role||profile.maintenance_role||profile.it_role||profile.inventory_role)
     if(anyRole){const s=storeAuthSession({user:authSession.user,session:authSession},profile);await bootApp(s);return}
   }
