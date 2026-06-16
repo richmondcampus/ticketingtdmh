@@ -1664,23 +1664,28 @@ async function submitPartsRequest(ticketId, ticketTitle) {
   const notes = document.getElementById('parts_notes')?.value?.trim() || ''
 
   try {
+    // Get ticket's dept_id — issue parts to the requesting department, not the tech's dept
+    const { data: ticket } = await SB.from('maint_tickets').select('dept_id').eq('id', ticketId).single()
+    const targetDeptId = ticket?.dept_id || S.user.dept_id || null
+
     // Generate CSR request number
     const { data: numData } = await SB.rpc('generate_request_no')
     const requestNo = numData || ('CSR-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
 
     // Create CSR request linked to this maintenance ticket
+    // dept_id = ticket's department (where parts will be issued to)
     const { data: req, error } = await SB.from('requests').insert({
       request_no: requestNo,
       request_type: 'purchase',
-      dept_id: S.user.dept_id || null,
+      dept_id: targetDeptId,
       requested_by: S.user.id,
       urgency,
       purpose: 'Parts request for Maintenance Ticket ' + ticketId + ' — "' + ticketTitle + '"',
       status: 'pending_approval',
       current_approval_level: 1,
       source_system: 'maintenance',
-      source_ref_id: null,           // uuid col — null for text ticket IDs
-      source_ref_text: ticketId      // store text ticket ID here
+      source_ref_id: null,
+      source_ref_text: ticketId
     }).select().single()
 
     if (error) throw error
@@ -2177,8 +2182,13 @@ function subscribeNotifications() {
   if (!S.user) return
   SB.channel('notif-' + S.user.id)
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:'user_id=eq.'+S.user.id }, (payload) => {
-      showToast('info', payload.new.title, payload.new.body || '')
+      const n = payload.new
+      showToast('info', n.title, n.body || '')
       loadNotifications()
+      // SMS tech if it's a parts-available notification
+      if (n.source_system === 'maintenance' && n.title?.includes('Parts Available') && S.user.phone) {
+        sendSMS([S.user.phone], '[TDMH Maintenance] ' + n.title + ' — ' + (n.body || '') + ' Open your ticket to continue.')
+      }
     }).subscribe()
 }
 async function openNotifications() {
