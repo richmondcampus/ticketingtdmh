@@ -1087,8 +1087,8 @@ function TDMHParking(){
           setSlots(sd);
         }
         // load txns last 90 days
-        const since=dAgo(89);
-        const{data:txnData}=await sb.from("transactions").select("*").gte("checkout_at",since+"T00:00:00").order("checkout_at",{ascending:false});
+        const since=new Date(new Date().getTime()-30*24*60*60*1000).toISOString().split('T')[0];
+        const{data:txnData}=await sb.from("transactions").select("*").gte("checkout_at",since+"T00:00:00").order("checkout_at",{ascending:false}).limit(1000);
         setTxns(txnData||[]);
         // seed ticket counter from latest ticket in DB so we never duplicate
         await seedTicketCounter();
