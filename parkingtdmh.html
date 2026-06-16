@@ -1089,8 +1089,12 @@ function TDMHParking(){
           setSlots(sd);
         }
         // load txns last 90 days
-        const since=new Date(new Date().getTime()-30*24*60*60*1000).toISOString().split('T')[0];
-        const{data:txnData}=await sb.from("transactions").select("*").gte("checkout_at",since+"T00:00:00").order("checkout_at",{ascending:false}).limit(1000);
+        // Load today's transactions only on startup — fast load
+        const todayPHT=new Date(new Date().getTime()+8*60*60*1000).toISOString().split('T')[0];
+        const{data:txnData}=await sb.from("transactions").select("*")
+          .gte("checkout_at",todayPHT+"T00:00:00+08:00")
+          .order("checkout_at",{ascending:false})
+          .limit(500);
         setTxns(txnData||[]);
         // seed ticket counter from latest ticket in DB so we never duplicate
         await seedTicketCounter();
@@ -1114,7 +1118,7 @@ function TDMHParking(){
     loadActivityLogs();
 
     // Auto-refresh every 10 seconds — fast polling for cross-device sync
-    const autoRefresh = setInterval(()=>{ loadData(); }, 10 * 1000);
+    const autoRefresh = setInterval(()=>{ loadData(); }, 30 * 1000);
 
     // Refresh when tab/app becomes visible again
     const handleVisibility = ()=>{ if(document.visibilityState==='visible') loadData(); };
