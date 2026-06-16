@@ -141,9 +141,12 @@ const fmtDT  =iso=>new Date(iso).toLocaleString("en-PH",{month:"short",day:"nume
 const fmtFull=iso=>new Date(iso).toLocaleString("en-PH",{weekday:"short",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 const ago    =iso=>{const m=Math.floor((Date.now()-new Date(iso))/60000);if(m<1)return"just now";if(m<60)return`${m}m ago`;return`${Math.floor(m/60)}h ${m%60}m ago`;};
 const P      =n=>`₱${Number(n).toLocaleString("en-PH")}`;
-const dOnly  =iso=>{try{return new Date(iso).toISOString().split("T")[0];}catch{return"";}};
-const todayStr=()=>new Date().toISOString().split("T")[0];
-const dAgo   =n=>{const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};
+// Philippine Time (UTC+8)
+const PHT_OFF=8*60*60000;
+const toPHT=d=>new Date(new Date(d).getTime()+PHT_OFF);
+const dOnly  =iso=>{try{return toPHT(iso).toISOString().split("T")[0];}catch{return"";}};
+const todayStr=()=>toPHT(new Date()).toISOString().split("T")[0];
+const dAgo   =n=>{const d=toPHT(new Date());d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};
 let _tix=1000;
 const nextTix=()=>`TKT-${++_tix}`;
 async function seedTicketCounter(){
@@ -405,29 +408,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 function printThermal(payload,preWin){
   // Save for reprint
   if(window._lastPrintPayload!==undefined) window._lastPrintPayload=payload;
-  // Try local print server first (python script running on cashier PC)
-  // Falls back to browser popup if server not running
-  const LOCAL_PRINT = 'http://localhost:9191/print';
-
-  fetch(LOCAL_PRINT, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(payload),
-    signal:AbortSignal.timeout(2000)
-  })
-  .then(r=>r.json())
-  .then(r=>{
-    if(r.ok){
-      console.log('Printed via local server:', r.msg);
-    } else {
-      console.warn('Print server error:', r.msg);
-      printBrowser(payload, preWin);
-    }
-  })
-  .catch(()=>{
-    // Server not running — fall back to browser popup
-    printBrowser(payload, preWin);
-  });
+  // Android: Kotlin bridge overrides this function entirely
+  // Web: use browser print optimized for 58mm thermal
+  printBrowser(payload, preWin);
 }
 
 function printBrowser(payload,preWin){
@@ -491,7 +474,7 @@ function printBrowser(payload,preWin){
     ln("RATE     : "+(overnight?"OVERNIGHT":"REGULAR"));
     ln(EQ);
     ct("TOTAL AMOUNT DUE");
-    R.push("<div style='text-align:center;font-size:16pt;font-weight:900;line-height:1.2'>"+P(fee)+"</div>");
+    R.push("<div class='big'>"+P(fee)+"</div>");
     if(overnight) ct("Overnight Rate 10PM-7AM");
     ln(DQ);
     if(payload.lostTicket) ln("Lost Ticket: +PHP 50.00");
@@ -505,10 +488,11 @@ function printBrowser(payload,preWin){
   const style=""
     +"@page{margin:0;size:58mm auto}"
     +"*{margin:0;padding:0;box-sizing:border-box}"
-    +"html,body{margin:0;padding:2px;width:58mm;background:#fff;color:#000;font-family:'Courier New',Courier,monospace;font-size:7.2pt;font-weight:bold;line-height:1.15}"
-    +"div{margin:0;padding:0;white-space:nowrap;overflow:hidden;line-height:1.15}"
+    +"html,body{margin:0;padding:0 2px;width:58mm;background:#fff;color:#000;font-family:'Courier New',Courier,monospace;font-size:7pt;font-weight:600;line-height:1.1}"
+    +"div{margin:0;padding:0;white-space:nowrap;overflow:hidden;line-height:1.1}"
+    +".big{font-size:12pt;font-weight:900;text-align:center;line-height:1.2}"
     +".np{margin-top:12px;text-align:center;font-family:Arial,sans-serif;white-space:normal;overflow:visible;font-size:12pt}"
-    +"@media print{.np{display:none!important}@page{size:58mm auto;margin:0}html,body{width:58mm;margin:0;padding:2px}}";
+    +"@media print{.np{display:none!important}@page{size:58mm auto;margin:0}html,body{width:58mm;margin:0;padding:0 2px;font-size:7pt}}";
 
   const html="<!DOCTYPE html><html><head>"
     +"<meta charset='UTF-8'/><title>Receipt</title>"
@@ -579,12 +563,12 @@ function DonutChart({data,size=110}){
 // ─── REPORTS PANEL ───────────────────────────────────────────────────────────
 // Fetches its own data directly from Supabase — always shows latest records
 function ReportsPanel({currentUser}){
-  const [from,setFrom]=useState(dAgo(6));
+  const [from,setFrom]=useState(todayStr());
   const [to,setTo]=useState(todayStr());
 
   function exportCSV(){
-    const rows=[['Date/Time','Ticket','Plate','Vehicle','Location','Duration','Type','Checked In By','Checked Out By','Status','Fee']];
-    [...filtered,...voided].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).forEach(e=>{
+    const rows=[['Date/Time','Ticket','Plate','Vehicle','Location','Duration','Type','Checked In By','Checked Out By','Fee']];
+    [...filtered].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).forEach(e=>{
       rows.push([
         fmtDT(e.checkout_at||e.checkout_time||e.checkin_at),
         e.ticket_no||'',
@@ -595,7 +579,6 @@ function ReportsPanel({currentUser}){
         e.overnight?'Overnight':'Regular',
         e.checkin_by||'',
         e.cashier||'',
-        e.status||'completed',
         e.fee||0
       ]);
     });
@@ -606,7 +589,7 @@ function ReportsPanel({currentUser}){
     a.href=url;a.download=`TDMH_Parking_${from}_to_${to}.csv`;
     a.click();URL.revokeObjectURL(url);
   }
-  const [preset,setPreset]=useState("week");
+  const [preset,setPreset]=useState("today");
   const [locF,setLocF]=useState({compound:true,quality:true,motopark:true});
   const [vtF,setVtF]=useState({car:true,motorcycle:true,tricycle:true});
   const [txns,setTxns]=useState([]);
@@ -618,20 +601,32 @@ function ReportsPanel({currentUser}){
     async function fetchData(){
       setFetching(true);
       try{
-        // Fetch by checkout_at, also catch records where checkout_at is null but checkout_time is set
-        const{data:d1,error:e1}=await sb.from("transactions")
-          .select("*")
-          .gte("checkout_at",from+"T00:00:00")
-          .lte("checkout_at",to+"T23:59:59")
-          .order("checkout_at",{ascending:false});
+        // PHT offset: subtract 8hrs to get UTC equivalent for DB query
+        // e.g. Apr 19 00:00 PHT = Apr 18 16:00 UTC
+        const fromUTC=new Date(from+"T00:00:00+08:00").toISOString();
+        const toUTC=new Date(to+"T23:59:59+08:00").toISOString();
+        // Paginated fetch — Supabase has 1000 row default limit
+        let allData=[], page=0, batchSize=1000, done=false;
+        let fetchError=null;
+        while(!done){
+          const{data:batch,error:bErr}=await sb.from("transactions")
+            .select("*")
+            .gte("checkout_at",fromUTC)
+            .lte("checkout_at",toUTC)
+            .order("checkout_at",{ascending:false})
+            .range(page*batchSize,(page+1)*batchSize-1);
+          if(bErr){fetchError=bErr;break;}
+          if(!batch||batch.length===0){done=true;}
+          else{allData=[...allData,...batch];if(batch.length<batchSize)done=true;page++;}
+        }
         const{data:d2}=await sb.from("transactions")
           .select("*")
           .is("checkout_at",null)
-          .gte("checkout_time",from+"T00:00:00")
-          .lte("checkout_time",to+"T23:59:59");
+          .gte("checkout_time",fromUTC)
+          .lte("checkout_time",toUTC);
         const seen=new Set();
-        const data=[...(d1||[]),...(d2||[])].filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
-        const error=e1;
+        const data=[...allData,...(d2||[])].filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
+        const error=fetchError;
         if(!cancelled&&!error&&data) setTxns(data);
       }catch(e){console.error("Reports fetch error:",e);}
       if(!cancelled) setFetching(false);
@@ -659,14 +654,11 @@ function ReportsPanel({currentUser}){
   const lostTxns=useMemo(()=>filtered.filter(e=>e.notes&&(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking Ticket")||e.notes.toLowerCase().includes("lost"))),[filtered]);
   const lostTotal=lostTxns.length*50;
 
-  const isCashier=currentUser?.role==="cashier";
-  // Cashier sees own transactions only
-  const myFiltered=isCashier?filtered.filter(e=>e.cashier===currentUser?.name):filtered;
-  const total=myFiltered.reduce((s,e)=>s+Number(e.fee||0),0);
-  const cnt=myFiltered.length;
+  const total=filtered.reduce((s,e)=>s+Number(e.fee||0),0);
+  const cnt=filtered.length;
   const avg=cnt>0?Math.round(total/cnt):0;
-  const ovrCnt=myFiltered.filter(e=>e.overnight).length;
-  const days=new Set(myFiltered.map(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at))).size;
+  const ovrCnt=filtered.filter(e=>e.overnight).length;
+  const days=new Set(filtered.map(e=>dOnly(e.checkout_at||e.checkout_time||e.checkin_at))).size;
   const avgD=days>0?Math.round(total/days):0;
 
   const dayRange=[];let cur=new Date(from);const end=new Date(to);
@@ -723,13 +715,7 @@ function ReportsPanel({currentUser}){
       </div>
 
       <div className="rmain">
-        {isCashier&&<div style={{background:"linear-gradient(135deg,#1e3a5f,#0e6ebd)",borderRadius:10,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:20}}>👤</span>
-          <div>
-            <div style={{color:"#fff",fontWeight:700,fontSize:13}}>Cashier View — {currentUser?.name}</div>
-            <div style={{color:"#90caf9",fontSize:11,marginTop:2}}>Showing your transactions only · Full reports available to Admin</div>
-          </div>
-        </div>}
+
         <div className="rkpis">
           <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Revenue</div><div className="kv">{P(total)}</div><div className="ks">{cnt} transactions</div></div>
           <div className="rkpi" style={{"--kc":"#0ea5e9"}}><div className="kl">Daily Average</div><div className="kv">{P(avgD)}</div><div className="ks">{days} day{days!==1?"s":""}</div></div>
@@ -744,7 +730,7 @@ function ReportsPanel({currentUser}){
             <div className="dc2">{dayData.map((d,i)=>(<div className="dr" key={i}><div className="dlbl">{d.label}</div><div className="dtr"><div className="dfi" style={{width:`${(d.val/maxDay)*100}%`}}/></div><div className="dv">{d.val>0?P(d.val):"—"}</div></div>))}</div>
           )}
         </div>
-        {!isCashier&&<div className="rspl">
+        <div className="rspl">
           <div className="rcc">
             <h4>📍 Revenue by Location</h4>
             <div className="cbg">{byLoc.map(l=>(<div className="cbr" key={l.id}><div className="cbl">{l.icon} {l.short}</div><div className="cbt"><div className="cbf" style={{width:`${(l.total/maxL)*100}%`,background:l.color}}>{l.count>0?`${l.count}`:""}</div></div><div className="cbv">{P(l.total)}</div></div>))}</div>
@@ -753,14 +739,14 @@ function ReportsPanel({currentUser}){
             <h4>🚗 By Vehicle Type</h4>
             <DonutChart data={byV.filter(v=>v.count>0).map(v=>({label:v.label,value:v.count,color:v.color}))} size={110}/>
           </div>
-        </div>}
+        </div>
         <div className="rcc">
           <h4>👤 Cashier Performance</h4>
           {byCash.length===0?<div className="nod"><div className="ni">👤</div>No data</div>:(
             <div className="cbg">{byCash.map((c,i)=>(<div className="cbr" key={i}><div className="cbl">{(c.name||"").split(" ")[0]}</div><div className="cbt"><div className="cbf" style={{width:`${(c.total/maxC)*100}%`,background:"#0ea5e9"}}>{c.count} transactions</div></div><div className="cbv">{P(c.total)}</div></div>))}</div>
           )}
         </div>
-        {!isCashier&&<div className="rcc">
+        <div className="rcc">
           <h4>🔥 Peak Hours Heatmap</h4>
           <div style={{overflowX:"auto"}}><div style={{minWidth:340}}>
             <div className="hml"><div/>{DAYS.map(d=><div key={d} className="hmd">{d}</div>)}</div>
@@ -776,12 +762,12 @@ function ReportsPanel({currentUser}){
               <tbody>{topP.map((p,i)=>(<tr key={i}><td style={{color:"var(--mu)",fontWeight:700}}>{i+1}</td><td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{p.plate}</span></td><td>{VT[p.vtype]?.icon} {VT[p.vtype]?.label}</td><td><span style={{background:"#e0f2fe",color:"#0369a1",padding:"2px 7px",borderRadius:100,fontSize:10,fontWeight:700}}>{p.count}×</span></td><td><span className="eam">{P(p.total)}</span></td><td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"var(--mu)"}}>{P(Math.round(p.total/p.count))}</td></tr>))}</tbody>
             </table></div>
           )}
-        </div>}
+        </div>
         <div className="rcc">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11,flexWrap:"wrap",gap:7}}>
             <h4 style={{margin:0}}>📄 Transaction Log</h4>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}{isCashier?" (your transactions)":""}</span>
+              <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,color:"#d97706",fontWeight:700}}>{cnt} records · {P(total)}</span>
               <button className="btn" style={{padding:"4px 10px",fontSize:11,background:"#f0fdf4",color:"#166534",border:"1px solid #86efac"}} onClick={exportCSV}>⬇️ Export CSV</button>
             </div>
           </div>
@@ -805,7 +791,7 @@ function ReportsPanel({currentUser}){
               ))}</tbody>
             </table></div>
           )}
-          {voided.length>0&&(
+          {voided.length>0&&currentUser?.role!=="cashier"&&(
             <div className="rc" style={{marginTop:12}}>
               <div className="rch" style={{background:"#fef2f2",borderColor:"#fca5a5"}}>
                 <h4 style={{color:"#991b1b",margin:0}}>⚠️ Voided Transactions — {P(lossTotal)} lost</h4>
@@ -974,6 +960,50 @@ function UserManagement({currentUser,toast}){
 }
 
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
+function ActivityLog({actLog}){
+  const PAGE_SIZE=50;
+  const [actPage,setActPage]=useState(0);
+  const [actFilter,setActFilter]=useState("");
+  const filtered=actFilter
+    ?actLog.filter(a=>a.msg.toLowerCase().includes(actFilter.toLowerCase()))
+    :actLog;
+  const totalPages=Math.ceil(filtered.length/PAGE_SIZE);
+  const pageItems=filtered.slice(actPage*PAGE_SIZE,(actPage+1)*PAGE_SIZE);
+  return(
+    <div className="pnl">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <span style={{fontSize:14,fontWeight:700}}>📋 Activity Log</span>
+        <span style={{fontSize:11,color:"var(--mu)"}}>{filtered.length} entries{actFilter?" (filtered)":""}</span>
+      </div>
+      <div className="srow" style={{marginBottom:10}}>
+        <input className="fi" placeholder="🔍 Filter — plate, ticket, action…" value={actFilter} onChange={e=>{setActFilter(e.target.value);setActPage(0);}}/>
+        {actFilter&&<button className="btn bg" style={{flex:"none",padding:"8px 12px"}} onClick={()=>{setActFilter("");setActPage(0);}}>✕</button>}
+      </div>
+      {actLog.length===0
+        ?<div className="emp"><div className="ei">📋</div><p>No activity yet</p></div>
+        :filtered.length===0
+          ?<div className="emp"><div className="ei">🔍</div><p>No results for "{actFilter}"</p></div>
+          :(
+            <>
+              <div className="al">
+                {pageItems.map(a=>(<div className="ai" key={a.id}><div className="adot" style={{background:a.color}}/><div><div className="atxt">{a.msg}</div><div className="atm">{a.time?new Date(a.time).toLocaleString("en-PH",{month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit"}):""}</div></div></div>))}
+              </div>
+              {totalPages>1&&(
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:12,flexWrap:"wrap"}}>
+                  <button className="btn bg" style={{padding:"6px 10px",fontSize:12}} onClick={()=>setActPage(0)} disabled={actPage===0}>«</button>
+                  <button className="btn bg" style={{padding:"6px 10px",fontSize:12}} onClick={()=>setActPage(p=>Math.max(0,p-1))} disabled={actPage===0}>‹ Prev</button>
+                  <span style={{fontSize:12,fontWeight:700,color:"var(--mu)",padding:"0 8px"}}>Page {actPage+1} of {totalPages}</span>
+                  <button className="btn bg" style={{padding:"6px 10px",fontSize:12}} onClick={()=>setActPage(p=>Math.min(totalPages-1,p+1))} disabled={actPage===totalPages-1}>Next ›</button>
+                  <button className="btn bg" style={{padding:"6px 10px",fontSize:12}} onClick={()=>setActPage(totalPages-1)} disabled={actPage===totalPages-1}>»</button>
+                </div>
+              )}
+            </>
+          )
+      }
+    </div>
+  );
+}
+
 function TDMHParking(){
   const {add:toast,Toasts}=useToast();
 
@@ -1067,6 +1097,19 @@ function TDMHParking(){
     // Expose to window so Android can trigger refresh on screen wake
     window.loadData = loadData;
     loadData();
+    // Load activity logs from DB (last 500)
+    async function loadActivityLogs(){
+      try{
+        const{data}=await sb.from("activity_logs")
+          .select("*")
+          .order("created_at",{ascending:false})
+          .limit(500);
+        if(data&&data.length>0){
+          setActLog(data.map(r=>({id:r.id,msg:r.msg,color:r.color||"#64748b",time:r.created_at})));
+        }
+      }catch(e){console.warn("Activity log load failed:",e);}
+    }
+    loadActivityLogs();
 
     // Auto-refresh every 10 seconds — fast polling for cross-device sync
     const autoRefresh = setInterval(()=>{ loadData(); }, 10 * 1000);
@@ -1115,7 +1158,7 @@ function TDMHParking(){
         });
         // only show toast/log if it came from another device (different cashier or same but different session is fine)
         const locName=LOCS.find(l=>l.id===t.loc_id)?.name||t.loc_id;
-        addLog(`[RT] ${t.plate} checked out from ${locName} · ${P(t.fee||0)} · by ${t.cashier||"—"}`,"#6366f1");
+        // RT log removed — doCheckout already logs this
         toast(`📡 ${t.plate} checked out — ${P(t.fee||0)}`,"info");
       })
       .subscribe(status=>{
@@ -1143,7 +1186,17 @@ function TDMHParking(){
     ? searchSlots.filter(s=>s.occupied&&(s.vehicle?.plate?.toLowerCase().includes(search.toLowerCase())||s.vehicle?.name?.toLowerCase().includes(search.toLowerCase()))).map(s=>({...s,locName:LOCS.find(l=>l.id===s.locId)?.name}))
     : [];
 
-  function addLog(msg,color){setActLog(p=>[{id:Date.now(),msg,color,time:new Date().toISOString()},...p.slice(0,199)]);}
+  function addLog(msg,color){
+    const entry={id:Date.now(),msg,color,time:new Date().toISOString()};
+    setActLog(p=>[entry,...p]);
+    // Save to DB for persistent audit trail
+    sb.from("activity_logs").insert({
+      msg,color,
+      created_at:entry.time,
+      user_name:user?.name||"—",
+      role:user?.role||"—"
+    }).then(({error})=>{if(error)console.warn("Log save failed:",error.message);});
+  }
 
   async function doLogin(){
     setLf(p=>({...p,loading:true,err:""}));
@@ -1199,7 +1252,7 @@ function TDMHParking(){
     // optimistic local update (realtime will also fire)
     setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:true,vehicle}:s);return c;});
     const locName=LOCS.find(x=>x.id===l)?.name;
-    addLog(`${vehicle.plate} checked in @ ${locName} · Slot #${sel.number} · ${tix}`,"#10b981");
+    addLog(`✅ CHECK-IN: ${vehicle.plate} · ${form.vtype.toUpperCase()} · ${locName} Slot #${sel.number} · ${tix} · by ${user.name}`,"#10b981");
     toast(`✅ ${vehicle.plate} checked in — ${tix}`,"ok");
     const ciPayload={isCheckIn:true,ticketNo:tix,plate:vehicle.plate,name:vehicle.name,vtype:form.vtype,locName,slotNum:sel.number,checkin:now,cashierName:user.name};
     setLastPrintPayload(ciPayload);
@@ -1217,12 +1270,20 @@ function TDMHParking(){
       const origTix=v.ticketNo||"";
       // Duplicate guard — check if this slot's check-in ticket already has a completed checkout
       if(origTix){
-        const{data:existing}=await sb.from("transactions").select("id").eq("ticket_no",origTix).eq("status","completed").maybeSingle();
+        // Check duplicate using ticket_no + checkin_time — more specific than ticket alone
+        // Prevents false positives when same plate returns same day with different ticket
+        const cinTime=v.checkin;
+        const{data:existing}=await sb.from("transactions").select("id")
+          .eq("ticket_no",origTix)
+          .eq("status","completed")
+          .eq("checkin_at",cinTime)
+          .maybeSingle();
         if(existing){
           // Already checked out — slot is stuck, auto-clear it
           await sb.from("slots").update({occupied:false,v_plate:null,v_name:null,v_vtype:null,v_checkin:null,v_ticket:null,v_checkin_by:null}).eq("id",sel.id);
           setSlots(p=>{const c={...p};c[l]=c[l].map(s=>s.id===sel.id?{...s,occupied:false,vehicle:null}:s);return c;});
-          toast("⚠️ "+origTix+" already checked out — slot cleared.","info");
+          addLog(`🔧 AUTO-CLEAR: ${v.plate} · ${locName} Slot #${sel.number} · ${origTix} already checked out · cleared by ${user.name}`,"#8b5cf6");
+          toast("⚠️ "+origTix+" already checked out — slot auto-cleared.","info");
           setModal(null);setProcessing(false);return;
         }
       }
@@ -1243,7 +1304,7 @@ function TDMHParking(){
       setTxns(p=>{if(p.find(x=>x.id===txnRow.id))return p;return[txnRow,...p];});
       setReceipt({v,fee,dur,overnight,slot:sel,loc:LOCS.find(x=>x.id===l),ticketNo:txnRow.ticket_no});
       const tix=txnRow.ticket_no; // Use DB-generated ticket number
-      addLog(`${v.plate} checked out from ${locName} · ${P(fee)} · ${tix}`,"#f59e0b");
+      addLog(`💰 CHECK-OUT: ${v.plate} · ${locName} Slot #${sel.number} · ${dur} · ${P(fee)} · ${tix} · in by ${v.checkinBy||'—'} · out by ${user.name}`,"#f59e0b");
       toast(`💰 ${v.plate} checked out — ${P(fee)}`,"ok");
       const coPayload={isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name,lostTicket};
       setLastPrintPayload(coPayload);
@@ -1281,7 +1342,7 @@ function TDMHParking(){
     const{data:txnRow,error:txnErr}=await sb.from("transactions").insert(txn).select().single();
     if(txnErr){console.error("Void txn error:",txnErr.message);toast("Warning: slot cleared but record not saved: "+txnErr.message,"err");}
     else if(txnRow) setTxns(p=>{if(p.find(x=>x.id===txnRow.id))return p;return[txnRow,...p];});
-    addLog(`⚠️ VOID: ${v.plate} from ${locName} · lost ${P(fee)} · by ${user.name}`,"#ef4444");
+    addLog(`⚠️ VOID: ${v.plate} · ${locName} Slot #${sel.number} · ${dur} · exp ${P(fee)} · by ${user.name}`,"#ef4444");
     printThermal({isVoid:true,isCheckIn:false,ticketNo:tix,plate:v.plate,name:v.name,vtype:v.vtype,locName,slotNum:sel.number,checkin:v.checkin,fee,dur,overnight,cashierName:user.name});
   }
 
@@ -1354,7 +1415,6 @@ function TDMHParking(){
           <div className="hck">{clock.toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div>
           <span className={`rbdg rb-${user.role}`}>{user.role==="admin"?"👑":user.role==="cashier"?"💳":"🅿️"} {user.role}</span>
           {user.role==="attendant"&&<button className="hbtn" onClick={()=>setAttLoc(null)} style={{background:"rgba(139,92,246,.2)",borderColor:"rgba(139,92,246,.4)",color:"#c4b5fd"}}>Change Location</button>}
-          {lastPrintPayload&&<button className="hbtn" style={{background:"rgba(14,165,233,.2)",borderColor:"rgba(14,165,233,.4)",color:"#7dd3fc"}} onClick={()=>printThermal(lastPrintPayload)} title="Reprint last receipt/ticket">🖨️ Reprint</button>}
           <button className="hbtn" onClick={doLogout}>Sign Out</button>
         </div>
       </div>
@@ -1414,7 +1474,6 @@ function TDMHParking(){
         {perms.co&&<button className={`tab ${tab==="manual"?"active":""}`} onClick={()=>setTab("manual")}>🧾 Manual Receipt</button>}
         {perms.earn&&<button className={`tab ${tab==="earnings"?"active":""}`} onClick={()=>setTab("earnings")}>💰 Earnings</button>}
         {perms.rep&&<button className={`tab ${tab==="reports"?"active":""}`} onClick={()=>setTab("reports")}>📊 Reports</button>}
-        {user?.role==="cashier"&&<button className={`tab ${tab==="cashreport"?"active":""}`} onClick={()=>setTab("cashreport")}>📊 My Report</button>}
         {perms.act&&<button className={`tab ${tab==="activity"?"active":""}`} onClick={()=>setTab("activity")}>📋 Activity{actLog.length>0&&<span className="tbdg">{actLog.length}</span>}</button>}
         {perms.users&&<button className={`tab ${tab==="users"?"active":""}`} onClick={()=>setTab("users")}>👥 Users</button>}
       </div>
@@ -1539,7 +1598,7 @@ function TDMHParking(){
           const tix=txnRow?.ticket_no||("MAN-"+Date.now().toString().slice(-6));
           printThermal({isCheckIn:false,ticketNo:tix,plate,name:manualForm.name||"—",vtype:manualForm.vtype,locName,slotNum:manualForm.slotNum||"?",checkin:checkinISO,fee:fee2,dur,overnight,cashierName:user.name,lostTicket});
           toast("🧾 Manual receipt printed — "+tix+(lostTicket?" (+₱50 Lost Ticket)":""),"ok");
-          addLog("MANUAL RECEIPT: "+plate+" · "+P(fee2)+" · "+tix+" · by "+user.name,"#d97706");
+          addLog("🧾 MANUAL RECEIPT: "+plate+" · "+manualForm.vtype.toUpperCase()+" · "+(locName||"?")+" Slot #"+(manualForm.slotNum||"?")+" · "+P(fee2)+" · "+tix+" · by "+user.name,"#d97706");
           // Reset form after successful print
           setManualForm({plate:"",name:"",vtype:"car",locId:"compound",slotNum:"",checkin:""});
           setLostTicket(false);
@@ -1643,111 +1702,9 @@ function TDMHParking(){
 
       {/* REPORTS — no props needed, fetches own data */}
       {tab==="reports"&&perms.rep&&<ReportsPanel currentUser={user}/>}
-      {tab==="cashreport"&&user?.role==="cashier"&&(()=>{
-        const myTxns=txns.filter(e=>e.cashier===user.name&&e.status!=="voided");
-        const myVoided=txns.filter(e=>e.cashier===user.name&&e.status==="voided");
-        const myLost=myTxns.filter(e=>e.notes&&e.notes.includes("LOST_TICKET"));
-        const myTotal=myTxns.reduce((s,e)=>s+Number(e.fee||0),0);
-        const myToday=myTxns.filter(e=>dOnly(e.checkout_at||e.checkout_time)===todayStr());
-        const myTodayTotal=myToday.reduce((s,e)=>s+Number(e.fee||0),0);
-        return(
-          <div className="pnl">
-            <div style={{background:"linear-gradient(135deg,#1e3a5f,#0e6ebd)",borderRadius:12,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:12}}>
-              <span style={{fontSize:32}}>👤</span>
-              <div>
-                <div style={{color:"#fff",fontWeight:900,fontSize:16}}>{user.name}</div>
-                <div style={{color:"#90caf9",fontSize:12,marginTop:2}}>Cashier Performance Report</div>
-              </div>
-              <div style={{marginLeft:"auto",textAlign:"right"}}>
-                <div style={{color:"#90caf9",fontSize:11}}>Today</div>
-                <div style={{color:"#fff",fontWeight:900,fontSize:20}}>{P(myTodayTotal)}</div>
-                <div style={{color:"#90caf9",fontSize:11}}>{myToday.length} transactions</div>
-              </div>
-            </div>
-            <div className="rkpis" style={{marginBottom:14}}>
-              <div className="rkpi" style={{"--kc":"#d97706"}}><div className="kl">Total Collected</div><div className="kv">{P(myTotal)}</div><div className="ks">{myTxns.length} transactions</div></div>
-              <div className="rkpi" style={{"--kc":"#10b981"}}><div className="kl">Today</div><div className="kv">{P(myTodayTotal)}</div><div className="ks">{myToday.length} transactions</div></div>
-              <div className="rkpi" style={{"--kc":"#f59e0b"}}><div className="kl">🎫 Lost Tickets</div><div className="kv">{myLost.length}</div><div className="ks">{P(myLost.length*50)} collected</div></div>
-              <div className="rkpi" style={{"--kc":"#ef4444"}}><div className="kl">⚠️ Voided</div><div className="kv">{myVoided.length}</div><div className="ks">{P(myVoided.reduce((s,e)=>s+Number(e.fee||0),0))} lost</div></div>
-            </div>
-            <div className="rcc" style={{marginBottom:14}}>
-              <h4 style={{margin:"0 0 12px"}}>🏆 Cashier Performance — Today</h4>
-              {(()=>{
-                const allCashiers={};
-                txns.filter(e=>e.status!=="voided"&&dOnly(e.checkout_at||e.checkout_time)===todayStr()).forEach(e=>{
-                  const n=e.cashier||"Unknown";
-                  if(!allCashiers[n]) allCashiers[n]={name:n,total:0,count:0};
-                  allCashiers[n].total+=Number(e.fee||0);
-                  allCashiers[n].count+=1;
-                });
-                const ranked=Object.values(allCashiers).sort((a,b)=>b.total-a.total);
-                const maxT=Math.max(...ranked.map(c=>c.total),1);
-                return ranked.length===0?<div className="nod"><div className="ni">📭</div><p>No transactions today</p></div>:(
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {ranked.map((c,i)=>{
-                      const isMe=c.name===user.name;
-                      const pct=Math.round((c.total/maxT)*100);
-                      const medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":"";
-                      return(
-                        <div key={c.name} style={{background:isMe?"#e0f2fe":"#f8fafc",border:"2px solid "+(isMe?"#0ea5e9":"#e2e8f0"),borderRadius:10,padding:"10px 14px"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <span style={{fontSize:18}}>{medal||"👤"}</span>
-                              <div>
-                                <div style={{fontWeight:900,fontSize:13,color:isMe?"#0369a1":"#1a1a2e"}}>{c.name}{isMe?" (You)":""}</div>
-                                <div style={{fontSize:11,color:"var(--mu)"}}>{c.count} transactions</div>
-                              </div>
-                            </div>
-                            <div style={{fontFamily:"'Space Mono',monospace",fontWeight:900,fontSize:15,color:isMe?"#0369a1":"#1a1a2e"}}>{P(c.total)}</div>
-                          </div>
-                          <div style={{background:"#e2e8f0",borderRadius:100,height:6,overflow:"hidden"}}>
-                            <div style={{width:pct+"%",height:"100%",background:isMe?"#0ea5e9":"#94a3b8",borderRadius:100,transition:"width .3s"}}/>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </div>
-            <div className="rcc">
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                <h4 style={{margin:0}}>📋 My Transactions — Today</h4>
-                <span style={{fontSize:11,color:"var(--mu)"}}>{myToday.length} records</span>
-              </div>
-              {myToday.length===0?<div className="nod"><div className="ni">📭</div><p>No transactions today</p></div>:(
-                <div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table className="rtbl">
-                  <thead><tr><th>Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Duration</th><th>Notes</th><th>Amount</th></tr></thead>
-                  <tbody>{myToday.sort((a,b)=>new Date(b.checkout_at||b.checkout_time)-new Date(a.checkout_at||a.checkout_time)).map((e,i)=>(
-                    <tr key={i}>
-                      <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_at||e.checkout_time)}</td>
-                      <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#7c3aed"}}>{e.ticket_no||"—"}</td>
-                      <td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{e.plate}</span></td>
-                      <td>{VT[e.vtype]?.icon} {VT[e.vtype]?.label||e.vtype}</td>
-                      <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur||e.duration||"—"}</td>
-                      <td>{e.notes?<span style={{fontSize:9,background:e.notes.includes("LOST")?"#fff8e1":"#f0f9ff",color:e.notes.includes("LOST")?"#d97706":"#0369a1",padding:"2px 6px",borderRadius:100,fontWeight:700}}>{e.notes.includes("LOST")?"🎫 Lost":"🧾 Manual"}</span>:"—"}</td>
-                      <td><span className="eam">{P(e.fee||0)}</span></td>
-                    </tr>
-                  ))}</tbody>
-                </table></div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* ACTIVITY */}
-      {tab==="activity"&&(
-        <div className="pnl">
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:14,fontWeight:700}}>📋 Activity Log</span>
-            {actLog.length>0&&<span style={{fontSize:11,color:"var(--mu)"}}>{actLog.length} entries this session</span>}
-          </div>
-          {actLog.length===0?<div className="emp"><div className="ei">📋</div><p>No activity this session</p></div>:(
-            <div className="al">{actLog.map(a=>(<div className="ai" key={a.id}><div className="adot" style={{background:a.color}}/><div><div className="atxt">{a.msg}</div><div className="atm">{fmtT(a.time)} · {ago(a.time)}</div></div></div>))}</div>
-          )}
-        </div>
-      )}
+      {tab==="activity"&&<ActivityLog actLog={actLog}/>}
 
       {/* USERS */}
       {tab==="users"&&perms.users&&<UserManagement currentUser={user} toast={toast}/>}
@@ -1837,7 +1794,7 @@ function TDMHParking(){
               <div className="mf">
                 <button className="btn bg" onClick={()=>{setModal(null);setLostTicket(false);}}>Cancel</button>
                 <button className="btn bg" style={{background:"#f0f9ff",color:"#0369a1",border:"1px solid #bae6fd",flex:"none",padding:"9px 11px"}} title="Reprint check-in ticket" onClick={()=>printThermal({isCheckIn:true,ticketNo:sel.vehicle.ticketNo||"—",plate:sel.vehicle.plate,name:sel.vehicle.name,vtype:sel.vehicle.vtype,locName:LOCS.find(l=>l.id===sel.locId)?.name,slotNum:sel.number,checkin:sel.vehicle.checkin,cashierName:user.name})}>🖨️ Reprint Ticket</button>
-                {user?.role==="admin"&&<button className="btn" style={{background:"#fee2e2",color:"#991b1b",border:"1px solid #fca5a5"}} onClick={()=>setModal("void")}>⚠️ Void</button>}
+                {(user?.role==="admin"||user?.role==="cashier")&&<button className="btn" style={{background:"#fee2e2",color:"#991b1b",border:"1px solid #fca5a5"}} onClick={()=>setModal("void")}>⚠️ Void</button>}
                 <button className="btn bd2" onClick={doCheckout} disabled={processing}>{processing&&<span className="spin"/>}{processing?"Processing…":"Confirm & Print Receipt"}</button>
               </div>
             </div>
