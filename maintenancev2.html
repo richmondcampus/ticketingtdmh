@@ -1038,13 +1038,7 @@ async function viewTicket(ticketId) {
   if (t.status === 'open' && ['technician','supervisor','admin'].includes(role)) {
     footer += '<button class="btn btn-primary" onclick="claimTicket(\'' + t.id + '\')">🙋 Claim Ticket</button>'
   }
-  if (t.status === 'claimed' && (t.claimed_by === S.user.id || ['supervisor','admin'].includes(role))) {
-    footer += '<button class="btn btn-secondary" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">▶ Start Work</button>'
-    footer += '<button class="btn btn-ghost" onclick="openTeamModal(\'' + t.id + '\')">👥 Add Team</button>'
-    footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts</button>'
-  }
   if (t.status === 'in_progress' && (t.claimed_by === S.user.id || ['supervisor','admin'].includes(role))) {
-    footer += '<button class="btn btn-ghost" onclick="updateStatus(\'' + t.id + '\',\'for_parts\')">⏸ Needs Parts</button>'
     footer += '<button class="btn btn-ghost" onclick="openTeamModal(\'' + t.id + '\')">👥 Add Team</button>'
     footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts</button>'
     footer += '<button class="btn btn-success" onclick="resolveTicket(\'' + t.id + '\')">✅ Mark Resolved</button>'
@@ -1103,20 +1097,28 @@ async function addNote(ticketId) {
 }
 
 async function claimTicket(ticketId) {
-  confirm2('Claim this ticket?', async () => {
+  confirm2('Claim this ticket and start work?', async () => {
     const { data: t } = await SB.from('maint_tickets').select('*').eq('id', ticketId).single()
-    await SB.from('maint_tickets').update({ status: 'claimed', claimed_by: S.user.id, updated_at: new Date().toISOString() }).eq('id', ticketId)
-    await SB.from('maint_ticket_notes').insert({ ticket_id: ticketId, user_id: S.user.id, note: S.user.full_name + ' claimed this ticket.', note_type: 'system' })
+    // Auto-set to in_progress immediately — no need for separate "Start Work" step
+    await SB.from('maint_tickets').update({
+      status: 'in_progress',
+      claimed_by: S.user.id,
+      claimed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).eq('id', ticketId)
+    await SB.from('maint_ticket_notes').insert({
+      ticket_id: ticketId, user_id: S.user.id,
+      note: S.user.full_name + ' claimed this ticket and started work.',
+      note_type: 'system'
+    })
     closeModal('ticketDetailModal')
-    showToast('success','Claimed', ticketId + ' is now assigned to you.')
-    // SMS to submitter
+    showToast('success', '🔧 Work Started', ticketId + ' is now in progress — assigned to you.')
+    // Email requester
     if (t) {
       const submitter = S.users.find(u => u.id === t.submitted_by)
-      if (submitter && submitter.phone) {
-        if (submitter?.email) sendEmail(submitter.email, 'ticket_claimed',
-            { id: ticketId, title: t.title, loc: t.location_detail },
-            { name: S.user.full_name, spec: S.user.spec })
-      }
+      if (submitter?.email) sendEmail(submitter.email, 'ticket_claimed',
+        { id: ticketId, title: t.title, loc: t.location_detail },
+        { name: S.user.full_name, spec: S.user.spec })
     }
     if (['all_tickets','open_tickets','my_tickets','dashboard'].includes(S.page)) showPage(S.page)
   })
@@ -1931,7 +1933,6 @@ async function renderKanban() {
   const tickets = await loadTickets()
   const cols = [
     { id:'open',       label:'🔓 Open',       color:'var(--accent)', bg:'var(--accent-a)' },
-    { id:'claimed',    label:'👤 Claimed',     color:'var(--violet)', bg:'var(--violet-a)' },
     { id:'in_progress',label:'🔄 In Progress', color:'var(--amber)',  bg:'var(--amber-a)' },
     { id:'for_parts',  label:'🔩 For Parts',   color:'var(--amber)',  bg:'var(--amber-a)' },
     { id:'resolved',   label:'✅ Resolved',    color:'var(--green)',  bg:'var(--green-a)' },
