@@ -418,7 +418,7 @@ function printBrowser(payload, preWin) {
   const ln = t => R.push("<div class='l'>" + t + "</div>");
   const ct = t => R.push("<div class='header'>" + t + "</div>");
 
-  // Header section (centered with offset)
+  // Header section
   ln(EQ);
   ct("TAYTAY DOCTORS");
   ct("MULTISPECIALTY HOSPITAL");
@@ -427,7 +427,7 @@ function printBrowser(payload, preWin) {
   ct(isVoid ? "** VOID / LOSS RECORD **" : isCheckIn ? "*** PARKING TICKET ***" : "*** PAYMENT RECEIPT ***");
   ln(EQ);
 
-  // Details (left aligned)
+  // Details
   ln("TICKET#  : " + ticketNo);
   ln(DQ);
   ln("PLATE    : " + (plate || "---"));
@@ -452,6 +452,7 @@ function printBrowser(payload, preWin) {
     ln("Issued    : " + fmt(new Date().toISOString()));
     ln(EQ);
     ct("Thank you! Drive safely.");
+    ln("________________________________"); // underline line
   } else if (isVoid) {
     ln("TIME IN  : " + fmt(checkin));
     ln("VOID AT  : " + fmt(new Date().toISOString()));
@@ -464,6 +465,7 @@ function printBrowser(payload, preWin) {
     ln("Voided by : " + cashierName);
     ln(EQ);
     ct("Official void record.");
+    ln("________________________________");
   } else {
     ln("TIME IN  : " + fmt(checkin));
     ln("TIME OUT : " + fmt(new Date().toISOString()));
@@ -480,9 +482,11 @@ function printBrowser(payload, preWin) {
     ln(EQ);
     ct("Thank you for parking!");
     ct("Drive safely.");
+    ln("________________________________");
   }
 
-  R.push("<div style='height:24px'></div>");
+  // Extra space para hindi na kailangan feed
+  R.push("<div style='height:40px'></div>");
 
   const style = `
     @page { margin:0; size:58mm auto; }
@@ -498,7 +502,7 @@ function printBrowser(payload, preWin) {
     div.header {
       width:58mm;
       text-align:center;
-      margin-left:-4mm; /* stronger offset to center in real print */
+      margin-left:-4mm; /* offset tweak */
     }
     .big {
       font-size:12pt;
@@ -539,6 +543,7 @@ function printBrowser(payload, preWin) {
     w.document.close();
   } else alert("Please allow popups to print.");
 }
+
 
 
 
