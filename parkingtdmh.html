@@ -416,7 +416,7 @@ function printBrowser(payload, preWin) {
 
   const R = [];
   const ln = t => R.push("<div class='l'>" + t + "</div>");
-  const ct = t => R.push("<div class='c'>" + t + "</div>");
+  const ct = t => R.push("<div class='left'>" + t + "</div>"); // changed to left
 
   ln(EQ);
   ct("TAYTAY DOCTORS");
@@ -492,20 +492,14 @@ function printBrowser(payload, preWin) {
     }
     div { margin:0; padding:0; white-space:nowrap; overflow:hidden; line-height:1.1; }
     div.l { text-align:left; padding-left:1mm; }
-    div.c {
-      display:flex;
-      justify-content:center;
-      align-items:center;
-      width:100%;
-    }
+    div.left { text-align:left; padding-left:1mm; } /* force left alignment */
     .big {
-      display:flex;
-      justify-content:center;
-      align-items:center;
       width:100%;
+      text-align:left; /* amount also left aligned */
       font-size:12pt;
       font-weight:900;
       line-height:1.2;
+      padding-left:1mm;
     }
     .np {
       margin-top:12px; text-align:center;
