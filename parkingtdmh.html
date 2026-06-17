@@ -407,7 +407,7 @@ function printThermal(payload, preWin) {
   printBrowser(payload, preWin);
 }
 
-// ── PATCHED printBrowser — full 58mm centering ──────────────────────────────
+// ── PATCHED printBrowser — flexbox centering ────────────────────────────────
 function printBrowser(payload, preWin) {
   const { isCheckIn, isVoid, ticketNo, plate, name, vtype, locName, slotNum, checkin, fee, dur, overnight, cashierName, lostTicket } = payload;
   const vObj = VT[vtype] || VT.car;
@@ -490,7 +490,7 @@ function printBrowser(payload, preWin) {
       background:#fff; color:#000;
       font-family:'Courier New', Courier, monospace;
       font-size:7pt; font-weight:600;
-      line-height:1.25; text-align:center;
+      line-height:1.25;
     }
     div.l {
       display:block; text-align:left;
@@ -498,9 +498,13 @@ function printBrowser(payload, preWin) {
       padding-left:1mm;
     }
     div.c {
-      display:block; text-align:center;
-      white-space:nowrap; overflow:hidden;
-      width:58mm; /* fixed centering */
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      width:100%;
+      text-align:center;
+      white-space:nowrap;
+      overflow:hidden;
     }
     .big {
       display:block; text-align:center;
@@ -540,6 +544,7 @@ function printBrowser(payload, preWin) {
     w.document.close();
   } else alert("Please allow popups to print.");
 }
+
 
 
 
