@@ -402,117 +402,145 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 `;
 
 // ─── THERMAL PRINTER ────────────────────────────────────────────────────────
-function printThermal(payload,preWin){
-  if(window._lastPrintPayload!==undefined) window._lastPrintPayload=payload;
+function printThermal(payload, preWin) {
+  if (window._lastPrintPayload !== undefined) window._lastPrintPayload = payload;
   printBrowser(payload, preWin);
 }
 
-// ── PATCHED printBrowser — CSS-based centering with explicit 54mm width ──────
-// Fix: previous char-count padding was unreliable on physical thermal printers.
-// Now uses div.c { width:54mm; text-align:center } which is guaranteed by the browser.
-function printBrowser(payload,preWin){
-  const{isCheckIn,isVoid,ticketNo,plate,name,vtype,locName,slotNum,checkin,fee,dur,overnight,cashierName,lostTicket}=payload;
-  const vObj=VT[vtype]||VT.car;
-  const fmt=iso=>new Date(iso).toLocaleString("en-PH",{month:"short",day:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
-  const EQ="================================";
-  const DQ="--------------------------------";
+// ── PATCHED printBrowser — full 58mm centering ──────────────────────────────
+function printBrowser(payload, preWin) {
+  const { isCheckIn, isVoid, ticketNo, plate, name, vtype, locName, slotNum, checkin, fee, dur, overnight, cashierName, lostTicket } = payload;
+  const vObj = VT[vtype] || VT.car;
+  const fmt = iso => new Date(iso).toLocaleString("en-PH", { month: "short", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const EQ = "================================";
+  const DQ = "--------------------------------";
 
-  const R=[];
-  const ln=(t)=>R.push("<div class='l'>"+t+"</div>");
-  const ct=(t)=>R.push("<div class='c'>"+t+"</div>");
+  const R = [];
+  const ln = t => R.push("<div class='l'>" + t + "</div>");
+  const ct = t => R.push("<div class='c'>" + t + "</div>");
 
   ln(EQ);
   ct("TAYTAY DOCTORS");
   ct("MULTISPECIALTY HOSPITAL");
   ct("Parking Management System");
   ln(EQ);
-  ct(isVoid?"** VOID / LOSS RECORD **":isCheckIn?"*** PARKING TICKET ***":"*** PAYMENT RECEIPT ***");
+  ct(isVoid ? "** VOID / LOSS RECORD **" : isCheckIn ? "*** PARKING TICKET ***" : "*** PAYMENT RECEIPT ***");
   ln(EQ);
-  ln("TICKET#  : "+ticketNo);
+  ln("TICKET#  : " + ticketNo);
   ln(DQ);
-  ln("PLATE    : "+(plate||"---"));
-  ln("NAME     : "+(name||"---"));
-  ln("VEHICLE  : "+vObj.label);
-  ln("LOCATION : "+locName);
-  ln("SLOT     : #"+slotNum);
+  ln("PLATE    : " + (plate || "---"));
+  ln("NAME     : " + (name || "---"));
+  ln("VEHICLE  : " + vObj.label);
+  ln("LOCATION : " + locName);
+  ln("SLOT     : #" + slotNum);
   ln(DQ);
-  if(isCheckIn){
-    ln("DATE IN  : "+fmt(checkin));
+
+  if (isCheckIn) {
+    ln("DATE IN  : " + fmt(checkin));
     ln(DQ);
-    ln("First "+vObj.fh+"hrs : "+P(vObj.fr));
-    ln("Per hour  : "+P(vObj.sr)+"/hr");
-    ln("Overnight : "+P(vObj.ovr));
+    ln("First " + vObj.fh + "hrs : " + P(vObj.fr));
+    ln("Per hour  : " + P(vObj.sr) + "/hr");
+    ln("Overnight : " + P(vObj.ovr));
     ln(EQ);
     ct("PLEASE KEEP THIS TICKET");
     ct("Present upon exit for payment");
-    ct("Lost Parking Ticket: \u20b150.00");
+    ct("Lost Parking Ticket: ₱50.00");
     ln(DQ);
-    ln("Attendant : "+cashierName);
-    ln("Issued    : "+fmt(new Date().toISOString()));
+    ln("Attendant : " + cashierName);
+    ln("Issued    : " + fmt(new Date().toISOString()));
     ln(EQ);
     ct("Thank you! Drive safely.");
-  } else if(isVoid){
-    ln("TIME IN  : "+fmt(checkin));
-    ln("VOID AT  : "+fmt(new Date().toISOString()));
-    ln("DURATION : "+dur);
-    ln("EXP FEE  : "+P(fee));
+  } else if (isVoid) {
+    ln("TIME IN  : " + fmt(checkin));
+    ln("VOID AT  : " + fmt(new Date().toISOString()));
+    ln("DURATION : " + dur);
+    ln("EXP FEE  : " + P(fee));
     ln(EQ);
     ct("LOST PARKING TICKET");
     ct("PHP 50.00");
     ln(DQ);
-    ln("Voided by : "+cashierName);
+    ln("Voided by : " + cashierName);
     ln(EQ);
     ct("Official void record.");
   } else {
-    ln("TIME IN  : "+fmt(checkin));
-    ln("TIME OUT : "+fmt(new Date().toISOString()));
-    ln("DURATION : "+dur);
+    ln("TIME IN  : " + fmt(checkin));
+    ln("TIME OUT : " + fmt(new Date().toISOString()));
+    ln("DURATION : " + dur);
     ln(DQ);
-    ln("RATE     : "+(overnight?"OVERNIGHT":"REGULAR"));
+    ln("RATE     : " + (overnight ? "OVERNIGHT" : "REGULAR"));
     ln(EQ);
     ct("TOTAL AMOUNT DUE");
-    R.push("<div class='big'>"+P(fee)+"</div>");
-    if(overnight) ct("Overnight Rate 10PM-7AM");
+    R.push("<div class='big'>" + P(fee) + "</div>");
+    if (overnight) ct("Overnight Rate 10PM–7AM");
     ln(DQ);
-    if(payload.lostTicket) ln("Lost Ticket: +PHP 50.00");
-    ln("Cashier  : "+cashierName);
+    if (payload.lostTicket) ln("Lost Ticket: +PHP 50.00");
+    ln("Cashier  : " + cashierName);
     ln(EQ);
     ct("Thank you for parking!");
     ct("Drive safely.");
   }
+
   R.push("<div style='height:24px'></div>");
 
-  const style=""
-    +"@page{margin:0;size:58mm auto}"
-    +"*{margin:0;padding:0;box-sizing:border-box}"
-    +"html,body{margin:0;padding:0;width:58mm;background:#fff;color:#000;"
-    +"font-family:'Courier New',Courier,monospace;font-size:7pt;font-weight:600;line-height:1.25;text-align:center}"
-    +"div.l{display:block;text-align:left;white-space:nowrap;overflow:hidden;padding-left:1mm}"
-    +"div.c{display:block;text-align:center;white-space:nowrap;overflow:hidden}"
-    +".big{display:block;text-align:center;font-size:12pt;font-weight:900;line-height:1.4}"
-    +".np{margin-top:12px;text-align:center;font-family:Arial,sans-serif;font-size:12pt}"
-    +"@media print{"
-    +".np{display:none!important}"
-    +"@page{size:58mm auto;margin:0}"
-    +"html,body{width:58mm;margin:0;padding:0;font-size:7pt}"
-    +"}";
+  const style = `
+    @page { margin:0; size:58mm auto; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body {
+      margin:0; padding:0; width:58mm;
+      background:#fff; color:#000;
+      font-family:'Courier New', Courier, monospace;
+      font-size:7pt; font-weight:600;
+      line-height:1.25; text-align:center;
+    }
+    div.l {
+      display:block; text-align:left;
+      white-space:nowrap; overflow:hidden;
+      padding-left:1mm;
+    }
+    div.c {
+      display:block; text-align:center;
+      white-space:nowrap; overflow:hidden;
+      width:58mm; /* fixed centering */
+    }
+    .big {
+      display:block; text-align:center;
+      font-size:12pt; font-weight:900;
+      line-height:1.4;
+    }
+    .np {
+      margin-top:12px; text-align:center;
+      font-family:Arial, sans-serif;
+      font-size:12pt;
+    }
+    @media print {
+      .np { display:none!important; }
+      @page { size:58mm auto; margin:0; }
+      html, body { width:58mm; margin:0; padding:0; font-size:7pt; }
+    }
+  `;
 
-  const html="<!DOCTYPE html><html><head>"
-    +"<meta charset='UTF-8'/><title>Receipt</title>"
-    +"<style>"+style+"</style>"
-    +"</head><body>"+R.join("")
-    +"<div class='np'>"
-    +"<button onclick='window.print()' style='padding:8px 16px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold'>Print</button>"
-    +"<button onclick='window.close()' style='padding:8px 12px;background:#f1f5f9;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px;margin-left:6px'>Close</button>"
-    +"<p style='font-size:10px;color:#666;margin-top:8px'>Paper: 58mm &middot; Margins: None &middot; Scale: 100%</p>"
-    +"</div>"
-    +"<script>setTimeout(function(){window.print();},500);<\/script>"
-    +"</body></html>";
+  const html = `
+    <!DOCTYPE html><html><head>
+    <meta charset='UTF-8'/><title>Receipt</title>
+    <style>${style}</style>
+    </head><body>${R.join("")}
+    <div class='np'>
+      <button onclick='window.print()' style='padding:8px 16px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold'>Print</button>
+      <button onclick='window.close()' style='padding:8px 12px;background:#f1f5f9;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:13px;margin-left:6px'>Close</button>
+      <p style='font-size:10px;color:#666;margin-top:8px'>Paper: 58mm · Margins: None · Scale: 100%</p>
+    </div>
+    <script>setTimeout(function(){window.print();},500);<\/script>
+    </body></html>
+  `;
 
-  const w=preWin||window.open("","_blank","width=420,height=620,toolbar=0,menubar=0,scrollbars=1");
-  if(w){w.document.open();w.document.write(html);w.document.close();}
-  else alert("Please allow popups to print.");
+  const w = preWin || window.open("", "_blank", "width=420,height=620,toolbar=0,menubar=0,scrollbars=1");
+  if (w) {
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  } else alert("Please allow popups to print.");
 }
+
 
 
 function useToast(){
