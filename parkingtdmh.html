@@ -498,7 +498,7 @@ function printBrowser(payload, preWin) {
     div.header {
       width:58mm;
       text-align:center;
-      margin-left:-1mm; /* tweak offset to center in real print */
+      margin-left:-4mm; /* stronger offset to center in real print */
     }
     .big {
       font-size:12pt;
@@ -539,6 +539,7 @@ function printBrowser(payload, preWin) {
     w.document.close();
   } else alert("Please allow popups to print.");
 }
+
 
 
 
