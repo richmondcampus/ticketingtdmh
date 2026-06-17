@@ -416,8 +416,9 @@ function printBrowser(payload, preWin) {
 
   const R = [];
   const ln = t => R.push("<div class='l'>" + t + "</div>");
-  const ct = t => R.push("<div class='left'>" + t + "</div>"); // changed to left
+  const ct = t => R.push("<div class='header'>" + t + "</div>");
 
+  // Header section (centered)
   ln(EQ);
   ct("TAYTAY DOCTORS");
   ct("MULTISPECIALTY HOSPITAL");
@@ -425,6 +426,8 @@ function printBrowser(payload, preWin) {
   ln(EQ);
   ct(isVoid ? "** VOID / LOSS RECORD **" : isCheckIn ? "*** PARKING TICKET ***" : "*** PAYMENT RECEIPT ***");
   ln(EQ);
+
+  // Details (left aligned)
   ln("TICKET#  : " + ticketNo);
   ln(DQ);
   ln("PLATE    : " + (plate || "---"));
@@ -469,7 +472,7 @@ function printBrowser(payload, preWin) {
     ln("RATE     : " + (overnight ? "OVERNIGHT" : "REGULAR"));
     ln(EQ);
     ct("TOTAL AMOUNT DUE");
-    R.push("<div class='big'>" + P(fee) + "</div>");
+    R.push("<div class='header big'>" + P(fee) + "</div>");
     if (overnight) ct("Overnight Rate 10PM–7AM");
     ln(DQ);
     if (payload.lostTicket) ln("Lost Ticket: +PHP 50.00");
@@ -492,14 +495,14 @@ function printBrowser(payload, preWin) {
     }
     div { margin:0; padding:0; white-space:nowrap; overflow:hidden; line-height:1.1; }
     div.l { text-align:left; padding-left:1mm; }
-    div.left { text-align:left; padding-left:1mm; } /* force left alignment */
-    .big {
+    div.header {
       width:100%;
-      text-align:left; /* amount also left aligned */
+      text-align:center;
+    }
+    .big {
       font-size:12pt;
       font-weight:900;
       line-height:1.2;
-      padding-left:1mm;
     }
     .np {
       margin-top:12px; text-align:center;
@@ -535,6 +538,7 @@ function printBrowser(payload, preWin) {
     w.document.close();
   } else alert("Please allow popups to print.");
 }
+
 
 
 
