@@ -423,9 +423,14 @@ function printBrowser(payload,preWin){
   const EQ="================================";
   const DQ="--------------------------------";
 
+const COLS=32; // 58mm ≈ 32 chars at 7pt Courier
 const R=[];
 const ln=(t)=>R.push("<div>"+t+"</div>");
-const ct=(t)=>R.push("<div style='text-align:center'>"+t+"</div>");
+const ct=(t)=>{
+  const s=String(t);
+  const pad=Math.max(0,Math.floor((COLS-s.length)/2));
+  R.push("<div>"+" ".repeat(pad)+s+"</div>");
+};
 const rt=(t)=>R.push("<div style='text-align:right'>"+t+"</div>");
 
   ln(EQ);
@@ -492,7 +497,7 @@ const rt=(t)=>R.push("<div style='text-align:right'>"+t+"</div>");
   const style=""
     +"@page{margin:0;size:58mm auto}"
     +"*{margin:0;padding:0;box-sizing:border-box}"
-    +"html,body{margin:0;padding:0 2px;width:58mm;background:#fff;color:#000;font-family:'Courier New',Courier,monospace;font-size:7pt;font-weight:600;line-height:1.1}"
+    +"html,body{margin:0;padding:0 2px;width:58mm;background:#fff;color:#000;font-family:'Courier New',Courier,monospace;font-size:7pt;font-weight:600;line-height:1.1;white-space:pre}"
     +"div{margin:0;padding:0;white-space:nowrap;overflow:hidden;line-height:1.1}"
     +".big{font-size:12pt;font-weight:900;text-align:center;line-height:1.2}"
     +".np{margin-top:12px;text-align:center;font-family:Arial,sans-serif;white-space:normal;overflow:visible;font-size:12pt}"
