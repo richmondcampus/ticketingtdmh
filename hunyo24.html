@@ -59,6 +59,10 @@ body{
 
 a{color:inherit;text-decoration:none;}
 button{font-family:inherit;cursor:pointer;}
+/* Safety net: any icon SVG without an explicit size (inline style/width attr)
+   defaults to a sane 18px instead of stretching to fill its container. Specific
+   contexts (.empty-state svg, .stat-icon svg, etc.) override this as needed. */
+svg{width:18px;height:18px;flex-shrink:0;}
 input,select,textarea{font-family:inherit;}
 :focus-visible{outline:2px solid var(--orange-600);outline-offset:2px;}
 
@@ -662,9 +666,27 @@ async function initAuth(){
   }
 
   sb.auth.onAuthStateChange(async (event, session) => {
+    // IMPORTANT: onAuthStateChange fires for more than just a fresh login —
+    // it also fires on TOKEN_REFRESHED (automatic, every ~hour) and again on
+    // SIGNED_IN when the browser tab regains focus/visibility. We only want
+    // to run the full "just logged in" flow (navigate to dashboard, open a
+    // realtime channel, etc.) the FIRST time we see a given user session —
+    // not every time the token quietly refreshes in the background.
     if(event === 'SIGNED_IN' && session){
+      const alreadyActiveForThisUser = STATE.profile && STATE.user && STATE.user.id === session.user.id;
+      if(alreadyActiveForThisUser){
+        // Same user, already fully loaded — just keep the session fresh, do nothing visual.
+        STATE.user = session.user;
+        return;
+      }
       await onAuthenticated(session);
+    } else if(event === 'TOKEN_REFRESHED'){
+      // Token quietly renewed in the background — update our reference, but
+      // do NOT re-navigate, re-render, or open new realtime channels.
+      if(session) STATE.user = session.user;
     } else if(event === 'SIGNED_OUT'){
+      STATE.profile = null;
+      STATE.user = null;
       showLogin();
     }
   });
@@ -685,7 +707,7 @@ async function onAuthenticated(session){
   }
   STATE.profile = profile;
 
-  // Update last_login_at + audit log
+  // Update last_login_at + audit log (fire-and-forget, only happens once per real login now)
   sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', profile.id).then(()=>{});
   sb.rpc('log_audit_event', { p_action:'login', p_entity_type:'user', p_entity_id: profile.id }).then(()=>{});
 
@@ -693,6 +715,7 @@ async function onAuthenticated(session){
   showApp();
   renderSidebar();
   navigateTo('dashboard');
+  teardownRealtimeSubscriptions(); // safety: ensure no leftover channels before opening a fresh one
   setupRealtimeSubscriptions();
   loadNotificationBadge();
 }
