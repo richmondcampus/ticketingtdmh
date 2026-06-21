@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
-<title>HUnyo 24 Trading — Inventory System</title>
+<title>Hunyo 24 Trading — Inventory System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -15,9 +15,9 @@
   --navy-800:#16263D;
   --navy-700:#1E3350;
   --navy-600:#2A4768;
-  --orange-600:#E8590C;
-  --orange-500:#F2730F;
-  --orange-100:#FFE8D6;
+  --orange-600:#C81E2C;
+  --orange-500:#D93A47;
+  --orange-100:#FBE2E4;
   --canvas:#F7F5F1;
   --surface:#FFFFFF;
   --slate-900:#1A202C;
@@ -436,7 +436,7 @@ select.filter-select{padding:9px 12px;border:1.5px solid var(--slate-200);border
     <div class="login-brand">
       <div class="mark">H24</div>
       <div>
-        <h1>HUnyo 24 Trading</h1>
+        <h1>Hunyo 24 Trading</h1>
         <p>Inventory System</p>
       </div>
     </div>
@@ -473,7 +473,7 @@ select.filter-select{padding:9px 12px;border:1.5px solid var(--slate-200);border
     <div class="sidebar-header">
       <div class="mark">H24</div>
       <div class="brand-text">
-        <h1>HUnyo 24</h1>
+        <h1>Hunyo 24</h1>
         <p>Trading</p>
       </div>
     </div>
@@ -1754,7 +1754,7 @@ function generateQuotationPDF(){
   y += 20;
   doc.setFontSize(8); doc.setTextColor(130,130,130); doc.setFont(undefined,'normal');
   doc.text('This quotation is valid for 7 days from the date of issue. Prices subject to change without prior notice.', 14, y);
-  doc.text('Thank you for choosing HUnyo 24 Trading.', 14, y+5);
+  doc.text('Thank you for choosing Hunyo 24 Trading.', 14, y+5);
 
   doc.save(`Quotation-${quoteNo}.pdf`);
   toast('Quotation PDF generated.', 'success');
