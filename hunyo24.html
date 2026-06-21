@@ -657,6 +657,9 @@ function debounce(fn, ms=300){
 }
 
 // ---------- AUTH ----------
+let AUTH_INIT_DONE = false;   // true once the full "just logged in" flow has completed at least once
+let AUTH_INIT_IN_PROGRESS = false; // guards against overlapping calls firing concurrently
+
 async function initAuth(){
   const { data: { session } } = await sb.auth.getSession();
   if(session){
@@ -668,23 +671,23 @@ async function initAuth(){
   sb.auth.onAuthStateChange(async (event, session) => {
     // IMPORTANT: onAuthStateChange fires for more than just a fresh login —
     // it also fires on TOKEN_REFRESHED (automatic, every ~hour) and again on
-    // SIGNED_IN when the browser tab regains focus/visibility. We only want
-    // to run the full "just logged in" flow (navigate to dashboard, open a
-    // realtime channel, etc.) the FIRST time we see a given user session —
-    // not every time the token quietly refreshes in the background.
+    // SIGNED_IN when the browser tab regains focus/visibility (Supabase calls
+    // this "visibility recovery"). We only want to run the full "just logged
+    // in" flow (navigate to dashboard, open a realtime channel, etc.) once —
+    // not every time the token quietly refreshes or the tab regains focus.
     if(event === 'SIGNED_IN' && session){
-      const alreadyActiveForThisUser = STATE.profile && STATE.user && STATE.user.id === session.user.id;
-      if(alreadyActiveForThisUser){
-        // Same user, already fully loaded — just keep the session fresh, do nothing visual.
-        STATE.user = session.user;
+      STATE.user = session.user;
+      if(AUTH_INIT_DONE || AUTH_INIT_IN_PROGRESS){
+        // Already fully loaded (or currently loading) — this is a background
+        // recovery event, not a real new login. Don't re-navigate or re-subscribe.
         return;
       }
       await onAuthenticated(session);
     } else if(event === 'TOKEN_REFRESHED'){
-      // Token quietly renewed in the background — update our reference, but
-      // do NOT re-navigate, re-render, or open new realtime channels.
+      // Token quietly renewed in the background — update our reference only.
       if(session) STATE.user = session.user;
     } else if(event === 'SIGNED_OUT'){
+      AUTH_INIT_DONE = false;
       STATE.profile = null;
       STATE.user = null;
       showLogin();
@@ -693,31 +696,37 @@ async function initAuth(){
 }
 
 async function onAuthenticated(session){
-  STATE.user = session.user;
-  const { data: profile, error } = await sb.from('users').select('*').eq('id', session.user.id).single();
-  if(error || !profile){
-    toast('Could not load your profile. Contact admin.', 'error');
-    await sb.auth.signOut();
-    return;
-  }
-  if(!profile.is_active){
-    toast('Your account has been deactivated. Contact admin.', 'error');
-    await sb.auth.signOut();
-    return;
-  }
-  STATE.profile = profile;
+  if(AUTH_INIT_IN_PROGRESS) return; // belt-and-suspenders against re-entrancy
+  AUTH_INIT_IN_PROGRESS = true;
+  try{
+    STATE.user = session.user;
+    const { data: profile, error } = await sb.from('users').select('*').eq('id', session.user.id).single();
+    if(error || !profile){
+      toast('Could not load your profile. Contact admin.', 'error');
+      await sb.auth.signOut();
+      return;
+    }
+    if(!profile.is_active){
+      toast('Your account has been deactivated. Contact admin.', 'error');
+      await sb.auth.signOut();
+      return;
+    }
+    STATE.profile = profile;
 
-  // Update last_login_at + audit log (fire-and-forget, only happens once per real login now)
-  sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', profile.id).then(()=>{});
-  sb.rpc('log_audit_event', { p_action:'login', p_entity_type:'user', p_entity_id: profile.id }).then(()=>{});
+    // Update last_login_at + audit log (fire-and-forget, only happens once per real login now)
+    sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', profile.id).then(()=>{});
+    sb.rpc('log_audit_event', { p_action:'login', p_entity_type:'user', p_entity_id: profile.id }).then(()=>{});
 
-  await loadBranches();
-  showApp();
-  renderSidebar();
-  navigateTo('dashboard');
-  teardownRealtimeSubscriptions(); // safety: ensure no leftover channels before opening a fresh one
-  setupRealtimeSubscriptions();
-  loadNotificationBadge();
+    await loadBranches();
+    showApp();
+    renderSidebar();
+    navigateTo('dashboard');
+    setupRealtimeSubscriptions(); // idempotent — tears down any existing channel itself
+    loadNotificationBadge();
+    AUTH_INIT_DONE = true;
+  } finally {
+    AUTH_INIT_IN_PROGRESS = false;
+  }
 }
 
 async function loadBranches(){
@@ -914,6 +923,16 @@ async function markAllNotifsRead(){
 
 // ---------- REALTIME ----------
 function setupRealtimeSubscriptions(){
+  // Idempotency guard: if a channel with this name already exists on the
+  // client (regardless of what STATE.realtimeChannels thinks), remove it
+  // first. This is what actually prevents the "cannot add postgres_changes
+  // callbacks after subscribe()" error — that error happens specifically
+  // when something tries to re-use/re-attach to an already-subscribed
+  // channel object instead of starting fresh.
+  const existing = sb.getChannels().filter(ch => ch.topic === 'realtime:inventory-realtime');
+  existing.forEach(ch => sb.removeChannel(ch));
+  STATE.realtimeChannels = STATE.realtimeChannels.filter(ch => ch.topic !== 'realtime:inventory-realtime');
+
   const ch = sb.channel('inventory-realtime')
     .on('postgres_changes', { event:'*', schema:'public', table:'stock_levels' }, payload=>{
       flashPulse();
