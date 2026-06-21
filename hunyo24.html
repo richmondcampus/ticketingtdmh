@@ -411,8 +411,26 @@ select.filter-select{padding:9px 12px;border:1.5px solid var(--slate-200);border
 .brand-chip{
   font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:12px;
   background:var(--slate-100);color:var(--slate-700);border:1px solid var(--slate-200);
+  cursor:pointer;transition:all .12s;
 }
+.brand-chip:hover{background:var(--orange-600);color:white;border-color:var(--orange-600);transform:translateY(-1px);}
 .brand-chip.preferred{background:var(--orange-100);color:var(--orange-600);border-color:var(--orange-100);}
+.brand-chip.preferred:hover{background:var(--orange-600);color:white;}
+
+/* Search-as-you-type product dropdown (Inquiry cart) */
+.product-search-dropdown{
+  display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:50;
+  background:white;border:1.5px solid var(--slate-200);border-radius:var(--radius-md);
+  box-shadow:var(--shadow-lg);max-height:420px;overflow-y:auto;
+}
+.product-search-dropdown.active{display:block;}
+.product-search-item{
+  padding:12px 14px;border-bottom:1px solid var(--slate-100);
+}
+.product-search-item:last-child{border-bottom:none;}
+.product-search-item-info{margin-bottom:7px;}
+.product-search-item-name{font-size:13px;font-weight:700;color:var(--navy-900);line-height:1.3;}
+.product-search-item-sku{font-size:10.5px;color:var(--slate-500);font-family:var(--font-mono);margin-top:1px;}
 
 .tab-bar{display:flex;gap:4px;border-bottom:2px solid var(--slate-200);margin-bottom:20px;}
 .tab-btn{padding:11px 16px;background:none;border:none;font-size:13.5px;font-weight:600;color:var(--slate-500);border-bottom:2px solid transparent;margin-bottom:-2px;}
@@ -2157,16 +2175,16 @@ async function renderInquiryCart(){
   container.innerHTML = `
     <div class="inquiry-layout">
       <div>
-        <div class="toolbar">
-          <div class="search-input-wrap">
+        <div class="toolbar" style="position:relative;">
+          <div class="search-input-wrap" style="max-width:none;flex:1;">
             ${ICONS.search}
-            <input type="text" class="search-input" id="cart-product-search" placeholder="Search products to add...">
+            <input type="text" class="search-input" id="cart-product-search" placeholder="Search products to add..." autocomplete="off">
           </div>
+          <div id="cart-product-dropdown" class="product-search-dropdown"></div>
         </div>
-        <div class="product-grid" id="cart-product-grid">
-          <div class="skeleton" style="height:160px;grid-column:span 1;"></div>
-          <div class="skeleton" style="height:160px;grid-column:span 1;"></div>
-          <div class="skeleton" style="height:160px;grid-column:span 1;"></div>
+        <div id="cart-search-hint" style="padding:40px 20px;text-align:center;color:var(--slate-500);">
+          ${ICONS.search}
+          <p style="font-size:13.5px;font-weight:500;margin-top:10px;">Start typing a product name or SKU above to add it to the cart.</p>
         </div>
       </div>
       <div class="cart-panel">
@@ -2218,7 +2236,13 @@ async function renderInquiryCart(){
     </div>
   `;
 
-  document.getElementById('cart-product-search').addEventListener('input', debounce(loadCartProductGrid, 300));
+  document.getElementById('cart-product-search').addEventListener('input', debounce(handleProductSearchInput, 250));
+  document.getElementById('cart-product-search').addEventListener('focus', ()=>{
+    const search = document.getElementById('cart-product-search').value.trim();
+    if(search.length > 0) handleProductSearchInput();
+  });
+  document.addEventListener('click', closeCartDropdownOnOutsideClick);
+
   document.getElementById('cart-submit-btn').addEventListener('click', submitInquiry);
   document.getElementById('cart-pdf-btn').addEventListener('click', generateQuotationPDF);
 
@@ -2277,28 +2301,49 @@ async function renderInquiryCart(){
 
     toast(`Customer "${newCustomer.full_name}" added.`, 'success');
   });
-
-  loadCartProductGrid();
 }
 
-async function loadCartProductGrid(){
-  const grid = document.getElementById('cart-product-grid');
-  if(!grid) return;
-  const search = document.getElementById('cart-product-search')?.value || '';
+async function handleProductSearchInput(){
+  const searchInput = document.getElementById('cart-product-search');
+  const dropdown = document.getElementById('cart-product-dropdown');
+  const hint = document.getElementById('cart-search-hint');
+  if(!searchInput || !dropdown) return;
 
-  let query = sb.from('products').select('id, name, sku, default_price, product_brands(id, brand_id, price, is_preferred, brands(name), stock_levels(qty_on_hand, branch_id))').eq('is_active', true).limit(24);
-  if(search) query = query.ilike('name', `%${search}%`);
+  const search = searchInput.value.trim();
 
-  const { data, error } = await query;
-  if(error){ grid.innerHTML = `<div class="empty-state"><p>Error: ${escapeHtml(error.message)}</p></div>`; return; }
-  if(!data || data.length===0){ grid.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No products found.</p></div>`; return; }
+  // Nothing typed — close the dropdown and show the idle hint instead of
+  // hitting the database with an unfiltered query.
+  if(search.length === 0){
+    dropdown.classList.remove('active');
+    dropdown.innerHTML = '';
+    if(hint) hint.style.display = 'block';
+    return;
+  }
 
-  grid.innerHTML = data.map(p => {
+  if(hint) hint.style.display = 'none';
+  dropdown.classList.add('active');
+  dropdown.innerHTML = `<div style="padding:16px;text-align:center;"><div class="skeleton" style="height:14px;width:60%;margin:0 auto;"></div></div>`;
+
+  const { data, error } = await sb.from('products')
+    .select('id, name, sku, product_brands(id, brand_id, price, is_preferred, brands(name), stock_levels(qty_on_hand, branch_id))')
+    .eq('is_active', true)
+    .or(`name.ilike.%${search}%,sku.ilike.%${search}%`)
+    .limit(6);
+
+  // The search box may have changed (or been cleared) while this request
+  // was in flight — discard a stale response instead of overwriting newer input.
+  if(document.getElementById('cart-product-search')?.value.trim() !== search) return;
+
+  if(error){ dropdown.innerHTML = `<div style="padding:16px;color:var(--red-600);font-size:12.5px;">Error: ${escapeHtml(error.message)}</div>`; return; }
+  if(!data || data.length===0){ dropdown.innerHTML = `<div style="padding:20px;text-align:center;color:var(--slate-500);font-size:13px;">No products match "${escapeHtml(search)}".</div>`; return; }
+
+  dropdown.innerHTML = data.map(p => {
     const brands = (p.product_brands||[]).filter(pb=>pb.id);
-    return `<div class="product-card" data-product-id="${p.id}">
-      <div class="product-card-img">${ICONS.box}</div>
-      <div class="product-card-name">${escapeHtml(p.name)}</div>
-      <div class="product-card-sku">${escapeHtml(p.sku)}</div>
+    return `<div class="product-search-item">
+      <div class="product-search-item-info">
+        <div class="product-search-item-name">${escapeHtml(p.name)}</div>
+        <div class="product-search-item-sku">${escapeHtml(p.sku)}</div>
+      </div>
       <div class="brand-chips">
         ${brands.map(b => {
           const stock = (b.stock_levels||[]).find(sl=>sl.branch_id===STATE.currentBranch);
@@ -2309,7 +2354,7 @@ async function loadCartProductGrid(){
     </div>`;
   }).join('');
 
-  grid.querySelectorAll('.brand-chip').forEach(chip=>{
+  dropdown.querySelectorAll('.brand-chip').forEach(chip=>{
     chip.addEventListener('click', (e)=>{
       e.stopPropagation();
       addToCart({
@@ -2321,8 +2366,23 @@ async function loadCartProductGrid(){
         available_stock: parseFloat(chip.dataset.stock),
         qty: 1
       });
+      // Close the dropdown after adding — keeps the flow fast for adding one
+      // item at a time without the list jumping around underneath the user.
+      dropdown.classList.remove('active');
+      dropdown.innerHTML = '';
+      searchInput.value = '';
+      if(hint) hint.style.display = 'block';
     });
   });
+}
+
+function closeCartDropdownOnOutsideClick(e){
+  const dropdown = document.getElementById('cart-product-dropdown');
+  const searchInput = document.getElementById('cart-product-search');
+  if(!dropdown || !searchInput) return;
+  if(!dropdown.contains(e.target) && e.target !== searchInput){
+    dropdown.classList.remove('active');
+  }
 }
 
 function addToCart(item){
