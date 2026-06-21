@@ -1,0 +1,2737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>HUnyo 24 Trading — Inventory System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --navy-950:#0A1320;
+  --navy-900:#0F1B2D;
+  --navy-800:#16263D;
+  --navy-700:#1E3350;
+  --navy-600:#2A4768;
+  --orange-600:#E8590C;
+  --orange-500:#F2730F;
+  --orange-100:#FFE8D6;
+  --canvas:#F7F5F1;
+  --surface:#FFFFFF;
+  --slate-900:#1A202C;
+  --slate-700:#2B3445;
+  --slate-500:#64748B;
+  --slate-300:#CBD5E1;
+  --slate-200:#E2E8F0;
+  --slate-100:#F1F5F9;
+  --green-600:#1E8E5A;
+  --green-100:#DCFCE7;
+  --amber-600:#D97706;
+  --amber-100:#FEF3C7;
+  --red-600:#DC2626;
+  --red-100:#FEE2E2;
+  --blue-600:#2563EB;
+  --blue-100:#DBEAFE;
+  --radius-sm:6px;
+  --radius-md:10px;
+  --radius-lg:16px;
+  --shadow-sm:0 1px 2px rgba(15,27,45,0.06);
+  --shadow-md:0 4px 12px rgba(15,27,45,0.08);
+  --shadow-lg:0 12px 32px rgba(15,27,45,0.16);
+  --font-ui:'Inter',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  font-family:var(--font-ui);
+  background:var(--canvas);
+  color:var(--slate-700);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+  height:100vh;
+}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--slate-300);border-radius:8px;}
+::-webkit-scrollbar-thumb:hover{background:var(--slate-500);}
+
+a{color:inherit;text-decoration:none;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+:focus-visible{outline:2px solid var(--orange-600);outline-offset:2px;}
+
+/* ===== STOCK PULSE — signature element ===== */
+.pulse-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--green-600);
+  display:inline-block;
+  position:relative;
+  flex-shrink:0;
+}
+.pulse-dot::after{
+  content:'';
+  position:absolute;inset:0;
+  border-radius:50%;
+  background:var(--green-600);
+  animation:pulse-ring 1.8s cubic-bezier(0.4,0,0.6,1) infinite;
+}
+.pulse-dot.flash::after{ animation-duration:0.6s; animation-iteration-count:2; }
+@keyframes pulse-ring{
+  0%{ transform:scale(1); opacity:0.7; }
+  100%{ transform:scale(2.8); opacity:0; }
+}
+@media (prefers-reduced-motion:reduce){
+  .pulse-dot::after{ animation:none; }
+}
+
+/* ===== LOGIN SCREEN ===== */
+#login-screen{
+  position:fixed;inset:0;
+  background:linear-gradient(135deg,var(--navy-950) 0%,var(--navy-800) 100%);
+  display:flex;align-items:center;justify-content:center;
+  z-index:1000;
+  padding:24px;
+}
+#login-screen::before{
+  content:'';
+  position:absolute;inset:0;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(232,89,12,0.04) 0px, rgba(232,89,12,0.04) 1px, transparent 1px, transparent 64px),
+    repeating-linear-gradient(0deg, rgba(232,89,12,0.04) 0px, rgba(232,89,12,0.04) 1px, transparent 1px, transparent 64px);
+  pointer-events:none;
+}
+.login-card{
+  position:relative;
+  background:var(--surface);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-lg);
+  width:100%;max-width:420px;
+  padding:40px 36px;
+}
+.login-brand{
+  display:flex;align-items:center;gap:12px;margin-bottom:8px;
+}
+.login-brand .mark{
+  width:44px;height:44px;border-radius:10px;
+  background:linear-gradient(135deg,var(--orange-600),var(--orange-500));
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;color:white;font-size:18px;
+  flex-shrink:0;
+}
+.login-brand h1{font-size:19px;font-weight:800;color:var(--navy-900);letter-spacing:-0.02em;}
+.login-brand p{font-size:12px;color:var(--slate-500);font-weight:600;letter-spacing:0.04em;text-transform:uppercase;}
+.login-sub{font-size:14px;color:var(--slate-500);margin:20px 0 24px;line-height:1.5;}
+.form-group{margin-bottom:16px;}
+.form-group label{display:block;font-size:12px;font-weight:600;color:var(--slate-700);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em;}
+.form-group input{
+  width:100%;padding:11px 14px;
+  border:1.5px solid var(--slate-200);
+  border-radius:var(--radius-sm);
+  font-size:14px;
+  transition:border-color .15s;
+  background:var(--slate-100);
+}
+.form-group input:focus{border-color:var(--orange-600);background:white;}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:11px 20px;border-radius:var(--radius-sm);
+  font-size:14px;font-weight:600;border:none;
+  transition:all .15s;
+}
+.btn-primary{background:var(--orange-600);color:white;width:100%;}
+.btn-primary:hover{background:#D14E0A;}
+.btn-primary:disabled{opacity:0.6;cursor:not-allowed;}
+.btn-secondary{background:var(--slate-100);color:var(--slate-700);border:1.5px solid var(--slate-200);}
+.btn-secondary:hover{background:var(--slate-200);}
+.btn-ghost{background:transparent;color:var(--slate-500);}
+.btn-ghost:hover{background:var(--slate-100);}
+.btn-danger{background:var(--red-600);color:white;}
+.btn-danger:hover{background:#C01E1E;}
+.btn-sm{padding:7px 12px;font-size:12.5px;}
+.login-footer{margin-top:20px;text-align:center;font-size:13px;color:var(--slate-500);}
+.login-footer a{color:var(--orange-600);font-weight:600;}
+.login-error{
+  background:var(--red-100);color:var(--red-600);
+  padding:10px 14px;border-radius:var(--radius-sm);
+  font-size:13px;margin-bottom:16px;display:none;
+  font-weight:500;
+}
+.login-toggle{display:flex;gap:4px;background:var(--slate-100);padding:4px;border-radius:var(--radius-sm);margin-bottom:24px;}
+.login-toggle button{flex:1;padding:9px;border:none;background:transparent;border-radius:6px;font-size:13px;font-weight:600;color:var(--slate-500);}
+.login-toggle button.active{background:white;color:var(--navy-900);box-shadow:var(--shadow-sm);}
+
+/* ===== APP SHELL ===== */
+#app-shell{display:none;height:100vh;overflow:hidden;}
+#app-shell.active{display:flex;}
+
+/* SIDEBAR */
+#sidebar{
+  width:248px;flex-shrink:0;
+  background:var(--navy-900);
+  display:flex;flex-direction:column;
+  height:100vh;
+  transition:width .2s;
+}
+#sidebar.collapsed{width:72px;}
+.sidebar-header{
+  padding:20px 16px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+}
+.sidebar-header .mark{
+  width:36px;height:36px;border-radius:8px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--orange-600),var(--orange-500));
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;color:white;font-size:15px;
+}
+.sidebar-header .brand-text{overflow:hidden;white-space:nowrap;}
+.sidebar-header .brand-text h1{font-size:14px;font-weight:800;color:white;letter-spacing:-0.01em;}
+.sidebar-header .brand-text p{font-size:10px;color:rgba(255,255,255,0.5);font-weight:600;letter-spacing:0.05em;text-transform:uppercase;}
+#sidebar.collapsed .brand-text{display:none;}
+
+.sidebar-nav{flex:1;overflow-y:auto;padding:12px 10px;}
+.nav-section{margin-bottom:18px;}
+.nav-section-label{
+  font-size:10px;font-weight:700;color:rgba(255,255,255,0.35);
+  text-transform:uppercase;letter-spacing:0.08em;
+  padding:8px 12px 6px;
+}
+#sidebar.collapsed .nav-section-label{display:none;}
+.nav-item{
+  display:flex;align-items:center;gap:12px;
+  padding:10px 12px;border-radius:8px;
+  color:rgba(255,255,255,0.65);
+  font-size:13.5px;font-weight:500;
+  cursor:pointer;margin-bottom:2px;
+  white-space:nowrap;overflow:hidden;
+  position:relative;
+  transition:background .12s,color .12s;
+}
+.nav-item svg{width:18px;height:18px;flex-shrink:0;}
+.nav-item:hover{background:rgba(255,255,255,0.06);color:white;}
+.nav-item.active{background:var(--orange-600);color:white;}
+.nav-item .nav-badge{
+  margin-left:auto;background:var(--red-600);color:white;
+  font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;
+  min-width:18px;text-align:center;
+}
+#sidebar.collapsed .nav-item span:not(.nav-badge){display:none;}
+#sidebar.collapsed .nav-item .nav-badge{position:absolute;top:4px;right:4px;margin-left:0;}
+
+.sidebar-footer{
+  padding:14px;border-top:1px solid rgba(255,255,255,0.08);
+}
+.user-chip{
+  display:flex;align-items:center;gap:10px;
+  padding:8px;border-radius:8px;cursor:pointer;
+}
+.user-chip:hover{background:rgba(255,255,255,0.06);}
+.user-avatar{
+  width:32px;height:32px;border-radius:50%;
+  background:var(--orange-600);color:white;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:12px;flex-shrink:0;
+}
+.user-info{overflow:hidden;flex:1;}
+#sidebar.collapsed .user-info{display:none;}
+.user-info .name{font-size:12.5px;font-weight:600;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.user-info .role{font-size:10.5px;color:rgba(255,255,255,0.5);text-transform:capitalize;}
+.collapse-btn{
+  width:100%;padding:8px;margin-top:8px;
+  background:rgba(255,255,255,0.04);border:none;border-radius:6px;
+  color:rgba(255,255,255,0.5);display:flex;align-items:center;justify-content:center;
+}
+.collapse-btn:hover{background:rgba(255,255,255,0.08);color:white;}
+
+/* MAIN AREA */
+#main-area{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden;min-width:0;}
+#topbar{
+  height:64px;flex-shrink:0;background:var(--surface);
+  border-bottom:1px solid var(--slate-200);
+  display:flex;align-items:center;gap:16px;padding:0 24px;
+}
+.topbar-title{font-size:17px;font-weight:700;color:var(--navy-900);}
+.topbar-spacer{flex:1;}
+.branch-pill{
+  display:flex;align-items:center;gap:8px;
+  padding:7px 14px;background:var(--slate-100);border-radius:20px;
+  font-size:12.5px;font-weight:600;color:var(--slate-700);
+}
+.icon-btn{
+  width:38px;height:38px;border-radius:8px;border:none;background:transparent;
+  display:flex;align-items:center;justify-content:center;color:var(--slate-500);
+  position:relative;
+}
+.icon-btn:hover{background:var(--slate-100);color:var(--navy-900);}
+.icon-btn svg{width:19px;height:19px;}
+.notif-dot{
+  position:absolute;top:7px;right:7px;width:8px;height:8px;border-radius:50%;
+  background:var(--red-600);border:2px solid white;
+}
+#realtime-indicator{
+  display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--slate-500);font-weight:600;
+}
+
+#content-area{flex:1;overflow-y:auto;padding:24px;}
+.page{display:none;}
+.page.active{display:block;animation:fadein .2s;}
+@keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+
+/* ===== SHARED COMPONENTS ===== */
+.card{background:var(--surface);border-radius:var(--radius-md);border:1px solid var(--slate-200);box-shadow:var(--shadow-sm);}
+.card-header{padding:18px 20px;border-bottom:1px solid var(--slate-200);display:flex;align-items:center;gap:12px;}
+.card-header h3{font-size:15px;font-weight:700;color:var(--navy-900);}
+.card-body{padding:20px;}
+
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:20px;}
+.stat-card{
+  background:var(--surface);border-radius:var(--radius-md);border:1px solid var(--slate-200);
+  padding:18px 20px;position:relative;overflow:hidden;
+}
+.stat-card .stat-icon{
+  width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;
+}
+.stat-card .stat-icon svg{width:18px;height:18px;}
+.stat-card .stat-value{font-size:26px;font-weight:800;color:var(--navy-900);font-family:var(--font-mono);letter-spacing:-0.02em;}
+.stat-card .stat-label{font-size:12px;color:var(--slate-500);font-weight:600;margin-top:4px;}
+.stat-card .stat-delta{font-size:11.5px;font-weight:700;margin-top:8px;display:flex;align-items:center;gap:4px;}
+.stat-delta.up{color:var(--green-600);}
+.stat-delta.down{color:var(--red-600);}
+
+.table-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:13.5px;}
+thead th{
+  text-align:left;padding:10px 14px;font-size:11px;font-weight:700;
+  color:var(--slate-500);text-transform:uppercase;letter-spacing:0.04em;
+  background:var(--slate-100);border-bottom:1px solid var(--slate-200);
+  white-space:nowrap;position:sticky;top:0;z-index:1;
+}
+tbody td{padding:12px 14px;border-bottom:1px solid var(--slate-100);color:var(--slate-700);}
+tbody tr:hover{background:var(--slate-100);}
+tbody tr:last-child td{border-bottom:none;}
+.mono{font-family:var(--font-mono);font-size:12.5px;}
+
+.badge{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;
+  text-transform:capitalize;
+}
+.badge-green{background:var(--green-100);color:var(--green-600);}
+.badge-amber{background:var(--amber-100);color:var(--amber-600);}
+.badge-red{background:var(--red-100);color:var(--red-600);}
+.badge-blue{background:var(--blue-100);color:var(--blue-600);}
+.badge-slate{background:var(--slate-200);color:var(--slate-700);}
+.badge-orange{background:var(--orange-100);color:var(--orange-600);}
+
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+.search-input-wrap{position:relative;flex:1;min-width:220px;max-width:380px;}
+.search-input-wrap svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--slate-500);}
+.search-input{width:100%;padding:9px 12px 9px 36px;border:1.5px solid var(--slate-200);border-radius:var(--radius-sm);font-size:13.5px;background:var(--surface);}
+.search-input:focus{border-color:var(--orange-600);}
+select.filter-select{padding:9px 12px;border:1.5px solid var(--slate-200);border-radius:var(--radius-sm);font-size:13px;background:var(--surface);color:var(--slate-700);}
+
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--slate-200);font-size:12.5px;color:var(--slate-500);}
+.pagination-btns{display:flex;gap:6px;}
+.page-btn{padding:6px 11px;border:1.5px solid var(--slate-200);background:white;border-radius:6px;font-size:12.5px;font-weight:600;color:var(--slate-700);}
+.page-btn:hover:not(:disabled){border-color:var(--orange-600);color:var(--orange-600);}
+.page-btn:disabled{opacity:0.4;cursor:not-allowed;}
+
+.empty-state{padding:60px 20px;text-align:center;color:var(--slate-500);}
+.empty-state svg{width:48px;height:48px;margin:0 auto 14px;opacity:0.3;}
+.empty-state p{font-size:13.5px;font-weight:500;}
+
+.skeleton{background:linear-gradient(90deg,var(--slate-100) 25%,var(--slate-200) 50%,var(--slate-100) 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:4px;}
+@keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+
+/* MODAL */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(10,19,32,0.55);
+  display:none;align-items:center;justify-content:center;z-index:500;padding:20px;
+  backdrop-filter:blur(2px);
+}
+.modal-overlay.active{display:flex;}
+.modal{
+  background:white;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);
+  width:100%;max-width:560px;max-height:90vh;display:flex;flex-direction:column;
+}
+.modal.modal-lg{max-width:840px;}
+.modal-header{padding:18px 22px;border-bottom:1px solid var(--slate-200);display:flex;align-items:center;gap:12px;}
+.modal-header h3{font-size:16px;font-weight:700;color:var(--navy-900);flex:1;}
+.modal-body{padding:22px;overflow-y:auto;}
+.modal-footer{padding:16px 22px;border-top:1px solid var(--slate-200);display:flex;justify-content:flex-end;gap:10px;}
+
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.form-group textarea{width:100%;padding:11px 14px;border:1.5px solid var(--slate-200);border-radius:var(--radius-sm);font-size:14px;resize:vertical;min-height:70px;}
+.form-group select{width:100%;padding:11px 14px;border:1.5px solid var(--slate-200);border-radius:var(--radius-sm);font-size:14px;background:white;}
+
+/* TOAST */
+#toast-container{position:fixed;bottom:24px;right:24px;z-index:2000;display:flex;flex-direction:column;gap:10px;}
+.toast{
+  background:var(--navy-900);color:white;padding:13px 18px;border-radius:var(--radius-sm);
+  font-size:13.5px;font-weight:500;box-shadow:var(--shadow-lg);
+  display:flex;align-items:center;gap:10px;min-width:280px;
+  animation:toast-in .25s ease;
+}
+.toast.success{background:var(--green-600);}
+.toast.error{background:var(--red-600);}
+.toast.info{background:var(--navy-900);}
+@keyframes toast-in{from{opacity:0;transform:translateX(20px);}to{opacity:1;transform:translateX(0);}}
+
+/* CART (Inquiry module) */
+.inquiry-layout{display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start;}
+.cart-panel{position:sticky;top:0;}
+.cart-item{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--slate-100);}
+.cart-item-info{flex:1;min-width:0;}
+.cart-item-name{font-size:13px;font-weight:600;color:var(--navy-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cart-item-brand{font-size:11.5px;color:var(--slate-500);}
+.qty-stepper{display:flex;align-items:center;gap:4px;}
+.qty-stepper button{width:24px;height:24px;border-radius:5px;border:1px solid var(--slate-200);background:white;font-size:14px;font-weight:700;color:var(--slate-700);display:flex;align-items:center;justify-content:center;}
+.qty-stepper input{width:40px;text-align:center;border:1px solid var(--slate-200);border-radius:5px;padding:3px;font-size:12.5px;font-family:var(--font-mono);}
+
+.product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;}
+.product-card{
+  background:white;border:1.5px solid var(--slate-200);border-radius:var(--radius-md);
+  padding:14px;cursor:pointer;transition:all .15s;
+}
+.product-card:hover{border-color:var(--orange-600);box-shadow:var(--shadow-md);transform:translateY(-1px);}
+.product-card-img{
+  width:100%;height:90px;background:var(--slate-100);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;margin-bottom:10px;color:var(--slate-300);
+}
+.product-card-img svg{width:32px;height:32px;}
+.product-card-name{font-size:13px;font-weight:700;color:var(--navy-900);margin-bottom:3px;line-height:1.3;}
+.product-card-sku{font-size:10.5px;color:var(--slate-500);font-family:var(--font-mono);margin-bottom:8px;}
+.brand-chips{display:flex;flex-wrap:wrap;gap:5px;}
+.brand-chip{
+  font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:12px;
+  background:var(--slate-100);color:var(--slate-700);border:1px solid var(--slate-200);
+}
+.brand-chip.preferred{background:var(--orange-100);color:var(--orange-600);border-color:var(--orange-100);}
+
+.tab-bar{display:flex;gap:4px;border-bottom:2px solid var(--slate-200);margin-bottom:20px;}
+.tab-btn{padding:11px 16px;background:none;border:none;font-size:13.5px;font-weight:600;color:var(--slate-500);border-bottom:2px solid transparent;margin-bottom:-2px;}
+.tab-btn.active{color:var(--orange-600);border-bottom-color:var(--orange-600);}
+.tab-btn:hover:not(.active){color:var(--navy-900);}
+
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}
+
+@media (max-width: 900px){
+  #sidebar{position:fixed;left:0;top:0;z-index:200;width:240px;transform:translateX(-100%);transition:transform .2s;}
+  #sidebar.mobile-open{transform:translateX(0);}
+  .inquiry-layout{grid-template-columns:1fr;}
+  .cart-panel{position:static;}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="mark">H24</div>
+      <div>
+        <h1>HUnyo 24 Trading</h1>
+        <p>Inventory System</p>
+      </div>
+    </div>
+    <p class="login-sub" id="login-subtitle">Sign in to manage stock, inquiries, and purchase orders.</p>
+
+    <div class="login-error" id="login-error"></div>
+    <div class="login-error" id="login-success" style="background:var(--green-100);color:var(--green-600);"></div>
+
+    <form id="login-form">
+      <div class="form-group">
+        <label>Email or Username</label>
+        <input type="text" id="login-email" placeholder="you@gmail.com or username" required autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:18px;">
+        <a href="#" id="forgot-password-link" style="font-size:12.5px;font-weight:600;color:var(--orange-600);">Forgot password?</a>
+      </div>
+      <button type="submit" class="btn btn-primary" id="login-submit-btn">Sign In</button>
+    </form>
+
+    <div class="login-footer">
+      Need an account? <a href="#" id="show-signup-link">Contact your administrator</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="app-shell">
+  <!-- SIDEBAR -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <div class="mark">H24</div>
+      <div class="brand-text">
+        <h1>HUnyo 24</h1>
+        <p>Trading</p>
+      </div>
+    </div>
+    <nav class="sidebar-nav" id="sidebar-nav"></nav>
+    <div class="sidebar-footer">
+      <div class="user-chip" id="user-chip">
+        <div class="user-avatar" id="user-avatar">--</div>
+        <div class="user-info">
+          <div class="name" id="user-name">Loading...</div>
+          <div class="role" id="user-role">--</div>
+        </div>
+      </div>
+      <button class="collapse-btn" id="collapse-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 19l-7-7 7-7M18 19l-7-7 7-7"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div id="main-area">
+    <header id="topbar">
+      <button class="icon-btn" id="mobile-menu-btn" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      </button>
+      <div class="topbar-title" id="page-title">Dashboard</div>
+      <div id="realtime-indicator"><span class="pulse-dot" id="realtime-dot"></span> Live</div>
+      <div class="topbar-spacer"></div>
+      <div class="branch-pill" id="branch-pill">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>
+        <span id="branch-pill-name">Main Branch</span>
+      </div>
+      <button class="icon-btn" id="notif-btn" title="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="notif-dot" id="notif-dot" style="display:none;"></span>
+      </button>
+      <button class="icon-btn" id="theme-btn" title="Toggle dark mode">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+      <button class="icon-btn" id="logout-btn" title="Sign out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      </button>
+    </header>
+
+    <main id="content-area"></main>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<!-- GENERIC MODAL ROOT -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal-box"></div>
+</div>
+
+<script>
+window.SUPABASE_URL = "https://muumaeebxbxujoslkwhz.supabase.co";
+window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11dW1hZWVieGJ4dWpvc2xrd2h6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4Mzg2NTQsImV4cCI6MjA5NzQxNDY1NH0.ORtoi5kS-zkgiiwMFdaK0d1Q6VGNOJCJucqc7TaVEsU";
+</script>
+<script>
+// ============================================================
+// HUNYO 24 TRADING — Inventory System
+// Core: Supabase client, Auth, Navigation, State
+// ============================================================
+
+const { createClient } = supabase;
+const sb = createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true }
+});
+
+const STATE = {
+  user: null,          // auth user
+  profile: null,       // public.users row
+  currentBranch: null, // selected branch id
+  branches: [],
+  page: 'dashboard',
+  cart: [],             // inquiry cart: [{product_brand_id, product_name, brand_name, qty, unit_price, sku}]
+  realtimeChannels: [],
+  darkMode: false,
+  pageCache: {}, // simple cache: key -> {data, ts}
+};
+
+// ---------- ICONS ----------
+const ICONS = {
+  dashboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>`,
+  inventory: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/></svg>`,
+  inquiry: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>`,
+  suppliers: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+  reports: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M18 17V9M13 17V5M8 17v-3"/></svg>`,
+  audit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`,
+  users: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+  logs: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>`,
+  plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`,
+  search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>`,
+  box: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>`,
+  trendUp: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 6l-9.5 9.5-5-5L1 18M17 6h6v6"/></svg>`,
+  alert: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>`,
+  truck: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+  cart: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>`,
+  edit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  x: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>`,
+  empty: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>`,
+};
+
+// ---------- NAV CONFIG (role-aware) ----------
+const NAV_CONFIG = [
+  { section:'Overview', items:[
+    { id:'dashboard', label:'Dashboard', icon:'dashboard', roles:'*' },
+  ]},
+  { section:'Operations', items:[
+    { id:'inventory', label:'Inventory', icon:'inventory', roles:'*' },
+    { id:'inquiry', label:'Inquiry & Quotation', icon:'inquiry', roles:['admin','sales_agent','inventory_manager','order_prep_staff'] },
+    { id:'suppliers', label:'Suppliers & POs', icon:'suppliers', roles:['admin','supplier_manager','inventory_manager'] },
+  ]},
+  { section:'Insights', items:[
+    { id:'reports', label:'Reports & Analytics', icon:'reports', roles:'*' },
+    { id:'audit', label:'Year-End Audit', icon:'audit', roles:['admin','auditor','inventory_manager'] },
+  ]},
+  { section:'Administration', items:[
+    { id:'users', label:'Users & Roles', icon:'users', roles:['admin'] },
+    { id:'logs', label:'Audit Logs', icon:'logs', roles:['admin','auditor'] },
+  ]},
+];
+
+const PAGE_TITLES = {
+  dashboard:'Dashboard', inventory:'Inventory Management', inquiry:'Inquiry & Quotation',
+  suppliers:'Suppliers & Purchase Orders', reports:'Reports & Analytics',
+  audit:'Year-End Inventory Audit', users:'Users & Roles', logs:'Audit Logs'
+};
+
+// ---------- TOAST ----------
+function toast(message, type='info'){
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),300); }, 3200);
+}
+
+// ---------- MODAL ----------
+function openModal(html, opts={}){
+  const box = document.getElementById('modal-box');
+  box.className = 'modal' + (opts.large ? ' modal-lg' : '');
+  box.innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('active');
+}
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('active');
+  document.getElementById('modal-box').innerHTML = '';
+}
+document.getElementById('modal-overlay').addEventListener('click', (e)=>{
+  if(e.target.id === 'modal-overlay') closeModal();
+});
+
+// ---------- FORMATTERS ----------
+function peso(n){
+  return '₱' + Number(n||0).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function fmtDate(d){
+  if(!d) return '—';
+  return new Date(d).toLocaleDateString('en-PH', {year:'numeric',month:'short',day:'numeric'});
+}
+function fmtDateTime(d){
+  if(!d) return '—';
+  return new Date(d).toLocaleString('en-PH', {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function timeAgo(d){
+  const s = Math.floor((new Date() - new Date(d))/1000);
+  if(s<60) return 'just now';
+  if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
+}
+function escapeHtml(str){
+  if(str===null||str===undefined) return '';
+  return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function debounce(fn, ms=300){
+  let t;
+  return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
+}
+
+// ---------- AUTH ----------
+async function initAuth(){
+  const { data: { session } } = await sb.auth.getSession();
+  if(session){
+    await onAuthenticated(session);
+  } else {
+    showLogin();
+  }
+
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if(event === 'SIGNED_IN' && session){
+      await onAuthenticated(session);
+    } else if(event === 'SIGNED_OUT'){
+      showLogin();
+    }
+  });
+}
+
+async function onAuthenticated(session){
+  STATE.user = session.user;
+  const { data: profile, error } = await sb.from('users').select('*').eq('id', session.user.id).single();
+  if(error || !profile){
+    toast('Could not load your profile. Contact admin.', 'error');
+    await sb.auth.signOut();
+    return;
+  }
+  if(!profile.is_active){
+    toast('Your account has been deactivated. Contact admin.', 'error');
+    await sb.auth.signOut();
+    return;
+  }
+  STATE.profile = profile;
+
+  // Update last_login_at + audit log
+  sb.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', profile.id).then(()=>{});
+  sb.rpc('log_audit_event', { p_action:'login', p_entity_type:'user', p_entity_id: profile.id }).then(()=>{});
+
+  await loadBranches();
+  showApp();
+  renderSidebar();
+  navigateTo('dashboard');
+  setupRealtimeSubscriptions();
+  loadNotificationBadge();
+}
+
+async function loadBranches(){
+  const { data } = await sb.from('branches').select('*').eq('is_active', true).order('is_main_branch', {ascending:false});
+  STATE.branches = data || [];
+  STATE.currentBranch = STATE.profile.branch_id || (STATE.branches[0] && STATE.branches[0].id);
+  const branchObj = STATE.branches.find(b=>b.id===STATE.currentBranch);
+  document.getElementById('branch-pill-name').textContent = branchObj ? branchObj.name : 'All Branches';
+}
+
+function showLogin(){
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app-shell').classList.remove('active');
+}
+function showApp(){
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-shell').classList.add('active');
+  const initials = (STATE.profile.full_name||'??').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = initials;
+  document.getElementById('user-name').textContent = STATE.profile.full_name;
+  document.getElementById('user-role').textContent = STATE.profile.role.replace(/_/g,' ');
+}
+
+// Resolves whatever the person typed (email OR username) into an actual email.
+// If it already looks like an email, use it as-is — no need to hit the DB.
+// Otherwise, look up the username via the public RPC. Generic "not found" is fine
+// here since signInWithPassword gives a generic error anyway (no enumeration risk).
+async function resolveLoginEmail(identifier){
+  if(identifier.includes('@')) return identifier;
+  const { data, error } = await sb.rpc('get_email_for_username', { p_username: identifier });
+  if(error || !data) return identifier; // fall through; signIn will just fail with invalid credentials
+  return data;
+}
+
+document.getElementById('login-form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const identifier = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-submit-btn');
+  errEl.style.display='none';
+  btn.disabled = true; btn.textContent = 'Signing in...';
+
+  const email = await resolveLoginEmail(identifier);
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if(error){
+    errEl.textContent = error.message === 'Invalid login credentials' ? 'Incorrect email/username or password.' : error.message;
+    errEl.style.display = 'block';
+  }
+});
+
+document.getElementById('forgot-password-link').addEventListener('click', async (e)=>{
+  e.preventDefault();
+  const identifier = document.getElementById('login-email').value.trim();
+  if(!identifier){ toast('Enter your email or username first, then click "Forgot password?"', 'error'); return; }
+  const email = await resolveLoginEmail(identifier);
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.href });
+  const successEl = document.getElementById('login-success');
+  if(error){ toast(error.message, 'error'); }
+  else {
+    successEl.textContent = 'If an account exists, a password reset email has been sent.';
+    successEl.style.display = 'block';
+  }
+});
+
+document.getElementById('logout-btn').addEventListener('click', async ()=>{
+  if(STATE.profile){
+    await sb.rpc('log_audit_event', { p_action:'logout', p_entity_type:'user', p_entity_id: STATE.profile.id });
+  }
+  teardownRealtimeSubscriptions();
+  await sb.auth.signOut();
+  STATE.user = null; STATE.profile = null;
+});
+
+// ---------- SIDEBAR / NAV ----------
+function renderSidebar(){
+  const role = STATE.profile.role;
+  const nav = document.getElementById('sidebar-nav');
+  nav.innerHTML = NAV_CONFIG.map(section => {
+    const items = section.items.filter(it => it.roles==='*' || it.roles.includes(role));
+    if(items.length===0) return '';
+    return `<div class="nav-section">
+      <div class="nav-section-label">${section.section}</div>
+      ${items.map(it => `
+        <div class="nav-item" data-page="${it.id}" id="nav-${it.id}">
+          ${ICONS[it.icon]}
+          <span>${it.label}</span>
+          ${it.id==='inquiry' ? `<span class="nav-badge" id="cart-badge" style="display:none;">0</span>` : ''}
+        </div>
+      `).join('')}
+    </div>`;
+  }).join('');
+
+  nav.querySelectorAll('.nav-item').forEach(el=>{
+    el.addEventListener('click', ()=> navigateTo(el.dataset.page));
+  });
+}
+
+function navigateTo(page){
+  STATE.page = page;
+  document.querySelectorAll('.nav-item').forEach(el=> el.classList.toggle('active', el.dataset.page===page));
+  document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
+
+  const content = document.getElementById('content-area');
+  content.innerHTML = `<div class="page active" id="page-${page}"></div>`;
+
+  const renderers = {
+    dashboard: renderDashboard,
+    inventory: renderInventory,
+    inquiry: renderInquiry,
+    suppliers: renderSuppliers,
+    reports: renderReports,
+    audit: renderAudit,
+    users: renderUsers,
+    logs: renderLogs,
+  };
+  if(renderers[page]) renderers[page]();
+
+  if(window.innerWidth <= 900) document.getElementById('sidebar').classList.remove('mobile-open');
+}
+
+document.getElementById('collapse-btn').addEventListener('click', ()=>{
+  document.getElementById('sidebar').classList.toggle('collapsed');
+});
+document.getElementById('mobile-menu-btn').addEventListener('click', ()=>{
+  document.getElementById('sidebar').classList.toggle('mobile-open');
+});
+if(window.innerWidth <= 900){
+  document.getElementById('mobile-menu-btn').style.display='flex';
+}
+
+// ---------- DARK MODE ----------
+document.getElementById('theme-btn').addEventListener('click', ()=>{
+  STATE.darkMode = !STATE.darkMode;
+  document.body.classList.toggle('dark-mode', STATE.darkMode);
+  applyDarkModeVars();
+});
+function applyDarkModeVars(){
+  const root = document.documentElement.style;
+  if(STATE.darkMode){
+    root.setProperty('--canvas', '#0F1620');
+    root.setProperty('--surface', '#1A2433');
+    root.setProperty('--slate-700', '#E2E8F0');
+    root.setProperty('--slate-900', '#F1F5F9');
+    root.setProperty('--slate-100', '#243044');
+    root.setProperty('--slate-200', '#2D3B52');
+    root.setProperty('--slate-300', '#3D4D68');
+  } else {
+    root.setProperty('--canvas', '#F7F5F1');
+    root.setProperty('--surface', '#FFFFFF');
+    root.setProperty('--slate-700', '#2B3445');
+    root.setProperty('--slate-900', '#1A202C');
+    root.setProperty('--slate-100', '#F1F5F9');
+    root.setProperty('--slate-200', '#E2E8F0');
+    root.setProperty('--slate-300', '#CBD5E1');
+  }
+}
+
+// ---------- NOTIFICATIONS ----------
+async function loadNotificationBadge(){
+  const { count } = await sb.from('notifications').select('id', {count:'exact', head:true}).eq('recipient_id', STATE.profile.id).eq('is_read', false);
+  document.getElementById('notif-dot').style.display = (count && count>0) ? 'block' : 'none';
+}
+document.getElementById('notif-btn').addEventListener('click', async ()=>{
+  const { data } = await sb.from('notifications').select('*').eq('recipient_id', STATE.profile.id).order('created_at',{ascending:false}).limit(20);
+  openModal(`
+    <div class="modal-header"><h3>Notifications</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body" style="padding:0;max-height:60vh;">
+      ${(!data || data.length===0) ? `<div class="empty-state">${ICONS.empty}<p>No notifications yet.</p></div>` :
+        data.map(n=>`
+          <div style="padding:14px 22px;border-bottom:1px solid var(--slate-100);${n.is_read?'':'background:var(--orange-100);'}">
+            <div style="font-size:13px;font-weight:700;color:var(--navy-900);">${escapeHtml(n.title)}</div>
+            <div style="font-size:12.5px;color:var(--slate-500);margin-top:3px;">${escapeHtml(n.message)}</div>
+            <div style="font-size:11px;color:var(--slate-300);margin-top:5px;">${timeAgo(n.created_at)}</div>
+          </div>
+        `).join('')
+      }
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="markAllNotifsRead()">Mark all as read</button>
+    </div>
+  `);
+  await sb.from('notifications').update({is_read:true}).eq('recipient_id', STATE.profile.id).eq('is_read', false);
+  loadNotificationBadge();
+});
+async function markAllNotifsRead(){
+  await sb.from('notifications').update({is_read:true}).eq('recipient_id', STATE.profile.id);
+  loadNotificationBadge();
+  closeModal();
+  toast('All notifications marked as read', 'success');
+}
+
+// ---------- REALTIME ----------
+function setupRealtimeSubscriptions(){
+  const ch = sb.channel('inventory-realtime')
+    .on('postgres_changes', { event:'*', schema:'public', table:'stock_levels' }, payload=>{
+      flashPulse();
+      if(STATE.page==='inventory') refreshInventoryTable();
+      if(STATE.page==='dashboard') renderDashboard();
+    })
+    .on('postgres_changes', { event:'*', schema:'public', table:'inquiries' }, payload=>{
+      flashPulse();
+      if(STATE.page==='inquiry') refreshInquiryList();
+      if(STATE.page==='dashboard') renderDashboard();
+    })
+    .on('postgres_changes', { event:'*', schema:'public', table:'purchase_orders' }, payload=>{
+      flashPulse();
+      if(STATE.page==='suppliers') refreshPOList();
+    })
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:`recipient_id=eq.${STATE.profile.id}` }, payload=>{
+      flashPulse();
+      loadNotificationBadge();
+      toast(payload.new.title, 'info');
+    })
+    .subscribe();
+
+  STATE.realtimeChannels.push(ch);
+}
+function flashPulse(){
+  const dot = document.getElementById('realtime-dot');
+  dot.classList.add('flash');
+  setTimeout(()=> dot.classList.remove('flash'), 1200);
+}
+function teardownRealtimeSubscriptions(){
+  STATE.realtimeChannels.forEach(ch => sb.removeChannel(ch));
+  STATE.realtimeChannels = [];
+}
+
+// ---------- ROLE HELPERS ----------
+function can(roles){
+  if(roles==='*') return true;
+  return roles.includes(STATE.profile.role);
+}
+function requireRole(roles, fn){
+  return (...args) => { if(can(roles)) fn(...args); else toast('You do not have permission for this action.', 'error'); };
+}
+
+// ---------- INIT ----------
+initAuth();
+
+
+// ============================================================
+// HUNYO 24 TRADING — Dashboard & Inventory Modules
+// ============================================================
+
+// ============ DASHBOARD ============
+async function renderDashboard(){
+  const el = document.getElementById('page-dashboard');
+  if(!el) return;
+  el.innerHTML = `
+    <div class="stat-grid" id="dash-stats">
+      ${Array(4).fill('<div class="stat-card"><div class="skeleton" style="height:70px;"></div></div>').join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:20px;align-items:start;">
+      <div class="card">
+        <div class="card-header"><h3>Recent Stock Movements</h3></div>
+        <div class="table-wrap" id="dash-movements"><div style="padding:20px;"><div class="skeleton" style="height:200px;"></div></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>${ICONS.alert} Low Stock Alerts</h3></div>
+        <div id="dash-lowstock"><div style="padding:20px;"><div class="skeleton" style="height:200px;"></div></div></div>
+      </div>
+    </div>
+  `;
+
+  const [salesRes, lowStockRes, pendingInqRes, poRes] = await Promise.all([
+    sb.from('v_rolling_7day_sales').select('*').eq('branch_id', STATE.currentBranch).maybeSingle(),
+    sb.rpc('get_low_stock_items', { p_branch_id: STATE.currentBranch }),
+    sb.from('inquiries').select('id',{count:'exact',head:true}).eq('branch_id', STATE.currentBranch).in('status',['submitted','forwarded_to_prep','preparing']),
+    sb.from('purchase_orders').select('id',{count:'exact',head:true}).eq('branch_id', STATE.currentBranch).in('status',['submitted','approved','partially_received']),
+  ]);
+
+  const sales7d = salesRes.data?.last_7_days_sales || 0;
+  const lowStockCount = (lowStockRes.data||[]).length;
+  const pendingInquiries = pendingInqRes.count || 0;
+  const openPOs = poRes.count || 0;
+
+  document.getElementById('dash-stats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--green-100);color:var(--green-600);">${ICONS.trendUp}</div>
+      <div class="stat-value">${peso(sales7d)}</div>
+      <div class="stat-label">Sales — Last 7 Days</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:${lowStockCount>0?'var(--red-100)':'var(--green-100)'};color:${lowStockCount>0?'var(--red-600)':'var(--green-600)'};">${ICONS.alert}</div>
+      <div class="stat-value">${lowStockCount}</div>
+      <div class="stat-label">Items Below Reorder Level</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--blue-100);color:var(--blue-600);">${ICONS.inquiry}</div>
+      <div class="stat-value">${pendingInquiries}</div>
+      <div class="stat-label">Pending Inquiries</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--orange-100);color:var(--orange-600);">${ICONS.truck}</div>
+      <div class="stat-value">${openPOs}</div>
+      <div class="stat-label">Open Purchase Orders</div>
+    </div>
+  `;
+
+  const { data: movements } = await sb.from('stock_movements')
+    .select('*, product_brands(*, products(name,sku), brands(name))')
+    .eq('branch_id', STATE.currentBranch)
+    .order('created_at',{ascending:false}).limit(8);
+
+  document.getElementById('dash-movements').innerHTML = (!movements || movements.length===0) ?
+    `<div class="empty-state">${ICONS.empty}<p>No stock movements yet.</p></div>` :
+    `<table><thead><tr><th>Product</th><th>Type</th><th>Qty</th><th>When</th></tr></thead><tbody>
+      ${movements.map(m=>{
+        const pname = m.product_brands?.products?.name || '—';
+        const bname = m.product_brands?.brands?.name || '';
+        const isIn = m.qty > 0;
+        return `<tr>
+          <td><div style="font-weight:600;color:var(--navy-900);">${escapeHtml(pname)}</div><div style="font-size:11px;color:var(--slate-500);">${escapeHtml(bname)}</div></td>
+          <td><span class="badge ${isIn?'badge-green':'badge-red'}">${m.movement_type.replace(/_/g,' ')}</span></td>
+          <td class="mono" style="font-weight:700;color:${isIn?'var(--green-600)':'var(--red-600)'};">${isIn?'+':''}${Number(m.qty).toLocaleString()}</td>
+          <td style="color:var(--slate-500);font-size:12px;">${timeAgo(m.created_at)}</td>
+        </tr>`;
+      }).join('')}
+    </tbody></table>`;
+
+  const lowItems = (lowStockRes.data || []).slice(0,8);
+  document.getElementById('dash-lowstock').innerHTML = lowItems.length===0 ?
+    `<div class="empty-state">${ICONS.empty}<p>All stock levels healthy.</p></div>` :
+    lowItems.map(it => `
+      <div style="padding:12px 20px;border-bottom:1px solid var(--slate-100);display:flex;align-items:center;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:600;color:var(--navy-900);">${escapeHtml(it.product_name)}</div>
+          <div style="font-size:11.5px;color:var(--slate-500);">${escapeHtml(it.brand_name)} • SKU ${escapeHtml(it.sku)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="mono" style="font-weight:700;color:var(--red-600);font-size:13px;">${Number(it.qty_on_hand)}</div>
+          <div style="font-size:10.5px;color:var(--slate-500);">reorder @ ${Number(it.reorder_level)}</div>
+        </div>
+      </div>
+    `).join('');
+}
+
+// ============ INVENTORY ============
+const INV_STATE = { page:1, pageSize:20, search:'', categoryFilter:'', lowStockOnly:false, total:0 };
+
+async function renderInventory(){
+  const el = document.getElementById('page-inventory');
+  if(!el) return;
+
+  const { data: categories } = await sb.from('categories').select('*').eq('is_active',true).order('name');
+
+  el.innerHTML = `
+    <div class="toolbar">
+      <div class="search-input-wrap">
+        ${ICONS.search}
+        <input type="text" class="search-input" id="inv-search" placeholder="Search by product name or SKU...">
+      </div>
+      <select class="filter-select" id="inv-category-filter">
+        <option value="">All Categories</option>
+        ${(categories||[]).map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--slate-700);font-weight:500;cursor:pointer;">
+        <input type="checkbox" id="inv-lowstock-filter"> Low stock only
+      </label>
+      <div style="flex:1;"></div>
+      ${can(['admin','inventory_manager']) ? `
+      <button class="btn btn-secondary btn-sm" id="btn-stock-in">${ICONS.plus} Stock In</button>
+      <button class="btn btn-primary btn-sm" id="btn-new-product">${ICONS.plus} New Product</button>
+      ` : ''}
+    </div>
+    <div class="card">
+      <div class="table-wrap" id="inv-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:300px;"></div></div></div>
+      <div class="pagination" id="inv-pagination"></div>
+    </div>
+  `;
+
+  document.getElementById('inv-search').addEventListener('input', debounce(e=>{
+    INV_STATE.search = e.target.value; INV_STATE.page = 1; refreshInventoryTable();
+  }, 350));
+  document.getElementById('inv-category-filter').addEventListener('change', e=>{
+    INV_STATE.categoryFilter = e.target.value; INV_STATE.page = 1; refreshInventoryTable();
+  });
+  document.getElementById('inv-lowstock-filter').addEventListener('change', e=>{
+    INV_STATE.lowStockOnly = e.target.checked; INV_STATE.page = 1; refreshInventoryTable();
+  });
+  if(can(['admin','inventory_manager'])){
+    document.getElementById('btn-stock-in').addEventListener('click', ()=>openStockInModal());
+    document.getElementById('btn-new-product').addEventListener('click', openNewProductModal);
+  }
+
+  refreshInventoryTable();
+}
+
+async function refreshInventoryTable(){
+  const wrap = document.getElementById('inv-table-wrap');
+  if(!wrap) return;
+
+  let lowStockIds = null;
+  if(INV_STATE.lowStockOnly){
+    const { data } = await sb.rpc('get_low_stock_items', { p_branch_id: STATE.currentBranch });
+    lowStockIds = (data||[]).map(d=>d.product_brand_id);
+    if(lowStockIds.length===0){
+      wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No items below reorder level. Nice work!</p></div>`;
+      document.getElementById('inv-pagination').innerHTML='';
+      return;
+    }
+  }
+
+  let query = sb.from('product_brands')
+    .select('*, products!inner(*, categories(name)), brands(name), stock_levels!inner(qty_on_hand, branch_id)', {count:'exact'})
+    .eq('is_active', true)
+    .eq('stock_levels.branch_id', STATE.currentBranch);
+
+  if(INV_STATE.search){
+    query = query.or(`name.ilike.%${INV_STATE.search}%,sku.ilike.%${INV_STATE.search}%`, { foreignTable:'products' });
+  }
+  if(INV_STATE.categoryFilter){
+    query = query.eq('products.category_id', INV_STATE.categoryFilter);
+  }
+  if(lowStockIds){
+    query = query.in('id', lowStockIds);
+  }
+
+  const from = (INV_STATE.page-1) * INV_STATE.pageSize;
+  const to = from + INV_STATE.pageSize - 1;
+  query = query.order('created_at', { foreignTable:'products', ascending:false }).range(from, to);
+
+  const { data, count, error } = await query;
+  if(error){ wrap.innerHTML = `<div class="empty-state"><p>Error loading inventory: ${escapeHtml(error.message)}</p></div>`; return; }
+
+  INV_STATE.total = count || 0;
+
+  if(!data || data.length===0){
+    wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No products found.</p></div>`;
+    document.getElementById('inv-pagination').innerHTML='';
+    return;
+  }
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Product</th><th>Brand</th><th>SKU</th><th>Category</th><th>Stock</th><th>Reorder Lvl</th><th>Price</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      ${data.map(pb => {
+        const qty = pb.stock_levels?.[0]?.qty_on_hand ?? 0;
+        const reorder = pb.products?.reorder_level ?? 0;
+        const isLow = qty <= reorder;
+        return `<tr>
+          <td style="font-weight:600;color:var(--navy-900);">${escapeHtml(pb.products?.name)}</td>
+          <td>${pb.is_preferred ? `<span class="badge badge-orange">★ ${escapeHtml(pb.brands?.name)}</span>` : escapeHtml(pb.brands?.name)}</td>
+          <td class="mono">${escapeHtml(pb.products?.sku)}</td>
+          <td>${escapeHtml(pb.products?.categories?.name || '—')}</td>
+          <td class="mono" style="font-weight:700;${isLow?'color:var(--red-600);':''}">${Number(qty).toLocaleString()}</td>
+          <td class="mono" style="color:var(--slate-500);">${Number(reorder).toLocaleString()}</td>
+          <td class="mono">${peso(pb.price)}</td>
+          <td>${isLow ? `<span class="badge badge-red">Low Stock</span>` : `<span class="badge badge-green">In Stock</span>`}</td>
+          <td><button class="btn btn-ghost btn-sm" onclick="viewProductDetail('${pb.id}')">View</button></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+
+  renderPagination('inv-pagination', INV_STATE.page, INV_STATE.pageSize, INV_STATE.total, (p)=>{ INV_STATE.page=p; refreshInventoryTable(); });
+}
+
+function renderPagination(containerId, page, pageSize, total, onPage){
+  const totalPages = Math.max(1, Math.ceil(total/pageSize));
+  const container = document.getElementById(containerId);
+  container.innerHTML = `
+    <span>Showing ${total===0?0:((page-1)*pageSize+1)}–${Math.min(page*pageSize,total)} of ${total}</span>
+    <div class="pagination-btns">
+      <button class="page-btn" ${page<=1?'disabled':''} data-go="prev">← Prev</button>
+      <span class="page-btn" style="cursor:default;">${page} / ${totalPages}</span>
+      <button class="page-btn" ${page>=totalPages?'disabled':''} data-go="next">Next →</button>
+    </div>
+  `;
+  container.querySelector('[data-go="prev"]')?.addEventListener('click', ()=> onPage(page-1));
+  container.querySelector('[data-go="next"]')?.addEventListener('click', ()=> onPage(page+1));
+}
+
+async function viewProductDetail(productBrandId){
+  const { data: pb } = await sb.from('product_brands').select('*, products(*, categories(name)), brands(name), suppliers(company_name)').eq('id', productBrandId).single();
+  const { data: batches } = await sb.from('stock_batches').select('*').eq('product_brand_id', productBrandId).eq('branch_id', STATE.currentBranch).gt('qty_remaining',0).order('received_date',{ascending:true});
+  const { data: stockLevel } = await sb.from('stock_levels').select('*').eq('product_brand_id', productBrandId).eq('branch_id', STATE.currentBranch).maybeSingle();
+
+  openModal(`
+    <div class="modal-header">
+      <h3>${escapeHtml(pb.products.name)} <span style="color:var(--slate-500);font-weight:500;">— ${escapeHtml(pb.brands.name)}</span></h3>
+      <button class="icon-btn" onclick="closeModal()">${ICONS.x}</button>
+    </div>
+    <div class="modal-body">
+      <div class="kpi-row" style="margin-bottom:20px;">
+        <div class="stat-card" style="padding:12px 14px;"><div class="stat-value" style="font-size:20px;">${Number(stockLevel?.qty_on_hand||0).toLocaleString()}</div><div class="stat-label">On Hand</div></div>
+        <div class="stat-card" style="padding:12px 14px;"><div class="stat-value" style="font-size:20px;">${peso(pb.price)}</div><div class="stat-label">Sell Price</div></div>
+        <div class="stat-card" style="padding:12px 14px;"><div class="stat-value" style="font-size:20px;">${pb.products.reorder_level}</div><div class="stat-label">Reorder Level</div></div>
+      </div>
+      <div style="font-size:12px;color:var(--slate-500);margin-bottom:6px;">SKU: <span class="mono">${escapeHtml(pb.products.sku)}</span> • Category: ${escapeHtml(pb.products.categories?.name||'—')} • Supplier: ${escapeHtml(pb.suppliers?.company_name||'—')}</div>
+      <h4 style="font-size:13px;margin:20px 0 10px;color:var(--navy-900);">FIFO Stock Batches (oldest deducted first)</h4>
+      <div class="table-wrap" style="border:1px solid var(--slate-200);border-radius:8px;">
+        <table>
+          <thead><tr><th>Batch Code</th><th>Received</th><th>Qty Remaining</th><th>Unit Cost</th><th>Value</th></tr></thead>
+          <tbody>
+            ${(!batches||batches.length===0) ? `<tr><td colspan="5" style="text-align:center;color:var(--slate-500);padding:20px;">No active batches.</td></tr>` :
+              batches.map(b=>`<tr>
+                <td class="mono">${escapeHtml(b.batch_code)}</td>
+                <td>${fmtDate(b.received_date)}</td>
+                <td class="mono" style="font-weight:700;">${Number(b.qty_remaining).toLocaleString()}</td>
+                <td class="mono">${peso(b.unit_cost)}</td>
+                <td class="mono">${peso(b.qty_remaining*b.unit_cost)}</td>
+              </tr>`).join('')
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      ${can(['admin','inventory_manager']) ? `<button class="btn btn-secondary" onclick="closeModal();openStockInModal('${productBrandId}')">Stock In More</button>` : ''}
+      <button class="btn btn-primary" onclick="closeModal()">Close</button>
+    </div>
+  `, {large:true});
+}
+
+async function openStockInModal(preselectProductBrandId){
+  const { data: productBrands } = await sb.from('product_brands').select('id, price, products(name,sku), brands(name)').eq('is_active',true).order('id');
+
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.plus} Stock In</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Product / Brand</label>
+        <select id="si-product-brand">
+          <option value="">Select product...</option>
+          ${(productBrands||[]).map(pb=>`<option value="${pb.id}" ${pb.id===preselectProductBrandId?'selected':''}>${escapeHtml(pb.products.name)} (${escapeHtml(pb.products.sku)}) — ${escapeHtml(pb.brands.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Quantity Received</label>
+          <input type="number" id="si-qty" min="0.01" step="0.01" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>Unit Cost (₱)</label>
+          <input type="number" id="si-cost" min="0" step="0.01" placeholder="0.00">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Batch Code (optional)</label>
+          <input type="text" id="si-batch-code" placeholder="Auto-generated if blank">
+        </div>
+        <div class="form-group">
+          <label>Expiry Date (optional)</label>
+          <input type="date" id="si-expiry">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="si-notes" placeholder="e.g. Delivered via PO-202606-00012"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="si-submit">Confirm Stock In</button>
+    </div>
+  `);
+
+  document.getElementById('si-submit').addEventListener('click', async ()=>{
+    const productBrandId = document.getElementById('si-product-brand').value;
+    const qty = parseFloat(document.getElementById('si-qty').value);
+    const cost = parseFloat(document.getElementById('si-cost').value) || 0;
+    const batchCode = document.getElementById('si-batch-code').value.trim() || null;
+    const expiry = document.getElementById('si-expiry').value || null;
+    const notes = document.getElementById('si-notes').value.trim() || null;
+
+    if(!productBrandId || !qty || qty<=0){ toast('Select a product and enter a valid quantity.', 'error'); return; }
+
+    const btn = document.getElementById('si-submit');
+    btn.disabled = true; btn.textContent = 'Processing...';
+
+    const { error } = await sb.rpc('stock_in', {
+      p_product_brand_id: productBrandId, p_branch_id: STATE.currentBranch,
+      p_qty: qty, p_unit_cost: cost, p_batch_code: batchCode, p_expiry_date: expiry, p_notes: notes
+    });
+
+    if(error){ toast('Stock-in failed: ' + error.message, 'error'); btn.disabled=false; btn.textContent='Confirm Stock In'; return; }
+
+    toast('Stock-in recorded successfully.', 'success');
+    closeModal();
+    refreshInventoryTable();
+  });
+}
+
+async function openNewProductModal(){
+  const [{data:categories}, {data:brands}, {data:suppliers}] = await Promise.all([
+    sb.from('categories').select('*').eq('is_active',true).order('name'),
+    sb.from('brands').select('*').eq('is_active',true).order('name'),
+    sb.from('suppliers').select('*').eq('is_active',true).order('company_name'),
+  ]);
+
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.plus} New Product</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>SKU</label><input type="text" id="np-sku" placeholder="e.g. PVC-PIPE-34"></div>
+        <div class="form-group"><label>Unit</label><input type="text" id="np-unit" placeholder="e.g. pc, m, gal, box" value="pc"></div>
+      </div>
+      <div class="form-group"><label>Product Name</label><input type="text" id="np-name" placeholder="e.g. PVC Pipe 3/4 inch x 3m"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Category</label>
+          <select id="np-category">${(categories||[]).map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><label>Reorder Level</label><input type="number" id="np-reorder" min="0" value="10"></div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--slate-200);margin:16px 0;">
+      <div style="font-size:12px;font-weight:700;color:var(--slate-500);text-transform:uppercase;margin-bottom:10px;">Initial Brand Variant</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Brand</label>
+          <select id="np-brand">${(brands||[]).map(b=>`<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}</select>
+        </div>
+        <div class="form-group">
+          <label>Supplier</label>
+          <select id="np-supplier"><option value="">None</option>${(suppliers||[]).map(s=>`<option value="${s.id}">${escapeHtml(s.company_name)}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Sell Price (₱)</label><input type="number" id="np-price" min="0" step="0.01"></div>
+        <div class="form-group"><label>Cost Price (₱)</label><input type="number" id="np-cost-price" min="0" step="0.01"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="np-submit">Create Product</button>
+    </div>
+  `, {large:true});
+
+  document.getElementById('np-submit').addEventListener('click', async ()=>{
+    const sku = document.getElementById('np-sku').value.trim();
+    const name = document.getElementById('np-name').value.trim();
+    const unit = document.getElementById('np-unit').value.trim() || 'pc';
+    const categoryId = document.getElementById('np-category').value;
+    const reorderLevel = parseFloat(document.getElementById('np-reorder').value) || 0;
+    const brandId = document.getElementById('np-brand').value;
+    const supplierId = document.getElementById('np-supplier').value || null;
+    const price = parseFloat(document.getElementById('np-price').value) || 0;
+    const costPrice = parseFloat(document.getElementById('np-cost-price').value) || 0;
+
+    if(!sku || !name || !brandId){ toast('SKU, name, and brand are required.', 'error'); return; }
+
+    const btn = document.getElementById('np-submit');
+    btn.disabled = true; btn.textContent = 'Creating...';
+
+    const { data: product, error: prodErr } = await sb.from('products').insert({
+      sku, name, unit, category_id: categoryId || null, reorder_level: reorderLevel, default_price: price, created_by: STATE.profile.id
+    }).select().single();
+
+    if(prodErr){ toast('Failed: ' + prodErr.message, 'error'); btn.disabled=false; btn.textContent='Create Product'; return; }
+
+    const { error: pbErr } = await sb.from('product_brands').insert({
+      product_id: product.id, brand_id: brandId, supplier_id: supplierId, price, cost_price: costPrice, is_preferred: true
+    });
+
+    if(pbErr){ toast('Product created but brand variant failed: ' + pbErr.message, 'error'); }
+    else { toast('Product created successfully.', 'success'); }
+
+    closeModal();
+    refreshInventoryTable();
+  });
+}
+
+
+// ============================================================
+// HUNYO 24 TRADING — Inquiry / Quotation / Pre-Order Module
+// ============================================================
+
+const INQ_STATE = { tab:'new', listPage:1, listPageSize:15, statusFilter:'', search:'' };
+
+async function renderInquiry(){
+  const el = document.getElementById('page-inquiry');
+  if(!el) return;
+
+  el.innerHTML = `
+    <div class="tab-bar">
+      <button class="tab-btn ${INQ_STATE.tab==='new'?'active':''}" data-tab="new">New Inquiry (Cart)</button>
+      <button class="tab-btn ${INQ_STATE.tab==='list'?'active':''}" data-tab="list">All Inquiries</button>
+    </div>
+    <div id="inquiry-tab-content"></div>
+  `;
+
+  el.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ INQ_STATE.tab = btn.dataset.tab; renderInquiry(); });
+  });
+
+  if(INQ_STATE.tab==='new') renderInquiryCart();
+  else renderInquiryList();
+}
+
+// ============ NEW INQUIRY — CART INTERFACE ============
+async function renderInquiryCart(){
+  const container = document.getElementById('inquiry-tab-content');
+  const { data: customers } = await sb.from('customers').select('*').eq('is_active',true).order('full_name');
+
+  container.innerHTML = `
+    <div class="inquiry-layout">
+      <div>
+        <div class="toolbar">
+          <div class="search-input-wrap">
+            ${ICONS.search}
+            <input type="text" class="search-input" id="cart-product-search" placeholder="Search products to add...">
+          </div>
+        </div>
+        <div class="product-grid" id="cart-product-grid">
+          <div class="skeleton" style="height:160px;grid-column:span 1;"></div>
+          <div class="skeleton" style="height:160px;grid-column:span 1;"></div>
+          <div class="skeleton" style="height:160px;grid-column:span 1;"></div>
+        </div>
+      </div>
+      <div class="cart-panel">
+        <div class="card">
+          <div class="card-header"><h3>${ICONS.cart} Inquiry Cart</h3><span class="badge badge-orange" id="cart-count-badge">${STATE.cart.length} items</span></div>
+          <div class="card-body" style="padding-top:14px;">
+            <div class="form-group">
+              <label>Customer</label>
+              <select id="cart-customer">
+                ${(customers||[]).map(c=>`<option value="${c.id}">${escapeHtml(c.full_name)}${c.company_name?' — '+escapeHtml(c.company_name):''}</option>`).join('')}
+              </select>
+            </div>
+            <div id="cart-items-list" style="max-height:320px;overflow-y:auto;margin:14px 0;">
+              ${renderCartItemsHtml()}
+            </div>
+            <div style="border-top:1px solid var(--slate-200);padding-top:12px;display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--navy-900);">
+              <span>Total</span><span class="mono" id="cart-total">${peso(cartTotal())}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;">
+              <button class="btn btn-primary" id="cart-submit-btn" ${STATE.cart.length===0?'disabled':''}>Submit Inquiry</button>
+              <button class="btn btn-secondary btn-sm" id="cart-pdf-btn" ${STATE.cart.length===0?'disabled':''}>Generate Quotation PDF</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('cart-product-search').addEventListener('input', debounce(loadCartProductGrid, 300));
+  document.getElementById('cart-submit-btn').addEventListener('click', submitInquiry);
+  document.getElementById('cart-pdf-btn').addEventListener('click', generateQuotationPDF);
+
+  loadCartProductGrid();
+}
+
+async function loadCartProductGrid(){
+  const grid = document.getElementById('cart-product-grid');
+  if(!grid) return;
+  const search = document.getElementById('cart-product-search')?.value || '';
+
+  let query = sb.from('products').select('id, name, sku, default_price, product_brands(id, brand_id, price, is_preferred, brands(name), stock_levels(qty_on_hand, branch_id))').eq('is_active', true).limit(24);
+  if(search) query = query.ilike('name', `%${search}%`);
+
+  const { data, error } = await query;
+  if(error){ grid.innerHTML = `<div class="empty-state"><p>Error: ${escapeHtml(error.message)}</p></div>`; return; }
+  if(!data || data.length===0){ grid.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No products found.</p></div>`; return; }
+
+  grid.innerHTML = data.map(p => {
+    const brands = (p.product_brands||[]).filter(pb=>pb.id);
+    return `<div class="product-card" data-product-id="${p.id}">
+      <div class="product-card-img">${ICONS.box}</div>
+      <div class="product-card-name">${escapeHtml(p.name)}</div>
+      <div class="product-card-sku">${escapeHtml(p.sku)}</div>
+      <div class="brand-chips">
+        ${brands.map(b => {
+          const stock = (b.stock_levels||[]).find(sl=>sl.branch_id===STATE.currentBranch);
+          const qty = stock?.qty_on_hand ?? 0;
+          return `<span class="brand-chip ${b.is_preferred?'preferred':''}" data-pb-id="${b.id}" data-pname="${escapeHtml(p.name)}" data-sku="${escapeHtml(p.sku)}" data-bname="${escapeHtml(b.brands.name)}" data-price="${b.price}" data-stock="${qty}">${escapeHtml(b.brands.name)} · ${peso(b.price)}</span>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  grid.querySelectorAll('.brand-chip').forEach(chip=>{
+    chip.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      addToCart({
+        product_brand_id: chip.dataset.pbId,
+        product_name: chip.dataset.pname,
+        sku: chip.dataset.sku,
+        brand_name: chip.dataset.bname,
+        unit_price: parseFloat(chip.dataset.price),
+        available_stock: parseFloat(chip.dataset.stock),
+        qty: 1
+      });
+    });
+  });
+}
+
+function addToCart(item){
+  const existing = STATE.cart.find(c=>c.product_brand_id === item.product_brand_id);
+  if(existing){ existing.qty += 1; }
+  else { STATE.cart.push(item); }
+  toast(`Added ${item.product_name} (${item.brand_name}) to cart`, 'success');
+  updateCartUI();
+}
+function removeFromCart(productBrandId){
+  STATE.cart = STATE.cart.filter(c=>c.product_brand_id !== productBrandId);
+  updateCartUI();
+}
+function updateCartQty(productBrandId, qty){
+  const item = STATE.cart.find(c=>c.product_brand_id === productBrandId);
+  if(item){ item.qty = Math.max(1, qty); }
+  updateCartUI();
+}
+function cartTotal(){
+  return STATE.cart.reduce((sum,c)=> sum + (c.qty * c.unit_price), 0);
+}
+function renderCartItemsHtml(){
+  if(STATE.cart.length===0) return `<div class="empty-state" style="padding:30px 10px;">${ICONS.cart}<p>Cart is empty. Tap a brand chip to add.</p></div>`;
+  return STATE.cart.map(c=>`
+    <div class="cart-item">
+      <div class="cart-item-info">
+        <div class="cart-item-name">${escapeHtml(c.product_name)}</div>
+        <div class="cart-item-brand">${escapeHtml(c.brand_name)} • ${peso(c.unit_price)} ${c.available_stock!==undefined ? `• stock: ${c.available_stock}` : ''}</div>
+      </div>
+      <div class="qty-stepper">
+        <button onclick="updateCartQty('${c.product_brand_id}', ${c.qty-1})">−</button>
+        <input type="number" value="${c.qty}" onchange="updateCartQty('${c.product_brand_id}', parseFloat(this.value)||1)">
+        <button onclick="updateCartQty('${c.product_brand_id}', ${c.qty+1})">+</button>
+      </div>
+      <button class="icon-btn" style="width:26px;height:26px;" onclick="removeFromCart('${c.product_brand_id}')">${ICONS.x}</button>
+    </div>
+  `).join('');
+}
+function updateCartUI(){
+  const list = document.getElementById('cart-items-list');
+  if(list) list.innerHTML = renderCartItemsHtml();
+  const total = document.getElementById('cart-total');
+  if(total) total.textContent = peso(cartTotal());
+  const countBadge = document.getElementById('cart-count-badge');
+  if(countBadge) countBadge.textContent = `${STATE.cart.length} items`;
+  const submitBtn = document.getElementById('cart-submit-btn');
+  if(submitBtn) submitBtn.disabled = STATE.cart.length===0;
+  const pdfBtn = document.getElementById('cart-pdf-btn');
+  if(pdfBtn) pdfBtn.disabled = STATE.cart.length===0;
+
+  const navBadge = document.getElementById('cart-badge');
+  if(navBadge){
+    navBadge.style.display = STATE.cart.length>0 ? 'inline-flex' : 'none';
+    navBadge.textContent = STATE.cart.length;
+  }
+}
+
+async function submitInquiry(){
+  if(STATE.cart.length===0) return;
+  const customerId = document.getElementById('cart-customer').value;
+  const btn = document.getElementById('cart-submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  const { data: inqNumber } = await sb.rpc('generate_inquiry_number');
+
+  const { data: inquiry, error: inqErr } = await sb.from('inquiries').insert({
+    inquiry_number: inqNumber, customer_id: customerId, branch_id: STATE.currentBranch,
+    sales_agent_id: STATE.profile.id, status: 'submitted',
+    valid_until: new Date(Date.now() + 7*86400000).toISOString().slice(0,10)
+  }).select().single();
+
+  if(inqErr){ toast('Failed to create inquiry: ' + inqErr.message, 'error'); btn.disabled=false; btn.textContent='Submit Inquiry'; return; }
+
+  const items = STATE.cart.map(c => ({
+    inquiry_id: inquiry.id, product_brand_id: c.product_brand_id, qty: c.qty, unit_price: c.unit_price
+  }));
+  const { error: itemsErr } = await sb.from('inquiry_items').insert(items);
+
+  if(itemsErr){ toast('Inquiry created but items failed: ' + itemsErr.message, 'error'); }
+  else { toast(`Inquiry ${inqNumber} submitted successfully.`, 'success'); }
+
+  STATE.cart = [];
+  updateCartUI();
+  btn.disabled = false; btn.textContent = 'Submit Inquiry';
+  INQ_STATE.tab = 'list';
+  renderInquiry();
+}
+
+// ============ QUOTATION PDF ============
+function generateQuotationPDF(){
+  if(STATE.cart.length===0){ toast('Cart is empty.', 'error'); return; }
+  const customerSelect = document.getElementById('cart-customer');
+  const customerName = customerSelect ? customerSelect.options[customerSelect.selectedIndex].text : 'Walk-in Customer';
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const quoteNo = 'QT-' + Date.now().toString().slice(-8);
+
+  doc.setFontSize(18); doc.setFont(undefined,'bold');
+  doc.setTextColor(15,27,45);
+  doc.text('HUNYO 24 TRADING', 14, 20);
+  doc.setFontSize(9); doc.setFont(undefined,'normal'); doc.setTextColor(100,100,100);
+  doc.text('Hardware & Construction Supplies — Taytay, Rizal, Philippines', 14, 26);
+
+  doc.setDrawColor(232,89,12); doc.setLineWidth(0.8);
+  doc.line(14, 30, 196, 30);
+
+  doc.setFontSize(13); doc.setTextColor(15,27,45); doc.setFont(undefined,'bold');
+  doc.text('QUOTATION', 14, 40);
+  doc.setFontSize(9); doc.setFont(undefined,'normal');
+  doc.text(`Quote No: ${quoteNo}`, 14, 47);
+  doc.text(`Date: ${new Date().toLocaleDateString('en-PH')}`, 14, 52);
+  doc.text(`Customer: ${customerName}`, 14, 57);
+  doc.text(`Prepared by: ${STATE.profile.full_name}`, 14, 62);
+  doc.text(`Valid until: ${new Date(Date.now()+7*86400000).toLocaleDateString('en-PH')}`, 120, 47);
+
+  let y = 74;
+  doc.setFillColor(15,27,45); doc.rect(14, y-6, 182, 8, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont(undefined,'bold');
+  doc.text('PRODUCT', 16, y); doc.text('BRAND', 95, y); doc.text('QTY', 130, y); doc.text('UNIT PRICE', 148, y); doc.text('TOTAL', 178, y);
+  y += 8;
+
+  doc.setTextColor(40,40,40); doc.setFont(undefined,'normal'); doc.setFontSize(9);
+  STATE.cart.forEach((item, idx) => {
+    if(idx % 2 === 1){ doc.setFillColor(247,245,241); doc.rect(14, y-5, 182, 7, 'F'); }
+    doc.text(String(item.product_name).slice(0,38), 16, y);
+    doc.text(String(item.brand_name).slice(0,18), 95, y);
+    doc.text(String(item.qty), 130, y);
+    doc.text(peso(item.unit_price).replace('₱','P'), 148, y);
+    doc.text(peso(item.qty*item.unit_price).replace('₱','P'), 178, y);
+    y += 7;
+  });
+
+  y += 4;
+  doc.setDrawColor(200,200,200); doc.line(14, y, 196, y);
+  y += 8;
+  doc.setFont(undefined,'bold'); doc.setFontSize(11); doc.setTextColor(232,89,12);
+  doc.text(`TOTAL: ${peso(cartTotal()).replace('₱','P')}`, 148, y);
+
+  y += 20;
+  doc.setFontSize(8); doc.setTextColor(130,130,130); doc.setFont(undefined,'normal');
+  doc.text('This quotation is valid for 7 days from the date of issue. Prices subject to change without prior notice.', 14, y);
+  doc.text('Thank you for choosing HUnyo 24 Trading.', 14, y+5);
+
+  doc.save(`Quotation-${quoteNo}.pdf`);
+  toast('Quotation PDF generated.', 'success');
+}
+
+// ============ INQUIRY LIST ============
+async function renderInquiryList(){
+  const container = document.getElementById('inquiry-tab-content');
+  container.innerHTML = `
+    <div class="toolbar">
+      <div class="search-input-wrap">${ICONS.search}<input type="text" class="search-input" id="inq-search" placeholder="Search inquiry number..."></div>
+      <select class="filter-select" id="inq-status-filter">
+        <option value="">All Statuses</option>
+        <option value="submitted">Submitted</option>
+        <option value="forwarded_to_prep">Forwarded to Prep</option>
+        <option value="preparing">Preparing</option>
+        <option value="ready">Ready</option>
+        <option value="converted">Converted</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="table-wrap" id="inq-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div>
+      <div class="pagination" id="inq-pagination"></div>
+    </div>
+  `;
+  document.getElementById('inq-search').addEventListener('input', debounce(e=>{ INQ_STATE.search=e.target.value; INQ_STATE.listPage=1; refreshInquiryList(); }, 300));
+  document.getElementById('inq-status-filter').addEventListener('change', e=>{ INQ_STATE.statusFilter=e.target.value; INQ_STATE.listPage=1; refreshInquiryList(); });
+  refreshInquiryList();
+}
+
+async function refreshInquiryList(){
+  const wrap = document.getElementById('inq-table-wrap');
+  if(!wrap) return;
+
+  let query = sb.from('inquiries').select('*, customers(full_name), users!inquiries_sales_agent_id_fkey(full_name)', {count:'exact'}).eq('branch_id', STATE.currentBranch);
+  if(INQ_STATE.search) query = query.ilike('inquiry_number', `%${INQ_STATE.search}%`);
+  if(INQ_STATE.statusFilter) query = query.eq('status', INQ_STATE.statusFilter);
+
+  const from = (INQ_STATE.listPage-1)*INQ_STATE.listPageSize;
+  const to = from + INQ_STATE.listPageSize - 1;
+  query = query.order('created_at',{ascending:false}).range(from,to);
+
+  const { data, count, error } = await query;
+  if(error){ wrap.innerHTML = `<div class="empty-state"><p>Error: ${escapeHtml(error.message)}</p></div>`; return; }
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No inquiries found.</p></div>`; document.getElementById('inq-pagination').innerHTML=''; return; }
+
+  const statusColors = { draft:'slate', submitted:'blue', forwarded_to_prep:'amber', preparing:'amber', ready:'green', converted:'green', cancelled:'red' };
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Inquiry #</th><th>Customer</th><th>Agent</th><th>Total</th><th>Status</th><th>Date</th><th></th></tr></thead>
+    <tbody>
+      ${data.map(i=>`<tr>
+        <td class="mono" style="font-weight:600;">${escapeHtml(i.inquiry_number)}</td>
+        <td>${escapeHtml(i.customers?.full_name || 'Walk-in')}</td>
+        <td>${escapeHtml(i.users?.full_name || '—')}</td>
+        <td class="mono">${peso(i.total_amount)}</td>
+        <td><span class="badge badge-${statusColors[i.status]||'slate'}">${i.status.replace(/_/g,' ')}</span></td>
+        <td style="color:var(--slate-500);font-size:12px;">${fmtDate(i.created_at)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="viewInquiryDetail('${i.id}')">View</button></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+
+  renderPagination('inq-pagination', INQ_STATE.listPage, INQ_STATE.listPageSize, count||0, (p)=>{ INQ_STATE.listPage=p; refreshInquiryList(); });
+}
+
+async function viewInquiryDetail(inquiryId){
+  const { data: inquiry } = await sb.from('inquiries').select('*, customers(*), users!inquiries_sales_agent_id_fkey(full_name)').eq('id', inquiryId).single();
+  const { data: items } = await sb.from('inquiry_items').select('*, product_brands(*, products(name,sku), brands(name))').eq('inquiry_id', inquiryId);
+
+  const canForward = can(['admin','sales_agent','inventory_manager']) && ['submitted'].includes(inquiry.status);
+  const canConvert = can(['admin','inventory_manager','order_prep_staff']) && ['submitted','forwarded_to_prep','preparing','ready'].includes(inquiry.status);
+  const canCancel = can(['admin','sales_agent','inventory_manager']) && !['converted','cancelled'].includes(inquiry.status);
+
+  openModal(`
+    <div class="modal-header"><h3>${escapeHtml(inquiry.inquiry_number)}</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div style="display:flex;justify-content:space-between;margin-bottom:16px;font-size:13px;">
+        <div>
+          <div style="color:var(--slate-500);">Customer</div>
+          <div style="font-weight:600;color:var(--navy-900);">${escapeHtml(inquiry.customers?.full_name || 'Walk-in')}</div>
+        </div>
+        <div>
+          <div style="color:var(--slate-500);">Sales Agent</div>
+          <div style="font-weight:600;color:var(--navy-900);">${escapeHtml(inquiry.users?.full_name || '—')}</div>
+        </div>
+        <div>
+          <div style="color:var(--slate-500);">Status</div>
+          <div style="font-weight:600;color:var(--navy-900);text-transform:capitalize;">${inquiry.status.replace(/_/g,' ')}</div>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Product</th><th>Brand</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr></thead>
+        <tbody>
+          ${(items||[]).map(it=>`<tr>
+            <td>${escapeHtml(it.product_brands?.products?.name||'—')}</td>
+            <td>${escapeHtml(it.product_brands?.brands?.name||'—')}</td>
+            <td class="mono">${Number(it.qty).toLocaleString()}</td>
+            <td class="mono">${peso(it.unit_price)}</td>
+            <td class="mono">${peso(it.line_total)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="text-align:right;margin-top:14px;font-size:15px;font-weight:700;color:var(--navy-900);">Total: ${peso(inquiry.total_amount)}</div>
+    </div>
+    <div class="modal-footer">
+      ${canForward ? `<button class="btn btn-secondary" onclick="forwardInquiry('${inquiry.id}')">Forward to Prep Staff</button>` : ''}
+      ${canConvert ? `<button class="btn btn-primary" onclick="convertInquiryToPurchase('${inquiry.id}')">Convert to Purchase (Deduct Stock)</button>` : ''}
+      ${canCancel ? `<button class="btn btn-danger" onclick="cancelInquiry('${inquiry.id}')">Cancel</button>` : ''}
+    </div>
+  `, {large:true});
+}
+
+async function forwardInquiry(inquiryId){
+  const { error } = await sb.from('inquiries').update({ status:'forwarded_to_prep', forwarded_at: new Date().toISOString() }).eq('id', inquiryId);
+  if(error){ toast('Failed: '+error.message,'error'); return; }
+  toast('Inquiry forwarded to preparation staff.', 'success');
+  closeModal();
+  refreshInquiryList();
+}
+
+async function convertInquiryToPurchase(inquiryId){
+  if(!confirm('Convert this inquiry to a purchase? This will deduct stock using FIFO and cannot be undone.')) return;
+  const { error } = await sb.rpc('convert_inquiry_to_purchase', { p_inquiry_id: inquiryId });
+  if(error){ toast('Conversion failed: ' + error.message, 'error'); return; }
+  toast('Inquiry converted to purchase. Stock deducted via FIFO.', 'success');
+  closeModal();
+  refreshInquiryList();
+}
+
+async function cancelInquiry(inquiryId){
+  if(!confirm('Cancel this inquiry?')) return;
+  const { error } = await sb.from('inquiries').update({ status:'cancelled' }).eq('id', inquiryId);
+  if(error){ toast('Failed: '+error.message,'error'); return; }
+  toast('Inquiry cancelled.', 'info');
+  closeModal();
+  refreshInquiryList();
+}
+
+
+// ============================================================
+// HUNYO 24 TRADING — Suppliers & Purchasing Management
+// ============================================================
+
+const SUP_STATE = { tab:'pos', poPage:1, poPageSize:15, poStatusFilter:'' };
+
+async function renderSuppliers(){
+  const el = document.getElementById('page-suppliers');
+  if(!el) return;
+  el.innerHTML = `
+    <div class="tab-bar">
+      <button class="tab-btn ${SUP_STATE.tab==='pos'?'active':''}" data-tab="pos">Purchase Orders</button>
+      <button class="tab-btn ${SUP_STATE.tab==='suppliers'?'active':''}" data-tab="suppliers">Supplier Database</button>
+      <button class="tab-btn ${SUP_STATE.tab==='performance'?'active':''}" data-tab="performance">Supplier Performance</button>
+    </div>
+    <div id="suppliers-tab-content"></div>
+  `;
+  el.querySelectorAll('.tab-btn').forEach(btn=> btn.addEventListener('click', ()=>{ SUP_STATE.tab=btn.dataset.tab; renderSuppliers(); }));
+
+  if(SUP_STATE.tab==='pos') renderPOList();
+  else if(SUP_STATE.tab==='suppliers') renderSupplierDB();
+  else renderSupplierPerformance();
+}
+
+// ============ PURCHASE ORDERS ============
+async function renderPOList(){
+  const container = document.getElementById('suppliers-tab-content');
+  container.innerHTML = `
+    <div class="toolbar">
+      <select class="filter-select" id="po-status-filter">
+        <option value="">All Statuses</option>
+        <option value="draft">Draft</option>
+        <option value="submitted">Submitted</option>
+        <option value="approved">Approved</option>
+        <option value="partially_received">Partially Received</option>
+        <option value="received">Received</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <div style="flex:1;"></div>
+      <button class="btn btn-primary btn-sm" id="btn-new-po">${ICONS.plus} New Purchase Order</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap" id="po-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div>
+      <div class="pagination" id="po-pagination"></div>
+    </div>
+  `;
+  document.getElementById('po-status-filter').addEventListener('change', e=>{ SUP_STATE.poStatusFilter=e.target.value; SUP_STATE.poPage=1; refreshPOList(); });
+  document.getElementById('btn-new-po').addEventListener('click', openNewPOModal);
+  refreshPOList();
+}
+
+async function refreshPOList(){
+  const wrap = document.getElementById('po-table-wrap');
+  if(!wrap) return;
+
+  let query = sb.from('purchase_orders').select('*, suppliers(company_name)', {count:'exact'}).eq('branch_id', STATE.currentBranch);
+  if(SUP_STATE.poStatusFilter) query = query.eq('status', SUP_STATE.poStatusFilter);
+
+  const from = (SUP_STATE.poPage-1)*SUP_STATE.poPageSize;
+  const to = from + SUP_STATE.poPageSize - 1;
+  query = query.order('created_at',{ascending:false}).range(from,to);
+
+  const { data, count, error } = await query;
+  if(error){ wrap.innerHTML = `<div class="empty-state"><p>Error: ${escapeHtml(error.message)}</p></div>`; return; }
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No purchase orders yet.</p></div>`; document.getElementById('po-pagination').innerHTML=''; return; }
+
+  const statusColors = { draft:'slate', submitted:'blue', approved:'amber', partially_received:'amber', received:'green', cancelled:'red' };
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>PO Number</th><th>Supplier</th><th>Order Date</th><th>Expected Delivery</th><th>Total</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      ${data.map(po=>`<tr>
+        <td class="mono" style="font-weight:600;">${escapeHtml(po.po_number)}</td>
+        <td>${escapeHtml(po.suppliers?.company_name||'—')}</td>
+        <td>${fmtDate(po.order_date)}</td>
+        <td>${fmtDate(po.expected_delivery_date)}</td>
+        <td class="mono">${peso(po.total_amount)}</td>
+        <td><span class="badge badge-${statusColors[po.status]||'slate'}">${po.status.replace(/_/g,' ')}</span></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="viewPODetail('${po.id}')">View</button></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+
+  renderPagination('po-pagination', SUP_STATE.poPage, SUP_STATE.poPageSize, count||0, (p)=>{ SUP_STATE.poPage=p; refreshPOList(); });
+}
+
+const NEW_PO_ITEMS = [];
+
+async function openNewPOModal(){
+  NEW_PO_ITEMS.length = 0;
+  const [{data:suppliers}, {data:productBrands}] = await Promise.all([
+    sb.from('suppliers').select('*').eq('is_active',true).order('company_name'),
+    sb.from('product_brands').select('id, price, cost_price, products(name,sku), brands(name)').eq('is_active',true),
+  ]);
+
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.plus} New Purchase Order</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Supplier</label>
+          <select id="po-supplier">${(suppliers||[]).map(s=>`<option value="${s.id}">${escapeHtml(s.company_name)}</option>`).join('')}</select>
+        </div>
+        <div class="form-group">
+          <label>Expected Delivery Date</label>
+          <input type="date" id="po-expected-date">
+        </div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--slate-200);margin:14px 0;">
+      <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:10px;">
+        <div class="form-group" style="flex:2;margin-bottom:0;">
+          <label>Add Product</label>
+          <select id="po-add-product">${(productBrands||[]).map(pb=>`<option value="${pb.id}" data-cost="${pb.cost_price}">${escapeHtml(pb.products.name)} — ${escapeHtml(pb.brands.name)}</option>`).join('')}</select>
+        </div>
+        <div class="form-group" style="flex:1;margin-bottom:0;">
+          <label>Qty</label>
+          <input type="number" id="po-add-qty" min="1" value="1">
+        </div>
+        <div class="form-group" style="flex:1;margin-bottom:0;">
+          <label>Unit Cost</label>
+          <input type="number" id="po-add-cost" min="0" step="0.01">
+        </div>
+        <button class="btn btn-secondary btn-sm" id="po-add-item-btn" style="height:42px;">Add</button>
+      </div>
+      <div id="po-items-table"></div>
+      <div style="text-align:right;margin-top:10px;font-weight:700;font-size:14px;" id="po-items-total">Total: ${peso(0)}</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="po-submit">Create Purchase Order</button>
+    </div>
+  `, {large:true});
+
+  const productSelect = document.getElementById('po-add-product');
+  productSelect.addEventListener('change', ()=>{
+    document.getElementById('po-add-cost').value = productSelect.options[productSelect.selectedIndex].dataset.cost || '';
+  });
+  if(productSelect.options.length){
+    document.getElementById('po-add-cost').value = productSelect.options[0].dataset.cost || '';
+  }
+
+  document.getElementById('po-add-item-btn').addEventListener('click', ()=>{
+    const select = document.getElementById('po-add-product');
+    const opt = select.options[select.selectedIndex];
+    const qty = parseFloat(document.getElementById('po-add-qty').value) || 1;
+    const cost = parseFloat(document.getElementById('po-add-cost').value) || 0;
+    if(!opt) return;
+    NEW_PO_ITEMS.push({ product_brand_id: select.value, label: opt.textContent, qty, unit_cost: cost });
+    renderPOItemsTable();
+  });
+
+  renderPOItemsTable();
+
+  document.getElementById('po-submit').addEventListener('click', submitNewPO);
+}
+
+function renderPOItemsTable(){
+  const wrap = document.getElementById('po-items-table');
+  if(NEW_PO_ITEMS.length===0){
+    wrap.innerHTML = `<div class="empty-state" style="padding:24px;">${ICONS.empty}<p>No items added yet.</p></div>`;
+  } else {
+    wrap.innerHTML = `<table><thead><tr><th>Product</th><th>Qty</th><th>Unit Cost</th><th>Subtotal</th><th></th></tr></thead><tbody>
+      ${NEW_PO_ITEMS.map((it,idx)=>`<tr>
+        <td>${escapeHtml(it.label)}</td>
+        <td class="mono">${it.qty}</td>
+        <td class="mono">${peso(it.unit_cost)}</td>
+        <td class="mono">${peso(it.qty*it.unit_cost)}</td>
+        <td><button class="icon-btn" style="width:26px;height:26px;" onclick="removePOItem(${idx})">${ICONS.x}</button></td>
+      </tr>`).join('')}
+    </tbody></table>`;
+  }
+  const total = NEW_PO_ITEMS.reduce((s,i)=>s+i.qty*i.unit_cost,0);
+  document.getElementById('po-items-total').textContent = 'Total: ' + peso(total);
+}
+function removePOItem(idx){ NEW_PO_ITEMS.splice(idx,1); renderPOItemsTable(); }
+
+async function submitNewPO(){
+  if(NEW_PO_ITEMS.length===0){ toast('Add at least one item.', 'error'); return; }
+  const supplierId = document.getElementById('po-supplier').value;
+  const expectedDate = document.getElementById('po-expected-date').value || null;
+  const btn = document.getElementById('po-submit');
+  btn.disabled = true; btn.textContent = 'Creating...';
+
+  const { data: poNumber } = await sb.rpc('generate_po_number');
+
+  const { data: po, error: poErr } = await sb.from('purchase_orders').insert({
+    po_number: poNumber, supplier_id: supplierId, branch_id: STATE.currentBranch,
+    status: 'submitted', expected_delivery_date: expectedDate, created_by: STATE.profile.id
+  }).select().single();
+
+  if(poErr){ toast('Failed: '+poErr.message,'error'); btn.disabled=false; btn.textContent='Create Purchase Order'; return; }
+
+  const items = NEW_PO_ITEMS.map(it => ({ purchase_order_id: po.id, product_brand_id: it.product_brand_id, qty_ordered: it.qty, unit_cost: it.unit_cost }));
+  const { error: itemsErr } = await sb.from('purchase_order_items').insert(items);
+
+  if(itemsErr){ toast('PO created but items failed: '+itemsErr.message, 'error'); }
+  else { toast(`Purchase order ${poNumber} created.`, 'success'); }
+
+  closeModal();
+  refreshPOList();
+}
+
+async function viewPODetail(poId){
+  const { data: po } = await sb.from('purchase_orders').select('*, suppliers(*)').eq('id', poId).single();
+  const { data: items } = await sb.from('purchase_order_items').select('*, product_brands(*, products(name,sku), brands(name))').eq('purchase_order_id', poId);
+
+  const canApprove = can(['admin','inventory_manager','supplier_manager']) && po.status==='submitted';
+  const canReceive = can(['admin','inventory_manager']) && ['approved','partially_received'].includes(po.status);
+
+  openModal(`
+    <div class="modal-header"><h3>${escapeHtml(po.po_number)}</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div style="font-size:13px;margin-bottom:14px;color:var(--slate-500);">Supplier: <strong style="color:var(--navy-900);">${escapeHtml(po.suppliers?.company_name)}</strong> • Status: <strong style="text-transform:capitalize;color:var(--navy-900);">${po.status.replace(/_/g,' ')}</strong></div>
+      <table>
+        <thead><tr><th>Product</th><th>Brand</th><th>Ordered</th><th>Received</th><th>Unit Cost</th><th>Subtotal</th>${canReceive?'<th></th>':''}</tr></thead>
+        <tbody>
+          ${(items||[]).map(it=>{
+            const pending = it.qty_ordered - it.qty_received;
+            return `<tr>
+              <td>${escapeHtml(it.product_brands?.products?.name||'—')}</td>
+              <td>${escapeHtml(it.product_brands?.brands?.name||'—')}</td>
+              <td class="mono">${Number(it.qty_ordered).toLocaleString()}</td>
+              <td class="mono">${Number(it.qty_received).toLocaleString()}</td>
+              <td class="mono">${peso(it.unit_cost)}</td>
+              <td class="mono">${peso(it.line_total)}</td>
+              ${canReceive ? `<td>${pending>0 ? `<button class="btn btn-secondary btn-sm" onclick="receivePOItemPrompt('${it.id}', ${pending})">Receive</button>` : `<span class="badge badge-green">Done</span>`}</td>` : ''}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <div style="text-align:right;margin-top:14px;font-size:15px;font-weight:700;color:var(--navy-900);">Total: ${peso(po.total_amount)}</div>
+    </div>
+    <div class="modal-footer">
+      ${canApprove ? `<button class="btn btn-primary" onclick="approvePO('${po.id}')">Approve PO</button>` : ''}
+      ${can(['admin']) && po.status!=='received' && po.status!=='cancelled' ? `<button class="btn btn-danger" onclick="cancelPO('${po.id}')">Cancel PO</button>` : ''}
+    </div>
+  `, {large:true});
+}
+
+async function approvePO(poId){
+  const { error } = await sb.from('purchase_orders').update({ status:'approved', approved_by: STATE.profile.id, approved_at: new Date().toISOString() }).eq('id', poId);
+  if(error){ toast('Failed: '+error.message,'error'); return; }
+  toast('Purchase order approved.', 'success');
+  closeModal(); refreshPOList();
+}
+async function cancelPO(poId){
+  if(!confirm('Cancel this purchase order?')) return;
+  const { error } = await sb.from('purchase_orders').update({ status:'cancelled' }).eq('id', poId);
+  if(error){ toast('Failed: '+error.message,'error'); return; }
+  toast('Purchase order cancelled.', 'info');
+  closeModal(); refreshPOList();
+}
+function receivePOItemPrompt(poItemId, maxQty){
+  const qty = prompt(`Quantity received (max ${maxQty}):`, maxQty);
+  if(qty===null) return;
+  const q = parseFloat(qty);
+  if(!q || q<=0 || q>maxQty){ toast('Invalid quantity.', 'error'); return; }
+  receivePOItem(poItemId, q);
+}
+async function receivePOItem(poItemId, qty){
+  const { error } = await sb.rpc('receive_po_item', { p_po_item_id: poItemId, p_qty_received: qty });
+  if(error){ toast('Failed: '+error.message,'error'); return; }
+  toast('Stock received and FIFO batch created.', 'success');
+  closeModal();
+  refreshPOList();
+}
+
+// ============ SUPPLIER DATABASE ============
+async function renderSupplierDB(){
+  const container = document.getElementById('suppliers-tab-content');
+  container.innerHTML = `
+    <div class="toolbar">
+      <div style="flex:1;"></div>
+      ${can(['admin','supplier_manager']) ? `<button class="btn btn-primary btn-sm" id="btn-new-supplier">${ICONS.plus} New Supplier</button>` : ''}
+    </div>
+    <div class="card"><div class="table-wrap" id="supplier-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div></div>
+  `;
+  if(can(['admin','supplier_manager'])){
+    document.getElementById('btn-new-supplier').addEventListener('click', openNewSupplierModal);
+  }
+
+  const { data } = await sb.from('suppliers').select('*').order('company_name');
+  const wrap = document.getElementById('supplier-table-wrap');
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No suppliers yet.</p></div>`; return; }
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Code</th><th>Company</th><th>Contact Person</th><th>Phone</th><th>Payment Terms</th><th>Lead Time</th><th>Status</th></tr></thead>
+    <tbody>
+      ${data.map(s=>`<tr>
+        <td class="mono">${escapeHtml(s.code)}</td>
+        <td style="font-weight:600;color:var(--navy-900);">${escapeHtml(s.company_name)}</td>
+        <td>${escapeHtml(s.contact_person||'—')}</td>
+        <td>${escapeHtml(s.contact_number||'—')}</td>
+        <td>${escapeHtml(s.payment_terms||'—')}</td>
+        <td>${s.lead_time_days} days</td>
+        <td>${s.is_active ? `<span class="badge badge-green">Active</span>` : `<span class="badge badge-slate">Inactive</span>`}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function openNewSupplierModal(){
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.plus} New Supplier</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>Supplier Code</label><input type="text" id="ns-code" placeholder="e.g. SUP-006"></div>
+        <div class="form-group"><label>Company Name</label><input type="text" id="ns-company"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Contact Person</label><input type="text" id="ns-contact"></div>
+        <div class="form-group"><label>Phone</label><input type="text" id="ns-phone"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Email</label><input type="email" id="ns-email"></div>
+        <div class="form-group"><label>Lead Time (days)</label><input type="number" id="ns-leadtime" value="7"></div>
+      </div>
+      <div class="form-group"><label>Address</label><input type="text" id="ns-address"></div>
+      <div class="form-group"><label>Payment Terms</label><input type="text" id="ns-terms" placeholder="e.g. 30 days, COD"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="ns-submit">Create Supplier</button>
+    </div>
+  `);
+  document.getElementById('ns-submit').addEventListener('click', async ()=>{
+    const payload = {
+      code: document.getElementById('ns-code').value.trim(),
+      company_name: document.getElementById('ns-company').value.trim(),
+      contact_person: document.getElementById('ns-contact').value.trim() || null,
+      contact_number: document.getElementById('ns-phone').value.trim() || null,
+      email: document.getElementById('ns-email').value.trim() || null,
+      address: document.getElementById('ns-address').value.trim() || null,
+      payment_terms: document.getElementById('ns-terms').value.trim() || null,
+      lead_time_days: parseInt(document.getElementById('ns-leadtime').value) || 7,
+    };
+    if(!payload.code || !payload.company_name){ toast('Code and company name are required.', 'error'); return; }
+    const { error } = await sb.from('suppliers').insert(payload);
+    if(error){ toast('Failed: '+error.message,'error'); return; }
+    toast('Supplier created.', 'success');
+    closeModal();
+    renderSupplierDB();
+  });
+}
+
+// ============ SUPPLIER PERFORMANCE ============
+async function renderSupplierPerformance(){
+  const container = document.getElementById('suppliers-tab-content');
+  container.innerHTML = `<div class="card"><div class="table-wrap" id="perf-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div></div>`;
+
+  const { data } = await sb.from('v_supplier_performance').select('*').order('total_po_value',{ascending:false});
+  const wrap = document.getElementById('perf-table-wrap');
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No data yet.</p></div>`; return; }
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Supplier</th><th>Total POs</th><th>Completed</th><th>Avg Delivery (days)</th><th>Late Deliveries</th><th>Total PO Value</th></tr></thead>
+    <tbody>
+      ${data.map(s=>`<tr>
+        <td style="font-weight:600;color:var(--navy-900);">${escapeHtml(s.company_name)}</td>
+        <td class="mono">${s.total_pos||0}</td>
+        <td class="mono">${s.completed_pos||0}</td>
+        <td class="mono">${s.avg_delivery_days ? Number(s.avg_delivery_days).toFixed(1) : '—'}</td>
+        <td class="mono" style="${(s.late_deliveries||0)>0?'color:var(--red-600);font-weight:700;':''}">${s.late_deliveries||0}</td>
+        <td class="mono">${peso(s.total_po_value)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+
+// ============================================================
+// HUNYO 24 TRADING — Reports & Analytics
+// ============================================================
+
+const REP_STATE = { tab:'sales' };
+
+async function renderReports(){
+  const el = document.getElementById('page-reports');
+  if(!el) return;
+  el.innerHTML = `
+    <div class="tab-bar">
+      <button class="tab-btn ${REP_STATE.tab==='sales'?'active':''}" data-tab="sales">Sales</button>
+      <button class="tab-btn ${REP_STATE.tab==='aging'?'active':''}" data-tab="aging">Stock Aging</button>
+      <button class="tab-btn ${REP_STATE.tab==='conversion'?'active':''}" data-tab="conversion">Inquiry Conversion</button>
+      <button class="tab-btn ${REP_STATE.tab==='value'?'active':''}" data-tab="value">Inventory Value</button>
+    </div>
+    <div id="reports-tab-content"></div>
+  `;
+  el.querySelectorAll('.tab-btn').forEach(btn=> btn.addEventListener('click', ()=>{ REP_STATE.tab=btn.dataset.tab; renderReports(); }));
+
+  if(REP_STATE.tab==='sales') renderSalesReport();
+  else if(REP_STATE.tab==='aging') renderAgingReport();
+  else if(REP_STATE.tab==='conversion') renderConversionReport();
+  else renderInventoryValueReport();
+}
+
+async function renderSalesReport(){
+  const container = document.getElementById('reports-tab-content');
+  container.innerHTML = `
+    <div class="kpi-row" id="sales-kpis" style="margin-bottom:20px;">
+      ${Array(3).fill('<div class="stat-card"><div class="skeleton" style="height:60px;"></div></div>').join('')}
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Daily Sales (Last 30 Days)</h3></div>
+      <div class="table-wrap" id="daily-sales-table"><div style="padding:20px;"><div class="skeleton" style="height:240px;"></div></div></div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="card-header"><h3>Monthly Sales Summary</h3></div>
+      <div class="table-wrap" id="monthly-sales-table"><div style="padding:20px;"><div class="skeleton" style="height:180px;"></div></div></div>
+    </div>
+  `;
+
+  const [rollingRes, dailyRes, monthlyRes] = await Promise.all([
+    sb.from('v_rolling_7day_sales').select('*').eq('branch_id', STATE.currentBranch).maybeSingle(),
+    sb.from('v_daily_sales').select('*').eq('branch_id', STATE.currentBranch).order('sale_date',{ascending:false}).limit(30),
+    sb.from('v_monthly_sales').select('*').eq('branch_id', STATE.currentBranch).order('sale_month',{ascending:false}).limit(12),
+  ]);
+
+  document.getElementById('sales-kpis').innerHTML = `
+    <div class="stat-card"><div class="stat-value">${peso(rollingRes.data?.last_7_days_sales||0)}</div><div class="stat-label">Last 7 Days</div></div>
+    <div class="stat-card"><div class="stat-value">${peso(rollingRes.data?.last_30_days_sales||0)}</div><div class="stat-label">Last 30 Days</div></div>
+    <div class="stat-card"><div class="stat-value">${peso((dailyRes.data&&dailyRes.data[0]?.total_sales)||0)}</div><div class="stat-label">Today</div></div>
+  `;
+
+  const dailyData = dailyRes.data || [];
+  document.getElementById('daily-sales-table').innerHTML = dailyData.length===0 ?
+    `<div class="empty-state">${ICONS.empty}<p>No sales recorded yet.</p></div>` :
+    `<table><thead><tr><th>Date</th><th>Transactions</th><th>Items Sold</th><th>Total Sales</th></tr></thead><tbody>
+      ${dailyData.map(d=>`<tr>
+        <td>${fmtDate(d.sale_date)}</td>
+        <td class="mono">${d.transaction_count}</td>
+        <td class="mono">${Number(d.total_items_sold||0).toLocaleString()}</td>
+        <td class="mono" style="font-weight:700;">${peso(d.total_sales)}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+
+  const monthlyData = monthlyRes.data || [];
+  document.getElementById('monthly-sales-table').innerHTML = monthlyData.length===0 ?
+    `<div class="empty-state">${ICONS.empty}<p>No monthly data yet.</p></div>` :
+    `<table><thead><tr><th>Month</th><th>Transactions</th><th>Total Sales</th></tr></thead><tbody>
+      ${monthlyData.map(m=>`<tr>
+        <td>${new Date(m.sale_month).toLocaleDateString('en-PH',{year:'numeric',month:'long'})}</td>
+        <td class="mono">${m.transaction_count}</td>
+        <td class="mono" style="font-weight:700;">${peso(m.total_sales)}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+async function renderAgingReport(){
+  const container = document.getElementById('reports-tab-content');
+  container.innerHTML = `
+    <div class="toolbar">
+      <select class="filter-select" id="aging-bucket-filter">
+        <option value="">All Age Buckets</option>
+        <option value="0-30 days">0-30 days</option>
+        <option value="31-60 days">31-60 days</option>
+        <option value="61-90 days">61-90 days</option>
+        <option value="91-180 days">91-180 days</option>
+        <option value="180+ days">180+ days</option>
+      </select>
+    </div>
+    <div class="card"><div class="table-wrap" id="aging-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:300px;"></div></div></div></div>
+  `;
+  document.getElementById('aging-bucket-filter').addEventListener('change', refreshAgingTable);
+  refreshAgingTable();
+}
+async function refreshAgingTable(){
+  const bucket = document.getElementById('aging-bucket-filter')?.value || '';
+  let query = sb.from('v_stock_aging').select('*').eq('branch_id', STATE.currentBranch).order('age_days',{ascending:false}).limit(100);
+  if(bucket) query = query.eq('age_bucket', bucket);
+  const { data } = await query;
+  const wrap = document.getElementById('aging-table-wrap');
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No stock batches found.</p></div>`; return; }
+
+  const bucketColors = { '0-30 days':'green','31-60 days':'blue','61-90 days':'amber','91-180 days':'amber','180+ days':'red' };
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Product</th><th>Brand</th><th>Batch</th><th>Received</th><th>Age</th><th>Qty Remaining</th><th>Value</th></tr></thead>
+    <tbody>
+      ${data.map(b=>`<tr>
+        <td style="font-weight:600;color:var(--navy-900);">${escapeHtml(b.product_name)}</td>
+        <td>${escapeHtml(b.brand_name)}</td>
+        <td class="mono">${escapeHtml(b.batch_code)}</td>
+        <td>${fmtDate(b.received_date)}</td>
+        <td><span class="badge badge-${bucketColors[b.age_bucket]||'slate'}">${b.age_bucket} (${b.age_days}d)</span></td>
+        <td class="mono">${Number(b.qty_remaining).toLocaleString()}</td>
+        <td class="mono">${peso(b.remaining_value)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function renderConversionReport(){
+  const container = document.getElementById('reports-tab-content');
+  container.innerHTML = `<div class="card"><div class="table-wrap" id="conv-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div></div>`;
+
+  const { data } = await sb.from('v_inquiry_conversion').select('*').eq('branch_id', STATE.currentBranch).order('month',{ascending:false}).limit(12);
+  const wrap = document.getElementById('conv-table-wrap');
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No inquiry data yet.</p></div>`; return; }
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Month</th><th>Total Inquiries</th><th>Converted</th><th>Cancelled</th><th>Conversion Rate</th></tr></thead>
+    <tbody>
+      ${data.map(c=>`<tr>
+        <td>${new Date(c.month).toLocaleDateString('en-PH',{year:'numeric',month:'long'})}</td>
+        <td class="mono">${c.total_inquiries}</td>
+        <td class="mono" style="color:var(--green-600);font-weight:700;">${c.converted_count}</td>
+        <td class="mono" style="color:var(--red-600);">${c.cancelled_count}</td>
+        <td><span class="badge ${c.conversion_rate_pct>=50?'badge-green':'badge-amber'}">${c.conversion_rate_pct||0}%</span></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function renderInventoryValueReport(){
+  const container = document.getElementById('reports-tab-content');
+  container.innerHTML = `<div class="card"><div class="table-wrap" id="value-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div></div>`;
+
+  const { data } = await sb.from('v_inventory_value').select('*').eq('branch_id', STATE.currentBranch).order('inventory_value',{ascending:false}).limit(100);
+  const wrap = document.getElementById('value-table-wrap');
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No inventory data yet.</p></div>`; return; }
+
+  const totalValue = data.reduce((s,d)=>s+Number(d.inventory_value||0),0);
+
+  wrap.innerHTML = `
+    <div style="padding:14px 20px;background:var(--navy-900);color:white;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:13px;font-weight:600;">Total Inventory Value</span>
+      <span class="mono" style="font-size:18px;font-weight:800;">${peso(totalValue)}</span>
+    </div>
+    <table>
+    <thead><tr><th>Product</th><th>Brand</th><th>SKU</th><th>Qty on Hand</th><th>Avg Unit Cost</th><th>Total Value</th></tr></thead>
+    <tbody>
+      ${data.map(v=>`<tr>
+        <td style="font-weight:600;color:var(--navy-900);">${escapeHtml(v.product_name)}</td>
+        <td>${escapeHtml(v.brand_name)}</td>
+        <td class="mono">${escapeHtml(v.sku)}</td>
+        <td class="mono">${Number(v.qty_on_hand).toLocaleString()}</td>
+        <td class="mono">${peso(v.avg_unit_cost)}</td>
+        <td class="mono" style="font-weight:700;">${peso(v.inventory_value)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+
+// ============================================================
+// HUNYO 24 TRADING — Year-End Inventory Audit
+// ============================================================
+
+const AUDIT_STATE = { activeAuditId:null };
+
+async function renderAudit(){
+  const el = document.getElementById('page-audit');
+  if(!el) return;
+
+  el.innerHTML = `
+    <div class="toolbar">
+      <div style="flex:1;"></div>
+      ${can(['admin','auditor']) ? `<button class="btn btn-primary btn-sm" id="btn-new-audit">${ICONS.plus} Start New Audit</button>` : ''}
+    </div>
+    <div class="card"><div class="table-wrap" id="audit-list-wrap"><div style="padding:20px;"><div class="skeleton" style="height:240px;"></div></div></div></div>
+  `;
+
+  if(can(['admin','auditor'])){
+    document.getElementById('btn-new-audit').addEventListener('click', startNewAudit);
+  }
+
+  const { data } = await sb.from('inventory_audits').select('*, users!inventory_audits_started_by_fkey(full_name)').eq('branch_id', STATE.currentBranch).order('created_at',{ascending:false});
+  const wrap = document.getElementById('audit-list-wrap');
+  if(!data || data.length===0){
+    wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No audits started yet. Begin a year-end audit to generate a system inventory snapshot.</p></div>`;
+    return;
+  }
+
+  const statusColors = { open:'slate', counting:'blue', pending_approval:'amber', approved:'green', closed:'slate' };
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Audit Code</th><th>Year</th><th>Started By</th><th>Started</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      ${data.map(a=>`<tr>
+        <td class="mono" style="font-weight:600;">${escapeHtml(a.audit_code)}</td>
+        <td>${a.audit_year}</td>
+        <td>${escapeHtml(a.users?.full_name||'—')}</td>
+        <td>${fmtDate(a.started_at)}</td>
+        <td><span class="badge badge-${statusColors[a.status]||'slate'}">${a.status.replace(/_/g,' ')}</span></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openAuditWorkspace('${a.id}')">Open</button></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function startNewAudit(){
+  const year = new Date().getFullYear();
+  if(!confirm(`Start a new inventory audit for ${year}? This will generate a system stock snapshot for this branch.`)) return;
+
+  const { data, error } = await sb.rpc('generate_audit_snapshot', { p_branch_id: STATE.currentBranch, p_audit_year: year });
+  if(error){ toast('Failed: ' + error.message, 'error'); return; }
+  toast('Audit snapshot generated. Begin physical counting.', 'success');
+  openAuditWorkspace(data);
+}
+
+async function openAuditWorkspace(auditId){
+  AUDIT_STATE.activeAuditId = auditId;
+  const { data: audit } = await sb.from('inventory_audits').select('*').eq('id', auditId).single();
+  const { data: lines } = await sb.from('audit_count_lines').select('*, product_brands(*, products(name,sku), brands(name))').eq('audit_id', auditId).order('id');
+
+  const countedCount = (lines||[]).filter(l=>l.physical_qty!==null).length;
+  const totalCount = (lines||[]).length;
+  const varianceCount = (lines||[]).filter(l=>l.physical_qty!==null && l.variance_qty!==0).length;
+
+  const canCount = can(['admin','auditor','inventory_manager']) && ['open','counting'].includes(audit.status);
+  const canSubmit = can(['admin','auditor']) && audit.status==='counting' && countedCount===totalCount && totalCount>0;
+  const canApprove = can(['admin']) && audit.status==='pending_approval';
+  const canClose = can(['admin']) && audit.status==='approved';
+
+  openModal(`
+    <div class="modal-header">
+      <h3>${escapeHtml(audit.audit_code)}</h3>
+      <span class="badge badge-blue" style="margin-right:8px;">${audit.status.replace(/_/g,' ')}</span>
+      <button class="icon-btn" onclick="closeModal()">${ICONS.x}</button>
+    </div>
+    <div class="modal-body">
+      <div class="kpi-row" style="margin-bottom:16px;">
+        <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:18px;">${countedCount}/${totalCount}</div><div class="stat-label">Items Counted</div></div>
+        <div class="stat-card" style="padding:12px;"><div class="stat-value" style="font-size:18px;${varianceCount>0?'color:var(--red-600);':''}">${varianceCount}</div><div class="stat-label">Variances Found</div></div>
+      </div>
+      <div class="table-wrap" style="max-height:360px;border:1px solid var(--slate-200);border-radius:8px;">
+        <table>
+          <thead><tr><th>Product</th><th>Brand</th><th>System Qty</th><th>Physical Count</th><th>Variance</th>${canCount?'<th></th>':''}</tr></thead>
+          <tbody>
+            ${(lines||[]).map(l=>{
+              const variance = l.variance_qty;
+              const hasCount = l.physical_qty!==null;
+              return `<tr>
+                <td>${escapeHtml(l.product_brands?.products?.name||'—')}</td>
+                <td>${escapeHtml(l.product_brands?.brands?.name||'—')}</td>
+                <td class="mono">${Number(l.system_qty).toLocaleString()}</td>
+                <td class="mono">${hasCount ? Number(l.physical_qty).toLocaleString() : '<span style="color:var(--slate-300);">pending</span>'}</td>
+                <td class="mono" style="${hasCount && variance!==0 ? (variance>0?'color:var(--green-600);':'color:var(--red-600);') : ''}font-weight:700;">${hasCount ? (variance>0?'+':'')+Number(variance).toLocaleString() : '—'}</td>
+                ${canCount ? `<td><button class="btn btn-ghost btn-sm" onclick="promptPhysicalCount('${l.id}', ${l.system_qty})">${hasCount?'Edit':'Count'}</button></td>` : ''}
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      ${canSubmit ? `<button class="btn btn-primary" onclick="submitAuditForApproval('${audit.id}')">Submit for Approval</button>` : ''}
+      ${canApprove ? `<button class="btn btn-primary" onclick="approveAuditAction('${audit.id}')">Approve & Apply Adjustments</button>` : ''}
+      ${canClose ? `<button class="btn btn-secondary" onclick="closeAuditAction('${audit.id}')">Close Audit</button>` : ''}
+    </div>
+  `, {large:true});
+}
+
+function promptPhysicalCount(lineId, systemQty){
+  const qty = prompt(`Enter physical count (system shows ${systemQty}):`, systemQty);
+  if(qty===null) return;
+  const q = parseFloat(qty);
+  if(isNaN(q) || q<0){ toast('Invalid quantity.', 'error'); return; }
+  recordCount(lineId, q);
+}
+async function recordCount(lineId, qty){
+  const { error } = await sb.rpc('record_physical_count', { p_line_id: lineId, p_physical_qty: qty });
+  if(error){ toast('Failed: '+error.message,'error'); return; }
+  toast('Count recorded.', 'success');
+  openAuditWorkspace(AUDIT_STATE.activeAuditId);
+}
+async function submitAuditForApproval(auditId){
+  if(!confirm('Submit this audit for admin approval? You will not be able to edit counts after this.')) return;
+  const { error } = await sb.rpc('submit_audit_for_approval', { p_audit_id: auditId });
+  if(error){ toast('Failed: '+error.message,'error'); return; }
+  toast('Audit submitted for approval.', 'success');
+  closeModal(); renderAudit();
+}
+async function approveAuditAction(auditId){
+  if(!confirm('Approve this audit? This will apply stock adjustments for all variances (creates audit-correction batches/stock-outs).')) return;
+  const { error } = await sb.rpc('approve_audit', { p_audit_id: auditId });
+  if(error){ toast('Failed: '+error.message,'error'); return; }
+  toast('Audit approved. Stock adjustments applied.', 'success');
+  closeModal(); renderAudit();
+}
+async function closeAuditAction(auditId){
+  if(!confirm('Close this audit? This finalizes the record for compliance.')) return;
+  const { error } = await sb.rpc('close_audit', { p_audit_id: auditId });
+  if(error){ toast('Failed: '+error.message,'error'); return; }
+  toast('Audit closed.', 'success');
+  closeModal(); renderAudit();
+}
+
+
+// ============================================================
+// HUNYO 24 TRADING — Users & Roles, Audit Logs
+// ============================================================
+
+// ============ USERS & ROLES ============
+async function renderUsers(){
+  const el = document.getElementById('page-users');
+  if(!el) return;
+  el.innerHTML = `
+    <div class="toolbar">
+      <div style="flex:1;"></div>
+      <button class="btn btn-primary btn-sm" id="btn-invite-user">${ICONS.plus} Invite User</button>
+    </div>
+    <div class="card"><div class="table-wrap" id="users-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div></div>
+  `;
+  document.getElementById('btn-invite-user').addEventListener('click', openInviteUserModal);
+
+  const { data } = await sb.from('users').select('*, branches(name)').order('created_at',{ascending:false});
+  const wrap = document.getElementById('users-table-wrap');
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No users found.</p></div>`; return; }
+
+  const roleColors = { admin:'red', inventory_manager:'blue', sales_agent:'green', order_prep_staff:'amber', supplier_manager:'orange', auditor:'slate' };
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Branch</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
+    <tbody>
+      ${data.map(u=>`<tr>
+        <td style="font-weight:600;color:var(--navy-900);">${escapeHtml(u.full_name)}</td>
+        <td class="mono">${escapeHtml(u.username||'—')}</td>
+        <td>${escapeHtml(u.email)}</td>
+        <td><span class="badge badge-${roleColors[u.role]||'slate'}">${u.role.replace(/_/g,' ')}</span></td>
+        <td>${escapeHtml(u.branches?.name||'—')}</td>
+        <td>${u.is_active?`<span class="badge badge-green">Active</span>`:`<span class="badge badge-slate">Inactive</span>`}</td>
+        <td style="color:var(--slate-500);font-size:12px;">${u.last_login_at?timeAgo(u.last_login_at):'Never'}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="openEditUserModal('${u.id}')">Edit</button>
+        </td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function openInviteUserModal(){
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.plus} Invite User</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div style="background:var(--blue-100);color:var(--blue-600);padding:12px 14px;border-radius:8px;font-size:12.5px;margin-bottom:16px;font-weight:500;">
+        This sends a Supabase invite email right away. The new staff member clicks the link, sets their password, and can log in immediately — no Dashboard trip needed.
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Full Name</label><input type="text" id="iu-name" placeholder="e.g. Juan Dela Cruz"></div>
+        <div class="form-group"><label>Username (optional)</label><input type="text" id="iu-username" placeholder="e.g. juan.dc"></div>
+      </div>
+      <div class="form-group"><label>Email (Gmail is fine)</label><input type="email" id="iu-email" placeholder="employee@gmail.com"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Role</label>
+          <select id="iu-role">
+            <option value="sales_agent">Sales Agent</option>
+            <option value="inventory_manager">Inventory Manager</option>
+            <option value="order_prep_staff">Order Prep Staff</option>
+            <option value="supplier_manager">Supplier Manager</option>
+            <option value="auditor">Auditor</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Branch</label>
+          <select id="iu-branch">${STATE.branches.map(b=>`<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="login-error" id="iu-error" style="display:none;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="iu-submit">Send Invite</button>
+    </div>
+  `);
+
+  document.getElementById('iu-submit').addEventListener('click', async ()=>{
+    const errEl = document.getElementById('iu-error');
+    errEl.style.display = 'none';
+
+    const email = document.getElementById('iu-email').value.trim();
+    const fullName = document.getElementById('iu-name').value.trim();
+    const username = document.getElementById('iu-username').value.trim();
+    const role = document.getElementById('iu-role').value;
+    const branchId = document.getElementById('iu-branch').value;
+
+    if(!email || !email.includes('@')){ errEl.textContent = 'Enter a valid email address.'; errEl.style.display='block'; return; }
+
+    const btn = document.getElementById('iu-submit');
+    btn.disabled = true; btn.textContent = 'Sending invite...';
+
+    try{
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch(`${window.SUPABASE_URL}/functions/v1/invite-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ email, full_name: fullName, username, role, branch_id: branchId }),
+      });
+      const result = await res.json();
+
+      if(!res.ok || result.error){
+        errEl.textContent = result.error || 'Failed to send invite.';
+        errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Send Invite';
+        return;
+      }
+
+      toast(`Invite sent to ${email}.`, 'success');
+      closeModal();
+      renderUsers();
+    } catch(e){
+      errEl.textContent = 'Network error: ' + e.message;
+      errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Send Invite';
+    }
+  });
+}
+
+async function openEditUserModal(userId){
+  const { data: user } = await sb.from('users').select('*').eq('id', userId).single();
+  openModal(`
+    <div class="modal-header"><h3>Edit User</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>Full Name</label><input type="text" id="eu-name" value="${escapeHtml(user.full_name)}"></div>
+        <div class="form-group"><label>Username</label><input type="text" id="eu-username" value="${escapeHtml(user.username||'')}" placeholder="e.g. richmond.c"></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--slate-500);margin:-8px 0 12px;">Login email: <span class="mono">${escapeHtml(user.email)}</span> — staff can sign in using either this email or the username above.</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Role</label>
+          <select id="eu-role">
+            ${['admin','inventory_manager','sales_agent','order_prep_staff','supplier_manager','auditor'].map(r=>`<option value="${r}" ${r===user.role?'selected':''}>${r.replace(/_/g,' ')}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Branch</label>
+          <select id="eu-branch">${STATE.branches.map(b=>`<option value="${b.id}" ${b.id===user.branch_id?'selected':''}>${escapeHtml(b.name)}</option>`).join('')}</select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;margin-top:8px;">
+        <input type="checkbox" id="eu-active" ${user.is_active?'checked':''}> Account Active
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="eu-submit">Save Changes</button>
+    </div>
+  `);
+
+  document.getElementById('eu-submit').addEventListener('click', async ()=>{
+    const oldValues = { role: user.role, is_active: user.is_active, branch_id: user.branch_id, username: user.username };
+    const newUsername = document.getElementById('eu-username').value.trim().toLowerCase() || null;
+    const newValues = {
+      full_name: document.getElementById('eu-name').value.trim(),
+      username: newUsername,
+      role: document.getElementById('eu-role').value,
+      branch_id: document.getElementById('eu-branch').value,
+      is_active: document.getElementById('eu-active').checked,
+    };
+    const { error } = await sb.from('users').update(newValues).eq('id', userId);
+    if(error){
+      if(error.message.includes('duplicate') || error.message.includes('unique')){
+        toast('That username is already taken. Please choose another.', 'error');
+      } else {
+        toast('Failed: '+error.message,'error');
+      }
+      return;
+    }
+
+    await sb.rpc('log_audit_event', { p_action:'update', p_entity_type:'user', p_entity_id:userId, p_old_values: oldValues, p_new_values: newValues });
+
+    toast('User updated.', 'success');
+    closeModal();
+    renderUsers();
+  });
+}
+
+// ============ AUDIT LOGS (compliance) ============
+const LOG_STATE = { page:1, pageSize:25, actionFilter:'', entityFilter:'' };
+
+async function renderLogs(){
+  const el = document.getElementById('page-logs');
+  if(!el) return;
+  el.innerHTML = `
+    <div class="toolbar">
+      <select class="filter-select" id="log-action-filter">
+        <option value="">All Actions</option>
+        <option value="login">Login</option>
+        <option value="logout">Logout</option>
+        <option value="create">Create</option>
+        <option value="update">Update</option>
+        <option value="delete">Delete</option>
+        <option value="approve">Approve</option>
+        <option value="convert">Convert</option>
+      </select>
+      <select class="filter-select" id="log-entity-filter">
+        <option value="">All Entities</option>
+        <option value="user">User</option>
+        <option value="product">Product</option>
+        <option value="inquiry">Inquiry</option>
+        <option value="purchase_order">Purchase Order</option>
+        <option value="audit">Audit</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="table-wrap" id="logs-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:320px;"></div></div></div>
+      <div class="pagination" id="logs-pagination"></div>
+    </div>
+  `;
+  document.getElementById('log-action-filter').addEventListener('change', e=>{ LOG_STATE.actionFilter=e.target.value; LOG_STATE.page=1; refreshLogsTable(); });
+  document.getElementById('log-entity-filter').addEventListener('change', e=>{ LOG_STATE.entityFilter=e.target.value; LOG_STATE.page=1; refreshLogsTable(); });
+  refreshLogsTable();
+}
+
+async function refreshLogsTable(){
+  const wrap = document.getElementById('logs-table-wrap');
+  if(!wrap) return;
+
+  let query = sb.from('audit_logs').select('*, users(full_name, email)', {count:'exact'});
+  if(LOG_STATE.actionFilter) query = query.eq('action', LOG_STATE.actionFilter);
+  if(LOG_STATE.entityFilter) query = query.eq('entity_type', LOG_STATE.entityFilter);
+
+  const from = (LOG_STATE.page-1)*LOG_STATE.pageSize;
+  const to = from + LOG_STATE.pageSize - 1;
+  query = query.order('created_at',{ascending:false}).range(from,to);
+
+  const { data, count, error } = await query;
+  if(error){ wrap.innerHTML = `<div class="empty-state"><p>Error: ${escapeHtml(error.message)}</p></div>`; return; }
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No audit log entries found.</p></div>`; document.getElementById('logs-pagination').innerHTML=''; return; }
+
+  const actionColors = { login:'green', logout:'slate', create:'blue', update:'amber', delete:'red', approve:'green', convert:'orange' };
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
+    <tbody>
+      ${data.map(l=>`<tr>
+        <td style="color:var(--slate-500);font-size:12px;">${fmtDateTime(l.created_at)}</td>
+        <td>${escapeHtml(l.users?.full_name || 'System')}</td>
+        <td><span class="badge badge-${actionColors[l.action]||'slate'}">${l.action}</span></td>
+        <td>${escapeHtml(l.entity_type)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick='viewLogDetail(${JSON.stringify(JSON.stringify(l)).replace(/'/g,"&#39;")})'>View</button></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+
+  renderPagination('logs-pagination', LOG_STATE.page, LOG_STATE.pageSize, count||0, (p)=>{ LOG_STATE.page=p; refreshLogsTable(); });
+}
+
+function viewLogDetail(logJson){
+  const l = JSON.parse(logJson);
+  openModal(`
+    <div class="modal-header"><h3>Audit Log Detail</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div style="font-size:13px;line-height:1.8;">
+        <div><strong>When:</strong> ${fmtDateTime(l.created_at)}</div>
+        <div><strong>User:</strong> ${escapeHtml(l.users?.full_name || 'System')} (${escapeHtml(l.users?.email||'—')})</div>
+        <div><strong>Action:</strong> ${escapeHtml(l.action)}</div>
+        <div><strong>Entity:</strong> ${escapeHtml(l.entity_type)} ${l.entity_id ? `(${escapeHtml(l.entity_id)})` : ''}</div>
+      </div>
+      ${l.old_values ? `<div style="margin-top:14px;"><div style="font-size:12px;font-weight:700;color:var(--slate-500);margin-bottom:4px;">OLD VALUES</div><pre class="mono" style="background:var(--slate-100);padding:10px;border-radius:6px;font-size:11.5px;overflow-x:auto;">${escapeHtml(JSON.stringify(l.old_values,null,2))}</pre></div>` : ''}
+      ${l.new_values ? `<div style="margin-top:10px;"><div style="font-size:12px;font-weight:700;color:var(--slate-500);margin-bottom:4px;">NEW VALUES</div><pre class="mono" style="background:var(--slate-100);padding:10px;border-radius:6px;font-size:11.5px;overflow-x:auto;">${escapeHtml(JSON.stringify(l.new_values,null,2))}</pre></div>` : ''}
+    </div>
+    <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>
+  `);
+}
+
+
+</script>
+</body>
+</html>
