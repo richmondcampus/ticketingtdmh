@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -576,6 +577,9 @@ const ICONS = {
   edit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
   x: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>`,
   empty: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>`,
+  upload: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>`,
+  download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`,
 };
 
 // ---------- NAV CONFIG (role-aware) ----------
@@ -1187,6 +1191,7 @@ async function renderInventory(){
       </label>
       <div style="flex:1;"></div>
       ${can(['admin','inventory_manager']) ? `
+      <button class="btn btn-secondary btn-sm" id="btn-bulk-upload">${ICONS.upload} Bulk Upload</button>
       <button class="btn btn-secondary btn-sm" id="btn-stock-in">${ICONS.plus} Stock In</button>
       <button class="btn btn-primary btn-sm" id="btn-new-product">${ICONS.plus} New Product</button>
       ` : ''}
@@ -1207,6 +1212,7 @@ async function renderInventory(){
     INV_STATE.lowStockOnly = e.target.checked; INV_STATE.page = 1; refreshInventoryTable();
   });
   if(can(['admin','inventory_manager'])){
+    document.getElementById('btn-bulk-upload').addEventListener('click', openBulkUploadModal);
     document.getElementById('btn-stock-in').addEventListener('click', ()=>openStockInModal());
     document.getElementById('btn-new-product').addEventListener('click', openNewProductModal);
   }
@@ -1492,6 +1498,262 @@ async function openNewProductModal(){
 
 
 // ============================================================
+// HUNYO 24 TRADING — Bulk Stock Upload (Excel)
+// ============================================================
+
+const BULK_STATE = { mode: 'stock_in', parsedRows: [], fileName: '' };
+
+function downloadBulkTemplate(){
+  const mode = BULK_STATE.mode;
+  const headers = ['sku','brand','product_name','category','unit','qty','unit_cost','price','reorder_level','batch_code','expiry_date','notes'];
+  const sampleRows = mode === 'stock_in' ? [
+    ['PVC-PIPE-12','Neltex','PVC Pipe 1/2 inch x 3m','Plumbing','pc',100,70,95,50,'','',''],
+    ['HAMMER-CLAW-16OZ','Stanley','Claw Hammer 16oz','Hardware & Fasteners','pc',20,310,420,10,'','',''],
+    ['NEW-ITEM-001','SomeBrand','Brand New Product Example','Hand Tools','pc',15,150,220,5,'','','Leave batch_code/expiry_date blank if not applicable'],
+  ] : [
+    ['PVC-PIPE-12','Neltex','PVC Pipe 1/2 inch x 3m','Plumbing','pc',180,'','','','','','Physical count correction'],
+    ['HAMMER-CLAW-16OZ','Stanley','Claw Hammer 16oz','Hardware & Fasteners','pc',22,'','','','','',''],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+  ws['!cols'] = [
+    {wch:18},{wch:14},{wch:28},{wch:18},{wch:8},{wch:8},{wch:10},{wch:10},{wch:12},{wch:14},{wch:12},{wch:30}
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, mode === 'stock_in' ? 'Stock In' : 'Stock Correction');
+
+  const notesWs = XLSX.utils.aoa_to_sheet([
+    ['Column','Required?','Notes'],
+    ['sku','Yes','Unique product code. If it does not exist yet, a new product will be created automatically.'],
+    ['brand','Yes','Brand name. If it does not exist yet, it will be created automatically.'],
+    ['product_name','Only for new SKUs','Used as the product name if this SKU does not exist yet. Ignored if SKU already exists.'],
+    ['category','Optional','Must match an existing category name exactly (e.g. Plumbing, Electrical). Ignored if it does not match.'],
+    ['unit','Optional','e.g. pc, m, gal, box. Defaults to "pc". Only used when creating a new product.'],
+    ['qty', 'Yes', mode === 'stock_in' ? 'Quantity being added as a new stock batch.' : 'The TARGET quantity that stock should be set to (system will add or remove the difference).'],
+    ['unit_cost','Recommended','Cost per unit. Used for FIFO batch costing and inventory valuation.'],
+    ['price','Only for new SKUs','Sell price. Only used when creating a new product+brand combo.'],
+    ['reorder_level','Only for new SKUs','Low-stock alert threshold. Only used when creating a new product.'],
+    ['batch_code','Optional','Custom batch identifier. Auto-generated if left blank.'],
+    ['expiry_date','Optional','Format: YYYY-MM-DD. Leave blank if not applicable.'],
+    ['notes','Optional','Free text note attached to this stock movement.'],
+  ]);
+  notesWs['!cols'] = [{wch:16},{wch:16},{wch:70}];
+  XLSX.utils.book_append_sheet(wb, notesWs, 'Instructions');
+
+  XLSX.writeFile(wb, `Hunyo24-${mode === 'stock_in' ? 'StockIn' : 'StockCorrection'}-Template.xlsx`);
+}
+
+async function openBulkUploadModal(){
+  BULK_STATE.mode = 'stock_in';
+  BULK_STATE.parsedRows = [];
+  BULK_STATE.fileName = '';
+
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.upload} Bulk Stock Upload</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="tab-bar" style="margin-bottom:16px;">
+        <button class="tab-btn active" id="bulk-tab-stockin" data-mode="stock_in">Bulk Stock-In</button>
+        <button class="tab-btn" id="bulk-tab-correction" data-mode="correction">Bulk Stock Correction</button>
+      </div>
+      <div id="bulk-mode-description" style="background:var(--blue-100);color:var(--blue-600);padding:11px 14px;border-radius:8px;font-size:12.5px;font-weight:500;margin-bottom:16px;">
+        Adds a new FIFO batch for each row — use this for receiving new deliveries in bulk. Existing stock is increased, never overwritten.
+      </div>
+
+      <div style="display:flex;gap:10px;margin-bottom:16px;">
+        <button class="btn btn-secondary btn-sm" id="bulk-download-template">${ICONS.download} Download Excel Template</button>
+      </div>
+
+      <div id="bulk-dropzone" style="border:2px dashed var(--slate-300);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:border-color .15s;">
+        <div style="color:var(--slate-500);">${ICONS.upload}</div>
+        <div style="font-size:13.5px;font-weight:600;color:var(--navy-900);margin-top:8px;">Click to choose a file, or drag and drop</div>
+        <div style="font-size:11.5px;color:var(--slate-500);margin-top:4px;">.xlsx or .csv — must follow the template column headers</div>
+        <input type="file" id="bulk-file-input" accept=".xlsx,.xls,.csv" style="display:none;">
+      </div>
+
+      <div id="bulk-preview-area" style="margin-top:18px;display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:700;color:var(--navy-900);" id="bulk-preview-title">Preview</div>
+          <button class="btn btn-ghost btn-sm" id="bulk-clear-file">Choose a different file</button>
+        </div>
+        <div class="table-wrap" style="max-height:280px;border:1px solid var(--slate-200);border-radius:8px;" id="bulk-preview-table"></div>
+      </div>
+
+      <div id="bulk-result-area" style="margin-top:18px;display:none;">
+        <div style="font-size:13px;font-weight:700;color:var(--navy-900);margin-bottom:10px;" id="bulk-result-title">Results</div>
+        <div class="table-wrap" style="max-height:280px;border:1px solid var(--slate-200);border-radius:8px;" id="bulk-result-table"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" id="bulk-import-btn" disabled>Import Rows</button>
+    </div>
+  `, {large:true});
+
+  document.getElementById('bulk-download-template').addEventListener('click', downloadBulkTemplate);
+
+  const dropzone = document.getElementById('bulk-dropzone');
+  const fileInput = document.getElementById('bulk-file-input');
+  dropzone.addEventListener('click', ()=> fileInput.click());
+  dropzone.addEventListener('dragover', e=>{ e.preventDefault(); dropzone.style.borderColor = 'var(--orange-600)'; });
+  dropzone.addEventListener('dragleave', ()=>{ dropzone.style.borderColor = 'var(--slate-300)'; });
+  dropzone.addEventListener('drop', e=>{
+    e.preventDefault();
+    dropzone.style.borderColor = 'var(--slate-300)';
+    if(e.dataTransfer.files.length) handleBulkFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e=>{
+    if(e.target.files.length) handleBulkFile(e.target.files[0]);
+  });
+
+  document.getElementById('bulk-clear-file').addEventListener('click', ()=>{
+    BULK_STATE.parsedRows = [];
+    fileInput.value = '';
+    document.getElementById('bulk-preview-area').style.display = 'none';
+    document.getElementById('bulk-result-area').style.display = 'none';
+    document.getElementById('bulk-import-btn').disabled = true;
+  });
+
+  document.querySelectorAll('#bulk-tab-stockin, #bulk-tab-correction').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      BULK_STATE.mode = btn.dataset.mode;
+      document.querySelectorAll('.tab-bar .tab-btn').forEach(b=>b.classList.toggle('active', b===btn));
+      document.getElementById('bulk-mode-description').textContent = BULK_STATE.mode === 'stock_in'
+        ? 'Adds a new FIFO batch for each row — use this for receiving new deliveries in bulk. Existing stock is increased, never overwritten.'
+        : 'Sets stock to an exact target quantity per row — use this to correct counts (e.g. after a physical inventory check). The system adds or removes only the difference, and logs it like an audit adjustment.';
+      if(BULK_STATE.parsedRows.length) renderBulkPreview();
+    });
+  });
+
+  document.getElementById('bulk-import-btn').addEventListener('click', runBulkImport);
+}
+
+function handleBulkFile(file){
+  BULK_STATE.fileName = file.name;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type:'array' });
+      const firstSheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      if(rows.length === 0){
+        toast('The file appears to be empty.', 'error');
+        return;
+      }
+
+      const normalizeKey = k => String(k).trim().toLowerCase().replace(/\s+/g,'_');
+      BULK_STATE.parsedRows = rows.map(r=>{
+        const norm = {};
+        Object.keys(r).forEach(k=>{ norm[normalizeKey(k)] = r[k]; });
+        return norm;
+      });
+
+      renderBulkPreview();
+      document.getElementById('bulk-result-area').style.display = 'none';
+      document.getElementById('bulk-import-btn').disabled = false;
+    } catch(err){
+      toast('Could not read this file: ' + err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderBulkPreview(){
+  const area = document.getElementById('bulk-preview-area');
+  const title = document.getElementById('bulk-preview-title');
+  const table = document.getElementById('bulk-preview-table');
+  const rows = BULK_STATE.parsedRows;
+
+  area.style.display = 'block';
+  title.textContent = `Preview — ${rows.length} row${rows.length===1?'':'s'} from "${BULK_STATE.fileName}"`;
+
+  const qtyLabel = BULK_STATE.mode === 'stock_in' ? 'Qty to Add' : 'Target Qty';
+  const previewRows = rows.slice(0, 50);
+
+  table.innerHTML = `<table>
+    <thead><tr><th>#</th><th>SKU</th><th>Brand</th><th>Product Name</th><th>${qtyLabel}</th><th>Unit Cost</th></tr></thead>
+    <tbody>
+      ${previewRows.map((r,i)=>{
+        const missingSku = !r.sku || String(r.sku).trim()==='';
+        const missingBrand = !r.brand || String(r.brand).trim()==='';
+        const qty = r.qty;
+        const badQty = qty===undefined || qty==='' || isNaN(parseFloat(qty));
+        const rowIssue = missingSku || missingBrand || badQty;
+        return `<tr ${rowIssue?'style="background:var(--red-100);"':''}>
+          <td class="mono">${i+1}</td>
+          <td class="mono">${missingSku ? '<span style="color:var(--red-600);font-weight:700;">missing</span>' : escapeHtml(r.sku)}</td>
+          <td>${missingBrand ? '<span style="color:var(--red-600);font-weight:700;">missing</span>' : escapeHtml(r.brand)}</td>
+          <td>${escapeHtml(r.product_name||'—')}</td>
+          <td class="mono">${badQty ? '<span style="color:var(--red-600);font-weight:700;">invalid</span>' : Number(qty).toLocaleString()}</td>
+          <td class="mono">${r.unit_cost!==undefined && r.unit_cost!=='' ? peso(r.unit_cost) : '—'}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>
+  ${rows.length>50 ? `<div style="padding:10px 14px;font-size:12px;color:var(--slate-500);">+ ${rows.length-50} more rows not shown in preview (all will still be imported)</div>` : ''}`;
+}
+
+async function runBulkImport(){
+  const rows = BULK_STATE.parsedRows;
+  if(!rows || rows.length===0) return;
+
+  const branchName = STATE.branches.find(b=>b.id===STATE.currentBranch)?.name || 'the current branch';
+  const ok = await confirmDialog(
+    `Import ${rows.length} row${rows.length===1?'':'s'} as ${BULK_STATE.mode==='stock_in' ? 'new stock-in batches' : 'stock corrections'} for ${branchName}? New products or brands not yet in the system will be created automatically.`,
+    { okLabel: 'Import Now' }
+  );
+  if(!ok) return;
+
+  const btn = document.getElementById('bulk-import-btn');
+  btn.disabled = true; btn.textContent = 'Importing...';
+
+  const payload = rows.map(r => ({
+    sku: r.sku, brand: r.brand, product_name: r.product_name, category: r.category,
+    unit: r.unit, qty: r.qty, unit_cost: r.unit_cost, price: r.price,
+    reorder_level: r.reorder_level, batch_code: r.batch_code, expiry_date: r.expiry_date, notes: r.notes
+  }));
+
+  const rpcName = BULK_STATE.mode === 'stock_in' ? 'bulk_stock_in' : 'bulk_stock_correction';
+  const { data, error } = await sb.rpc(rpcName, { p_branch_id: STATE.currentBranch, p_rows: payload });
+
+  btn.disabled = false; btn.textContent = 'Import Rows';
+
+  if(error){
+    toast('Import failed: ' + error.message, 'error');
+    return;
+  }
+
+  const successCount = (data||[]).filter(r=>r.success).length;
+  const failCount = (data||[]).length - successCount;
+
+  document.getElementById('bulk-result-area').style.display = 'block';
+  document.getElementById('bulk-result-title').textContent = `Results — ${successCount} succeeded, ${failCount} failed`;
+  document.getElementById('bulk-result-table').innerHTML = `<table>
+    <thead><tr><th>#</th><th>SKU</th><th>Brand</th><th>Status</th><th>Detail</th></tr></thead>
+    <tbody>
+      ${(data||[]).map(r=>`<tr>
+        <td class="mono">${r.row_index}</td>
+        <td class="mono">${escapeHtml(r.sku||'—')}</td>
+        <td>${escapeHtml(r.brand||'—')}</td>
+        <td>${r.success ? `<span class="badge badge-green">${ICONS.check} OK</span>` : `<span class="badge badge-red">Failed</span>`}</td>
+        <td style="font-size:12px;color:var(--slate-500);">${escapeHtml(r.message||'')}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+
+  if(failCount===0){
+    toast(`All ${successCount} rows imported successfully.`, 'success');
+  } else {
+    toast(`Imported ${successCount} rows, ${failCount} failed. See details below.`, failCount===data.length ? 'error' : 'info');
+  }
+
+  refreshInventoryTable();
+}
+
+
+// ============================================================
 // HUNYO 24 TRADING — Inquiry / Quotation / Pre-Order Module
 // ============================================================
 
@@ -1520,7 +1782,17 @@ async function renderInquiry(){
 // ============ NEW INQUIRY — CART INTERFACE ============
 async function renderInquiryCart(){
   const container = document.getElementById('inquiry-tab-content');
-  const { data: customers } = await sb.from('customers').select('*').eq('is_active',true).order('full_name');
+  const { data: customersRaw } = await sb.from('customers').select('*').eq('is_active',true).order('full_name');
+
+  // Walk-in Customer should always be the default, top-of-list option —
+  // everything else sorted alphabetically after it.
+  const customers = [...(customersRaw||[])].sort((a,b)=>{
+    const aWalkIn = a.full_name.trim().toLowerCase() === 'walk-in customer';
+    const bWalkIn = b.full_name.trim().toLowerCase() === 'walk-in customer';
+    if(aWalkIn && !bWalkIn) return -1;
+    if(bWalkIn && !aWalkIn) return 1;
+    return a.full_name.localeCompare(b.full_name);
+  });
 
   container.innerHTML = `
     <div class="inquiry-layout">
@@ -1544,8 +1816,27 @@ async function renderInquiryCart(){
             <div class="form-group">
               <label>Customer</label>
               <select id="cart-customer">
-                ${(customers||[]).map(c=>`<option value="${c.id}">${escapeHtml(c.full_name)}${c.company_name?' — '+escapeHtml(c.company_name):''}</option>`).join('')}
+                ${customers.map(c=>`<option value="${c.id}">${escapeHtml(c.full_name)}${c.company_name?' — '+escapeHtml(c.company_name):''}</option>`).join('')}
+                <option value="__new__">+ Add New Customer…</option>
               </select>
+            </div>
+            <div id="cart-new-customer-form" style="display:none;background:var(--slate-100);border-radius:8px;padding:12px;margin-top:-6px;margin-bottom:14px;">
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:11px;">Full Name</label>
+                <input type="text" id="ncf-name" placeholder="e.g. Juan Dela Cruz" style="padding:8px 10px;font-size:13px;">
+              </div>
+              <div class="form-group" style="margin-bottom:8px;">
+                <label style="font-size:11px;">Company (optional)</label>
+                <input type="text" id="ncf-company" placeholder="e.g. JD Construction" style="padding:8px 10px;font-size:13px;">
+              </div>
+              <div class="form-group" style="margin-bottom:10px;">
+                <label style="font-size:11px;">Contact Number (optional)</label>
+                <input type="text" id="ncf-phone" placeholder="e.g. 0917-000-0000" style="padding:8px 10px;font-size:13px;">
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-secondary btn-sm" id="ncf-cancel" style="flex:1;">Cancel</button>
+                <button class="btn btn-primary btn-sm" id="ncf-save" style="flex:1;">Save Customer</button>
+              </div>
             </div>
             <div id="cart-items-list" style="max-height:320px;overflow-y:auto;margin:14px 0;">
               ${renderCartItemsHtml()}
@@ -1566,6 +1857,60 @@ async function renderInquiryCart(){
   document.getElementById('cart-product-search').addEventListener('input', debounce(loadCartProductGrid, 300));
   document.getElementById('cart-submit-btn').addEventListener('click', submitInquiry);
   document.getElementById('cart-pdf-btn').addEventListener('click', generateQuotationPDF);
+
+  const customerSelect = document.getElementById('cart-customer');
+  const newCustomerForm = document.getElementById('cart-new-customer-form');
+  let lastSelectedValue = customerSelect.value;
+
+  customerSelect.addEventListener('change', ()=>{
+    if(customerSelect.value === '__new__'){
+      newCustomerForm.style.display = 'block';
+      document.getElementById('ncf-name').focus();
+    } else {
+      lastSelectedValue = customerSelect.value;
+      newCustomerForm.style.display = 'none';
+    }
+  });
+
+  document.getElementById('ncf-cancel').addEventListener('click', ()=>{
+    customerSelect.value = lastSelectedValue;
+    newCustomerForm.style.display = 'none';
+  });
+
+  document.getElementById('ncf-save').addEventListener('click', async ()=>{
+    const fullName = document.getElementById('ncf-name').value.trim();
+    const companyName = document.getElementById('ncf-company').value.trim() || null;
+    const contactNumber = document.getElementById('ncf-phone').value.trim() || null;
+
+    if(!fullName){ toast("Please enter the customer's name.", 'error'); return; }
+
+    const saveBtn = document.getElementById('ncf-save');
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
+
+    const { data: newCustomer, error } = await sb.from('customers').insert({
+      full_name: fullName, company_name: companyName, contact_number: contactNumber,
+      customer_type: companyName ? 'business' : 'walk_in'
+    }).select().single();
+
+    saveBtn.disabled = false; saveBtn.textContent = 'Save Customer';
+
+    if(error){ toast('Failed to save customer: ' + error.message, 'error'); return; }
+
+    // Insert the new customer into the dropdown, right before the "Add New" option, and select it.
+    const newOption = document.createElement('option');
+    newOption.value = newCustomer.id;
+    newOption.textContent = newCustomer.full_name + (newCustomer.company_name ? ' — ' + newCustomer.company_name : '');
+    customerSelect.insertBefore(newOption, customerSelect.querySelector('option[value="__new__"]'));
+    customerSelect.value = newCustomer.id;
+    lastSelectedValue = newCustomer.id;
+
+    newCustomerForm.style.display = 'none';
+    document.getElementById('ncf-name').value = '';
+    document.getElementById('ncf-company').value = '';
+    document.getElementById('ncf-phone').value = '';
+
+    toast(`Customer "${newCustomer.full_name}" added.`, 'success');
+  });
 
   loadCartProductGrid();
 }
@@ -1672,6 +2017,12 @@ function updateCartUI(){
 async function submitInquiry(){
   if(STATE.cart.length===0) return;
   const customerId = document.getElementById('cart-customer').value;
+
+  if(customerId === '__new__'){
+    toast('Please finish adding the new customer first (or pick an existing one).', 'error');
+    return;
+  }
+
   const btn = document.getElementById('cart-submit-btn');
   btn.disabled = true; btn.textContent = 'Submitting...';
 
@@ -1704,6 +2055,10 @@ async function submitInquiry(){
 function generateQuotationPDF(){
   if(STATE.cart.length===0){ toast('Cart is empty.', 'error'); return; }
   const customerSelect = document.getElementById('cart-customer');
+  if(customerSelect && customerSelect.value === '__new__'){
+    toast('Please finish adding the new customer first (or pick an existing one).', 'error');
+    return;
+  }
   const customerName = customerSelect ? customerSelect.options[customerSelect.selectedIndex].text : 'Walk-in Customer';
 
   const { jsPDF } = window.jspdf;
