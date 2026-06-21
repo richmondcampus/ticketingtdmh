@@ -628,6 +628,92 @@ document.getElementById('modal-overlay').addEventListener('click', (e)=>{
   if(e.target.id === 'modal-overlay') closeModal();
 });
 
+// ---------- STYLED CONFIRM / PROMPT DIALOGS ----------
+// Drop-in replacements for native confirm()/prompt() that match the app's
+// look. Both return a Promise. They render in a dedicated stacked overlay
+// (separate from the main modal) so they work correctly even when called on
+// top of an already-open modal (e.g. confirming an action inside the Audit
+// workspace) without wiping out what's underneath.
+function ensureDialogRoot(){
+  let root = document.getElementById('dialog-overlay');
+  if(!root){
+    root = document.createElement('div');
+    root.id = 'dialog-overlay';
+    root.className = 'modal-overlay';
+    root.style.zIndex = '900'; // above the regular modal (500)
+    root.innerHTML = '<div class="modal" id="dialog-box" style="max-width:420px;"></div>';
+    document.body.appendChild(root);
+  }
+  return root;
+}
+
+function confirmDialog(message, opts={}){
+  return new Promise(resolve=>{
+    const root = ensureDialogRoot();
+    const box = document.getElementById('dialog-box');
+    const danger = opts.danger;
+    box.innerHTML = `
+      <div class="modal-body" style="padding-top:24px;">
+        <div style="display:flex;gap:14px;align-items:flex-start;">
+          <div style="width:38px;height:38px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${danger?'var(--red-100)':'var(--orange-100)'};color:${danger?'var(--red-600)':'var(--orange-600)'};">${ICONS.alert}</div>
+          <div style="font-size:14px;color:var(--slate-700);line-height:1.5;padding-top:7px;">${escapeHtml(message)}</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="dlg-cancel">${opts.cancelLabel || 'Cancel'}</button>
+        <button class="btn ${danger?'btn-danger':'btn-primary'}" id="dlg-ok">${opts.okLabel || 'Confirm'}</button>
+      </div>
+    `;
+    root.classList.add('active');
+    const cleanup = (result)=>{ root.classList.remove('active'); box.innerHTML=''; resolve(result); };
+    document.getElementById('dlg-cancel').addEventListener('click', ()=>cleanup(false));
+    document.getElementById('dlg-ok').addEventListener('click', ()=>cleanup(true));
+    root.onclick = (e)=>{ if(e.target.id==='dialog-overlay') cleanup(false); };
+  });
+}
+
+function promptDialog(message, opts={}){
+  return new Promise(resolve=>{
+    const root = ensureDialogRoot();
+    const box = document.getElementById('dialog-box');
+    const defaultValue = opts.defaultValue ?? '';
+    const inputType = opts.type || 'text';
+    box.innerHTML = `
+      <div class="modal-body" style="padding-top:24px;">
+        <div style="font-size:14px;color:var(--slate-700);margin-bottom:12px;line-height:1.5;">${escapeHtml(message)}</div>
+        <input type="${inputType}" id="dlg-input" class="search-input" style="width:100%;padding:11px 14px;" value="${escapeHtml(String(defaultValue))}" ${opts.min!==undefined?`min="${opts.min}"`:''} ${opts.max!==undefined?`max="${opts.max}"`:''} step="${opts.step||'any'}">
+        <div id="dlg-error" style="color:var(--red-600);font-size:12px;margin-top:8px;display:none;font-weight:500;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="dlg-cancel">Cancel</button>
+        <button class="btn btn-primary" id="dlg-ok">${opts.okLabel || 'OK'}</button>
+      </div>
+    `;
+    root.classList.add('active');
+    const input = document.getElementById('dlg-input');
+    input.focus();
+    input.select();
+
+    const cleanup = (result)=>{ root.classList.remove('active'); box.innerHTML=''; resolve(result); };
+    const submit = ()=>{
+      const val = input.value.trim();
+      if(opts.validate){
+        const err = opts.validate(val);
+        if(err){
+          const errEl = document.getElementById('dlg-error');
+          errEl.textContent = err; errEl.style.display = 'block';
+          return;
+        }
+      }
+      cleanup(val);
+    };
+    document.getElementById('dlg-cancel').addEventListener('click', ()=>cleanup(null));
+    document.getElementById('dlg-ok').addEventListener('click', submit);
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+    root.onclick = (e)=>{ if(e.target.id==='dialog-overlay') cleanup(null); };
+  });
+}
+
 // ---------- FORMATTERS ----------
 function peso(n){
   return '₱' + Number(n||0).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -1740,8 +1826,7 @@ async function viewInquiryDetail(inquiryId){
   const { data: inquiry } = await sb.from('inquiries').select('*, customers(*), users!inquiries_sales_agent_id_fkey(full_name)').eq('id', inquiryId).single();
   const { data: items } = await sb.from('inquiry_items').select('*, product_brands(*, products(name,sku), brands(name))').eq('inquiry_id', inquiryId);
 
-  const canForward = can(['admin','sales_agent','inventory_manager']) && ['submitted'].includes(inquiry.status);
-  const canConvert = can(['admin','inventory_manager','order_prep_staff']) && ['submitted','forwarded_to_prep','preparing','ready'].includes(inquiry.status);
+  const canConvert = can(['admin','inventory_manager','order_prep_staff','sales_agent']) && ['submitted','forwarded_to_prep','preparing','ready'].includes(inquiry.status);
   const canCancel = can(['admin','sales_agent','inventory_manager']) && !['converted','cancelled'].includes(inquiry.status);
 
   openModal(`
@@ -1776,23 +1861,15 @@ async function viewInquiryDetail(inquiryId){
       <div style="text-align:right;margin-top:14px;font-size:15px;font-weight:700;color:var(--navy-900);">Total: ${peso(inquiry.total_amount)}</div>
     </div>
     <div class="modal-footer">
-      ${canForward ? `<button class="btn btn-secondary" onclick="forwardInquiry('${inquiry.id}')">Forward to Prep Staff</button>` : ''}
       ${canConvert ? `<button class="btn btn-primary" onclick="convertInquiryToPurchase('${inquiry.id}')">Convert to Purchase (Deduct Stock)</button>` : ''}
       ${canCancel ? `<button class="btn btn-danger" onclick="cancelInquiry('${inquiry.id}')">Cancel</button>` : ''}
     </div>
   `, {large:true});
 }
 
-async function forwardInquiry(inquiryId){
-  const { error } = await sb.from('inquiries').update({ status:'forwarded_to_prep', forwarded_at: new Date().toISOString() }).eq('id', inquiryId);
-  if(error){ toast('Failed: '+error.message,'error'); return; }
-  toast('Inquiry forwarded to preparation staff.', 'success');
-  closeModal();
-  refreshInquiryList();
-}
-
 async function convertInquiryToPurchase(inquiryId){
-  if(!confirm('Convert this inquiry to a purchase? This will deduct stock using FIFO and cannot be undone.')) return;
+  const ok = await confirmDialog('Convert this inquiry to a purchase? This will deduct stock using FIFO and cannot be undone.', {okLabel:'Convert to Purchase'});
+  if(!ok) return;
   const { error } = await sb.rpc('convert_inquiry_to_purchase', { p_inquiry_id: inquiryId });
   if(error){ toast('Conversion failed: ' + error.message, 'error'); return; }
   toast('Inquiry converted to purchase. Stock deducted via FIFO.', 'success');
@@ -1801,7 +1878,8 @@ async function convertInquiryToPurchase(inquiryId){
 }
 
 async function cancelInquiry(inquiryId){
-  if(!confirm('Cancel this inquiry?')) return;
+  const ok = await confirmDialog('Cancel this inquiry?', {danger:true, okLabel:'Cancel Inquiry'});
+  if(!ok) return;
   const { error } = await sb.from('inquiries').update({ status:'cancelled' }).eq('id', inquiryId);
   if(error){ toast('Failed: '+error.message,'error'); return; }
   toast('Inquiry cancelled.', 'info');
@@ -2056,18 +2134,30 @@ async function approvePO(poId){
   closeModal(); refreshPOList();
 }
 async function cancelPO(poId){
-  if(!confirm('Cancel this purchase order?')) return;
+  const ok = await confirmDialog('Cancel this purchase order?', {danger:true, okLabel:'Cancel PO'});
+  if(!ok) return;
   const { error } = await sb.from('purchase_orders').update({ status:'cancelled' }).eq('id', poId);
   if(error){ toast('Failed: '+error.message,'error'); return; }
   toast('Purchase order cancelled.', 'info');
   closeModal(); refreshPOList();
 }
-function receivePOItemPrompt(poItemId, maxQty){
-  const qty = prompt(`Quantity received (max ${maxQty}):`, maxQty);
+async function receivePOItemPrompt(poItemId, maxQty){
+  const qty = await promptDialog(`Enter quantity received (maximum ${maxQty}).`, {
+    type: 'number',
+    defaultValue: maxQty,
+    min: 0,
+    max: maxQty,
+    okLabel: 'Receive',
+    validate: (val)=>{
+      if(val==='') return 'Please enter a quantity.';
+      const n = parseFloat(val);
+      if(isNaN(n) || n<=0) return 'Enter a quantity greater than zero.';
+      if(n>maxQty) return `Cannot exceed ${maxQty} (the pending quantity).`;
+      return null;
+    }
+  });
   if(qty===null) return;
-  const q = parseFloat(qty);
-  if(!q || q<=0 || q>maxQty){ toast('Invalid quantity.', 'error'); return; }
-  receivePOItem(poItemId, q);
+  receivePOItem(poItemId, parseFloat(qty));
 }
 async function receivePOItem(poItemId, qty){
   const { error } = await sb.rpc('receive_po_item', { p_po_item_id: poItemId, p_qty_received: qty });
@@ -2403,7 +2493,8 @@ async function renderAudit(){
 
 async function startNewAudit(){
   const year = new Date().getFullYear();
-  if(!confirm(`Start a new inventory audit for ${year}? This will generate a system stock snapshot for this branch.`)) return;
+  const ok = await confirmDialog(`Start a new inventory audit for ${year}? This will generate a system stock snapshot for this branch.`, {okLabel:'Start Audit'});
+  if(!ok) return;
 
   const { data, error } = await sb.rpc('generate_audit_snapshot', { p_branch_id: STATE.currentBranch, p_audit_year: year });
   if(error){ toast('Failed: ' + error.message, 'error'); return; }
@@ -2464,12 +2555,21 @@ async function openAuditWorkspace(auditId){
   `, {large:true});
 }
 
-function promptPhysicalCount(lineId, systemQty){
-  const qty = prompt(`Enter physical count (system shows ${systemQty}):`, systemQty);
+async function promptPhysicalCount(lineId, systemQty){
+  const qty = await promptDialog(`Enter the physical count for this item.`, {
+    type: 'number',
+    defaultValue: systemQty,
+    min: 0,
+    okLabel: 'Save Count',
+    validate: (val)=>{
+      if(val==='') return 'Please enter a quantity.';
+      const n = parseFloat(val);
+      if(isNaN(n) || n < 0) return 'Enter a valid, non-negative number.';
+      return null;
+    }
+  });
   if(qty===null) return;
-  const q = parseFloat(qty);
-  if(isNaN(q) || q<0){ toast('Invalid quantity.', 'error'); return; }
-  recordCount(lineId, q);
+  recordCount(lineId, parseFloat(qty));
 }
 async function recordCount(lineId, qty){
   const { error } = await sb.rpc('record_physical_count', { p_line_id: lineId, p_physical_qty: qty });
@@ -2478,21 +2578,24 @@ async function recordCount(lineId, qty){
   openAuditWorkspace(AUDIT_STATE.activeAuditId);
 }
 async function submitAuditForApproval(auditId){
-  if(!confirm('Submit this audit for admin approval? You will not be able to edit counts after this.')) return;
+  const ok = await confirmDialog('Submit this audit for admin approval? You will not be able to edit counts after this.', {okLabel:'Submit'});
+  if(!ok) return;
   const { error } = await sb.rpc('submit_audit_for_approval', { p_audit_id: auditId });
   if(error){ toast('Failed: '+error.message,'error'); return; }
   toast('Audit submitted for approval.', 'success');
   closeModal(); renderAudit();
 }
 async function approveAuditAction(auditId){
-  if(!confirm('Approve this audit? This will apply stock adjustments for all variances (creates audit-correction batches/stock-outs).')) return;
+  const ok = await confirmDialog('Approve this audit? This will apply stock adjustments for all variances (creates audit-correction batches/stock-outs).', {okLabel:'Approve & Apply'});
+  if(!ok) return;
   const { error } = await sb.rpc('approve_audit', { p_audit_id: auditId });
   if(error){ toast('Failed: '+error.message,'error'); return; }
   toast('Audit approved. Stock adjustments applied.', 'success');
   closeModal(); renderAudit();
 }
 async function closeAuditAction(auditId){
-  if(!confirm('Close this audit? This finalizes the record for compliance.')) return;
+  const ok = await confirmDialog('Close this audit? This finalizes the record for compliance.', {okLabel:'Close Audit'});
+  if(!ok) return;
   const { error } = await sb.rpc('close_audit', { p_audit_id: auditId });
   if(error){ toast('Failed: '+error.message,'error'); return; }
   toast('Audit closed.', 'success');
