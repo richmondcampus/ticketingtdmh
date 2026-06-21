@@ -1140,18 +1140,22 @@ async function renderDashboard(){
     .eq('branch_id', STATE.currentBranch)
     .order('created_at',{ascending:false}).limit(8);
 
+  const canVoid = can(['admin','inventory_manager']);
+
   document.getElementById('dash-movements').innerHTML = (!movements || movements.length===0) ?
     `<div class="empty-state">${ICONS.empty}<p>No stock movements yet.</p></div>` :
-    `<table><thead><tr><th>Product</th><th>Type</th><th>Qty</th><th>When</th></tr></thead><tbody>
+    `<table><thead><tr><th>Product</th><th>Type</th><th>Qty</th><th>When</th>${canVoid?'<th></th>':''}</tr></thead><tbody>
       ${movements.map(m=>{
         const pname = m.product_brands?.products?.name || '—';
         const bname = m.product_brands?.brands?.name || '';
         const isIn = m.qty > 0;
+        const isVoidable = canVoid && ['stock_in','stock_out'].includes(m.movement_type) && m.reference_type !== 'void';
         return `<tr>
           <td><div style="font-weight:600;color:var(--navy-900);">${escapeHtml(pname)}</div><div style="font-size:11px;color:var(--slate-500);">${escapeHtml(bname)}</div></td>
           <td><span class="badge ${isIn?'badge-green':'badge-red'}">${m.movement_type.replace(/_/g,' ')}</span></td>
           <td class="mono" style="font-weight:700;color:${isIn?'var(--green-600)':'var(--red-600)'};">${isIn?'+':''}${Number(m.qty).toLocaleString()}</td>
           <td style="color:var(--slate-500);font-size:12px;">${timeAgo(m.created_at)}</td>
+          ${canVoid ? `<td>${isVoidable ? `<button class="btn btn-ghost btn-sm" style="color:var(--red-600);" onclick="confirmVoidMovement('${m.id}','${escapeHtml(pname).replace(/'/g,"&#39;")}')">Void</button>` : ''}</td>` : ''}
         </tr>`;
       }).join('')}
     </tbody></table>`;
@@ -1176,8 +1180,29 @@ async function renderDashboard(){
 // ============ INVENTORY ============
 const INV_STATE = { page:1, pageSize:20, search:'', categoryFilter:'', lowStockOnly:false, total:0 };
 
+const INVENTORY_PAGE_STATE = { tab: 'products' };
+
 async function renderInventory(){
   const el = document.getElementById('page-inventory');
+  if(!el) return;
+
+  el.innerHTML = `
+    <div class="tab-bar">
+      <button class="tab-btn ${INVENTORY_PAGE_STATE.tab==='products'?'active':''}" data-tab="products">Products</button>
+      ${can(['admin','inventory_manager']) ? `<button class="tab-btn ${INVENTORY_PAGE_STATE.tab==='taxonomy'?'active':''}" data-tab="taxonomy">Categories & Brands</button>` : ''}
+    </div>
+    <div id="inventory-tab-content"></div>
+  `;
+  el.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ INVENTORY_PAGE_STATE.tab = btn.dataset.tab; renderInventory(); });
+  });
+
+  if(INVENTORY_PAGE_STATE.tab === 'taxonomy' && can(['admin','inventory_manager'])) renderTaxonomyTab();
+  else renderProductsTab();
+}
+
+async function renderProductsTab(){
+  const el = document.getElementById('inventory-tab-content');
   if(!el) return;
 
   const { data: categories } = await sb.from('categories').select('*').eq('is_active',true).order('name');
@@ -1350,6 +1375,8 @@ async function viewProductDetail(productBrandId){
       ${!costVisible ? `<div style="font-size:11.5px;color:var(--slate-500);margin-top:8px;">Cost and value figures are only visible to Admin, Inventory Manager, and Auditor roles.</div>` : ''}
     </div>
     <div class="modal-footer">
+      ${can(['admin','inventory_manager']) ? `<button class="btn btn-secondary" onclick="closeModal();openEditProductModal('${pb.products.id}','${productBrandId}')">Edit</button>` : ''}
+      ${can(['admin','inventory_manager']) ? `<button class="btn btn-danger" onclick="confirmDeleteProduct('${pb.products.id}','${escapeHtml(pb.products.name).replace(/'/g,"&#39;")}')">Delete</button>` : ''}
       ${can(['admin','inventory_manager']) ? `<button class="btn btn-secondary" onclick="closeModal();openStockInModal('${productBrandId}')">Stock In More</button>` : ''}
       <button class="btn btn-primary" onclick="closeModal()">Close</button>
     </div>
@@ -1503,6 +1530,328 @@ async function openNewProductModal(){
     closeModal();
     refreshInventoryTable();
   });
+}
+
+async function openEditProductModal(productId, productBrandId){
+  const [{data:product}, {data:pb}, {data:categories}] = await Promise.all([
+    sb.from('products').select('*').eq('id', productId).single(),
+    sb.from('product_brands').select('*').eq('id', productBrandId).single(),
+    sb.from('categories').select('*').eq('is_active',true).order('name'),
+  ]);
+
+  const canSeeCost = can(['admin','inventory_manager','auditor']);
+
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.edit} Edit Product</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>SKU</label><input type="text" id="ep-sku" value="${escapeHtml(product.sku)}"></div>
+        <div class="form-group"><label>Unit</label><input type="text" id="ep-unit" value="${escapeHtml(product.unit)}"></div>
+      </div>
+      <div class="form-group"><label>Product Name</label><input type="text" id="ep-name" value="${escapeHtml(product.name)}"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Category</label>
+          <select id="ep-category">
+            <option value="">No category</option>
+            ${(categories||[]).map(c=>`<option value="${c.id}" ${c.id===product.category_id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Reorder Level</label><input type="number" id="ep-reorder" min="0" value="${product.reorder_level}"></div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--slate-200);margin:16px 0;">
+      <div style="font-size:12px;font-weight:700;color:var(--slate-500);text-transform:uppercase;margin-bottom:10px;">This Brand Variant</div>
+      <div class="form-row">
+        <div class="form-group"><label>Sell Price (₱)</label><input type="number" id="ep-price" min="0" step="0.01" value="${pb.price}"></div>
+        ${canSeeCost ? `<div class="form-group"><label>Cost Price (₱)</label><input type="number" id="ep-cost-price" min="0" step="0.01" value="${pb.cost_price}"></div>` : ''}
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;margin-top:4px;">
+        <input type="checkbox" id="ep-preferred" ${pb.is_preferred?'checked':''}> Mark this brand as preferred for this product
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="ep-submit">Save Changes</button>
+    </div>
+  `, {large:true});
+
+  document.getElementById('ep-submit').addEventListener('click', async ()=>{
+    const sku = document.getElementById('ep-sku').value.trim();
+    const name = document.getElementById('ep-name').value.trim();
+    const unit = document.getElementById('ep-unit').value.trim() || 'pc';
+    const categoryId = document.getElementById('ep-category').value || null;
+    const reorderLevel = parseFloat(document.getElementById('ep-reorder').value) || 0;
+    const price = parseFloat(document.getElementById('ep-price').value) || 0;
+    const costPriceInput = document.getElementById('ep-cost-price');
+    const isPreferred = document.getElementById('ep-preferred').checked;
+
+    if(!sku || !name){ toast('SKU and name are required.', 'error'); return; }
+
+    const btn = document.getElementById('ep-submit');
+    btn.disabled = true; btn.textContent = 'Saving...';
+
+    const { error: prodErr } = await sb.from('products').update({
+      sku, name, unit, category_id: categoryId, reorder_level: reorderLevel
+    }).eq('id', productId);
+
+    if(prodErr){ toast('Failed to update product: ' + prodErr.message, 'error'); btn.disabled=false; btn.textContent='Save Changes'; return; }
+
+    const pbUpdate = { price, is_preferred: isPreferred };
+    if(costPriceInput) pbUpdate.cost_price = parseFloat(costPriceInput.value) || 0;
+
+    const { error: pbErr } = await sb.from('product_brands').update(pbUpdate).eq('id', productBrandId);
+
+    if(pbErr){ toast('Product updated, but brand variant update failed: ' + pbErr.message, 'error'); }
+    else { toast('Product updated successfully.', 'success'); }
+
+    closeModal();
+    refreshInventoryTable();
+  });
+}
+
+async function confirmDeleteProduct(productId, productName){
+  const ok = await confirmDialog(`Delete "${productName}"? This cannot be undone. If this product has any stock history, purchase orders, or inquiries on record, deletion will be blocked, deactivate it instead in that case.`, {danger:true, okLabel:'Delete Product'});
+  if(!ok) return;
+
+  const { error } = await sb.rpc('delete_product', { p_product_id: productId });
+  if(error){
+    openModal(`
+      <div class="modal-header"><h3>${ICONS.alert} Cannot Delete</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+      <div class="modal-body"><p style="font-size:13.5px;color:var(--slate-700);line-height:1.6;">${escapeHtml(error.message)}</p></div>
+      <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>
+    `);
+    return;
+  }
+  toast('Product deleted.', 'success');
+  closeModal();
+  refreshInventoryTable();
+}
+
+// ============ CATEGORIES & BRANDS (TAXONOMY) TAB ============
+async function renderTaxonomyTab(){
+  const el = document.getElementById('inventory-tab-content');
+  if(!el) return;
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+      <div class="card">
+        <div class="card-header">
+          <h3>Categories</h3>
+          <button class="btn btn-primary btn-sm" id="btn-new-category">${ICONS.plus} New Category</button>
+        </div>
+        <div class="table-wrap" id="cat-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:200px;"></div></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3>Brands</h3>
+          <button class="btn btn-primary btn-sm" id="btn-new-brand">${ICONS.plus} New Brand</button>
+        </div>
+        <div class="table-wrap" id="brand-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:200px;"></div></div></div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btn-new-category').addEventListener('click', openNewCategoryModal);
+  document.getElementById('btn-new-brand').addEventListener('click', openNewBrandModal);
+
+  refreshCategoryTable();
+  refreshBrandTable();
+}
+
+async function refreshCategoryTable(){
+  const wrap = document.getElementById('cat-table-wrap');
+  if(!wrap) return;
+  const { data } = await sb.from('categories').select('*, products(count)').order('name');
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No categories yet.</p></div>`; return; }
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Name</th><th>Products</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      ${data.map(c=>`<tr>
+        <td style="font-weight:600;color:var(--navy-900);">${escapeHtml(c.name)}</td>
+        <td class="mono">${c.products?.[0]?.count ?? 0}</td>
+        <td>${c.is_active ? `<span class="badge badge-green">Active</span>` : `<span class="badge badge-slate">Inactive</span>`}</td>
+        <td style="display:flex;gap:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="openEditCategoryModal('${c.id}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red-600);" onclick="confirmDeleteCategory('${c.id}','${escapeHtml(c.name).replace(/'/g,"&#39;")}')">Delete</button>
+        </td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function refreshBrandTable(){
+  const wrap = document.getElementById('brand-table-wrap');
+  if(!wrap) return;
+  const { data } = await sb.from('brands').select('*, product_brands(count)').order('name');
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No brands yet.</p></div>`; return; }
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Name</th><th>Products</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      ${data.map(b=>`<tr>
+        <td style="font-weight:600;color:var(--navy-900);">${escapeHtml(b.name)}</td>
+        <td class="mono">${b.product_brands?.[0]?.count ?? 0}</td>
+        <td>${b.is_active ? `<span class="badge badge-green">Active</span>` : `<span class="badge badge-slate">Inactive</span>`}</td>
+        <td style="display:flex;gap:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="openEditBrandModal('${b.id}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red-600);" onclick="confirmDeleteBrand('${b.id}','${escapeHtml(b.name).replace(/'/g,"&#39;")}')">Delete</button>
+        </td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function openNewCategoryModal(){
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.plus} New Category</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Name</label><input type="text" id="nc-name" placeholder="e.g. Plumbing"></div>
+      <div class="form-group"><label>Description (optional)</label><textarea id="nc-desc"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="nc-submit">Create Category</button>
+    </div>
+  `);
+  document.getElementById('nc-submit').addEventListener('click', async ()=>{
+    const name = document.getElementById('nc-name').value.trim();
+    const description = document.getElementById('nc-desc').value.trim() || null;
+    if(!name){ toast('Name is required.', 'error'); return; }
+    const { error } = await sb.from('categories').insert({ name, description });
+    if(error){ toast('Failed: '+error.message,'error'); return; }
+    toast('Category created.', 'success');
+    closeModal();
+    refreshCategoryTable();
+  });
+}
+
+async function openEditCategoryModal(categoryId){
+  const { data: c } = await sb.from('categories').select('*').eq('id', categoryId).single();
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.edit} Edit Category</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Name</label><input type="text" id="ec-cat-name" value="${escapeHtml(c.name)}"></div>
+      <div class="form-group"><label>Description (optional)</label><textarea id="ec-cat-desc">${escapeHtml(c.description||'')}</textarea></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;">
+        <input type="checkbox" id="ec-cat-active" ${c.is_active?'checked':''}> Active
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="ec-cat-submit">Save Changes</button>
+    </div>
+  `);
+  document.getElementById('ec-cat-submit').addEventListener('click', async ()=>{
+    const name = document.getElementById('ec-cat-name').value.trim();
+    const description = document.getElementById('ec-cat-desc').value.trim() || null;
+    const is_active = document.getElementById('ec-cat-active').checked;
+    if(!name){ toast('Name is required.', 'error'); return; }
+    const { error } = await sb.from('categories').update({ name, description, is_active }).eq('id', categoryId);
+    if(error){ toast('Failed: '+error.message,'error'); return; }
+    toast('Category updated.', 'success');
+    closeModal();
+    refreshCategoryTable();
+  });
+}
+
+async function confirmDeleteCategory(categoryId, categoryName){
+  const ok = await confirmDialog(`Delete "${categoryName}"? If any products use this category, deletion will be blocked, reassign or deactivate instead.`, {danger:true, okLabel:'Delete Category'});
+  if(!ok) return;
+  const { error } = await sb.rpc('delete_category', { p_category_id: categoryId });
+  if(error){
+    openModal(`
+      <div class="modal-header"><h3>${ICONS.alert} Cannot Delete</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+      <div class="modal-body"><p style="font-size:13.5px;color:var(--slate-700);line-height:1.6;">${escapeHtml(error.message)}</p></div>
+      <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>
+    `);
+    return;
+  }
+  toast('Category deleted.', 'success');
+  closeModal();
+  refreshCategoryTable();
+}
+
+async function openNewBrandModal(){
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.plus} New Brand</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Name</label><input type="text" id="nb-name" placeholder="e.g. Neltex"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="nb-submit">Create Brand</button>
+    </div>
+  `);
+  document.getElementById('nb-submit').addEventListener('click', async ()=>{
+    const name = document.getElementById('nb-name').value.trim();
+    if(!name){ toast('Name is required.', 'error'); return; }
+    const { error } = await sb.from('brands').insert({ name });
+    if(error){ toast('Failed: '+error.message,'error'); return; }
+    toast('Brand created.', 'success');
+    closeModal();
+    refreshBrandTable();
+  });
+}
+
+async function openEditBrandModal(brandId){
+  const { data: b } = await sb.from('brands').select('*').eq('id', brandId).single();
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.edit} Edit Brand</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Name</label><input type="text" id="ec-brand-name" value="${escapeHtml(b.name)}"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;">
+        <input type="checkbox" id="ec-brand-active" ${b.is_active?'checked':''}> Active
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="ec-brand-submit">Save Changes</button>
+    </div>
+  `);
+  document.getElementById('ec-brand-submit').addEventListener('click', async ()=>{
+    const name = document.getElementById('ec-brand-name').value.trim();
+    const is_active = document.getElementById('ec-brand-active').checked;
+    if(!name){ toast('Name is required.', 'error'); return; }
+    const { error } = await sb.from('brands').update({ name, is_active }).eq('id', brandId);
+    if(error){ toast('Failed: '+error.message,'error'); return; }
+    toast('Brand updated.', 'success');
+    closeModal();
+    refreshBrandTable();
+  });
+}
+
+async function confirmDeleteBrand(brandId, brandName){
+  const ok = await confirmDialog(`Delete "${brandName}"? If any products use this brand, deletion will be blocked, deactivate it instead.`, {danger:true, okLabel:'Delete Brand'});
+  if(!ok) return;
+  const { error } = await sb.rpc('delete_brand', { p_brand_id: brandId });
+  if(error){
+    openModal(`
+      <div class="modal-header"><h3>${ICONS.alert} Cannot Delete</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+      <div class="modal-body"><p style="font-size:13.5px;color:var(--slate-700);line-height:1.6;">${escapeHtml(error.message)}</p></div>
+      <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>
+    `);
+    return;
+  }
+  toast('Brand deleted.', 'success');
+  closeModal();
+  refreshBrandTable();
+}
+
+async function confirmVoidMovement(movementId, productName){
+  const reason = await promptDialog(`Why are you voiding this stock movement for "${productName}"? (e.g. "accidental double entry", "wrong quantity typed")`, {
+    okLabel: 'Void Movement',
+    validate: (val)=> val.trim() === '' ? 'Please briefly explain why, for the audit trail.' : null
+  });
+  if(reason === null) return;
+
+  const ok = await confirmDialog('This will reverse the stock change for this movement. The original entry stays on record, but a correcting movement will be added. Continue?', {danger:true, okLabel:'Confirm Void'});
+  if(!ok) return;
+
+  const { error } = await sb.rpc('void_stock_movement', { p_movement_id: movementId, p_reason: reason });
+  if(error){ toast('Failed to void: ' + error.message, 'error'); return; }
+  toast('Stock movement voided successfully.', 'success');
+  renderDashboard();
 }
 
 
@@ -1776,6 +2125,7 @@ async function renderInquiry(){
     <div class="tab-bar">
       <button class="tab-btn ${INQ_STATE.tab==='new'?'active':''}" data-tab="new">New Inquiry (Cart)</button>
       <button class="tab-btn ${INQ_STATE.tab==='list'?'active':''}" data-tab="list">All Inquiries</button>
+      <button class="tab-btn ${INQ_STATE.tab==='customers'?'active':''}" data-tab="customers">Customers</button>
     </div>
     <div id="inquiry-tab-content"></div>
   `;
@@ -1785,7 +2135,8 @@ async function renderInquiry(){
   });
 
   if(INQ_STATE.tab==='new') renderInquiryCart();
-  else renderInquiryList();
+  else if(INQ_STATE.tab==='list') renderInquiryList();
+  else renderCustomersTab();
 }
 
 // ============ NEW INQUIRY — CART INTERFACE ============
@@ -1838,9 +2189,13 @@ async function renderInquiryCart(){
                 <label style="font-size:11px;">Company (optional)</label>
                 <input type="text" id="ncf-company" placeholder="e.g. JD Construction" style="padding:8px 10px;font-size:13px;">
               </div>
-              <div class="form-group" style="margin-bottom:10px;">
+              <div class="form-group" style="margin-bottom:8px;">
                 <label style="font-size:11px;">Contact Number (optional)</label>
                 <input type="text" id="ncf-phone" placeholder="e.g. 0917-000-0000" style="padding:8px 10px;font-size:13px;">
+              </div>
+              <div class="form-group" style="margin-bottom:10px;">
+                <label style="font-size:11px;">Delivery Address (optional)</label>
+                <textarea id="ncf-address" placeholder="e.g. 123 Sampaguita St., Brgy. San Juan, Taytay, Rizal" style="padding:8px 10px;font-size:13px;min-height:54px;width:100%;border:1.5px solid var(--slate-200);border-radius:var(--radius-sm);resize:vertical;font-family:inherit;"></textarea>
               </div>
               <div style="display:flex;gap:8px;">
                 <button class="btn btn-secondary btn-sm" id="ncf-cancel" style="flex:1;">Cancel</button>
@@ -1890,6 +2245,7 @@ async function renderInquiryCart(){
     const fullName = document.getElementById('ncf-name').value.trim();
     const companyName = document.getElementById('ncf-company').value.trim() || null;
     const contactNumber = document.getElementById('ncf-phone').value.trim() || null;
+    const address = document.getElementById('ncf-address').value.trim() || null;
 
     if(!fullName){ toast("Please enter the customer's name.", 'error'); return; }
 
@@ -1897,7 +2253,7 @@ async function renderInquiryCart(){
     saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
 
     const { data: newCustomer, error } = await sb.from('customers').insert({
-      full_name: fullName, company_name: companyName, contact_number: contactNumber,
+      full_name: fullName, company_name: companyName, contact_number: contactNumber, address: address,
       customer_type: companyName ? 'business' : 'walk_in'
     }).select().single();
 
@@ -1917,6 +2273,7 @@ async function renderInquiryCart(){
     document.getElementById('ncf-name').value = '';
     document.getElementById('ncf-company').value = '';
     document.getElementById('ncf-phone').value = '';
+    document.getElementById('ncf-address').value = '';
 
     toast(`Customer "${newCustomer.full_name}" added.`, 'success');
   });
@@ -2061,7 +2418,7 @@ async function submitInquiry(){
 }
 
 // ============ QUOTATION PDF ============
-function generateQuotationPDF(){
+async function generateQuotationPDF(){
   if(STATE.cart.length===0){ toast('Cart is empty.', 'error'); return; }
   const customerSelect = document.getElementById('cart-customer');
   if(customerSelect && customerSelect.value === '__new__'){
@@ -2069,6 +2426,13 @@ function generateQuotationPDF(){
     return;
   }
   const customerName = customerSelect ? customerSelect.options[customerSelect.selectedIndex].text : 'Walk-in Customer';
+  const customerId = customerSelect ? customerSelect.value : null;
+
+  let customerAddress = null;
+  if(customerId){
+    const { data: customerRow } = await sb.from('customers').select('address').eq('id', customerId).maybeSingle();
+    customerAddress = customerRow?.address || null;
+  }
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
@@ -2092,7 +2456,17 @@ function generateQuotationPDF(){
   doc.text(`Prepared by: ${STATE.profile.full_name}`, 14, 62);
   doc.text(`Valid until: ${new Date(Date.now()+7*86400000).toLocaleDateString('en-PH')}`, 120, 47);
 
-  let y = 74;
+  // Delivery address (optional) — wraps to multiple lines if long, and the
+  // rest of the layout shifts down dynamically so nothing overlaps.
+  let addressLines = [];
+  let tableStartY = 74;
+  if(customerAddress){
+    addressLines = doc.splitTextToSize(`Delivery Address: ${customerAddress}`, 182);
+    doc.text(addressLines, 14, 67);
+    tableStartY = 67 + (addressLines.length * 5) + 8;
+  }
+
+  let y = tableStartY;
   doc.setFillColor(15,27,45); doc.rect(14, y-6, 182, 8, 'F');
   doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont(undefined,'bold');
   doc.text('PRODUCT', 16, y); doc.text('BRAND', 95, y); doc.text('QTY', 130, y); doc.text('UNIT PRICE', 148, y); doc.text('TOTAL', 178, y);
@@ -2192,6 +2566,7 @@ async function viewInquiryDetail(inquiryId){
 
   const canConvert = can(['admin','inventory_manager','order_prep_staff','sales_agent']) && ['submitted','forwarded_to_prep','preparing','ready'].includes(inquiry.status);
   const canCancel = can(['admin','sales_agent','inventory_manager']) && !['converted','cancelled'].includes(inquiry.status);
+  const canEditItems = can(['admin','sales_agent','inventory_manager']) && inquiry.status === 'submitted';
 
   openModal(`
     <div class="modal-header"><h3>${escapeHtml(inquiry.inquiry_number)}</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
@@ -2210,30 +2585,119 @@ async function viewInquiryDetail(inquiryId){
           <div style="font-weight:600;color:var(--navy-900);text-transform:capitalize;">${inquiry.status.replace(/_/g,' ')}</div>
         </div>
       </div>
+      ${canEditItems ? `<div style="background:var(--blue-100);color:var(--blue-600);padding:9px 12px;border-radius:8px;font-size:12px;font-weight:500;margin-bottom:12px;">This inquiry hasn't been converted yet — you can still adjust quantities or remove items below.</div>` : ''}
       <table>
-        <thead><tr><th>Product</th><th>Brand</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr></thead>
-        <tbody>
-          ${(items||[]).map(it=>`<tr>
+        <thead><tr><th>Product</th><th>Brand</th><th>Qty</th><th>Unit Price</th><th>Line Total</th>${canEditItems?'<th></th>':''}</tr></thead>
+        <tbody id="inq-detail-items-body">
+          ${(items||[]).map(it=>`<tr data-item-id="${it.id}">
             <td>${escapeHtml(it.product_brands?.products?.name||'—')}</td>
             <td>${escapeHtml(it.product_brands?.brands?.name||'—')}</td>
-            <td class="mono">${Number(it.qty).toLocaleString()}</td>
+            <td class="mono">
+              ${canEditItems
+                ? `<input type="number" min="0.01" step="0.01" value="${it.qty}" data-item-id="${it.id}" class="inq-item-qty-input" style="width:70px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-family:var(--font-mono);font-size:12.5px;">`
+                : Number(it.qty).toLocaleString()
+              }
+            </td>
             <td class="mono">${peso(it.unit_price)}</td>
             <td class="mono">${peso(it.line_total)}</td>
+            ${canEditItems ? `<td><button class="icon-btn" style="width:26px;height:26px;" onclick="removeInquiryItem('${inquiry.id}','${it.id}')">${ICONS.x}</button></td>` : ''}
           </tr>`).join('')}
         </tbody>
       </table>
-      <div style="text-align:right;margin-top:14px;font-size:15px;font-weight:700;color:var(--navy-900);">Total: ${peso(inquiry.total_amount)}</div>
+      <div style="text-align:right;margin-top:14px;font-size:15px;font-weight:700;color:var(--navy-900);">Total: <span id="inq-detail-total">${peso(inquiry.total_amount)}</span></div>
     </div>
     <div class="modal-footer">
-      ${canConvert ? `<button class="btn btn-primary" onclick="convertInquiryToPurchase('${inquiry.id}')">Convert to Purchase (Deduct Stock)</button>` : ''}
+      ${canEditItems ? `<button class="btn btn-secondary" id="inq-save-qty-btn" onclick="saveInquiryItemQuantities('${inquiry.id}')">Save Quantity Changes</button>` : ''}
+      ${canConvert ? `<button class="btn btn-primary" onclick="convertInquiryToPurchase('${inquiry.id}', this)">Convert to Purchase (Deduct Stock)</button>` : ''}
       ${canCancel ? `<button class="btn btn-danger" onclick="cancelInquiry('${inquiry.id}')">Cancel</button>` : ''}
     </div>
   `, {large:true});
 }
 
-async function convertInquiryToPurchase(inquiryId){
-  const ok = await confirmDialog('Convert this inquiry to a purchase? This will deduct stock using FIFO and cannot be undone.', {okLabel:'Convert to Purchase'});
+async function removeInquiryItem(inquiryId, itemId){
+  const ok = await confirmDialog('Remove this item from the inquiry?', {danger:true, okLabel:'Remove'});
   if(!ok) return;
+  const { error } = await sb.from('inquiry_items').delete().eq('id', itemId);
+  if(error){ toast('Failed to remove item: ' + error.message, 'error'); return; }
+  toast('Item removed.', 'success');
+  viewInquiryDetail(inquiryId);
+}
+
+async function saveInquiryItemQuantities(inquiryId){
+  const inputs = document.querySelectorAll('.inq-item-qty-input');
+  const btn = document.getElementById('inq-save-qty-btn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+
+  let hadError = false;
+  for(const input of inputs){
+    const qty = parseFloat(input.value);
+    if(!qty || qty <= 0){
+      toast('All quantities must be greater than zero.', 'error');
+      hadError = true;
+      break;
+    }
+    const { error } = await sb.from('inquiry_items').update({ qty }).eq('id', input.dataset.itemId);
+    if(error){ toast('Failed to update an item: ' + error.message, 'error'); hadError = true; break; }
+  }
+
+  btn.disabled = false; btn.textContent = 'Save Quantity Changes';
+
+  if(!hadError){
+    toast('Quantities updated.', 'success');
+    viewInquiryDetail(inquiryId);
+    refreshInquiryList();
+  }
+}
+
+async function convertInquiryToPurchase(inquiryId, btn){
+  const originalLabel = btn ? btn.textContent : null;
+  if(btn){ btn.disabled = true; btn.textContent = 'Checking stock...'; }
+
+  const { data: availability, error: checkErr } = await sb.rpc('check_inquiry_stock_availability', { p_inquiry_id: inquiryId });
+
+  if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
+
+  if(checkErr){ toast('Could not check stock availability: ' + checkErr.message, 'error'); return; }
+
+  const allSufficient = (availability||[]).every(a => a.is_sufficient);
+
+  if(allSufficient){
+    // Everything's available — go straight to the usual confirmation.
+    const ok = await confirmDialog('Convert this inquiry to a purchase? This will deduct stock using FIFO and cannot be undone.', {okLabel:'Convert to Purchase'});
+    if(!ok) return;
+    await doConvertInquiry(inquiryId);
+    return;
+  }
+
+  // Some items are short — show exactly what's available vs requested,
+  // and let the sales agent decide (fix quantities, talk to the customer,
+  // or cancel) rather than silently partial-converting or failing midway.
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.alert} Stock Check Before Converting</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div style="background:var(--red-100);color:var(--red-600);padding:12px 14px;border-radius:8px;font-size:12.5px;font-weight:500;margin-bottom:16px;">
+        One or more items no longer have enough stock to fulfill this inquiry as-is. This can happen if stock was sold to someone else since this inquiry was created. Adjust the quantities on the inquiry, or check with the customer, before converting.
+      </div>
+      <table>
+        <thead><tr><th>Product</th><th>Brand</th><th>Requested</th><th>Available Now</th><th>Status</th></tr></thead>
+        <tbody>
+          ${(availability||[]).map(a=>`<tr ${!a.is_sufficient?'style="background:var(--red-100);"':''}>
+            <td>${escapeHtml(a.product_name)}</td>
+            <td>${escapeHtml(a.brand_name)}</td>
+            <td class="mono">${Number(a.requested_qty).toLocaleString()}</td>
+            <td class="mono" style="font-weight:700;${!a.is_sufficient?'color:var(--red-600);':''}">${Number(a.available_qty).toLocaleString()}</td>
+            <td>${a.is_sufficient ? `<span class="badge badge-green">OK</span>` : `<span class="badge badge-red">Short by ${(a.requested_qty - a.available_qty).toLocaleString()}</span>`}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Close & Adjust Inquiry</button>
+    </div>
+  `, {large:true});
+}
+
+async function doConvertInquiry(inquiryId){
   const { error } = await sb.rpc('convert_inquiry_to_purchase', { p_inquiry_id: inquiryId });
   if(error){ toast('Conversion failed: ' + error.message, 'error'); return; }
   toast('Inquiry converted to purchase. Stock deducted via FIFO.', 'success');
@@ -2249,6 +2713,136 @@ async function cancelInquiry(inquiryId){
   toast('Inquiry cancelled.', 'info');
   closeModal();
   refreshInquiryList();
+}
+
+// ============ CUSTOMERS TAB ============
+const CUST_STATE = { search: '' };
+
+async function renderCustomersTab(){
+  const container = document.getElementById('inquiry-tab-content');
+  container.innerHTML = `
+    <div class="toolbar">
+      <div class="search-input-wrap">${ICONS.search}<input type="text" class="search-input" id="cust-search" placeholder="Search customers..."></div>
+    </div>
+    <div class="card"><div class="table-wrap" id="cust-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div></div>
+  `;
+  document.getElementById('cust-search').addEventListener('input', debounce(e=>{ CUST_STATE.search = e.target.value; refreshCustomersTable(); }, 300));
+  refreshCustomersTable();
+}
+
+async function refreshCustomersTable(){
+  const wrap = document.getElementById('cust-table-wrap');
+  if(!wrap) return;
+
+  let query = sb.from('v_customer_summary').select('*').order('full_name');
+  if(CUST_STATE.search) query = query.ilike('full_name', `%${CUST_STATE.search}%`);
+
+  const { data, error } = await query;
+  if(error){ wrap.innerHTML = `<div class="empty-state"><p>Error: ${escapeHtml(error.message)}</p></div>`; return; }
+  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No customers found.</p></div>`; return; }
+
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Name</th><th>Company</th><th>Total Orders</th><th>Total Spent</th><th>Last Purchase</th><th></th></tr></thead>
+    <tbody>
+      ${data.map(c=>`<tr>
+        <td style="font-weight:600;color:var(--navy-900);">${escapeHtml(c.full_name)}</td>
+        <td>${escapeHtml(c.company_name||'—')}</td>
+        <td class="mono">${c.total_orders||0}</td>
+        <td class="mono">${peso(c.total_spent)}</td>
+        <td style="color:var(--slate-500);font-size:12px;">${c.last_purchase_at ? fmtDate(c.last_purchase_at) : 'Never'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openEditCustomerModal('${c.customer_id}')">View / Edit</button></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function openEditCustomerModal(customerId){
+  const [{data:customer}, {data:history}] = await Promise.all([
+    sb.from('customers').select('*').eq('id', customerId).single(),
+    sb.from('v_customer_purchase_history').select('*').eq('customer_id', customerId).order('converted_at',{ascending:false}).limit(20),
+  ]);
+
+  openModal(`
+    <div class="modal-header"><h3>${escapeHtml(customer.full_name)}</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>Full Name</label><input type="text" id="ec-name" value="${escapeHtml(customer.full_name)}"></div>
+        <div class="form-group"><label>Company (optional)</label><input type="text" id="ec-company" value="${escapeHtml(customer.company_name||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Contact Number</label><input type="text" id="ec-phone" value="${escapeHtml(customer.contact_number||'')}"></div>
+        <div class="form-group"><label>Email</label><input type="email" id="ec-email" value="${escapeHtml(customer.email||'')}"></div>
+      </div>
+      <div class="form-group"><label>Delivery Address</label><textarea id="ec-address">${escapeHtml(customer.address||'')}</textarea></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;margin-bottom:18px;">
+        <input type="checkbox" id="ec-active" ${customer.is_active?'checked':''}> Active
+      </label>
+
+      <h4 style="font-size:13px;margin:0 0 10px;color:var(--navy-900);">Purchase History</h4>
+      <div class="table-wrap" style="max-height:240px;border:1px solid var(--slate-200);border-radius:8px;">
+        <table>
+          <thead><tr><th>Inquiry #</th><th>Date</th><th>Items</th><th>Total</th><th>Agent</th></tr></thead>
+          <tbody>
+            ${(!history||history.length===0) ? `<tr><td colspan="5" style="text-align:center;color:var(--slate-500);padding:20px;">No completed purchases yet.</td></tr>` :
+              history.map(h=>`<tr>
+                <td class="mono">${escapeHtml(h.inquiry_number)}</td>
+                <td>${fmtDate(h.converted_at)}</td>
+                <td class="mono">${h.item_count}</td>
+                <td class="mono">${peso(h.total_amount)}</td>
+                <td>${escapeHtml(h.sales_agent_name||'—')}</td>
+              </tr>`).join('')
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="confirmDeleteCustomer('${customer.id}','${escapeHtml(customer.full_name).replace(/'/g,"&#39;")}')">Delete</button>
+      <div style="flex:1;"></div>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="ec-submit">Save Changes</button>
+    </div>
+  `, {large:true});
+
+  document.getElementById('ec-submit').addEventListener('click', async ()=>{
+    const payload = {
+      full_name: document.getElementById('ec-name').value.trim(),
+      company_name: document.getElementById('ec-company').value.trim() || null,
+      contact_number: document.getElementById('ec-phone').value.trim() || null,
+      email: document.getElementById('ec-email').value.trim() || null,
+      address: document.getElementById('ec-address').value.trim() || null,
+      is_active: document.getElementById('ec-active').checked,
+    };
+    if(!payload.full_name){ toast('Name is required.', 'error'); return; }
+
+    const btn = document.getElementById('ec-submit');
+    btn.disabled = true; btn.textContent = 'Saving...';
+
+    const { error } = await sb.from('customers').update(payload).eq('id', customerId);
+
+    if(error){ toast('Failed: '+error.message,'error'); btn.disabled=false; btn.textContent='Save Changes'; return; }
+    toast('Customer updated.', 'success');
+    closeModal();
+    refreshCustomersTable();
+  });
+}
+
+async function confirmDeleteCustomer(customerId, customerName){
+  const ok = await confirmDialog(`Delete "${customerName}"? This cannot be undone. If this customer has any inquiries on record, deletion will be blocked, deactivate it instead in that case.`, {danger:true, okLabel:'Delete Customer'});
+  if(!ok) return;
+
+  const { error } = await sb.rpc('delete_customer', { p_customer_id: customerId });
+  if(error){
+    openModal(`
+      <div class="modal-header"><h3>${ICONS.alert} Cannot Delete</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+      <div class="modal-body"><p style="font-size:13.5px;color:var(--slate-700);line-height:1.6;">${escapeHtml(error.message)}</p></div>
+      <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>
+    `);
+    return;
+  }
+  toast('Customer deleted.', 'success');
+  closeModal();
+  refreshCustomersTable();
 }
 
 
@@ -2550,7 +3144,7 @@ async function renderSupplierDB(){
   if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No suppliers yet.</p></div>`; return; }
 
   wrap.innerHTML = `<table>
-    <thead><tr><th>Code</th><th>Company</th><th>Contact Person</th><th>Phone</th><th>Payment Terms</th><th>Lead Time</th><th>Status</th></tr></thead>
+    <thead><tr><th>Code</th><th>Company</th><th>Contact Person</th><th>Phone</th><th>Payment Terms</th><th>Lead Time</th><th>Status</th>${can(['admin','supplier_manager'])?'<th></th>':''}</tr></thead>
     <tbody>
       ${data.map(s=>`<tr>
         <td class="mono">${escapeHtml(s.code)}</td>
@@ -2560,6 +3154,10 @@ async function renderSupplierDB(){
         <td>${escapeHtml(s.payment_terms||'—')}</td>
         <td>${s.lead_time_days} days</td>
         <td>${s.is_active ? `<span class="badge badge-green">Active</span>` : `<span class="badge badge-slate">Inactive</span>`}</td>
+        ${can(['admin','supplier_manager']) ? `<td style="display:flex;gap:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="openEditSupplierModal('${s.id}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red-600);" onclick="confirmDeleteSupplier('${s.id}','${escapeHtml(s.company_name).replace(/'/g,"&#39;")}')">Delete</button>
+        </td>` : ''}
       </tr>`).join('')}
     </tbody>
   </table>`;
@@ -2607,6 +3205,80 @@ async function openNewSupplierModal(){
     closeModal();
     renderSupplierDB();
   });
+}
+
+async function openEditSupplierModal(supplierId){
+  const { data: s } = await sb.from('suppliers').select('*').eq('id', supplierId).single();
+
+  openModal(`
+    <div class="modal-header"><h3>${ICONS.edit} Edit Supplier</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>Supplier Code</label><input type="text" id="es-code" value="${escapeHtml(s.code)}"></div>
+        <div class="form-group"><label>Company Name</label><input type="text" id="es-company" value="${escapeHtml(s.company_name)}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Contact Person</label><input type="text" id="es-contact" value="${escapeHtml(s.contact_person||'')}"></div>
+        <div class="form-group"><label>Phone</label><input type="text" id="es-phone" value="${escapeHtml(s.contact_number||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Email</label><input type="email" id="es-email" value="${escapeHtml(s.email||'')}"></div>
+        <div class="form-group"><label>Lead Time (days)</label><input type="number" id="es-leadtime" value="${s.lead_time_days}"></div>
+      </div>
+      <div class="form-group"><label>Address</label><input type="text" id="es-address" value="${escapeHtml(s.address||'')}"></div>
+      <div class="form-group"><label>Payment Terms</label><input type="text" id="es-terms" value="${escapeHtml(s.payment_terms||'')}"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;margin-top:4px;">
+        <input type="checkbox" id="es-active" ${s.is_active?'checked':''}> Active
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="es-submit">Save Changes</button>
+    </div>
+  `);
+
+  document.getElementById('es-submit').addEventListener('click', async ()=>{
+    const payload = {
+      code: document.getElementById('es-code').value.trim(),
+      company_name: document.getElementById('es-company').value.trim(),
+      contact_person: document.getElementById('es-contact').value.trim() || null,
+      contact_number: document.getElementById('es-phone').value.trim() || null,
+      email: document.getElementById('es-email').value.trim() || null,
+      address: document.getElementById('es-address').value.trim() || null,
+      payment_terms: document.getElementById('es-terms').value.trim() || null,
+      lead_time_days: parseInt(document.getElementById('es-leadtime').value) || 7,
+      is_active: document.getElementById('es-active').checked,
+    };
+    if(!payload.code || !payload.company_name){ toast('Code and company name are required.', 'error'); return; }
+
+    const btn = document.getElementById('es-submit');
+    btn.disabled = true; btn.textContent = 'Saving...';
+
+    const { error } = await sb.from('suppliers').update(payload).eq('id', supplierId);
+
+    if(error){ toast('Failed: '+error.message,'error'); btn.disabled=false; btn.textContent='Save Changes'; return; }
+    toast('Supplier updated.', 'success');
+    closeModal();
+    renderSupplierDB();
+  });
+}
+
+async function confirmDeleteSupplier(supplierId, companyName){
+  const ok = await confirmDialog(`Delete "${companyName}"? This cannot be undone. If this supplier has any purchase orders or stock batches on record, deletion will be blocked, deactivate it instead in that case.`, {danger:true, okLabel:'Delete Supplier'});
+  if(!ok) return;
+
+  const { error } = await sb.rpc('delete_supplier', { p_supplier_id: supplierId });
+  if(error){
+    openModal(`
+      <div class="modal-header"><h3>${ICONS.alert} Cannot Delete</h3><button class="icon-btn" onclick="closeModal()">${ICONS.x}</button></div>
+      <div class="modal-body"><p style="font-size:13.5px;color:var(--slate-700);line-height:1.6;">${escapeHtml(error.message)}</p></div>
+      <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>
+    `);
+    return;
+  }
+  toast('Supplier deleted.', 'success');
+  closeModal();
+  renderSupplierDB();
 }
 
 // ============ SUPPLIER PERFORMANCE ============
@@ -2982,9 +3654,30 @@ async function closeAuditAction(auditId){
 // HUNYO 24 TRADING — Users & Roles, Audit Logs
 // ============================================================
 
-// ============ USERS & ROLES ============
+const USERS_PAGE_STATE = { tab: 'users' };
+
+// ============ USERS & ROLES (with Data Backup tab) ============
 async function renderUsers(){
   const el = document.getElementById('page-users');
+  if(!el) return;
+
+  el.innerHTML = `
+    <div class="tab-bar">
+      <button class="tab-btn ${USERS_PAGE_STATE.tab==='users'?'active':''}" data-tab="users">Users</button>
+      <button class="tab-btn ${USERS_PAGE_STATE.tab==='backup'?'active':''}" data-tab="backup">Data Backup</button>
+    </div>
+    <div id="users-tab-content"></div>
+  `;
+  el.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ USERS_PAGE_STATE.tab = btn.dataset.tab; renderUsers(); });
+  });
+
+  if(USERS_PAGE_STATE.tab === 'backup') renderDataBackupTab();
+  else renderUsersListTab();
+}
+
+async function renderUsersListTab(){
+  const el = document.getElementById('users-tab-content');
   if(!el) return;
   el.innerHTML = `
     <div class="toolbar">
@@ -3160,6 +3853,84 @@ async function openEditUserModal(userId){
     closeModal();
     renderUsers();
   });
+}
+
+// ============ DATA BACKUP ============
+const BACKUP_TABLES = [
+  'branches','categories','brands','suppliers','customers','users',
+  'products','product_brands','stock_batches','stock_levels','stock_movements',
+  'inquiries','inquiry_items','purchase_orders','purchase_order_items',
+  'inventory_audits','audit_count_lines','audit_logs','notifications'
+];
+
+async function renderDataBackupTab(){
+  const el = document.getElementById('users-tab-content');
+  if(!el) return;
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header"><h3>${ICONS.download} Export Full Data Backup</h3></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--slate-700);line-height:1.6;margin-bottom:16px;">
+          Downloads a complete snapshot of all business data as a single JSON file — every product, customer, supplier, inquiry, stock batch, purchase order, and audit log currently in the system. Keep this somewhere safe (e.g. Google Drive, an external drive) as a backup independent of Supabase.
+        </p>
+        <div style="background:var(--amber-100);color:var(--amber-600);padding:12px 14px;border-radius:8px;font-size:12.5px;font-weight:500;margin-bottom:16px;">
+          This is a data export for backup/record-keeping, not a one-click restore. To actually restore from this file, the data would need to be re-imported manually or with developer help. For full database-level disaster recovery (point-in-time restore), Supabase's own backup system (available on your Pro plan) is the primary safety net — this export is a secondary, portable copy you control yourself.
+        </div>
+        <button class="btn btn-primary" id="btn-export-backup">${ICONS.download} Download Backup (JSON)</button>
+        <div id="backup-progress" style="margin-top:14px;font-size:12.5px;color:var(--slate-500);"></div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btn-export-backup').addEventListener('click', runDataBackupExport);
+}
+
+async function runDataBackupExport(){
+  const btn = document.getElementById('btn-export-backup');
+  const progressEl = document.getElementById('backup-progress');
+  btn.disabled = true; btn.textContent = 'Exporting...';
+
+  const backup = {
+    exported_at: new Date().toISOString(),
+    exported_by: STATE.profile.full_name,
+    exported_by_email: STATE.profile.email,
+    system: 'Hunyo 24 Trading Inventory System',
+    tables: {}
+  };
+
+  let hadError = false;
+
+  for(const table of BACKUP_TABLES){
+    progressEl.textContent = `Exporting ${table}...`;
+    const { data, error } = await sb.from(table).select('*');
+    if(error){
+      backup.tables[table] = { error: error.message };
+      hadError = true;
+    } else {
+      backup.tables[table] = data;
+    }
+  }
+
+  progressEl.textContent = hadError
+    ? 'Export completed with some errors — check the downloaded file for details.'
+    : `Export complete. ${BACKUP_TABLES.length} tables exported.`;
+
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `Hunyo24-Backup-${dateStr}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  btn.disabled = false; btn.textContent = `${ICONS.download} Download Backup (JSON)`;
+  toast(hadError ? 'Backup exported with some errors — please review.' : 'Backup exported successfully.', hadError ? 'error' : 'success');
+
+  await sb.rpc('log_audit_event', { p_action:'create', p_entity_type:'data_backup', p_entity_id: null, p_new_values: { exported_tables: BACKUP_TABLES.length } });
 }
 
 // ============ AUDIT LOGS (compliance) ============
