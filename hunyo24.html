@@ -567,6 +567,8 @@ const ICONS = {
   audit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`,
   users: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
   logs: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>`,
+  help: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>`,
+  chevronDown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>`,
   plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`,
   search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>`,
   box: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>`,
@@ -600,12 +602,15 @@ const NAV_CONFIG = [
     { id:'users', label:'Users & Roles', icon:'users', roles:['admin'] },
     { id:'logs', label:'Audit Logs', icon:'logs', roles:['admin','auditor'] },
   ]},
+  { section:'Support', items:[
+    { id:'help', label:'Help & FAQ', icon:'help', roles:'*' },
+  ]},
 ];
 
 const PAGE_TITLES = {
   dashboard:'Dashboard', inventory:'Inventory Management', inquiry:'Inquiry & Quotation',
   suppliers:'Suppliers & Purchase Orders', reports:'Reports & Analytics',
-  audit:'Year-End Inventory Audit', users:'Users & Roles', logs:'Audit Logs'
+  audit:'Year-End Inventory Audit', users:'Users & Roles', logs:'Audit Logs', help:'Help & FAQ'
 };
 
 // ---------- TOAST ----------
@@ -934,6 +939,7 @@ function navigateTo(page){
     audit: renderAudit,
     users: renderUsers,
     logs: renderLogs,
+    help: renderHelp,
   };
   if(renderers[page]) renderers[page]();
 
@@ -3243,6 +3249,200 @@ function viewLogDetail(logJson){
     </div>
     <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>
   `);
+}
+
+
+// ============================================================
+// HUNYO 24 TRADING — Help & FAQ
+// ============================================================
+
+const HELP_STATE = { search: '' };
+
+// ---------- GENERAL GUIDELINES (visible to everyone, role-agnostic) ----------
+const GENERAL_GUIDELINES = [
+  {
+    title: 'How stock works in this system (FIFO)',
+    body: `Every time stock comes in — whether from a Purchase Order, a manual Stock In, or a Bulk Upload — it's recorded as a separate <strong>batch</strong> with its own received date and cost. When stock goes out (a sale, an inquiry conversion, an audit correction), the system always deducts from the <strong>oldest batch first</strong>. This is called FIFO (First-In, First-Out) and it's automatic — you never have to pick which batch to deduct from.`
+  },
+  {
+    title: 'The basic sales flow: Inquiry to Convert to Purchase',
+    body: `1. A Sales Agent builds a cart in <strong>Inquiry & Quotation</strong>, picking products and brands.<br>
+    2. The inquiry is submitted with a customer attached (or "Walk-in Customer" by default).<br>
+    3. When the sale is final, anyone authorized clicks <strong>"Convert to Purchase (Deduct Stock)"</strong> — this is the one action that actually removes stock from inventory (via FIFO) and marks the inquiry as converted. This step cannot be undone, so it should only be done once the customer has actually paid/taken the items.`
+  },
+  {
+    title: 'Multiple brands per product',
+    body: `Many products (e.g. "PVC Pipe 1/2 inch") come in several brand options (Neltex, Atlanta, Moldex). Each brand has its own price, cost, and stock count, tracked separately. A <strong>star mark</strong> next to a brand name means it's marked as the "preferred" brand for that product — just a visual hint, it doesn't restrict what can be sold.`
+  },
+  {
+    title: 'Branches',
+    body: `Stock, sales, and reports are all tracked per branch. The branch shown in the top bar is the one whose data you're currently viewing/working with.`
+  },
+  {
+    title: 'Real-time updates',
+    body: `You don't need to refresh the page. When someone else updates stock, submits an inquiry, or changes a purchase order, your screen updates automatically (look for the pulsing dot next to "Live" in the top bar — it flashes when something changes).`
+  },
+  {
+    title: 'Why some numbers are hidden from me',
+    body: `Cost prices and inventory valuation (how much stock is worth, not what it sells for) are only visible to Admin, Inventory Manager, and Auditor roles. If you don't see cost figures somewhere, that's expected, not a bug. Sell prices are visible to everyone who needs to quote a customer.`
+  },
+  {
+    title: 'Year-End Audit, in short',
+    body: `1. An Auditor or Admin starts an audit — the system snapshots current stock per item.<br>
+    2. Staff physically count what's on the shelves and enter the numbers.<br>
+    3. Once everything is counted, it's submitted for Admin approval.<br>
+    4. Admin approves — the system automatically adjusts stock to match the physical count, and logs everything for compliance.`
+  },
+];
+
+// ---------- ROLE-SPECIFIC FAQ ----------
+const ROLE_FAQ = {
+  admin: [
+    { q: 'What can I do that other roles cannot?', a: 'Manage user accounts and roles (Users & Roles), approve and close Year-End Audits, view all Audit Logs, and access every module regardless of role restrictions.' },
+    { q: 'How do I add a new staff member?', a: 'Go to Users & Roles, then Invite User. Fill in their email (Gmail is fine), role, and branch, then send the invite. They will get an email to set their password and can log in right away. No need to use the Supabase dashboard.' },
+    { q: 'How do I change someone\'s role or deactivate their account?', a: 'Users & Roles, click "Edit" next to their name. You can change their role, branch, username, or toggle their account active/inactive from there.' },
+    { q: 'Who can approve a Year-End Audit?', a: 'Only Admins can approve (which applies the stock adjustments) and close an audit. Auditors can start an audit and submit it for approval, but cannot approve their own submission.' },
+    { q: 'Can I see what everyone has been doing in the system?', a: 'Yes, Audit Logs shows every login, logout, create, update, approve, and convert action across the system, with who did it and when.' },
+  ],
+  inventory_manager: [
+    { q: 'What is the fastest way to update a lot of stock at once?', a: 'Inventory, then Bulk Upload. You can download an Excel template, fill it in, and upload it, either as "Bulk Stock-In" (adding new delivery batches) or "Bulk Stock Correction" (setting exact quantities, e.g. after a manual count).' },
+    { q: 'How do I receive a delivery against a Purchase Order?', a: 'Open the PO in Suppliers & POs, then click "Receive" next to each line item once the goods arrive. This creates a proper FIFO batch with the correct cost automatically.' },
+    { q: 'Why can\'t I approve my own Purchase Order?', a: 'You can create and approve POs as Inventory Manager, but final audit approval (Year-End Audit) is Admin-only, a separation-of-duties safeguard.' },
+    { q: 'How does the system decide what counts as low stock?', a: 'Each product has a Reorder Level. When stock on hand drops to or below that level, it shows up in the dashboard\'s Low Stock Alerts and you (and Admins) get a notification automatically.' },
+    { q: 'Can I add a brand-new product that is not in the system yet?', a: 'Yes, Inventory, then New Product, or just include it in a Bulk Upload file. If the SKU does not exist yet, the system creates it automatically based on the row you provide.' },
+  ],
+  sales_agent: [
+    { q: 'How do I create a quotation for a customer?', a: 'Inquiry & Quotation, then New Inquiry (Cart). Search for products, tap a brand chip to add it to the cart, adjust quantities, then click "Generate Quotation PDF" to download a printable quote. No need to submit the inquiry first.' },
+    { q: 'The customer is not in the dropdown, what do I do?', a: 'In the cart\'s Customer dropdown, select "+ Add New Customer..." A small form appears right there so you can add them without leaving the page.' },
+    { q: 'What happens when I click Submit Inquiry?', a: 'It saves the inquiry with status "Submitted" so it shows up in "All Inquiries" for everyone on your branch to see. It does NOT deduct stock yet, that only happens on "Convert to Purchase."' },
+    { q: 'When should I click Convert to Purchase?', a: 'Only once the sale is actually final (customer has paid / is taking the items). This step deducts real stock using FIFO and cannot be undone.' },
+    { q: 'Why can\'t I see the cost price, only the sell price?', a: 'Cost data is restricted to Admin, Inventory Manager, and Auditor roles. You will always be able to see the sell price you need to quote customers.' },
+  ],
+  order_prep_staff: [
+    { q: 'How do I see which inquiries need preparing?', a: 'Inquiry & Quotation, then the All Inquiries tab. Filter by status to see what is pending.' },
+    { q: 'Can I convert an inquiry to a purchase myself?', a: 'Yes, Order Prep Staff can click "Convert to Purchase (Deduct Stock)" once items are ready and the sale is final.' },
+  ],
+  supplier_manager: [
+    { q: 'How do I add a new supplier?', a: 'Suppliers & POs, then Supplier Database tab, then New Supplier. Fill in company details, contact info, and payment terms.' },
+    { q: 'How do I create a Purchase Order?', a: 'Suppliers & POs, then Purchase Orders tab, then New Purchase Order. Pick a supplier, add line items with quantity and cost, then submit. An Admin or Inventory Manager will approve it before stock can be received against it.' },
+    { q: 'Where can I check how a supplier has been performing?', a: 'Suppliers & POs, then Supplier Performance tab, shows total POs, completion rate, average delivery time, and late deliveries per supplier.' },
+  ],
+  auditor: [
+    { q: 'How do I start a Year-End Audit?', a: 'Year-End Audit, then Start New Audit. This generates a snapshot of current system stock for the branch, which you will then compare against a physical count.' },
+    { q: 'How do I record physical counts?', a: 'Open the audit, click "Count" next to each item, and enter what you physically counted. The system automatically calculates the variance against system stock.' },
+    { q: 'I have counted everything, now what?', a: 'Once every item has a physical count entered, click "Submit for Approval." An Admin then reviews and approves it, which applies the stock adjustments automatically.' },
+    { q: 'Can I see historical stock movements for compliance purposes?', a: 'Yes, Audit Logs gives you a full trail of actions across the system, and each product\'s detail view in Inventory shows its FIFO batch history.' },
+  ],
+};
+
+const ROLE_LABELS = {
+  admin: 'Admin', inventory_manager: 'Inventory Manager', sales_agent: 'Sales Agent',
+  order_prep_staff: 'Order Prep Staff', supplier_manager: 'Supplier Manager', auditor: 'Auditor'
+};
+
+function renderHelp(){
+  const el = document.getElementById('page-help');
+  if(!el) return;
+
+  const myRole = STATE.profile.role;
+  const myFaq = ROLE_FAQ[myRole] || [];
+
+  el.innerHTML = `
+    <div class="toolbar">
+      <div class="search-input-wrap" style="max-width:480px;">
+        ${ICONS.search}
+        <input type="text" class="search-input" id="help-search" placeholder="Search guidelines and FAQ...">
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">
+        <h3>${ICONS.help} General Guidelines</h3>
+        <span class="badge badge-blue">All Users</span>
+      </div>
+      <div class="card-body" id="help-general-list" style="padding-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>Frequently Asked Questions</h3>
+        <span class="badge badge-orange">${escapeHtml(ROLE_LABELS[myRole] || myRole)}</span>
+      </div>
+      <div class="card-body" id="help-faq-list" style="padding-top:8px;"></div>
+    </div>
+  `;
+
+  renderGeneralGuidelines(GENERAL_GUIDELINES);
+  renderRoleFaq(myFaq);
+
+  document.getElementById('help-search').addEventListener('input', debounce(e=>{
+    HELP_STATE.search = e.target.value.trim().toLowerCase();
+    filterHelpContent();
+  }, 250));
+}
+
+function renderGeneralGuidelines(items){
+  const container = document.getElementById('help-general-list');
+  if(items.length === 0){
+    container.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No matching guidelines.</p></div>`;
+    return;
+  }
+  container.innerHTML = items.map((g, i) => `
+    <div class="help-accordion-item" data-section="general" data-idx="${i}" style="border-bottom:1px solid var(--slate-100);">
+      <button class="help-accordion-trigger" style="width:100%;text-align:left;background:none;border:none;padding:13px 4px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <span style="font-size:13.5px;font-weight:600;color:var(--navy-900);">${escapeHtml(g.title)}</span>
+        <span class="help-chevron" style="color:var(--slate-500);flex-shrink:0;transition:transform .15s;">${ICONS.chevronDown}</span>
+      </button>
+      <div class="help-accordion-body" style="display:none;padding:0 4px 16px;font-size:13px;color:var(--slate-700);line-height:1.6;">${g.body}</div>
+    </div>
+  `).join('');
+  wireAccordion(container);
+}
+
+function renderRoleFaq(items){
+  const container = document.getElementById('help-faq-list');
+  if(items.length === 0){
+    container.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No FAQ entries yet for your role.</p></div>`;
+    return;
+  }
+  container.innerHTML = items.map((f, i) => `
+    <div class="help-accordion-item" data-section="faq" data-idx="${i}" style="border-bottom:1px solid var(--slate-100);">
+      <button class="help-accordion-trigger" style="width:100%;text-align:left;background:none;border:none;padding:13px 4px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <span style="font-size:13.5px;font-weight:600;color:var(--navy-900);">${escapeHtml(f.q)}</span>
+        <span class="help-chevron" style="color:var(--slate-500);flex-shrink:0;transition:transform .15s;">${ICONS.chevronDown}</span>
+      </button>
+      <div class="help-accordion-body" style="display:none;padding:0 4px 16px;font-size:13px;color:var(--slate-700);line-height:1.6;">${escapeHtml(f.a)}</div>
+    </div>
+  `).join('');
+  wireAccordion(container);
+}
+
+function wireAccordion(container){
+  container.querySelectorAll('.help-accordion-trigger').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const item = btn.closest('.help-accordion-item');
+      const body = item.querySelector('.help-accordion-body');
+      const chevron = item.querySelector('.help-chevron');
+      const isOpen = body.style.display === 'block';
+      body.style.display = isOpen ? 'none' : 'block';
+      chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    });
+  });
+}
+
+function filterHelpContent(){
+  const q = HELP_STATE.search;
+  const myRole = STATE.profile.role;
+
+  const filteredGeneral = q
+    ? GENERAL_GUIDELINES.filter(g => g.title.toLowerCase().includes(q) || g.body.toLowerCase().includes(q))
+    : GENERAL_GUIDELINES;
+  const filteredFaq = q
+    ? (ROLE_FAQ[myRole]||[]).filter(f => f.q.toLowerCase().includes(q) || f.a.toLowerCase().includes(q))
+    : (ROLE_FAQ[myRole]||[]);
+
+  renderGeneralGuidelines(filteredGeneral);
+  renderRoleFaq(filteredFaq);
 }
 
 
