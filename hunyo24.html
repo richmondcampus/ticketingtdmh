@@ -438,6 +438,7 @@ select.filter-select{padding:9px 12px;border:1.5px solid var(--slate-200);border
 .tab-btn:hover:not(.active){color:var(--navy-900);}
 
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}
+.dashboard-columns{display:grid;grid-template-columns:1.5fr 1fr;gap:20px;align-items:start;}
 
 @media (max-width: 900px){
   #sidebar{position:fixed;left:0;top:0;z-index:200;width:240px;transform:translateX(-100%);transition:transform .2s;}
@@ -445,7 +446,112 @@ select.filter-select{padding:9px 12px;border:1.5px solid var(--slate-200);border
   .inquiry-layout{grid-template-columns:1fr;}
   .cart-panel{position:static;}
 }
+
+/* ===== PHONE-WIDTH OPTIMIZATION (≤640px) ===== */
+@media (max-width: 640px){
+  /* Topbar: tighten padding, hide non-essential text, keep icons reachable */
+  #topbar{padding:0 12px;gap:8px;}
+  .topbar-title{font-size:15px;}
+  #realtime-indicator{display:none;} /* "Live" text — the pulse dot is enough signal on small screens */
+  .branch-pill{
+    padding:6px 10px;font-size:11px;max-width:130px;
+  }
+  .branch-pill span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;}
+  .icon-btn{width:34px;height:34px;}
+
+  /* Sidebar header: brand name must never overflow its own panel */
+  .sidebar-header .brand-text h1{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .sidebar-header .brand-text p{font-size:9px;}
+  .user-info .name{font-size:12px;}
+
+  #content-area{padding:14px;}
+
+  /* Stat cards: single column, no cramped 2-up squeeze on a 360px screen */
+  .stat-grid{grid-template-columns:1fr;gap:10px;}
+  .kpi-row{grid-template-columns:repeat(2,1fr);}
+
+  /* Toolbars: stack filters/buttons vertically and let them fill width
+     instead of wrapping into an awkward ragged row */
+  .toolbar{flex-direction:column;align-items:stretch;}
+  .toolbar .search-input-wrap{max-width:none;min-width:0;}
+  .toolbar .btn{width:100%;}
+  .toolbar > div:not(.search-input-wrap){width:100%;}
+
+  /* ===== TABLE → CARD TRANSFORM =====
+     Hide the table header entirely and lay out each row as a stacked card.
+     Each <td> already carries a data-label (set by applyMobileTableLabels
+     in app-core.js) pulled from its column's <th> text — we surface that
+     as a small caption above the value instead of relying on column
+     position, so nothing gets visually cut off regardless of how long the
+     content is (product names, supplier names, etc. wrap freely instead
+     of forcing horizontal scroll). */
+  .table-wrap{overflow-x:visible;}
+  table{width:100%;}
+  table thead{display:none;}
+  table tbody{display:block;}
+  table tbody tr{
+    display:block;background:var(--surface);border:1px solid var(--slate-200);
+    border-radius:var(--radius-md);margin-bottom:10px;padding:12px 14px;
+  }
+  table tbody tr:hover{background:var(--surface);} /* disable desktop hover-highlight on touch */
+  table tbody td{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+    padding:7px 0;border-bottom:1px solid var(--slate-100);
+    text-align:right;white-space:normal;word-break:break-word;
+  }
+  table tbody td:last-child{border-bottom:none;}
+  table tbody td:empty{display:none;} /* action-only cells with no label add no clutter when empty */
+  table tbody td::before{
+    content:attr(data-label);
+    font-size:10.5px;font-weight:700;color:var(--slate-500);
+    text-transform:uppercase;letter-spacing:0.03em;
+    text-align:left;flex-shrink:0;padding-top:1px;
+  }
+  /* Cells with no meaningful label (e.g. a lone action button column) skip the caption */
+  table tbody td:not([data-label])::before{content:none;}
+
+  /* Action-button cells (Edit/Delete pairs etc.) sometimes carry their own
+     inline `display:flex;gap:4px` from the render function for desktop
+     layout — on mobile, let those buttons stack full-width instead of
+     being squeezed onto one row next to nothing. */
+  table tbody td[style*="display:flex"]{
+    flex-direction:column !important;justify-content:flex-start !important;
+    align-items:stretch !important;gap:6px !important;
+  }
+  table tbody td[style*="display:flex"] .btn{width:100%;justify-content:center;}
+
+  /* Pagination: stack the count text above the prev/next controls */
+  .pagination{flex-direction:column;gap:10px;align-items:stretch;text-align:center;}
+  .pagination-btns{justify-content:center;}
+
+  /* Modals: use nearly the full viewport instead of fixed desktop widths */
+  .modal{max-width:100%;width:100%;margin:0 8px;max-height:92vh;}
+  .modal.modal-lg{max-width:100%;}
+  .modal-header h3{font-size:14.5px;}
+  .form-row{grid-template-columns:1fr;}
+
+  /* Modal footer buttons: stack full-width instead of cramming 2-3 buttons
+     onto one row — much easier to tap accurately on a phone. */
+  .modal-footer{flex-direction:column-reverse;} /* primary action ends up on top, thumb-reachable */
+  .modal-footer .btn{width:100%;}
+  .modal-footer > div[style*="flex:1"]{display:none;} /* spacer divs (used to push a Delete button left on desktop) are meaningless once stacked */
+
+  /* Product search dropdown (Inquiry cart): full-width, no overflow past viewport */
+  .product-search-dropdown{left:0;right:0;max-height:60vh;}
+
+  /* Cards used as KPI tiles inside modals (audit workspace etc.) */
+  .stat-card{padding:14px;}
+  .stat-card .stat-value{font-size:20px;}
+
+  /* Dashboard's two-column layout (Recent Movements + Low Stock Alerts)
+     stacks to a single column on phone width. */
+  .dashboard-columns{grid-template-columns:1fr !important;}
+
+  /* Login screen: tighten padding so the card doesn't feel cramped edge-to-edge */
+  .login-card{padding:28px 22px;}
+}
 </style>
+
 </head>
 <body>
 
@@ -630,6 +736,42 @@ const PAGE_TITLES = {
   suppliers:'Suppliers & Purchase Orders', reports:'Reports & Analytics',
   audit:'Year-End Inventory Audit', users:'Users & Roles', logs:'Audit Logs', help:'Help & FAQ'
 };
+
+// ---------- MOBILE TABLE → CARD TRANSFORM ----------
+// On narrow screens, plain HTML tables don't work well (forced horizontal
+// scroll, tiny touch targets, long product names like "Latex Paint White
+// (Gallon)" blowing out the layout). Instead of rewriting all ~14 separate
+// table-rendering functions across the app, this tags every <td> with a
+// data-label pulled from its matching <th>, and the CSS (see
+// .table-wrap in mobile media query) uses that label to lay each row out
+// as a stacked card below ~640px. This runs automatically via a
+// MutationObserver so any table rendered anywhere (including inside
+// modals) gets labeled with zero extra calls needed in render functions.
+function applyMobileTableLabels(root){
+  root.querySelectorAll('table').forEach(table=>{
+    if(table.dataset.mobileLabeled) return; // already processed
+    const headerCells = Array.from(table.querySelectorAll('thead th'));
+    if(headerCells.length === 0) return;
+    const labels = headerCells.map(th => th.textContent.trim());
+    table.querySelectorAll('tbody tr').forEach(tr=>{
+      Array.from(tr.children).forEach((td, i)=>{
+        if(labels[i]) td.setAttribute('data-label', labels[i]);
+      });
+    });
+    table.dataset.mobileLabeled = 'true';
+  });
+}
+
+const mobileTableObserver = new MutationObserver(()=>{
+  applyMobileTableLabels(document.getElementById('content-area') || document.body);
+  applyMobileTableLabels(document.getElementById('modal-box') || document.body);
+});
+(function initMobileTableObserver(){
+  const contentArea = document.getElementById('content-area');
+  const modalBox = document.getElementById('modal-box');
+  if(contentArea) mobileTableObserver.observe(contentArea, { childList:true, subtree:true });
+  if(modalBox) mobileTableObserver.observe(modalBox, { childList:true, subtree:true });
+})();
 
 // ---------- TOAST ----------
 function toast(message, type='info'){
@@ -1106,7 +1248,7 @@ async function renderDashboard(){
     <div class="stat-grid" id="dash-stats">
       ${Array(4).fill('<div class="stat-card"><div class="skeleton" style="height:70px;"></div></div>').join('')}
     </div>
-    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:20px;align-items:start;">
+    <div class="dashboard-columns">
       <div class="card">
         <div class="card-header"><h3>Recent Stock Movements</h3></div>
         <div class="table-wrap" id="dash-movements"><div style="padding:20px;"><div class="skeleton" style="height:200px;"></div></div></div>
