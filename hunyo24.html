@@ -1307,8 +1307,10 @@ function renderPagination(containerId, page, pageSize, total, onPage){
 
 async function viewProductDetail(productBrandId){
   const { data: pb } = await sb.from('product_brands').select('*, products(*, categories(name)), brands(name), suppliers(company_name)').eq('id', productBrandId).single();
-  const { data: batches } = await sb.from('stock_batches').select('*').eq('product_brand_id', productBrandId).eq('branch_id', STATE.currentBranch).gt('qty_remaining',0).order('received_date',{ascending:true});
+  const { data: batches } = await sb.rpc('get_stock_batches_for_product', { p_product_brand_id: productBrandId, p_branch_id: STATE.currentBranch });
   const { data: stockLevel } = await sb.from('stock_levels').select('*').eq('product_brand_id', productBrandId).eq('branch_id', STATE.currentBranch).maybeSingle();
+
+  const costVisible = (batches && batches.length > 0) ? batches[0].cost_visible : can(['admin','inventory_manager','auditor']);
 
   openModal(`
     <div class="modal-header">
@@ -1332,13 +1334,14 @@ async function viewProductDetail(productBrandId){
                 <td class="mono">${escapeHtml(b.batch_code)}</td>
                 <td>${fmtDate(b.received_date)}</td>
                 <td class="mono" style="font-weight:700;">${Number(b.qty_remaining).toLocaleString()}</td>
-                <td class="mono">${peso(b.unit_cost)}</td>
-                <td class="mono">${peso(b.qty_remaining*b.unit_cost)}</td>
+                <td class="mono">${costVisible ? peso(b.unit_cost) : '••••'}</td>
+                <td class="mono">${costVisible ? peso(b.batch_value) : '••••'}</td>
               </tr>`).join('')
             }
           </tbody>
         </table>
       </div>
+      ${!costVisible ? `<div style="font-size:11.5px;color:var(--slate-500);margin-top:8px;">Cost and value figures are only visible to Admin, Inventory Manager, and Auditor roles.</div>` : ''}
     </div>
     <div class="modal-footer">
       ${can(['admin','inventory_manager']) ? `<button class="btn btn-secondary" onclick="closeModal();openStockInModal('${productBrandId}')">Stock In More</button>` : ''}
@@ -2605,7 +2608,7 @@ async function renderSupplierPerformance(){
   const container = document.getElementById('suppliers-tab-content');
   container.innerHTML = `<div class="card"><div class="table-wrap" id="perf-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div></div>`;
 
-  const { data } = await sb.from('v_supplier_performance').select('*').order('total_po_value',{ascending:false});
+  const { data } = await sb.from('v_supplier_performance_secured').select('*').order('total_po_value',{ascending:false});
   const wrap = document.getElementById('perf-table-wrap');
   if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No data yet.</p></div>`; return; }
 
@@ -2634,21 +2637,32 @@ const REP_STATE = { tab:'sales' };
 async function renderReports(){
   const el = document.getElementById('page-reports');
   if(!el) return;
+
+  const canSeeCostReports = can(['admin','inventory_manager','auditor']);
+
+  // If the person is on a financial tab they no longer have access to
+  // (e.g. role changed, or they navigated here via a stale link), fall back
+  // to Sales, which everyone can see.
+  if(!canSeeCostReports && (REP_STATE.tab === 'aging' || REP_STATE.tab === 'value')){
+    REP_STATE.tab = 'sales';
+  }
+
   el.innerHTML = `
     <div class="tab-bar">
       <button class="tab-btn ${REP_STATE.tab==='sales'?'active':''}" data-tab="sales">Sales</button>
-      <button class="tab-btn ${REP_STATE.tab==='aging'?'active':''}" data-tab="aging">Stock Aging</button>
+      ${canSeeCostReports ? `<button class="tab-btn ${REP_STATE.tab==='aging'?'active':''}" data-tab="aging">Stock Aging</button>` : ''}
       <button class="tab-btn ${REP_STATE.tab==='conversion'?'active':''}" data-tab="conversion">Inquiry Conversion</button>
-      <button class="tab-btn ${REP_STATE.tab==='value'?'active':''}" data-tab="value">Inventory Value</button>
+      ${canSeeCostReports ? `<button class="tab-btn ${REP_STATE.tab==='value'?'active':''}" data-tab="value">Inventory Value</button>` : ''}
     </div>
     <div id="reports-tab-content"></div>
   `;
   el.querySelectorAll('.tab-btn').forEach(btn=> btn.addEventListener('click', ()=>{ REP_STATE.tab=btn.dataset.tab; renderReports(); }));
 
   if(REP_STATE.tab==='sales') renderSalesReport();
-  else if(REP_STATE.tab==='aging') renderAgingReport();
+  else if(REP_STATE.tab==='aging' && canSeeCostReports) renderAgingReport();
   else if(REP_STATE.tab==='conversion') renderConversionReport();
-  else renderInventoryValueReport();
+  else if(REP_STATE.tab==='value' && canSeeCostReports) renderInventoryValueReport();
+  else renderSalesReport();
 }
 
 async function renderSalesReport(){
@@ -2723,7 +2737,7 @@ async function renderAgingReport(){
 }
 async function refreshAgingTable(){
   const bucket = document.getElementById('aging-bucket-filter')?.value || '';
-  let query = sb.from('v_stock_aging').select('*').eq('branch_id', STATE.currentBranch).order('age_days',{ascending:false}).limit(100);
+  let query = sb.from('v_stock_aging_secured').select('*').eq('branch_id', STATE.currentBranch).order('age_days',{ascending:false}).limit(100);
   if(bucket) query = query.eq('age_bucket', bucket);
   const { data } = await query;
   const wrap = document.getElementById('aging-table-wrap');
@@ -2773,7 +2787,7 @@ async function renderInventoryValueReport(){
   const container = document.getElementById('reports-tab-content');
   container.innerHTML = `<div class="card"><div class="table-wrap" id="value-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div></div>`;
 
-  const { data } = await sb.from('v_inventory_value').select('*').eq('branch_id', STATE.currentBranch).order('inventory_value',{ascending:false}).limit(100);
+  const { data } = await sb.from('v_inventory_value_secured').select('*').eq('branch_id', STATE.currentBranch).order('inventory_value',{ascending:false}).limit(100);
   const wrap = document.getElementById('value-table-wrap');
   if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No inventory data yet.</p></div>`; return; }
 
