@@ -394,6 +394,140 @@ select.filter-select{padding:9px 12px;border:1.5px solid var(--slate-200);border
 .qty-stepper button{width:24px;height:24px;border-radius:5px;border:1px solid var(--slate-200);background:white;font-size:14px;font-weight:700;color:var(--slate-700);display:flex;align-items:center;justify-content:center;}
 .qty-stepper input{width:40px;text-align:center;border:1px solid var(--slate-200);border-radius:5px;padding:3px;font-size:12.5px;font-family:var(--font-mono);}
 
+/* ===== INQUIRY WIZARD (Step 1: Customer / Step 2: Add Products / Step 3: Review & Submit) ===== */
+.wizard-shell{max-width:920px;margin:0 auto;}
+
+.wizard-progress{
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:32px;padding:0 8px;
+}
+.wizard-step{
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  opacity:0.5;transition:opacity .2s;
+}
+.wizard-step.active,.wizard-step.done{opacity:1;}
+.wizard-step.clickable{cursor:pointer;}
+.wizard-step-circle{
+  width:34px;height:34px;border-radius:50%;
+  background:var(--slate-200);color:var(--slate-500);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;font-family:var(--font-mono);
+  transition:all .2s;flex-shrink:0;
+}
+.wizard-step-circle svg{width:16px;height:16px;}
+.wizard-step.active .wizard-step-circle{
+  background:var(--orange-600);color:white;
+  box-shadow:0 0 0 4px var(--orange-100);
+}
+.wizard-step.done .wizard-step-circle{background:var(--green-600);color:white;}
+.wizard-step-label{
+  font-size:11.5px;font-weight:600;color:var(--slate-500);
+  white-space:nowrap;
+}
+.wizard-step.active .wizard-step-label{color:var(--navy-900);}
+.wizard-step-connector{
+  width:64px;height:2px;background:var(--slate-200);margin:0 10px 22px;
+  transition:background .2s;
+}
+.wizard-step-connector.done{background:var(--green-600);}
+
+.wizard-card{
+  background:var(--surface);border:1px solid var(--slate-200);border-radius:var(--radius-lg);
+  padding:28px 32px;box-shadow:var(--shadow-sm);
+}
+.wizard-card-heading{margin-bottom:22px;}
+.wizard-card-heading h2{font-size:19px;font-weight:800;color:var(--navy-900);letter-spacing:-0.01em;margin-bottom:5px;}
+.wizard-card-heading p{font-size:13px;color:var(--slate-500);line-height:1.5;}
+.wizard-card-footer{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-top:26px;padding-top:20px;border-top:1px solid var(--slate-200);
+}
+
+.wizard-products-layout{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start;}
+.wizard-mini-cart{
+  position:sticky;top:0;background:var(--surface);border:1px solid var(--slate-200);
+  border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden;
+}
+.wizard-mini-cart-header{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:16px 18px;border-bottom:1px solid var(--slate-200);
+  font-size:14px;font-weight:700;color:var(--navy-900);
+}
+.wizard-mini-cart-header svg{width:18px;height:18px;vertical-align:-3px;margin-right:4px;}
+.wizard-mini-cart #cart-items-list{max-height:340px;overflow-y:auto;padding:6px 18px;}
+.wizard-mini-cart-total{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 18px;border-top:1px solid var(--slate-200);background:var(--slate-100);
+  font-size:14px;font-weight:700;color:var(--navy-900);
+}
+
+.wizard-review-customer{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+  background:var(--slate-100);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:20px;
+}
+.wizard-review-label{font-size:10.5px;font-weight:700;color:var(--slate-500);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px;}
+.wizard-review-value{font-size:14px;font-weight:700;color:var(--navy-900);}
+.wizard-review-sub{font-size:12px;color:var(--slate-500);margin-top:3px;line-height:1.4;}
+
+.wizard-review-items{border:1px solid var(--slate-200);border-radius:var(--radius-md);overflow:hidden;margin-bottom:16px;}
+.wizard-review-item{
+  display:flex;align-items:center;gap:14px;padding:13px 16px;
+  border-bottom:1px solid var(--slate-100);
+}
+.wizard-review-item:last-child{border-bottom:none;}
+.wizard-review-item-info{flex:1;min-width:0;}
+.wizard-review-item-name{font-size:13.5px;font-weight:600;color:var(--navy-900);}
+.wizard-review-item-meta{font-size:11.5px;color:var(--slate-500);margin-top:2px;}
+.wizard-review-item-qty{font-size:13px;color:var(--slate-500);font-weight:600;flex-shrink:0;}
+.wizard-review-item-total{font-size:13.5px;font-weight:700;color:var(--navy-900);flex-shrink:0;min-width:90px;text-align:right;}
+
+.wizard-review-total{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 18px;background:var(--navy-900);border-radius:var(--radius-md);
+  font-size:15px;font-weight:700;color:white;margin-bottom:4px;
+}
+.wizard-review-total .mono{font-size:18px;font-weight:800;color:var(--orange-500);}
+
+/* ===== KANBAN BOARD (All Inquiries) ===== */
+.kanban-board{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:16px;
+  align-items:start;
+}
+.kanban-column{
+  background:var(--canvas);border-radius:var(--radius-lg);
+  border:1px solid var(--slate-200);overflow:hidden;
+  display:flex;flex-direction:column;max-height:calc(100vh - 220px);
+}
+.kanban-column-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:13px 14px;font-size:12.5px;font-weight:700;color:var(--navy-900);
+  border-bottom:2px solid var(--slate-200);background:var(--surface);
+  text-transform:uppercase;letter-spacing:0.03em;flex-shrink:0;
+}
+.kanban-column-header.kanban-color-blue{border-bottom-color:var(--blue-600);}
+.kanban-column-header.kanban-color-amber{border-bottom-color:var(--amber-600);}
+.kanban-column-header.kanban-color-green{border-bottom-color:var(--green-600);}
+.kanban-column-header.kanban-color-red{border-bottom-color:var(--red-600);}
+.kanban-count{
+  background:var(--slate-200);color:var(--slate-700);border-radius:10px;
+  font-size:11px;font-weight:700;padding:2px 8px;font-family:var(--font-mono);
+}
+.kanban-column-body{padding:10px;overflow-y:auto;flex:1;}
+.kanban-card{
+  background:var(--surface);border:1px solid var(--slate-200);border-radius:var(--radius-md);
+  padding:12px 13px;margin-bottom:8px;cursor:pointer;transition:all .12s;
+}
+.kanban-card:hover{border-color:var(--orange-600);box-shadow:var(--shadow-md);transform:translateY(-1px);}
+.kanban-card:last-child{margin-bottom:0;}
+.kanban-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.kanban-card-number{font-size:11.5px;font-weight:700;color:var(--slate-500);}
+.kanban-card-total{font-size:13px;font-weight:700;color:var(--navy-900);}
+.kanban-card-customer{font-size:13.5px;font-weight:600;color:var(--navy-900);margin-bottom:6px;line-height:1.3;}
+.kanban-card-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--slate-500);}
+.kanban-empty{padding:24px 10px;text-align:center;font-size:12px;color:var(--slate-500);}
+.kanban-more{padding:10px;text-align:center;font-size:11px;color:var(--slate-500);font-style:italic;}
+
+
 .product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;}
 .product-card{
   background:white;border:1.5px solid var(--slate-200);border-radius:var(--radius-md);
@@ -539,6 +673,26 @@ select.filter-select{padding:9px 12px;border:1.5px solid var(--slate-200);border
   /* Product search dropdown (Inquiry cart): full-width, no overflow past viewport */
   .product-search-dropdown{left:0;right:0;max-height:60vh;}
 
+  /* Inquiry wizard: compact the progress indicator (hide step labels, keep
+     just the numbered circles + connectors so it still fits on a narrow
+     screen) and stack the products+mini-cart layout into one column. */
+  .wizard-card{padding:18px 16px;}
+  .wizard-card-heading h2{font-size:16px;}
+  .wizard-card-footer{flex-direction:column-reverse;gap:10px;align-items:stretch;}
+  .wizard-card-footer .btn{width:100%;}
+  .wizard-card-footer > div:empty{display:none;}
+  .wizard-card-footer > div[style*="display:flex"]{
+    flex-direction:column-reverse !important;width:100%;
+  }
+  .wizard-step-label{display:none;}
+  .wizard-step-connector{width:28px;margin:0 4px 0;}
+  .wizard-progress{margin-bottom:22px;}
+  .wizard-products-layout{grid-template-columns:1fr;}
+  .wizard-mini-cart{position:static;}
+  .wizard-review-customer{flex-direction:column;gap:10px;}
+  .wizard-review-item{flex-wrap:wrap;}
+  .wizard-review-item-total{min-width:0;}
+
   /* Cards used as KPI tiles inside modals (audit workspace etc.) */
   .stat-card{padding:14px;}
   .stat-card .stat-value{font-size:20px;}
@@ -546,6 +700,18 @@ select.filter-select{padding:9px 12px;border:1.5px solid var(--slate-200);border
   /* Dashboard's two-column layout (Recent Movements + Low Stock Alerts)
      stacks to a single column on phone width. */
   .dashboard-columns{grid-template-columns:1fr !important;}
+
+  /* Kanban board (All Inquiries): 4 side-by-side columns don't fit a phone
+     screen — switch to horizontal scroll-snap so each column takes up
+     most of the viewport and swiping moves between them, rather than
+     squeezing everything into unreadable slivers. */
+  .kanban-board{
+    grid-template-columns:none;display:flex;gap:12px;
+    overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;
+    margin:0 -14px;padding-left:14px;padding-right:14px;
+  }
+  .kanban-column{min-width:82vw;max-width:82vw;scroll-snap-align:start;max-height:none;}
+  .kanban-column-body{max-height:60vh;}
 
   /* Login screen: tighten padding so the card doesn't feel cramped edge-to-edge */
   .login-card{padding:28px 22px;}
@@ -2275,7 +2441,8 @@ async function runBulkImport(){
 // HUNYO 24 TRADING — Inquiry / Quotation / Pre-Order Module
 // ============================================================
 
-const INQ_STATE = { tab:'new', listPage:1, listPageSize:15, statusFilter:'', search:'' };
+const INQ_STATE = { tab:'new', search:'', showCancelled:false };
+const CART_WIZARD_STATE = { step: 1, customerId: null }; // 1=Customer, 2=Add Products, 3=Review & Submit
 
 async function renderInquiry(){
   const el = document.getElementById('page-inquiry');
@@ -2299,13 +2466,66 @@ async function renderInquiry(){
   else renderCustomersTab();
 }
 
-// ============ NEW INQUIRY — CART INTERFACE ============
+// ============ NEW INQUIRY — STEP WIZARD ============
+const WIZARD_STEPS = [
+  { n:1, label:'Customer' },
+  { n:2, label:'Add Products' },
+  { n:3, label:'Review & Submit' },
+];
+
 async function renderInquiryCart(){
   const container = document.getElementById('inquiry-tab-content');
+
+  container.innerHTML = `
+    <div class="wizard-shell">
+      <div class="wizard-progress" id="wizard-progress"></div>
+      <div id="wizard-step-content"></div>
+    </div>
+  `;
+
+  renderWizardProgress();
+  renderWizardStep();
+}
+
+function renderWizardProgress(){
+  const el = document.getElementById('wizard-progress');
+  if(!el) return;
+  el.innerHTML = WIZARD_STEPS.map((s, i)=>{
+    const isActive = CART_WIZARD_STATE.step === s.n;
+    const isDone = CART_WIZARD_STATE.step > s.n;
+    // Step 1 is always reachable; later steps are reachable once a
+    // customer is selected (so the agent can jump back to fix something
+    // without losing their place).
+    const isClickable = s.n === 1 || (STATE.cart.length > 0 || CART_WIZARD_STATE.step > s.n);
+    return `
+      <div class="wizard-step ${isActive?'active':''} ${isDone?'done':''} ${isClickable?'clickable':''}" ${isClickable?`onclick="goToWizardStep(${s.n})"`:''}>
+        <div class="wizard-step-circle">${isDone ? ICONS.check : s.n}</div>
+        <div class="wizard-step-label">${s.label}</div>
+      </div>
+      ${i < WIZARD_STEPS.length-1 ? `<div class="wizard-step-connector ${isDone?'done':''}"></div>` : ''}
+    `;
+  }).join('');
+}
+
+function goToWizardStep(stepN){
+  CART_WIZARD_STATE.step = stepN;
+  renderWizardProgress();
+  renderWizardStep();
+}
+
+function renderWizardStep(){
+  const el = document.getElementById('wizard-step-content');
+  if(!el) return;
+  if(CART_WIZARD_STATE.step === 1) renderWizardStepCustomer();
+  else if(CART_WIZARD_STATE.step === 2) renderWizardStepProducts();
+  else renderWizardStepReview();
+}
+
+// ---- STEP 1: CUSTOMER ----
+async function renderWizardStepCustomer(){
+  const el = document.getElementById('wizard-step-content');
   const { data: customersRaw } = await sb.from('customers').select('*').eq('is_active',true).order('full_name');
 
-  // Walk-in Customer should always be the default, top-of-list option —
-  // everything else sorted alphabetically after it.
   const customers = [...(customersRaw||[])].sort((a,b)=>{
     const aWalkIn = a.full_name.trim().toLowerCase() === 'walk-in customer';
     const bWalkIn = b.full_name.trim().toLowerCase() === 'walk-in customer';
@@ -2314,79 +2534,52 @@ async function renderInquiryCart(){
     return a.full_name.localeCompare(b.full_name);
   });
 
-  container.innerHTML = `
-    <div class="inquiry-layout">
-      <div>
-        <div class="toolbar" style="position:relative;">
-          <div class="search-input-wrap" style="max-width:none;flex:1;">
-            ${ICONS.search}
-            <input type="text" class="search-input" id="cart-product-search" placeholder="Search products to add..." autocomplete="off">
-          </div>
-          <div id="cart-product-dropdown" class="product-search-dropdown"></div>
+  if(!CART_WIZARD_STATE.customerId && customers.length > 0){
+    const walkIn = customers.find(c => c.full_name.trim().toLowerCase() === 'walk-in customer');
+    CART_WIZARD_STATE.customerId = walkIn ? walkIn.id : customers[0].id;
+  }
+
+  el.innerHTML = `
+    <div class="wizard-card">
+      <div class="wizard-card-heading">
+        <h2>Who's this inquiry for?</h2>
+        <p>Pick an existing customer, or add a new one. "Walk-in Customer" is selected by default if you don't need to track who it is.</p>
+      </div>
+      <div class="form-group">
+        <label>Customer</label>
+        <select id="cart-customer">
+          ${customers.map(c=>`<option value="${c.id}" ${c.id===CART_WIZARD_STATE.customerId?'selected':''}>${escapeHtml(c.full_name)}${c.company_name?' — '+escapeHtml(c.company_name):''}</option>`).join('')}
+          <option value="__new__">+ Add New Customer…</option>
+        </select>
+      </div>
+      <div id="cart-new-customer-form" style="display:none;background:var(--slate-100);border-radius:8px;padding:14px;margin-top:4px;">
+        <div class="form-group" style="margin-bottom:10px;">
+          <label style="font-size:11px;">Full Name</label>
+          <input type="text" id="ncf-name" placeholder="e.g. Juan Dela Cruz" style="padding:9px 11px;font-size:13.5px;">
         </div>
-        <div id="cart-search-hint" style="padding:40px 20px;text-align:center;color:var(--slate-500);">
-          ${ICONS.search}
-          <p style="font-size:13.5px;font-weight:500;margin-top:10px;">Start typing a product name or SKU above to add it to the cart.</p>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label style="font-size:11px;">Company (optional)</label>
+          <input type="text" id="ncf-company" placeholder="e.g. JD Construction" style="padding:9px 11px;font-size:13.5px;">
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label style="font-size:11px;">Contact Number (optional)</label>
+          <input type="text" id="ncf-phone" placeholder="e.g. 0917-000-0000" style="padding:9px 11px;font-size:13.5px;">
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-size:11px;">Delivery Address (optional)</label>
+          <textarea id="ncf-address" placeholder="e.g. 123 Sampaguita St., Brgy. San Juan, Taytay, Rizal" style="padding:9px 11px;font-size:13.5px;min-height:54px;width:100%;border:1.5px solid var(--slate-200);border-radius:var(--radius-sm);resize:vertical;font-family:inherit;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" id="ncf-cancel" style="flex:1;">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="ncf-save" style="flex:1;">Save Customer</button>
         </div>
       </div>
-      <div class="cart-panel">
-        <div class="card">
-          <div class="card-header"><h3>${ICONS.cart} Inquiry Cart</h3><span class="badge badge-orange" id="cart-count-badge">${STATE.cart.length} items</span></div>
-          <div class="card-body" style="padding-top:14px;">
-            <div class="form-group">
-              <label>Customer</label>
-              <select id="cart-customer">
-                ${customers.map(c=>`<option value="${c.id}">${escapeHtml(c.full_name)}${c.company_name?' — '+escapeHtml(c.company_name):''}</option>`).join('')}
-                <option value="__new__">+ Add New Customer…</option>
-              </select>
-            </div>
-            <div id="cart-new-customer-form" style="display:none;background:var(--slate-100);border-radius:8px;padding:12px;margin-top:-6px;margin-bottom:14px;">
-              <div class="form-group" style="margin-bottom:8px;">
-                <label style="font-size:11px;">Full Name</label>
-                <input type="text" id="ncf-name" placeholder="e.g. Juan Dela Cruz" style="padding:8px 10px;font-size:13px;">
-              </div>
-              <div class="form-group" style="margin-bottom:8px;">
-                <label style="font-size:11px;">Company (optional)</label>
-                <input type="text" id="ncf-company" placeholder="e.g. JD Construction" style="padding:8px 10px;font-size:13px;">
-              </div>
-              <div class="form-group" style="margin-bottom:8px;">
-                <label style="font-size:11px;">Contact Number (optional)</label>
-                <input type="text" id="ncf-phone" placeholder="e.g. 0917-000-0000" style="padding:8px 10px;font-size:13px;">
-              </div>
-              <div class="form-group" style="margin-bottom:10px;">
-                <label style="font-size:11px;">Delivery Address (optional)</label>
-                <textarea id="ncf-address" placeholder="e.g. 123 Sampaguita St., Brgy. San Juan, Taytay, Rizal" style="padding:8px 10px;font-size:13px;min-height:54px;width:100%;border:1.5px solid var(--slate-200);border-radius:var(--radius-sm);resize:vertical;font-family:inherit;"></textarea>
-              </div>
-              <div style="display:flex;gap:8px;">
-                <button class="btn btn-secondary btn-sm" id="ncf-cancel" style="flex:1;">Cancel</button>
-                <button class="btn btn-primary btn-sm" id="ncf-save" style="flex:1;">Save Customer</button>
-              </div>
-            </div>
-            <div id="cart-items-list" style="max-height:320px;overflow-y:auto;margin:14px 0;">
-              ${renderCartItemsHtml()}
-            </div>
-            <div style="border-top:1px solid var(--slate-200);padding-top:12px;display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--navy-900);">
-              <span>Total</span><span class="mono" id="cart-total">${peso(cartTotal())}</span>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;">
-              <button class="btn btn-primary" id="cart-submit-btn" ${STATE.cart.length===0?'disabled':''}>Submit Inquiry</button>
-              <button class="btn btn-secondary btn-sm" id="cart-pdf-btn" ${STATE.cart.length===0?'disabled':''}>Generate Quotation PDF</button>
-            </div>
-          </div>
-        </div>
+      <div class="wizard-card-footer">
+        <div></div>
+        <button class="btn btn-primary" id="wizard-to-step2">Continue to Add Products →</button>
       </div>
     </div>
   `;
-
-  document.getElementById('cart-product-search').addEventListener('input', debounce(handleProductSearchInput, 250));
-  document.getElementById('cart-product-search').addEventListener('focus', ()=>{
-    const search = document.getElementById('cart-product-search').value.trim();
-    if(search.length > 0) handleProductSearchInput();
-  });
-  document.addEventListener('click', closeCartDropdownOnOutsideClick);
-
-  document.getElementById('cart-submit-btn').addEventListener('click', submitInquiry);
-  document.getElementById('cart-pdf-btn').addEventListener('click', generateQuotationPDF);
 
   const customerSelect = document.getElementById('cart-customer');
   const newCustomerForm = document.getElementById('cart-new-customer-form');
@@ -2398,6 +2591,7 @@ async function renderInquiryCart(){
       document.getElementById('ncf-name').focus();
     } else {
       lastSelectedValue = customerSelect.value;
+      CART_WIZARD_STATE.customerId = customerSelect.value;
       newCustomerForm.style.display = 'none';
     }
   });
@@ -2427,13 +2621,13 @@ async function renderInquiryCart(){
 
     if(error){ toast('Failed to save customer: ' + error.message, 'error'); return; }
 
-    // Insert the new customer into the dropdown, right before the "Add New" option, and select it.
     const newOption = document.createElement('option');
     newOption.value = newCustomer.id;
     newOption.textContent = newCustomer.full_name + (newCustomer.company_name ? ' — ' + newCustomer.company_name : '');
     customerSelect.insertBefore(newOption, customerSelect.querySelector('option[value="__new__"]'));
     customerSelect.value = newCustomer.id;
     lastSelectedValue = newCustomer.id;
+    CART_WIZARD_STATE.customerId = newCustomer.id;
 
     newCustomerForm.style.display = 'none';
     document.getElementById('ncf-name').value = '';
@@ -2443,6 +2637,120 @@ async function renderInquiryCart(){
 
     toast(`Customer "${newCustomer.full_name}" added.`, 'success');
   });
+
+  document.getElementById('wizard-to-step2').addEventListener('click', ()=>{
+    if(!CART_WIZARD_STATE.customerId || CART_WIZARD_STATE.customerId === '__new__'){
+      toast('Please select or add a customer first.', 'error');
+      return;
+    }
+    goToWizardStep(2);
+  });
+}
+
+// ---- STEP 2: ADD PRODUCTS ----
+function renderWizardStepProducts(){
+  const el = document.getElementById('wizard-step-content');
+  el.innerHTML = `
+    <div class="wizard-products-layout">
+      <div class="wizard-card" style="flex:1;">
+        <div class="wizard-card-heading">
+          <h2>What's in this order?</h2>
+          <p>Search by product name or SKU, then tap a brand to add it to the cart.</p>
+        </div>
+        <div style="position:relative;">
+          <div class="search-input-wrap" style="max-width:none;">
+            ${ICONS.search}
+            <input type="text" class="search-input" id="cart-product-search" placeholder="Search products to add..." autocomplete="off">
+          </div>
+          <div id="cart-product-dropdown" class="product-search-dropdown"></div>
+        </div>
+        <div id="cart-search-hint" style="padding:48px 20px;text-align:center;color:var(--slate-500);">
+          ${ICONS.search}
+          <p style="font-size:13.5px;font-weight:500;margin-top:10px;">Start typing above to find a product.</p>
+        </div>
+        <div class="wizard-card-footer">
+          <button class="btn btn-secondary" onclick="goToWizardStep(1)">← Back</button>
+          <button class="btn btn-primary" id="wizard-to-step3" ${STATE.cart.length===0?'disabled':''}>Continue to Review →</button>
+        </div>
+      </div>
+      <div class="wizard-mini-cart">
+        <div class="wizard-mini-cart-header">
+          <span>${ICONS.cart} Cart</span>
+          <span class="badge badge-orange" id="cart-count-badge">${STATE.cart.length} item${STATE.cart.length===1?'':'s'}</span>
+        </div>
+        <div id="cart-items-list">${renderCartItemsHtml()}</div>
+        <div class="wizard-mini-cart-total">
+          <span>Total</span><span class="mono" id="cart-total">${peso(cartTotal())}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('cart-product-search').addEventListener('input', debounce(handleProductSearchInput, 250));
+  document.getElementById('cart-product-search').addEventListener('focus', ()=>{
+    const search = document.getElementById('cart-product-search').value.trim();
+    if(search.length > 0) handleProductSearchInput();
+  });
+  document.addEventListener('click', closeCartDropdownOnOutsideClick);
+
+  document.getElementById('wizard-to-step3').addEventListener('click', ()=>{
+    if(STATE.cart.length === 0){ toast('Add at least one product first.', 'error'); return; }
+    goToWizardStep(3);
+  });
+
+  document.getElementById('cart-product-search').focus();
+}
+
+// ---- STEP 3: REVIEW & SUBMIT ----
+async function renderWizardStepReview(){
+  const el = document.getElementById('wizard-step-content');
+  const { data: customer } = await sb.from('customers').select('*').eq('id', CART_WIZARD_STATE.customerId).maybeSingle();
+
+  el.innerHTML = `
+    <div class="wizard-card">
+      <div class="wizard-card-heading">
+        <h2>Review before you submit</h2>
+        <p>Double-check the customer and items below. You can still go back and make changes.</p>
+      </div>
+
+      <div class="wizard-review-customer">
+        <div>
+          <div class="wizard-review-label">Customer</div>
+          <div class="wizard-review-value">${escapeHtml(customer?.full_name || 'Walk-in Customer')}${customer?.company_name ? ' — '+escapeHtml(customer.company_name) : ''}</div>
+          ${customer?.address ? `<div class="wizard-review-sub">${escapeHtml(customer.address)}</div>` : ''}
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="goToWizardStep(1)">Change</button>
+      </div>
+
+      <div class="wizard-review-items">
+        ${STATE.cart.length === 0 ? `<div class="empty-state">${ICONS.empty}<p>Cart is empty.</p></div>` : STATE.cart.map(c=>`
+          <div class="wizard-review-item">
+            <div class="wizard-review-item-info">
+              <div class="wizard-review-item-name">${escapeHtml(c.product_name)}</div>
+              <div class="wizard-review-item-meta">${escapeHtml(c.brand_name)} · ${peso(c.unit_price)} each</div>
+            </div>
+            <div class="wizard-review-item-qty">×${c.qty}</div>
+            <div class="wizard-review-item-total mono">${peso(c.qty * c.unit_price)}</div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="wizard-review-total">
+        <span>Total</span><span class="mono">${peso(cartTotal())}</span>
+      </div>
+
+      <div class="wizard-card-footer">
+        <button class="btn btn-secondary" onclick="goToWizardStep(2)">← Back to Products</button>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-secondary" id="cart-pdf-btn">${ICONS.download} Quotation PDF</button>
+          <button class="btn btn-primary" id="cart-submit-btn">Submit Inquiry</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('cart-submit-btn').addEventListener('click', submitInquiry);
+  document.getElementById('cart-pdf-btn').addEventListener('click', generateQuotationPDF);
 }
 
 async function handleProductSearchInput(){
@@ -2584,10 +2892,10 @@ function updateCartUI(){
 
 async function submitInquiry(){
   if(STATE.cart.length===0) return;
-  const customerId = document.getElementById('cart-customer').value;
+  const customerId = CART_WIZARD_STATE.customerId;
 
-  if(customerId === '__new__'){
-    toast('Please finish adding the new customer first (or pick an existing one).', 'error');
+  if(!customerId || customerId === '__new__'){
+    toast('Please go back and select a customer first.', 'error');
     return;
   }
 
@@ -2613,8 +2921,8 @@ async function submitInquiry(){
   else { toast(`Inquiry ${inqNumber} submitted successfully.`, 'success'); }
 
   STATE.cart = [];
-  updateCartUI();
-  btn.disabled = false; btn.textContent = 'Submit Inquiry';
+  CART_WIZARD_STATE.step = 1;
+  CART_WIZARD_STATE.customerId = null;
   INQ_STATE.tab = 'list';
   renderInquiry();
 }
@@ -2622,19 +2930,14 @@ async function submitInquiry(){
 // ============ QUOTATION PDF ============
 async function generateQuotationPDF(){
   if(STATE.cart.length===0){ toast('Cart is empty.', 'error'); return; }
-  const customerSelect = document.getElementById('cart-customer');
-  if(customerSelect && customerSelect.value === '__new__'){
-    toast('Please finish adding the new customer first (or pick an existing one).', 'error');
+  if(!CART_WIZARD_STATE.customerId || CART_WIZARD_STATE.customerId === '__new__'){
+    toast('Please go back and select a customer first.', 'error');
     return;
   }
-  const customerName = customerSelect ? customerSelect.options[customerSelect.selectedIndex].text : 'Walk-in Customer';
-  const customerId = customerSelect ? customerSelect.value : null;
 
-  let customerAddress = null;
-  if(customerId){
-    const { data: customerRow } = await sb.from('customers').select('address').eq('id', customerId).maybeSingle();
-    customerAddress = customerRow?.address || null;
-  }
+  const { data: customerRow } = await sb.from('customers').select('full_name, company_name, address').eq('id', CART_WIZARD_STATE.customerId).maybeSingle();
+  const customerName = customerRow ? (customerRow.full_name + (customerRow.company_name ? ' — ' + customerRow.company_name : '')) : 'Walk-in Customer';
+  const customerAddress = customerRow?.address || null;
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
@@ -2701,65 +3004,98 @@ async function generateQuotationPDF(){
 }
 
 // ============ INQUIRY LIST ============
+// ============ ALL INQUIRIES — KANBAN BOARD ============
+const KANBAN_COLUMNS = [
+  { key:'submitted', label:'Submitted', statuses:['submitted'], color:'blue' },
+  { key:'preparing', label:'Preparing', statuses:['forwarded_to_prep','preparing'], color:'amber' },
+  { key:'ready', label:'Ready', statuses:['ready'], color:'green' },
+  { key:'converted', label:'Converted', statuses:['converted'], color:'green' },
+];
+const KANBAN_CARD_LIMIT = 8; // per column, before "+N more" kicks in
+
 async function renderInquiryList(){
   const container = document.getElementById('inquiry-tab-content');
   container.innerHTML = `
     <div class="toolbar">
       <div class="search-input-wrap">${ICONS.search}<input type="text" class="search-input" id="inq-search" placeholder="Search inquiry number..."></div>
-      <select class="filter-select" id="inq-status-filter">
-        <option value="">All Statuses</option>
-        <option value="submitted">Submitted</option>
-        <option value="forwarded_to_prep">Forwarded to Prep</option>
-        <option value="preparing">Preparing</option>
-        <option value="ready">Ready</option>
-        <option value="converted">Converted</option>
-        <option value="cancelled">Cancelled</option>
-      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--slate-700);font-weight:500;cursor:pointer;">
+        <input type="checkbox" id="inq-show-cancelled"> Show cancelled
+      </label>
     </div>
-    <div class="card">
-      <div class="table-wrap" id="inq-table-wrap"><div style="padding:20px;"><div class="skeleton" style="height:280px;"></div></div></div>
-      <div class="pagination" id="inq-pagination"></div>
-    </div>
+    <div class="kanban-board" id="inq-kanban-board"></div>
   `;
-  document.getElementById('inq-search').addEventListener('input', debounce(e=>{ INQ_STATE.search=e.target.value; INQ_STATE.listPage=1; refreshInquiryList(); }, 300));
-  document.getElementById('inq-status-filter').addEventListener('change', e=>{ INQ_STATE.statusFilter=e.target.value; INQ_STATE.listPage=1; refreshInquiryList(); });
+  document.getElementById('inq-search').addEventListener('input', debounce(()=>{ INQ_STATE.search = document.getElementById('inq-search').value; refreshInquiryList(); }, 300));
+  document.getElementById('inq-show-cancelled').addEventListener('change', e=>{ INQ_STATE.showCancelled = e.target.checked; refreshInquiryList(); });
   refreshInquiryList();
 }
 
 async function refreshInquiryList(){
-  const wrap = document.getElementById('inq-table-wrap');
-  if(!wrap) return;
+  const board = document.getElementById('inq-kanban-board');
+  if(!board) return;
 
-  let query = sb.from('inquiries').select('*, customers(full_name), users!inquiries_sales_agent_id_fkey(full_name)', {count:'exact'}).eq('branch_id', STATE.currentBranch);
+  const columns = [...KANBAN_COLUMNS];
+  if(INQ_STATE.showCancelled){
+    columns.push({ key:'cancelled', label:'Cancelled', statuses:['cancelled'], color:'red' });
+  }
+
+  board.innerHTML = columns.map(col => `
+    <div class="kanban-column">
+      <div class="kanban-column-header kanban-color-${col.color}">
+        <span>${escapeHtml(col.label)}</span>
+        <span class="kanban-count" id="kanban-count-${col.key}">…</span>
+      </div>
+      <div class="kanban-column-body" id="kanban-body-${col.key}">
+        <div class="skeleton" style="height:70px;margin-bottom:8px;"></div>
+        <div class="skeleton" style="height:70px;"></div>
+      </div>
+    </div>
+  `).join('');
+
+  // Fetch each column's cards independently — keeps per-column counts and
+  // limits accurate without one giant query trying to bucket everything client-side.
+  await Promise.all(columns.map(col => loadKanbanColumn(col)));
+}
+
+async function loadKanbanColumn(col){
+  let query = sb.from('inquiries')
+    .select('*, customers(full_name), users!inquiries_sales_agent_id_fkey(full_name)', {count:'exact'})
+    .eq('branch_id', STATE.currentBranch)
+    .in('status', col.statuses);
+
   if(INQ_STATE.search) query = query.ilike('inquiry_number', `%${INQ_STATE.search}%`);
-  if(INQ_STATE.statusFilter) query = query.eq('status', INQ_STATE.statusFilter);
 
-  const from = (INQ_STATE.listPage-1)*INQ_STATE.listPageSize;
-  const to = from + INQ_STATE.listPageSize - 1;
-  query = query.order('created_at',{ascending:false}).range(from,to);
+  query = query.order('created_at', {ascending:false}).limit(KANBAN_CARD_LIMIT);
 
   const { data, count, error } = await query;
-  if(error){ wrap.innerHTML = `<div class="empty-state"><p>Error: ${escapeHtml(error.message)}</p></div>`; return; }
-  if(!data || data.length===0){ wrap.innerHTML = `<div class="empty-state">${ICONS.empty}<p>No inquiries found.</p></div>`; document.getElementById('inq-pagination').innerHTML=''; return; }
+  const countEl = document.getElementById(`kanban-count-${col.key}`);
+  const bodyEl = document.getElementById(`kanban-body-${col.key}`);
+  if(!bodyEl) return;
 
-  const statusColors = { draft:'slate', submitted:'blue', forwarded_to_prep:'amber', preparing:'amber', ready:'green', converted:'green', cancelled:'red' };
+  if(error){ bodyEl.innerHTML = `<div class="kanban-empty">Error loading.</div>`; return; }
+  if(countEl) countEl.textContent = count || 0;
 
-  wrap.innerHTML = `<table>
-    <thead><tr><th>Inquiry #</th><th>Customer</th><th>Agent</th><th>Total</th><th>Status</th><th>Date</th><th></th></tr></thead>
-    <tbody>
-      ${data.map(i=>`<tr>
-        <td class="mono" style="font-weight:600;">${escapeHtml(i.inquiry_number)}</td>
-        <td>${escapeHtml(i.customers?.full_name || 'Walk-in')}</td>
-        <td>${escapeHtml(i.users?.full_name || '—')}</td>
-        <td class="mono">${peso(i.total_amount)}</td>
-        <td><span class="badge badge-${statusColors[i.status]||'slate'}">${i.status.replace(/_/g,' ')}</span></td>
-        <td style="color:var(--slate-500);font-size:12px;">${fmtDate(i.created_at)}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="viewInquiryDetail('${i.id}')">View</button></td>
-      </tr>`).join('')}
-    </tbody>
-  </table>`;
+  if(!data || data.length===0){
+    bodyEl.innerHTML = `<div class="kanban-empty">No inquiries here.</div>`;
+    return;
+  }
 
-  renderPagination('inq-pagination', INQ_STATE.listPage, INQ_STATE.listPageSize, count||0, (p)=>{ INQ_STATE.listPage=p; refreshInquiryList(); });
+  bodyEl.innerHTML = data.map(i => `
+    <div class="kanban-card" onclick="viewInquiryDetail('${i.id}')">
+      <div class="kanban-card-top">
+        <span class="kanban-card-number mono">${escapeHtml(i.inquiry_number)}</span>
+        <span class="kanban-card-total mono">${peso(i.total_amount)}</span>
+      </div>
+      <div class="kanban-card-customer">${escapeHtml(i.customers?.full_name || 'Walk-in Customer')}</div>
+      <div class="kanban-card-meta">
+        <span>${escapeHtml(i.users?.full_name || '—')}</span>
+        <span>${timeAgo(i.created_at)}</span>
+      </div>
+    </div>
+  `).join('');
+
+  if(count > KANBAN_CARD_LIMIT){
+    bodyEl.innerHTML += `<div class="kanban-more">+${count - KANBAN_CARD_LIMIT} more — refine your search to narrow this down</div>`;
+  }
 }
 
 async function viewInquiryDetail(inquiryId){
