@@ -6060,16 +6060,7 @@ function navigateTo(page){
   _origNavigateTo(page);
 }
 
-// Patch renderSidebar to re-render after nav config patch
-const _origRenderSidebar = renderSidebar;
-function renderSidebar(){
-  _origRenderSidebar();
-  // The patchNav IIFE already modified NAV_CONFIG so the new nav item
-  // will be picked up by _origRenderSidebar on subsequent calls.
-  // Re-attach event for stockout nav item if it already exists
-  const soNav = document.querySelector('.nav-item[data-page="stockout"]');
-  if(soNav) soNav.addEventListener('click', () => navigateTo('stockout'));
-}
+// renderSidebar override removed
 
 console.log('[Hunyo24] Stock Out module loaded.');
 
