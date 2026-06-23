@@ -1261,6 +1261,7 @@ function navigateTo(page){
   const renderers = {
     dashboard: renderDashboard,
     inventory: renderInventory,
+    stockout: renderStockout,
     inquiry: renderInquiry,
     suppliers: renderSuppliers,
     reports: renderReports,
@@ -6040,31 +6041,7 @@ async function doGenerateQTPdf(customerRow){
 }
 
 
-// ---- PATCH navigateTo renderers to include stockout ----
-// Safe approach: patch the PAGE_TITLES and use a monkey-patch on the renderers
-// inside the existing navigateTo instead of overriding the whole function.
-// We do this by wrapping the original navigateTo only ONCE using a flag.
-(function(){
-  const _orig = navigateTo;
-  let patched = false;
-  navigateTo = function(page){
-    if(!patched){
-      patched = true;
-      // Monkey-patch: intercept stockout before calling original
-    }
-    if(page === 'stockout'){
-      STATE.page = page;
-      document.querySelectorAll('.nav-item').forEach(el=> el.classList.toggle('active', el.dataset.page===page));
-      document.getElementById('page-title').textContent = 'Stock Out';
-      const content = document.getElementById('content-area');
-      content.innerHTML = '<div class="page active" id="page-stockout"></div>';
-      renderStockout();
-      if(window.innerWidth <= 900) document.getElementById('sidebar').classList.remove('mobile-open');
-      return;
-    }
-    _orig(page);
-  };
-})();
+
 
 // renderSidebar override removed
 
