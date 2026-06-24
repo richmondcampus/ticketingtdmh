@@ -5005,8 +5005,8 @@ async function openNewSOModal(){
           </select>
         </div>
         <div class="form-group">
-          <label>Reference No. (optional)</label>
-          <input type="text" id="so-ref-number" placeholder="Auto-generated if blank">
+          <label>Receipt / Reference No. <span style="font-weight:400;color:var(--slate-500);">(optional)</span></label>
+          <input type="text" id="so-ref-number" placeholder="e.g. 001 — auto-generated if blank">
         </div>
       </div>
 
@@ -5385,7 +5385,24 @@ async function submitStockOut(){
   };
 
   const btn = document.getElementById('so-submit-btn');
-  btn.disabled = true; btn.textContent = 'Saving...';
+  btn.disabled = true; btn.textContent = 'Checking stock...';
+
+  // Pre-validate: check stock availability before saving
+  for(const item of SO_STATE.items){
+    const { data: slData } = await sb.from('stock_levels')
+      .select('qty_on_hand')
+      .eq('product_brand_id', item.product_brand_id)
+      .eq('branch_id', STATE.currentBranch)
+      .maybeSingle();
+    const available = slData?.qty_on_hand ?? 0;
+    if(available < item.qty){
+      toast(`⚠️ ${item.product_name} (${item.brand_name}): Kulang ang stock. Available: ${Number(available).toLocaleString()}, Requested: ${Number(item.qty).toLocaleString()}`, 'error');
+      btn.disabled = false; btn.textContent = 'Save Stock Out';
+      return;
+    }
+  }
+
+  btn.textContent = 'Saving...';
 
   const { data: soRecord, error: soErr } = await sb.from('stock_outs').insert(payload).select().single();
 
@@ -5426,7 +5443,15 @@ async function submitStockOut(){
         p_reference_id: soRecord.id,
         p_notes: `Stock Out: ${soRecord.ref_number || soRecord.id}`,
       });
-      if(deductErr) console.error('Stock deduct error:', deductErr.message);
+      if(deductErr){
+        const msg = deductErr.message || '';
+        if(msg.includes('Insufficient stock')){
+          toast(`⚠️ ${item.product_name} (${item.brand_name}): ${msg}`, 'error');
+        } else {
+          toast(`Stock deduction failed for ${item.product_name}: ${msg}`, 'error');
+        }
+        console.error('Stock deduct error:', deductErr.message);
+      }
     }
     toast('Stock out recorded successfully!', 'success');
   }
