@@ -571,6 +571,7 @@ function renderSidebarNav() {
     { id:'my_tickets',   icon:'🎫', label:'My Tickets',   roles:['requester','technician','supervisor','admin'] },
     { id:'open_tickets', icon:'🔓', label:'Open Tickets', roles:['technician','supervisor','admin'] },
     { id:'all_tickets',  icon:'🗂', label:'All Tickets',  roles:['technician','supervisor','admin'] },
+    { id:'kanban',       icon:'📋', label:'Kanban',       roles:['technician','supervisor','admin'] },
     { id:'analytics',    icon:'📈', label:'Analytics',    roles:['supervisor','admin'] },
     { id:'reports',      icon:'📊', label:'Reports',      roles:['admin'] },
     { id:'team',         icon:'👥', label:'Team',         roles:['supervisor','admin'] },
@@ -591,7 +592,7 @@ function renderSidebarNav() {
 // ═══════════════════════════════════
 const PAGE_TITLES = {
   dashboard:'Dashboard', my_tickets:'My Tickets', all_tickets:'All Tickets',
-  open_tickets:'Open Tickets', kanban:'Kanban Board', analytics:'Analytics', team:'Team', reports:'Reports'
+  open_tickets:'Open Tickets', kanban:'Kanban', analytics:'Analytics', team:'Team', reports:'Reports'
 }
 
 function showPage(page) {
