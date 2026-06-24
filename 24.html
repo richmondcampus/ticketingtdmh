@@ -2705,57 +2705,75 @@ function renderWizardStepProducts(){
 }
 
 // ---- STEP 3: REVIEW & SUBMIT ----
-// QT pricing state — per-item overrides + overall discount
-const QT_PRICING = {
-  overallDiscType: 'pct',  // 'pct' or 'amt'
-  overallDiscValue: 0,
-};
+// QT pricing — reads from DOM inputs directly to avoid stale state
+const QT_PRICING = { overallDiscType: 'pct' };
 
-function qtGetItemPrice(idx){
-  const c = STATE.cart[idx];
-  return c.qt_price !== undefined ? c.qt_price : c.unit_price;
+function qtReadItemPrice(idx){
+  const el = document.getElementById('qt-price-' + idx);
+  return el ? (parseFloat(el.value) || STATE.cart[idx]?.unit_price || 0) : (STATE.cart[idx]?.unit_price || 0);
 }
+function qtReadItemDiscType(idx){
+  const el = document.getElementById('qt-disc-type-' + idx);
+  return el ? el.value : 'pct';
+}
+function qtReadItemDiscValue(idx){
+  const el = document.getElementById('qt-disc-val-' + idx);
+  return el ? (parseFloat(el.value) || 0) : 0;
+}
+function qtGetItemPrice(idx){ return qtReadItemPrice(idx); }
 function qtGetItemDiscAmt(idx){
-  const c = STATE.cart[idx];
-  const price = qtGetItemPrice(idx);
-  if(c.qt_disc_type === 'amt') return Math.min(c.qt_disc_value || 0, price);
-  return price * ((c.qt_disc_value || 0) / 100);
+  const price = qtReadItemPrice(idx);
+  const dtype = qtReadItemDiscType(idx);
+  const dval = qtReadItemDiscValue(idx);
+  if(dtype === 'amt') return Math.min(dval, price);
+  return price * (dval / 100);
 }
 function qtGetItemLineTotal(idx){
-  const c = STATE.cart[idx];
-  return c.qty * (qtGetItemPrice(idx) - qtGetItemDiscAmt(idx));
+  if(!STATE.cart[idx]) return 0;
+  return STATE.cart[idx].qty * (qtGetItemPrice(idx) - qtGetItemDiscAmt(idx));
 }
-function qtCartTotal(){
-  const sub = STATE.cart.reduce((s,_,idx) => s + qtGetItemLineTotal(idx), 0);
-  const discAmt = QT_PRICING.overallDiscType === 'amt'
-    ? Math.min(QT_PRICING.overallDiscValue, sub)
-    : sub * (QT_PRICING.overallDiscValue / 100);
-  return sub - discAmt;
+function qtReadOverallDiscType(){
+  const el = document.getElementById('qt-overall-disc-type');
+  return el ? el.value : 'pct';
+}
+function qtReadOverallDiscValue(){
+  const el = document.getElementById('qt-overall-disc-val');
+  return el ? (parseFloat(el.value) || 0) : 0;
 }
 function qtSubtotal(){
   return STATE.cart.reduce((s,_,idx) => s + qtGetItemLineTotal(idx), 0);
 }
 function qtOverallDiscAmt(){
   const sub = qtSubtotal();
-  return QT_PRICING.overallDiscType === 'amt'
-    ? Math.min(QT_PRICING.overallDiscValue, sub)
-    : sub * (QT_PRICING.overallDiscValue / 100);
+  const dtype = qtReadOverallDiscType();
+  const dval = qtReadOverallDiscValue();
+  return dtype === 'amt' ? Math.min(dval, sub) : sub * (dval / 100);
+}
+function qtCartTotal(){ return qtSubtotal() - qtOverallDiscAmt(); }
+
+// Recompute and update displayed totals without touching any input
+function qtRecompute(){
+  STATE.cart.forEach((_, idx) => {
+    const el = document.getElementById('qt-lt-' + idx);
+    if(el) el.textContent = peso(qtGetItemLineTotal(idx));
+  });
+  const subEl = document.getElementById('qt-sub-display');
+  const discEl = document.getElementById('qt-overall-disc-amt');
+  const totEl = document.getElementById('qt-total-display');
+  const sub = qtSubtotal();
+  const disc = qtOverallDiscAmt();
+  if(subEl) subEl.textContent = peso(sub);
+  if(discEl) discEl.textContent = '-' + peso(disc);
+  if(totEl) totEl.textContent = peso(sub - disc);
 }
 
 function qtUpdateItem(idx, field, val){
-  if(!STATE.cart[idx]) return;
-  if(field === 'price'){
-    STATE.cart[idx].qt_price = parseFloat(val) || 0;
-  } else if(field === 'disc_type'){
-    STATE.cart[idx].qt_disc_type = val;
-    STATE.cart[idx].qt_disc_value = 0;
-  } else if(field === 'disc_value'){
-    STATE.cart[idx].qt_disc_value = parseFloat(val) || 0;
-    if(STATE.cart[idx].qt_disc_type !== 'amt' && STATE.cart[idx].qt_disc_value > 100)
-      STATE.cart[idx].qt_disc_value = 100;
+  if(field === 'disc_type'){
+    // Reset disc value input when switching type
+    const dv = document.getElementById('qt-disc-val-' + idx);
+    if(dv) dv.value = '0';
   }
-  renderQTItemsTable();
-  renderQTTotalsSection();
+  qtRecompute();
 }
 
 function renderQTItemsTable(){
@@ -2768,42 +2786,36 @@ function renderQTItemsTable(){
           <th style="min-width:160px;">Product</th>
           <th style="width:50px;">Qty</th>
           <th style="width:110px;">Unit Price</th>
-          <th style="width:130px;">Discount</th>
+          <th style="width:140px;">Discount</th>
           <th style="width:110px;text-align:right;">Line Total</th>
         </tr>
       </thead>
       <tbody>
-        ${STATE.cart.map((c, idx) => {
-          const price = qtGetItemPrice(idx);
-          const discType = c.qt_disc_type || 'pct';
-          const discVal = c.qt_disc_value || 0;
-          const lineTotal = qtGetItemLineTotal(idx);
-          return `<tr>
+        ${STATE.cart.map((c, idx) => `<tr>
             <td>
               <div style="font-weight:600;color:var(--navy-900);line-height:1.3;">${escapeHtml(c.product_name)}</div>
-              <div style="font-size:11px;color:var(--slate-500);">${escapeHtml(c.brand_name)}</div>
+              <div style="font-size:11px;color:var(--slate-500);">${escapeHtml(c.brand_name)} &times; ${c.qty}</div>
             </td>
             <td class="mono" style="color:var(--slate-500);">${c.qty}</td>
             <td>
-              <input type="number" min="0" step="0.01" value="${price}"
+              <input id="qt-price-${idx}" type="number" min="0" step="0.01" value="${c.unit_price}"
                 style="width:100%;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                oninput="qtUpdateItem(${idx},'price',this.value)">
+                oninput="qtRecompute()">
             </td>
             <td>
               <div style="display:flex;align-items:center;gap:3px;">
-                <select style="padding:4px 5px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:11px;"
+                <select id="qt-disc-type-${idx}" style="padding:4px 5px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:11px;"
                   onchange="qtUpdateItem(${idx},'disc_type',this.value)">
-                  <option value="pct" ${discType==='pct'?'selected':''}>%</option>
-                  <option value="amt" ${discType==='amt'?'selected':''}>₱</option>
+                  <option value="pct">%</option>
+                  <option value="amt">₱</option>
                 </select>
-                <input type="number" min="0" step="0.01" value="${discVal}"
+                <input id="qt-disc-val-${idx}" type="number" min="0" step="0.01" value="0"
                   style="width:65px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                  oninput="qtUpdateItem(${idx},'disc_value',this.value)">
+                  oninput="qtRecompute()">
               </div>
             </td>
-            <td class="mono" style="text-align:right;font-weight:600;">${peso(lineTotal)}</td>
-          </tr>`;
-        }).join('')}
+            <td class="mono" style="text-align:right;font-weight:600;" id="qt-lt-${idx}">${peso(c.qty * c.unit_price)}</td>
+          </tr>`).join('')}
       </tbody>
     </table>
   `;
@@ -2812,33 +2824,29 @@ function renderQTItemsTable(){
 function renderQTTotalsSection(){
   const el = document.getElementById('qt-totals-section');
   if(!el) return;
-  const sub = qtSubtotal();
-  const discAmt = qtOverallDiscAmt();
-  const total = qtCartTotal();
   el.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:6px;padding:10px 14px;background:var(--slate-100);border-radius:8px;margin-top:10px;">
       <div style="display:flex;justify-content:space-between;font-size:13px;">
         <span style="color:var(--slate-500);">Subtotal</span>
-        <span class="mono">${peso(sub)}</span>
+        <span class="mono" id="qt-sub-display">${peso(qtSubtotal())}</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;">
         <span style="color:var(--slate-500);">Overall Discount</span>
         <div style="display:flex;align-items:center;gap:4px;">
-          <select style="padding:4px 5px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:11px;"
-            onchange="QT_PRICING.overallDiscType=this.value;renderQTTotalsSection()">
-            <option value="pct" ${QT_PRICING.overallDiscType==='pct'?'selected':''}>%</option>
-            <option value="amt" ${QT_PRICING.overallDiscType==='amt'?'selected':''}>₱</option>
+          <select id="qt-overall-disc-type" style="padding:4px 5px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:11px;"
+            onchange="qtRecompute()">
+            <option value="pct">%</option>
+            <option value="amt">₱</option>
           </select>
-          <input type="number" min="0" step="0.01" value="${QT_PRICING.overallDiscValue}"
+          <input id="qt-overall-disc-val" type="number" min="0" step="0.01" value="0"
             style="width:70px;padding:4px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;text-align:right;"
-            oninput="QT_PRICING.overallDiscValue=parseFloat(this.value)||0;"
-            onchange="renderQTTotalsSection()">
-          <span class="mono" style="color:var(--red-600);min-width:80px;text-align:right;">-${peso(discAmt)}</span>
+            oninput="qtRecompute()">
+          <span class="mono" style="color:var(--red-600);min-width:80px;text-align:right;" id="qt-overall-disc-amt">-${peso(0)}</span>
         </div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;color:var(--navy-900);border-top:1.5px solid var(--slate-300);padding-top:8px;margin-top:2px;">
         <span>TOTAL</span>
-        <span class="mono" style="color:var(--orange-600);">${peso(total)}</span>
+        <span class="mono" style="color:var(--orange-600);" id="qt-total-display">${peso(qtSubtotal())}</span>
       </div>
     </div>
   `;
@@ -3256,6 +3264,108 @@ async function loadKanbanColumn(col){
   }
 }
 
+
+// ============ QUOTATION PDF BUILDER ============
+// Reusable — called from review step AND inquiry reprint
+function buildQuotationPDF(customerRow, items, overallDiscAmt, grandTotal, quoteLabel){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const quoteNo = quoteLabel || ('QT-' + Date.now().toString().slice(-8));
+  const customerName = customerRow ? (customerRow.full_name + (customerRow.company_name ? ' — ' + customerRow.company_name : '')) : 'Walk-in Customer';
+  const customerAddress = customerRow?.address || null;
+  const sub = items.reduce((s, i) => s + (i.line_total || 0), 0);
+  const discAmt = overallDiscAmt || 0;
+  const total = grandTotal !== undefined ? grandTotal : (sub - discAmt);
+
+  doc.setFontSize(18); doc.setFont(undefined,'bold'); doc.setTextColor(15,27,45);
+  doc.text('HUNYO 24 TRADING', 14, 20);
+  doc.setFontSize(9); doc.setFont(undefined,'normal'); doc.setTextColor(100,100,100);
+  doc.text('Hardware & Construction Supplies — Taytay, Rizal, Philippines', 14, 26);
+  doc.setDrawColor(232,89,12); doc.setLineWidth(0.8); doc.line(14, 30, 196, 30);
+
+  doc.setFontSize(13); doc.setTextColor(15,27,45); doc.setFont(undefined,'bold');
+  doc.text('QUOTATION', 14, 40);
+  doc.setFontSize(9); doc.setFont(undefined,'normal');
+  doc.text('Quote No: ' + quoteNo, 14, 47);
+  doc.text('Date: ' + new Date().toLocaleDateString('en-PH'), 14, 52);
+  doc.text('Customer: ' + customerName, 14, 57);
+  doc.text('Prepared by: ' + (STATE.profile?.full_name || ''), 14, 62);
+  doc.text('Valid until: ' + new Date(Date.now()+7*86400000).toLocaleDateString('en-PH'), 120, 47);
+
+  let tableStartY = 74;
+  if(customerAddress){
+    const addrLines = doc.splitTextToSize('Delivery Address: ' + customerAddress, 182);
+    doc.text(addrLines, 14, 67);
+    tableStartY = 67 + (addrLines.length * 5) + 8;
+  }
+
+  let y = tableStartY;
+  doc.setFillColor(15,27,45); doc.rect(14, y-6, 182, 8, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont(undefined,'bold');
+  doc.text('PRODUCT', 16, y); doc.text('BRAND', 82, y); doc.text('QTY', 118, y);
+  doc.text('UNIT PRICE', 130, y); doc.text('DISC', 158, y); doc.text('TOTAL', 176, y);
+  y += 8;
+
+  doc.setTextColor(40,40,40); doc.setFont(undefined,'normal'); doc.setFontSize(9);
+  items.forEach((item, idx) => {
+    if(idx % 2 === 1){ doc.setFillColor(247,245,241); doc.rect(14, y-5, 182, 7, 'F'); }
+    doc.text(String(item.product_name || '').slice(0,30), 16, y);
+    doc.text(String(item.brand_name || '').slice(0,13), 82, y);
+    doc.text(String(item.qty), 118, y);
+    doc.text(peso(item.unit_price).replace('₱','P'), 130, y);
+    doc.text((item.disc_amt > 0) ? '-'+peso(item.disc_amt).replace('₱','P') : '—', 158, y);
+    doc.text(peso(item.line_total).replace('₱','P'), 176, y);
+    y += 7;
+  });
+
+  y += 4;
+  doc.setDrawColor(200,200,200); doc.line(14, y, 196, y);
+  y += 7;
+  doc.setFontSize(9); doc.setTextColor(80,80,80);
+  if(discAmt > 0){
+    doc.text('Overall Discount: -' + peso(discAmt).replace('₱','P'), 118, y);
+    y += 6;
+  }
+  y += 2;
+  doc.setFont(undefined,'bold'); doc.setFontSize(11); doc.setTextColor(200,30,44);
+  doc.text('TOTAL: ' + peso(total).replace('₱','P'), 136, y);
+  y += 18;
+  doc.setFontSize(8); doc.setTextColor(130,130,130); doc.setFont(undefined,'normal');
+  doc.text('This quotation is valid for 7 days from date of issue. Prices subject to change without prior notice.', 14, y);
+  doc.text('Thank you for choosing Hunyo 24 Trading.', 14, y+5);
+  doc.save(quoteNo + '.pdf');
+  toast('Quotation PDF generated.', 'success');
+}
+
+
+async function reprintInquiryQuotation(inquiryId){
+  const { data: inquiry } = await sb.from('inquiries')
+    .select('*, customers(full_name, company_name, address), users!inquiries_sales_agent_id_fkey(full_name)')
+    .eq('id', inquiryId).single();
+  const { data: items } = await sb.from('inquiry_items')
+    .select('*, product_brands(*, products(name,sku), brands(name))')
+    .eq('inquiry_id', inquiryId);
+
+  if(!inquiry || !items){ toast('Could not load inquiry data.', 'error'); return; }
+
+  const pdfItems = (items || []).map(it => ({
+    product_name: it.product_brands?.products?.name || '—',
+    brand_name: it.product_brands?.brands?.name || '—',
+    qty: it.qty,
+    unit_price: it.unit_price,
+    disc_amt: 0,
+    line_total: it.line_total || (it.qty * it.unit_price),
+  }));
+
+  buildQuotationPDF(
+    inquiry.customers,
+    pdfItems,
+    0,
+    inquiry.total_amount,
+    inquiry.inquiry_number
+  );
+}
+
 async function viewInquiryDetail(inquiryId){
   const { data: inquiry } = await sb.from('inquiries').select('*, customers(*), users!inquiries_sales_agent_id_fkey(full_name)').eq('id', inquiryId).single();
   const { data: items } = await sb.from('inquiry_items').select('*, product_brands(*, products(name,sku), brands(name))').eq('inquiry_id', inquiryId);
@@ -3304,6 +3414,7 @@ async function viewInquiryDetail(inquiryId){
     </div>
     <div class="modal-footer">
       ${canEditItems ? `<button class="btn btn-secondary" id="inq-save-qty-btn" onclick="saveInquiryItemQuantities('${inquiry.id}')">Save Quantity Changes</button>` : ''}
+      <button class="btn btn-secondary" onclick="reprintInquiryQuotation('${inquiry.id}')">${ICONS.download} Quotation PDF</button>
       ${canConvert ? `<button class="btn btn-primary" onclick="convertInquiryToPurchase('${inquiry.id}', this)">Convert to Purchase (Deduct Stock)</button>` : ''}
       ${canCancel ? `<button class="btn btn-danger" onclick="cancelInquiry('${inquiry.id}')">Cancel</button>` : ''}
     </div>
@@ -5309,15 +5420,24 @@ function soUpdateItem(idx, field, val){
   if(!SO_STATE.items[idx]) return;
   if(field === 'disc_type'){
     SO_STATE.items[idx].disc_type = val;
-    // Reset discount value when switching type
     SO_STATE.items[idx].discount_pct = 0;
     SO_STATE.items[idx].discount_amt = 0;
-  } else {
-    SO_STATE.items[idx][field] = parseFloat(val) || 0;
-    if(field === 'qty' && SO_STATE.items[idx].qty < 0.01) SO_STATE.items[idx].qty = 0.01;
-    if(field === 'discount_pct' && SO_STATE.items[idx].discount_pct > 100) SO_STATE.items[idx].discount_pct = 100;
+    // Full re-render only on type switch (select, not typing)
+    renderSOItemsList();
+    renderSOTotals();
+    return;
   }
-  renderSOItemsList();
+  SO_STATE.items[idx][field] = parseFloat(val) || 0;
+  if(field === 'qty' && SO_STATE.items[idx].qty < 0.01) SO_STATE.items[idx].qty = 0.01;
+  if(field === 'discount_pct' && SO_STATE.items[idx].discount_pct > 100) SO_STATE.items[idx].discount_pct = 100;
+  // Typing: just update the line total span, don't destroy the input
+  const soItem = SO_STATE.items[idx];
+  const da = soItem.disc_type === 'amt'
+    ? Math.min(soItem.discount_amt || 0, soItem.unit_price)
+    : soItem.unit_price * (soItem.discount_pct || 0) / 100;
+  const lineTotal = soItem.qty * (soItem.unit_price - da);
+  const ltEl = document.getElementById('so-lt-' + idx);
+  if(ltEl) ltEl.textContent = peso(lineTotal);
   renderSOTotals();
 }
 
@@ -5393,14 +5513,14 @@ function renderSOItemsList(){
             <td>
               <input type="number" min="0.01" step="0.01" value="${item.qty}"
                 style="width:70px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                oninput="soUpdateItem(${idx},'qty',this.value)">
+                oninput="soUpdateItem(${idx},'qty',this.value)" onchange="soUpdateItem(${idx},'qty',this.value)">
             </td>
             <td style="color:var(--slate-500);">pc</td>
             ${showUnitPrice ? `
             <td>
               <input type="number" min="0" step="0.01" value="${item.unit_price}"
                 style="width:90px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                oninput="soUpdateItem(${idx},'unit_price',this.value)">
+                oninput="soUpdateItem(${idx},'unit_price',this.value)" onchange="soUpdateItem(${idx},'unit_price',this.value)">
             </td>
             <td>
               <div style="display:flex;align-items:center;gap:2px;">
@@ -5410,10 +5530,10 @@ function renderSOItemsList(){
                 </select>
                 <input type="number" min="0" step="0.01" value="${item.disc_type==='amt'?(item.discount_amt||0):(item.discount_pct||0)}"
                   style="width:65px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                  oninput="soUpdateItem(${idx},item.disc_type==='amt'?'discount_amt':'discount_pct',this.value)">
+                  oninput="soUpdateItem(${idx},item.disc_type==='amt'?'discount_amt':'discount_pct',this.value)" onchange="soUpdateItem(${idx},item.disc_type==='amt'?'discount_amt':'discount_pct',this.value)">
               </div>
             </td>
-            <td class="mono" style="font-weight:600;white-space:nowrap;">${peso(lineTotal)}</td>
+            <td class="mono" style="font-weight:600;white-space:nowrap;" id="so-lt-${idx}">${peso(lineTotal)}</td>
             ` : ''}
             <td><button class="icon-btn" style="width:26px;height:26px;" onclick="soRemoveItem(${idx})">${ICONS.x}</button></td>
           </tr>`;
@@ -5480,8 +5600,8 @@ function renderSOTotals(){
           </select>
           <input type="number" id="so-overall-disc" min="0" step="0.01" value="${SO_STATE.overallDiscValue}"
             style="width:70px;padding:4px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;text-align:right;"
-            oninput="SO_STATE.overallDiscValue=parseFloat(this.value)||0;" onchange="renderSOTotals()">
-          <span class="mono" style="min-width:100px;text-align:right;color:var(--red-600);">-${peso(t.overallDiscAmt)}</span>
+            oninput="SO_STATE.overallDiscValue=parseFloat(this.value)||0;(function(){const _t=soCalcTotals();const _s=document.getElementById('so-overall-disc-amt');if(_s)_s.textContent='-'+peso(_t.overallDiscAmt);const _tot=document.getElementById('so-total-display');if(_tot)_tot.textContent=peso(_t.total);})();" onchange="renderSOTotals()">
+          <span class="mono" style="min-width:100px;text-align:right;color:var(--red-600);" id="so-overall-disc-amt">-${peso(t.overallDiscAmt)}</span>
         </div>
       </div>
       ` : ''}
@@ -5506,7 +5626,7 @@ function renderSOTotals(){
       <hr style="width:100%;border:none;border-top:1.5px solid var(--slate-300);margin:2px 0;">
       <div style="display:flex;gap:16px;align-items:center;font-size:15px;font-weight:800;color:var(--navy-900);">
         <span>${rt.hasVat ? 'TOTAL AMOUNT DUE' : (rt.hasSimpleTotal ? 'TOTAL ₱' : 'TOTAL')}</span>
-        <span class="mono" style="min-width:120px;text-align:right;color:var(--orange-600);">${peso(t.total)}</span>
+        <span class="mono" style="min-width:120px;text-align:right;color:var(--orange-600);" id="so-total-display">${peso(t.total)}</span>
       </div>
     </div>
   `;
@@ -6022,249 +6142,6 @@ function exportPriceCostCSV(){
 // ============================================================
 
 // Override generateQuotationPDF with enhanced version
-async function generateQuotationPDF(){
-  if(STATE.cart.length===0){ toast('Cart is empty.', 'error'); return; }
-  if(!CART_WIZARD_STATE.customerId || CART_WIZARD_STATE.customerId === '__new__'){
-    toast('Please go back and select a customer first.', 'error');
-    return;
-  }
-
-  // Open a config modal first to let them set per-line prices and overall discount
-  await openQuotationConfigModal();
-}
-
-// State for QT config
-const QT_CONFIG = { items: [], overallDiscPct: 0, includeVat: false };
-
-async function openQuotationConfigModal(){
-  const { data: customerRow } = await sb.from('customers').select('full_name, company_name, address').eq('id', CART_WIZARD_STATE.customerId).maybeSingle();
-
-  // Copy cart items to QT_CONFIG
-  QT_CONFIG.items = STATE.cart.map(c => ({
-    product_brand_id: c.product_brand_id,
-    product_name: c.product_name,
-    brand_name: c.brand_name,
-    sku: c.sku,
-    qty: c.qty,
-    unit_price: c.unit_price,
-    discount_pct: 0,
-  }));
-  QT_CONFIG.overallDiscPct = 0;
-  QT_CONFIG.includeVat = false;
-
-  openModal(`
-    <div class="modal-header">
-      <h3>${ICONS.download} Generate Quotation</h3>
-      <button class="icon-btn" onclick="closeModal()">${ICONS.x}</button>
-    </div>
-    <div class="modal-body">
-      <div style="background:var(--slate-100);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;">
-        <strong>${escapeHtml(customerRow?.full_name || 'Walk-in Customer')}</strong>
-        ${customerRow?.company_name ? ` — ${escapeHtml(customerRow.company_name)}` : ''}
-        ${customerRow?.address ? `<div style="font-size:11.5px;color:var(--slate-500);margin-top:2px;">${escapeHtml(customerRow.address)}</div>` : ''}
-      </div>
-
-      <div style="font-size:11px;font-weight:700;color:var(--slate-500);text-transform:uppercase;margin-bottom:8px;">Adjust Prices & Discounts Per Item</div>
-      <div id="qt-items-config"></div>
-
-      <div style="margin-top:14px;padding:12px;background:var(--slate-100);border-radius:8px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
-          <label style="font-size:13px;font-weight:600;">Overall Discount (%)</label>
-          <input type="number" id="qt-overall-disc" min="0" max="100" step="0.01" value="0"
-            style="width:80px;padding:7px 10px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:13px;text-align:right;"
-            onchange="renderQTTotals()">
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;cursor:pointer;">
-          <input type="checkbox" id="qt-include-vat" onchange="renderQTTotals()"> Show VAT-inclusive breakdown
-        </label>
-        <div id="qt-totals" style="margin-top:12px;"></div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="qt-gen-btn">${ICONS.download} Generate PDF</button>
-    </div>
-  `, { large: true });
-
-  renderQTItemsConfig();
-  renderQTTotals();
-
-  document.getElementById('qt-gen-btn').addEventListener('click', () => {
-    // Collect values from the form
-    QT_CONFIG.items = QT_CONFIG.items.map((item, idx) => ({
-      ...item,
-      unit_price: parseFloat(document.getElementById(`qt-price-${idx}`)?.value) || item.unit_price,
-      discount_pct: parseFloat(document.getElementById(`qt-disc-${idx}`)?.value) || 0,
-    }));
-    QT_CONFIG.overallDiscPct = parseFloat(document.getElementById('qt-overall-disc')?.value) || 0;
-    QT_CONFIG.includeVat = document.getElementById('qt-include-vat')?.checked || false;
-    closeModal();
-    doGenerateQTPdf(customerRow);
-  });
-}
-
-function renderQTItemsConfig(){
-  const el = document.getElementById('qt-items-config');
-  if(!el) return;
-  el.innerHTML = `
-    <table style="font-size:13px;margin-bottom:6px;">
-      <thead><tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Disc %</th><th>Line Total</th></tr></thead>
-      <tbody>
-        ${QT_CONFIG.items.map((item, idx) => {
-          const discAmt = item.disc_type === 'amt'
-            ? Math.min(item.discount_amt || 0, item.unit_price)
-            : item.unit_price * (item.discount_pct || 0) / 100;
-          const effectivePrice = item.unit_price - discAmt;
-          const lineTotal = item.qty * effectivePrice;
-          return `<tr>
-            <td>
-              <div style="font-weight:600;color:var(--navy-900);">${escapeHtml(item.product_name)}</div>
-              <div style="font-size:11px;color:var(--slate-500);">${escapeHtml(item.brand_name)}</div>
-            </td>
-            <td class="mono">${item.qty}</td>
-            <td>
-              <input type="number" id="qt-price-${idx}" min="0" step="0.01" value="${item.unit_price}"
-                style="width:90px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                onchange="renderQTTotals()">
-            </td>
-            <td>
-              <div style="display:flex;align-items:center;gap:3px;">
-                <input type="number" id="qt-disc-${idx}" min="0" max="100" step="0.01" value="${item.discount_pct || 0}"
-                  style="width:60px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                  onchange="renderQTTotals()">
-                <span style="font-size:11px;color:var(--slate-500);">%</span>
-              </div>
-            </td>
-            <td class="mono" id="qt-linetotal-${idx}" style="font-weight:600;">${peso(lineTotal)}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  `;
-}
-
-function renderQTTotals(){
-  // Recalculate with current form values
-  const items = QT_CONFIG.items.map((item, idx) => ({
-    ...item,
-    unit_price: parseFloat(document.getElementById(`qt-price-${idx}`)?.value) || item.unit_price,
-    discount_pct: parseFloat(document.getElementById(`qt-disc-${idx}`)?.value) || 0,
-  }));
-
-  items.forEach((item, idx) => {
-    const lineTotal = item.qty * item.unit_price * (1 - (item.discount_pct || 0) / 100);
-    const el = document.getElementById(`qt-linetotal-${idx}`);
-    if(el) el.textContent = peso(lineTotal);
-  });
-
-  const subtotal = items.reduce((s, i) => s + (i.qty * i.unit_price * (1 - (i.discount_pct || 0) / 100)), 0);
-  const overallDiscPct = parseFloat(document.getElementById('qt-overall-disc')?.value) || 0;
-  const overallDiscAmt = subtotal * overallDiscPct / 100;
-  const afterDisc = subtotal - overallDiscAmt;
-  const includeVat = document.getElementById('qt-include-vat')?.checked || false;
-  const vatAmount = includeVat ? afterDisc - (afterDisc / 1.12) : 0;
-  const total = afterDisc;
-
-  const el = document.getElementById('qt-totals');
-  if(!el) return;
-  el.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;">
-      <div style="display:flex;justify-content:space-between;"><span style="color:var(--slate-500);">Subtotal</span><span class="mono">${peso(subtotal)}</span></div>
-      ${overallDiscPct > 0 ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--slate-500);">Overall Discount (${overallDiscPct}%)</span><span class="mono" style="color:var(--red-600);">-${peso(overallDiscAmt)}</span></div>` : ''}
-      ${includeVat ? `
-      <div style="display:flex;justify-content:space-between;color:var(--slate-500);font-size:12px;"><span>Amount Net of VAT</span><span class="mono">${peso(afterDisc / 1.12)}</span></div>
-      <div style="display:flex;justify-content:space-between;color:var(--slate-500);font-size:12px;"><span>Add: VAT (12%)</span><span class="mono">${peso(vatAmount)}</span></div>
-      ` : ''}
-      <div style="display:flex;justify-content:space-between;font-weight:800;font-size:15px;color:var(--navy-900);border-top:1.5px solid var(--slate-300);padding-top:6px;margin-top:2px;"><span>TOTAL</span><span class="mono" style="color:var(--orange-600);">${peso(total)}</span></div>
-    </div>
-  `;
-}
-
-async function doGenerateQTPdf(customerRow){
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  const quoteNo = 'QT-' + Date.now().toString().slice(-8);
-
-  const customerName = customerRow ? (customerRow.full_name + (customerRow.company_name ? ' — ' + customerRow.company_name : '')) : 'Walk-in Customer';
-  const customerAddress = customerRow?.address || null;
-
-  const items = QT_CONFIG.items;
-  const subtotal = items.reduce((s, i) => s + (i.qty * i.unit_price * (1 - (i.discount_pct || 0) / 100)), 0);
-  const overallDiscAmt = subtotal * (QT_CONFIG.overallDiscPct || 0) / 100;
-  const afterDisc = subtotal - overallDiscAmt;
-  const vatAmount = QT_CONFIG.includeVat ? afterDisc - (afterDisc / 1.12) : 0;
-  const total = afterDisc;
-
-  doc.setFontSize(18); doc.setFont(undefined,'bold');
-  doc.setTextColor(15,27,45);
-  doc.text('HUNYO 24 TRADING', 14, 20);
-  doc.setFontSize(9); doc.setFont(undefined,'normal'); doc.setTextColor(100,100,100);
-  doc.text('Hardware & Construction Supplies — Taytay, Rizal, Philippines', 14, 26);
-
-  doc.setDrawColor(232,89,12); doc.setLineWidth(0.8);
-  doc.line(14, 30, 196, 30);
-
-  doc.setFontSize(13); doc.setTextColor(15,27,45); doc.setFont(undefined,'bold');
-  doc.text('QUOTATION', 14, 40);
-  doc.setFontSize(9); doc.setFont(undefined,'normal');
-  doc.text(`Quote No: ${quoteNo}`, 14, 47);
-  doc.text(`Date: ${new Date().toLocaleDateString('en-PH')}`, 14, 52);
-  doc.text(`Customer: ${customerName}`, 14, 57);
-  doc.text(`Prepared by: ${STATE.profile.full_name}`, 14, 62);
-  doc.text(`Valid until: ${new Date(Date.now()+7*86400000).toLocaleDateString('en-PH')}`, 120, 47);
-
-  let addressLines = [];
-  let tableStartY = 74;
-  if(customerAddress){
-    addressLines = doc.splitTextToSize(`Delivery Address: ${customerAddress}`, 182);
-    doc.text(addressLines, 14, 67);
-    tableStartY = 67 + (addressLines.length * 5) + 8;
-  }
-
-  let y = tableStartY;
-  doc.setFillColor(15,27,45); doc.rect(14, y-6, 182, 8, 'F');
-  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont(undefined,'bold');
-  doc.text('PRODUCT', 16, y); doc.text('BRAND', 82, y); doc.text('QTY', 118, y);
-  doc.text('UNIT PRICE', 130, y); doc.text('DISC%', 158, y); doc.text('TOTAL', 175, y);
-  y += 8;
-
-  doc.setTextColor(40,40,40); doc.setFont(undefined,'normal'); doc.setFontSize(9);
-  items.forEach((item, idx) => {
-    const lineTotal = item.qty * item.unit_price * (1 - (item.discount_pct || 0) / 100);
-    if(idx % 2 === 1){ doc.setFillColor(247,245,241); doc.rect(14, y-5, 182, 7, 'F'); }
-    doc.text(String(item.product_name).slice(0,32), 16, y);
-    doc.text(String(item.brand_name).slice(0,15), 82, y);
-    doc.text(String(item.qty), 118, y);
-    doc.text(peso(item.unit_price).replace('₱','P'), 130, y);
-    doc.text(item.discount_pct > 0 ? item.discount_pct + '%' : '—', 158, y);
-    doc.text(peso(lineTotal).replace('₱','P'), 175, y);
-    y += 7;
-  });
-
-  y += 4;
-  doc.setDrawColor(200,200,200); doc.line(14, y, 196, y);
-  y += 7;
-  doc.setFontSize(9); doc.setTextColor(80,80,80);
-  if(QT_CONFIG.overallDiscPct > 0){
-    doc.text(`Overall Discount (${QT_CONFIG.overallDiscPct}%): -${peso(overallDiscAmt).replace('₱','P')}`, 120, y);
-    y += 6;
-  }
-  if(QT_CONFIG.includeVat){
-    doc.text(`Amount Net of VAT: ${peso(afterDisc / 1.12).replace('₱','P')}`, 120, y); y += 5;
-    doc.text(`Add: VAT (12%): ${peso(vatAmount).replace('₱','P')}`, 120, y); y += 5;
-  }
-  y += 3;
-  doc.setFont(undefined,'bold'); doc.setFontSize(11); doc.setTextColor(232,89,12);
-  doc.text(`TOTAL: ${peso(total).replace('₱','P')}`, 140, y);
-
-  y += 20;
-  doc.setFontSize(8); doc.setTextColor(130,130,130); doc.setFont(undefined,'normal');
-  doc.text('This quotation is valid for 7 days from the date of issue. Prices subject to change without prior notice.', 14, y);
-  doc.text('Thank you for choosing Hunyo 24 Trading.', 14, y+5);
-
-  doc.save(`Quotation-${quoteNo}.pdf`);
-  toast('Quotation PDF generated.', 'success');
-}
 
 
 
