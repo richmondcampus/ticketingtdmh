@@ -3275,9 +3275,12 @@ function buildQuotationPDF(customerRow, items, overallDiscAmt, grandTotal, quote
     doc.text(peso(item.unit_price).replace('₱','P'), 122, y);
     if(hasAnyDiscount){
       if(item.disc_pct > 0){
-        // Show: 10% (-P50.00)
         doc.setTextColor(180,30,30);
         doc.text(item.disc_pct + '% (-' + peso(item.disc_amt).replace('₱','P') + ')', 152, y);
+        doc.setTextColor(40,40,40);
+      } else if(item.disc_amt > 0){
+        doc.setTextColor(180,30,30);
+        doc.text('-' + peso(item.disc_amt).replace('₱','P'), 152, y);
         doc.setTextColor(40,40,40);
       } else {
         doc.setTextColor(160,160,160);
@@ -3340,15 +3343,14 @@ async function reprintInquiryQuotation(inquiryId){
   if(!inquiry || !items){ toast('Could not load inquiry data.', 'error'); return; }
 
   const pdfItems = (items || []).map(it => {
-    const discPct = it.discount_pct || 0;
-    const discAmt = it.unit_price * discPct / 100;
-    const lineTotal = it.line_total || (it.qty * it.unit_price * (1 - discPct/100));
+    const discAmt = it.discount_amt || (it.unit_price * (it.discount_pct||0) / 100);
+    const lineTotal = it.line_total || (it.qty * (it.unit_price - discAmt));
     return {
       product_name: it.product_brands?.products?.name || '—',
       brand_name:   it.product_brands?.brands?.name   || '—',
       qty:        it.qty,
       unit_price: it.unit_price,
-      disc_pct:   discPct,
+      disc_pct:   it.discount_pct || 0,
       disc_amt:   discAmt,
       line_total: lineTotal,
     };
@@ -3420,8 +3422,15 @@ async function viewInquiryDetail(inquiryId){
               </td>
               ${canEditItems ? `<td>
                 <div style="display:flex;align-items:center;gap:3px;">
-                  <input type="number" min="0" max="100" step="0.01" value="${discPct}" data-item-id="${it.id}" class="inq-item-disc-input" style="width:60px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-family:var(--font-mono);font-size:12.5px;" oninput="inqRecomputeRow(this)">
-                  <span style="font-size:11px;color:var(--slate-500);">%</span>
+                  <select class="inq-item-disc-type" data-item-id="${it.id}"
+                    style="padding:4px 4px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:11px;"
+                    onchange="inqDiscTypeChanged(this)">
+                    <option value="pct">%</option>
+                    <option value="amt">₱</option>
+                  </select>
+                  <input type="number" min="0" step="0.01" value="${discPct}" data-item-id="${it.id}" class="inq-item-disc-input"
+                    style="width:65px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-family:var(--font-mono);font-size:12.5px;"
+                    oninput="inqRecomputeRow(this)">
                 </div>
               </td>` : ''}
               <td class="mono" id="inq-lt-${it.id}" style="font-weight:600;">${peso(lineTotal)}</td>
@@ -3476,14 +3485,23 @@ async function removeInquiryItem(inquiryId, itemId){
 }
 
 // Recompute a single row's line total (no re-render)
+function inqDiscTypeChanged(selectEl){
+  // Reset disc value when switching type
+  const row = selectEl.closest('tr');
+  if(row){ const di = row.querySelector('.inq-item-disc-input'); if(di) di.value = '0'; }
+  inqRecomputeRow(selectEl);
+}
+
 function inqRecomputeRow(changedInput){
-  const itemId = changedInput.dataset.itemId;
   const row = changedInput.closest('tr');
   if(!row) return;
-  const price = parseFloat(row.querySelector('.inq-item-price-input')?.value) || 0;
-  const disc  = parseFloat(row.querySelector('.inq-item-disc-input')?.value)  || 0;
-  const qty   = parseFloat(row.querySelector('.inq-item-qty-input')?.value)   || 1;
-  const lineTotal = qty * price * (1 - disc/100);
+  const itemId = row.querySelector('[data-item-id]')?.dataset.itemId;
+  const price    = parseFloat(row.querySelector('.inq-item-price-input')?.value) || 0;
+  const discType = row.querySelector('.inq-item-disc-type')?.value || 'pct';
+  const discVal  = parseFloat(row.querySelector('.inq-item-disc-input')?.value)  || 0;
+  const qty      = parseFloat(row.querySelector('.inq-item-qty-input')?.value)   || 1;
+  const discAmt  = discType === 'amt' ? Math.min(discVal, price) : price * discVal / 100;
+  const lineTotal = qty * (price - discAmt);
   const ltEl = document.getElementById('inq-lt-' + itemId);
   if(ltEl) ltEl.textContent = peso(lineTotal);
   inqRecomputeTotals();
@@ -3528,14 +3546,14 @@ async function saveInquiryItemQuantities(inquiryId){
       toast('All quantities must be greater than zero.', 'error');
       hadError = true; break;
     }
-    const priceInput = row?.querySelector('.inq-item-price-input');
-    const discInput = row?.querySelector('.inq-item-disc-input');
-    const unit_price = priceInput ? (parseFloat(priceInput.value) || 0) : null;
-    const discount_pct = discInput ? (parseFloat(discInput.value) || 0) : 0;
-    const line_total = qty * (unit_price || 0) * (1 - discount_pct/100);
+    const unit_price  = parseFloat(row?.querySelector('.inq-item-price-input')?.value) || 0;
+    const discType    = row?.querySelector('.inq-item-disc-type')?.value || 'pct';
+    const discVal     = parseFloat(row?.querySelector('.inq-item-disc-input')?.value)  || 0;
+    const discAmt     = discType === 'amt' ? Math.min(discVal, unit_price) : unit_price * discVal / 100;
+    const discount_pct = discType === 'pct' ? discVal : (unit_price > 0 ? discAmt/unit_price*100 : 0);
+    const line_total  = qty * (unit_price - discAmt);
 
-    const updateData = { qty, discount_pct, line_total };
-    if(unit_price !== null) updateData.unit_price = unit_price;
+    const updateData = { qty, unit_price, discount_pct, discount_amt: discAmt, line_total };
 
     const { error } = await sb.from('inquiry_items').update(updateData).eq('id', itemId);
     if(error){ toast('Failed to update an item: ' + error.message, 'error'); hadError = true; break; }
