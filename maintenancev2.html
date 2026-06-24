@@ -651,8 +651,8 @@ function subscribeTickets() {
     }).subscribe()
   S.activeChannels.push(ch)
 
-  // Trigger auto-close check on boot (fire and forget)
-  fetch(SUPA_URL + '/functions/v1/auto-close-tickets').catch(() => {})
+  // Auto-close resolved tickets 24h+ (fire and forget)
+  fetch(SUPA_URL + '/functions/v1/auto-close-tickets', { method: 'POST' }).catch(() => {})
 }
 
 // ═══════════════════════════════════
