@@ -546,6 +546,8 @@ async function bootApp(session) {
   subscribeTickets()
   subscribeNotifications()  // start realtime notification listener
   loadNotifications()       // load existing notifications on boot
+  // Auto-close once on boot only
+  fetch(SUPA_URL + '/functions/v1/auto-close-tickets', { method: 'POST' }).catch(() => {})
   showPage('dashboard')
 }
 
@@ -644,15 +646,16 @@ function subscribeTickets() {
       if (payload.eventType === 'DELETE') {
         S.tickets = S.tickets.filter(t => t.id !== payload.old.id)
       }
-      // Re-render whichever page is active
-      if (['dashboard','all_tickets','open_tickets','my_tickets','kanban'].includes(S.page)) {
-        showPage(S.page)
-      }
+      // Debounced re-render — avoid rapid fire loops
+      clearTimeout(window._realtimeRenderTimer)
+      window._realtimeRenderTimer = setTimeout(() => {
+        if (['dashboard','all_tickets','open_tickets','my_tickets','kanban'].includes(S.page)) {
+          showPage(S.page)
+        }
+      }, 800)
     }).subscribe()
   S.activeChannels.push(ch)
 
-  // Auto-close resolved tickets 24h+ (fire and forget)
-  fetch(SUPA_URL + '/functions/v1/auto-close-tickets', { method: 'POST' }).catch(() => {})
 }
 
 // ═══════════════════════════════════
