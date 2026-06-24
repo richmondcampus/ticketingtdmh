@@ -551,6 +551,8 @@ async function bootApp(session) {
   renderSidebarNav()
   await Promise.all([loadUsers(), loadDepartments()])
   subscribeTickets()
+  subscribeNotifications()  // start realtime notification listener
+  loadNotifications()       // load existing notifications on boot
   showPage('dashboard')
 }
 
@@ -568,9 +570,9 @@ function renderSidebarNav() {
     { id:'dashboard',    icon:'📊', label:'Dashboard',    roles:['requester','technician','supervisor','admin'] },
     { id:'my_tickets',   icon:'🎫', label:'My Tickets',   roles:['requester','technician','supervisor','admin'] },
     { id:'open_tickets', icon:'🔓', label:'Open Tickets', roles:['technician','supervisor','admin'] },
-    { id:'kanban',       icon:'📋', label:'Kanban Board', roles:['technician','supervisor','admin'] },
     { id:'all_tickets',  icon:'🗂', label:'All Tickets',  roles:['technician','supervisor','admin'] },
     { id:'analytics',    icon:'📈', label:'Analytics',    roles:['supervisor','admin'] },
+    { id:'reports',      icon:'📊', label:'Reports',      roles:['admin'] },
     { id:'team',         icon:'👥', label:'Team',         roles:['supervisor','admin'] },
   ]
   let html = ''
@@ -589,7 +591,7 @@ function renderSidebarNav() {
 // ═══════════════════════════════════
 const PAGE_TITLES = {
   dashboard:'Dashboard', my_tickets:'My Tickets', all_tickets:'All Tickets',
-  open_tickets:'Open Tickets', kanban:'Kanban Board', analytics:'Analytics', team:'Team'
+  open_tickets:'Open Tickets', kanban:'Kanban Board', analytics:'Analytics', team:'Team', reports:'Reports'
 }
 
 function showPage(page) {
@@ -603,7 +605,8 @@ function showPage(page) {
   content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
   const pages = { dashboard:renderDashboard, my_tickets:renderMyTickets,
     all_tickets:renderAllTickets, open_tickets:renderOpenTickets,
-    kanban:renderKanban, analytics:renderAnalytics, team:renderTeam }
+    kanban:renderKanban, analytics:renderAnalytics, team:renderTeam,
+    reports:renderReports }
   if (pages[page]) pages[page]()
 }
 
@@ -701,6 +704,42 @@ async function renderDashboard() {
     html += '<div class="ticket-grid">'
     recent.forEach(t => { html += ticketCard(t) })
     html += '</div>'
+  }
+
+  // Kanban board merged into dashboard (for technician/supervisor/admin)
+  if (role !== 'requester') {
+    html += '<div style="margin-top:24px;">'
+    html += '<div style="font-size:14px;font-weight:700;color:var(--txt);margin-bottom:12px;">📋 Kanban Board</div>'
+    const kanbanCols = [
+      { id:'open',        label:'🔓 Open',        color:'var(--accent)' },
+      { id:'in_progress', label:'🔄 In Progress',  color:'var(--amber)' },
+      { id:'for_parts',   label:'🔩 For Parts',    color:'var(--amber)' },
+      { id:'resolved',    label:'✅ Resolved',     color:'var(--green)' },
+    ]
+    html += '<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;">'
+    kanbanCols.forEach(col => {
+      const colTickets = tickets.filter(t => t.status === col.id)
+      html += '<div style="min-width:200px;flex:1;background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;padding:10px;">'
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+      html += '<span style="font-size:12px;font-weight:600;color:' + col.color + ';">' + col.label + '</span>'
+      html += '<span style="background:var(--surf2);border-radius:10px;padding:1px 8px;font-size:11px;color:var(--txt2);">' + colTickets.length + '</span>'
+      html += '</div>'
+      if (colTickets.length === 0) {
+        html += '<div style="text-align:center;padding:12px 0;font-size:11px;color:var(--txt3);">Empty</div>'
+      } else {
+        colTickets.slice(0, 5).forEach(t => {
+          const claimed = S.users.find(u => u.id === t.claimed_by)
+          html += '<div onclick="viewTicket(\'' + t.id + '\')" style="background:var(--surf2);border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer;">'
+          html += '<div style="font-size:11px;font-family:monospace;color:var(--accent);margin-bottom:3px;">' + t.id + '</div>'
+          html += '<div style="font-size:12px;font-weight:600;line-height:1.3;margin-bottom:4px;">' + t.title + '</div>'
+          html += '<div style="font-size:11px;color:var(--txt3);">' + (claimed ? '👤 ' + claimed.full_name.split(' ')[0] : '—') + '</div>'
+          html += '</div>'
+        })
+        if (colTickets.length > 5) html += '<div style="font-size:11px;color:var(--txt3);text-align:center;">+' + (colTickets.length - 5) + ' more</div>'
+      }
+      html += '</div>'
+    })
+    html += '</div></div>'
   }
 
   content.innerHTML = html
@@ -1030,44 +1069,54 @@ async function viewTicket(ticketId) {
   // Footer actions
   let footer = '<button class="btn btn-ghost" onclick="closeModal(\'ticketDetailModal\')">Close</button>'
 
-  // Link Asset button — always available for active tickets without asset link
-  if (!t.asset_id && !['closed','resolved'].includes(t.status) && ['technician','supervisor','admin'].includes(role)) {
+  // Check if current user is assigned to this ticket (claimed or in team)
+  const isAssigned = t.claimed_by === S.user.id || (teamMembers || []).some(m => m.user_id === S.user.id)
+  const canAct = isAssigned || ['supervisor','admin'].includes(role)
+
+  // Link Asset button
+  if (!t.asset_id && !['closed','resolved'].includes(t.status) && canAct) {
     footer += '<button class="btn btn-ghost btn-sm" onclick="openLinkAssetModal(\'' + t.id + '\')">🏷️ Link Asset</button>'
   }
 
   if (t.status === 'open' && ['technician','supervisor','admin'].includes(role)) {
-    footer += '<button class="btn btn-primary" onclick="claimTicket(\'' + t.id + '\')">🙋 Claim Ticket</button>'
+    footer += '<button class="btn btn-primary" onclick="claimTicket(\'' + t.id + '\')">🙋 Claim & Start Work</button>'
   }
-  if (t.status === 'in_progress' && (t.claimed_by === S.user.id || ['supervisor','admin'].includes(role))) {
+
+  if (t.status === 'in_progress' && canAct) {
     footer += '<button class="btn btn-ghost" onclick="openTeamModal(\'' + t.id + '\')">👥 Add Team</button>'
     footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts</button>'
     footer += '<button class="btn btn-success" onclick="resolveTicket(\'' + t.id + '\')">✅ Mark Resolved</button>'
   }
-  if (t.status === 'for_parts') {
-    // Check if parts are available from CSR
+
+  if (t.status === 'for_parts' && canAct) {
     const { data: partsReqs } = await SB.from('maint_parts_requests')
-      .select('id,status,part_name')
+      .select('id,status,item_name,quantity')
       .eq('ticket_id', t.id)
     const allParts = partsReqs || []
-    const pendingParts = allParts.filter(p => !['available','received'].includes(p.status))
-    const availableParts = allParts.filter(p => p.status === 'available')
+    const pendingParts = allParts.filter(p => !['available','received','cancelled'].includes(p.status))
+    const cancelledParts = allParts.filter(p => p.status === 'cancelled')
+    const activeParts = allParts.filter(p => p.status !== 'cancelled')
 
-    footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts via CSR</button>'
+    footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Add More Parts</button>'
 
-    if (allParts.length === 0) {
-      // No parts requested yet — allow continue
-      footer += '<button class="btn btn-secondary" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">▶ Continue (No Parts Needed)</button>'
-    } else if (pendingParts.length > 0) {
-      // Parts pending from CSR — locked
-      footer += '<button class="btn btn-secondary" disabled title="Waiting for CSR to mark parts as available (' + pendingParts.length + ' pending)">⏳ Waiting for Parts (' + pendingParts.length + ' pending)</button>'
-      // Show which parts are still pending
-      const pendingNames = pendingParts.map(p => p.part_name || 'Part').join(', ')
+    if (activeParts.length > 0 && pendingParts.length > 0) {
+      // Parts still pending — locked, show cancel option
+      const pendingNames = pendingParts.map(p => (p.item_name || 'Part') + ' ×' + p.quantity).join(', ')
+      footer += '<button class="btn btn-secondary" disabled>⏳ Waiting for Parts (' + pendingParts.length + ' pending)</button>'
+      footer += '</div>' // close footer early to show info
       footer += '<div style="font-size:11px;color:var(--amber);margin-top:6px;padding:0 4px;">⚠️ Pending from CSR: ' + pendingNames + '</div>'
-    } else {
-      // All parts available — unlock
-      footer += '<button class="btn btn-success" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">✅ Parts Available — Continue Repair</button>'
+      footer += '<div style="margin-top:8px;"><button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="cancelPartsRequest(\'' + t.id + '\')">🗑️ Cancel Parts Request</button></div>'
+      footer = '<button class="btn btn-ghost" onclick="closeModal(\'ticketDetailModal\')">Close</button>' + footer
+      document.getElementById('ticketDetailFooter').innerHTML = footer
+      openModal('ticketDetailModal')
+      return
+    } else if (activeParts.length > 0 && pendingParts.length === 0) {
+      // All parts available
+      footer += '<button class="btn btn-success" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">✅ Parts Received — Continue Repair</button>'
     }
+    // Note: NO "Continue without parts" button — if parts were requested, must wait or cancel
   }
+
   if (t.status === 'resolved' && ['supervisor','admin'].includes(role)) {
     footer += '<button class="btn btn-primary" onclick="closeTicket(\'' + t.id + '\')">🔒 Close Ticket</button>'
   }
@@ -1086,6 +1135,45 @@ function iF(label, value) {
 // ═══════════════════════════════════
 // TICKET ACTIONS
 // ═══════════════════════════════════
+async function cancelPartsRequest(ticketId) {
+  confirm2('Cancel parts request? Ticket will resume to In Progress.', async () => {
+    // Get active parts requests for this ticket
+    const { data: parts } = await SB.from('maint_parts_requests')
+      .select('id,csr_request_id,status')
+      .eq('ticket_id', ticketId)
+      .not('status', 'eq', 'cancelled')
+
+    if (parts?.length) {
+      // Mark parts requests as cancelled
+      await SB.from('maint_parts_requests').update({ status: 'cancelled' })
+        .eq('ticket_id', ticketId).not('status', 'eq', 'cancelled')
+
+      // Cancel linked CSR requests if still pending
+      for (const p of parts) {
+        if (p.csr_request_id) {
+          const { data: csrReq } = await SB.from('requests').select('status').eq('id', p.csr_request_id).single()
+          // Only cancel if not yet ordered/issued
+          if (csrReq && ['pending_approval','approved','for_po'].includes(csrReq.status)) {
+            await SB.from('requests').update({ status: 'cancelled' }).eq('id', p.csr_request_id)
+          }
+        }
+      }
+    }
+
+    // Set ticket back to in_progress
+    await SB.from('maint_tickets').update({ status: 'in_progress', updated_at: new Date().toISOString() }).eq('id', ticketId)
+    await SB.from('maint_ticket_notes').insert({
+      ticket_id: ticketId, user_id: S.user.id,
+      note: 'Parts request cancelled. Ticket resumed — back to In Progress.',
+      note_type: 'system'
+    })
+
+    closeModal('ticketDetailModal')
+    showToast('success', '🔄 Parts Cancelled', 'Ticket is back in progress.')
+    if (['dashboard','my_tickets','all_tickets','open_tickets'].includes(S.page)) showPage(S.page)
+  })
+}
+
 async function addNote(ticketId) {
   const note = document.getElementById('noteInput')?.value.trim()
   if (!note) return
@@ -1931,6 +2019,84 @@ async function checkMaintSLAEscalation() {
 }
 
 // ═══════════════════════════════════
+// REPORTS (Admin only)
+// ═══════════════════════════════════
+async function renderReports() {
+  const content = document.getElementById('mainContent')
+  content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
+
+  const { data: tickets } = await SB.from('maint_tickets').select('*').order('created_at', { ascending: false })
+  const all = tickets || []
+
+  const total = all.length
+  const byStatus = {}
+  const byCategory = {}
+  const byClaimed = {}
+  const byDept = {}
+
+  all.forEach(t => {
+    byStatus[t.status] = (byStatus[t.status] || 0) + 1
+    byCategory[t.category] = (byCategory[t.category] || 0) + 1
+    if (t.claimed_by) {
+      const tech = S.users.find(u => u.id === t.claimed_by)
+      const name = tech?.full_name || t.claimed_by
+      byClaimed[name] = (byClaimed[name] || 0) + 1
+    }
+    const dept = S.departments.find(d => d.id === t.dept_id)
+    const dname = dept?.dept_name || t.dept_name || '—'
+    byDept[dname] = (byDept[dname] || 0) + 1
+  })
+
+  const avgResolution = (() => {
+    const resolved = all.filter(t => t.resolved_at && t.created_at)
+    if (!resolved.length) return '—'
+    const avg = resolved.reduce((sum, t) => sum + (new Date(t.resolved_at) - new Date(t.created_at)), 0) / resolved.length
+    return Math.round(avg / 3600000) + 'h avg'
+  })()
+
+  let html = '<div class="page-header"><h2>📊 Reports</h2></div>'
+
+  // Summary stats
+  html += '<div class="stat-grid" style="margin-bottom:20px;">'
+  html += statC('📋', 'Total Tickets', total, 'All time', 'var(--txt)')
+  html += statC('🔓', 'Open', byStatus['open'] || 0, 'Awaiting action', 'var(--accent)')
+  html += statC('🔄', 'In Progress', byStatus['in_progress'] || 0, 'Being handled', 'var(--amber)')
+  html += statC('✅', 'Resolved', (byStatus['resolved'] || 0) + (byStatus['closed'] || 0), 'Completed', 'var(--green)')
+  html += statC('⏱️', 'Avg Resolution', avgResolution, 'Time to resolve', 'var(--accent)')
+  html += '</div>'
+
+  // By Status
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">'
+  html += reportTable('By Status', Object.entries(byStatus).sort((a,b) => b[1]-a[1]))
+  html += reportTable('By Category', Object.entries(byCategory).sort((a,b) => b[1]-a[1]))
+  html += reportTable('By Technician', Object.entries(byClaimed).sort((a,b) => b[1]-a[1]))
+  html += reportTable('By Department', Object.entries(byDept).sort((a,b) => b[1]-a[1]).slice(0,10))
+  html += '</div>'
+
+  content.innerHTML = html
+}
+
+function reportTable(title, entries) {
+  let html = '<div style="background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;padding:14px;">'
+  html += '<div style="font-size:13px;font-weight:700;margin-bottom:10px;">' + title + '</div>'
+  if (!entries.length) { html += '<div style="color:var(--txt3);font-size:12px;">No data</div>'; html += '</div>'; return html }
+  const max = entries[0][1]
+  entries.forEach(([label, count]) => {
+    const pct = Math.round((count / max) * 100)
+    html += '<div style="margin-bottom:8px;">'
+    html += '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">'
+    html += '<span style="color:var(--txt);">' + label + '</span>'
+    html += '<span style="color:var(--txt2);font-weight:600;">' + count + '</span>'
+    html += '</div>'
+    html += '<div style="background:var(--surf2);border-radius:4px;height:6px;">'
+    html += '<div style="background:var(--accent);border-radius:4px;height:6px;width:' + pct + '%;"></div>'
+    html += '</div></div>'
+  })
+  html += '</div>'
+  return html
+}
+
+// ═══════════════════════════════════
 // KANBAN BOARD — MAINTENANCE
 // ═══════════════════════════════════
 async function renderKanban() {
@@ -2106,7 +2272,7 @@ function showToast(type, title, body) {
 }
 
 function confirm2(msg, onOk) {
-  document.getElementById('confirmMsg').textContent = msg
+  document.getElementById('confirmMsg').innerHTML = '<p style="color:var(--txt2);font-size:14px;">' + msg + '</p>'
   document.getElementById('confirmOkBtn').textContent = 'Confirm'
   document.getElementById('confirmOkBtn').onclick = () => { closeModal('confirmModal'); onOk() }
   openModal('confirmModal')
