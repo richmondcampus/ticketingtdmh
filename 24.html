@@ -3390,7 +3390,7 @@ async function viewInquiryDetail(inquiryId){
           <div style="font-weight:600;color:var(--navy-900);text-transform:capitalize;">${inquiry.status.replace(/_/g,' ')}</div>
         </div>
       </div>
-      ${canEditItems ? `<div style="background:var(--blue-100);color:var(--blue-600);padding:9px 12px;border-radius:8px;font-size:12px;font-weight:500;margin-bottom:12px;">This inquiry hasn't been converted yet — you can still adjust quantities or remove items below.</div>` : ''}
+      ${canEditItems ? `<div style="background:var(--blue-100);color:var(--blue-600);padding:9px 12px;border-radius:8px;font-size:12px;font-weight:500;margin-bottom:12px;">Inquiry is still open — pwede kang mag-adjust ng qty, price, discount, mag-remove ng items, o mag-add ng bagong items sa baba.</div>` : ''}
       <table>
         <thead><tr>
           <th>Product</th><th>Brand</th>
@@ -3439,6 +3439,27 @@ async function viewInquiryDetail(inquiryId){
           }).join('')}
         </tbody>
       </table>
+      ${canEditItems ? `
+      <!-- ADD ITEM SECTION -->
+      <div style="margin-top:12px;padding:12px 14px;border:1.5px dashed var(--slate-300);border-radius:8px;">
+        <div style="font-size:12px;font-weight:700;color:var(--slate-500);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">+ Add Item</div>
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="position:relative;flex:1;min-width:200px;">
+            <input type="text" id="inq-add-search" placeholder="Search product by name or SKU..."
+              style="width:100%;padding:8px 12px;border:1.5px solid var(--slate-200);border-radius:6px;font-size:13px;"
+              oninput="inqSearchProducts(this.value,'${inquiry.id}')" autocomplete="off">
+            <div id="inq-add-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;background:white;border:1.5px solid var(--slate-200);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12);max-height:260px;overflow-y:auto;"></div>
+          </div>
+          <input type="number" id="inq-add-qty" min="0.01" step="0.01" value="1" placeholder="Qty"
+            style="width:70px;padding:8px 10px;border:1.5px solid var(--slate-200);border-radius:6px;font-size:13px;">
+          <input type="number" id="inq-add-price" min="0" step="0.01" placeholder="Price"
+            style="width:100px;padding:8px 10px;border:1.5px solid var(--slate-200);border-radius:6px;font-size:13px;">
+          <button class="btn btn-primary btn-sm" onclick="inqAddItem('${inquiry.id}')" style="white-space:nowrap;">${ICONS.plus} Add</button>
+        </div>
+        <div id="inq-add-selected" style="margin-top:8px;font-size:12px;color:var(--slate-500);"></div>
+      </div>
+      ` : ''}
+
       <!-- TOTALS SECTION -->
       <div style="margin-top:14px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding:10px 14px;background:var(--slate-100);border-radius:8px;">
         <div style="display:flex;justify-content:space-between;width:100%;max-width:360px;font-size:13px;">
@@ -3473,6 +3494,83 @@ async function viewInquiryDetail(inquiryId){
       ${canCancel ? `<button class="btn btn-danger" onclick="cancelInquiry('${inquiry.id}')">Cancel</button>` : ''}
     </div>
   `, {large:true});
+}
+
+// ── INQUIRY: Add item functions ─────────────────────────────────────
+let INQ_ADD_SELECTED = null; // { product_brand_id, product_name, brand_name, unit_price }
+
+async function inqSearchProducts(query, inquiryId){
+  const dropdown = document.getElementById('inq-add-dropdown');
+  if(!dropdown) return;
+  if(!query || query.trim().length < 2){
+    dropdown.style.display = 'none';
+    return;
+  }
+  dropdown.style.display = 'block';
+  dropdown.innerHTML = '<div style="padding:10px 14px;font-size:12.5px;color:var(--slate-500);">Searching...</div>';
+
+  const { data } = await sb.from('product_brands')
+    .select('id, price, products(name, sku, unit), brands(name), stock_levels!inner(qty_on_hand, branch_id)')
+    .eq('is_active', true)
+    .eq('stock_levels.branch_id', STATE.currentBranch)
+    .or(`name.ilike.%${query}%,sku.ilike.%${query}%`, {foreignTable: 'products'})
+    .limit(6);
+
+  if(!data || data.length === 0){
+    dropdown.innerHTML = '<div style="padding:10px 14px;font-size:12.5px;color:var(--slate-500);">Walang nahanap.</div>';
+    return;
+  }
+
+  dropdown.innerHTML = data.map(pb => {
+    const qty = pb.stock_levels?.[0]?.qty_on_hand ?? 0;
+    const isLow = qty <= 0;
+    return `<div class="product-search-item" style="cursor:pointer;padding:10px 14px;border-bottom:1px solid var(--slate-100);"
+      onmousedown="inqSelectProduct('${pb.id}','${escapeHtml(pb.products.name).replace(/'/g,"&#39;")}','${escapeHtml(pb.brands.name).replace(/'/g,"&#39;")}',${pb.price},'${pb.products.sku}',${qty})">
+      <div style="font-weight:600;font-size:13px;color:var(--navy-900);">${escapeHtml(pb.products.name)}</div>
+      <div style="font-size:11.5px;color:var(--slate-500);margin-top:2px;">
+        ${escapeHtml(pb.brands.name)} · SKU: ${escapeHtml(pb.products.sku)} · ${peso(pb.price)}
+        <span style="margin-left:6px;font-weight:700;color:${isLow?'var(--red-600)':'var(--green-600)'};">
+          ${isLow ? '⚠ Out of stock' : 'Stock: '+Number(qty).toLocaleString()}
+        </span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function inqSelectProduct(pbId, name, brand, price, sku, stock){
+  INQ_ADD_SELECTED = { product_brand_id: pbId, product_name: name, brand_name: brand, unit_price: price, stock };
+  const searchInput = document.getElementById('inq-add-search');
+  const priceInput  = document.getElementById('inq-add-price');
+  const dropdown    = document.getElementById('inq-add-dropdown');
+  const selected    = document.getElementById('inq-add-selected');
+  if(searchInput) searchInput.value = `${name} — ${brand} (${sku})`;
+  if(priceInput)  priceInput.value  = price;
+  if(dropdown)    dropdown.style.display = 'none';
+  if(selected)    selected.innerHTML = `<span style="color:var(--green-600);font-weight:600;">✓ Selected</span> · Price: ${peso(price)} · Stock: ${Number(stock).toLocaleString()}`;
+}
+
+async function inqAddItem(inquiryId){
+  if(!INQ_ADD_SELECTED){
+    toast('Pumili muna ng product.', 'error'); return;
+  }
+  const qty   = parseFloat(document.getElementById('inq-add-qty')?.value)   || 0;
+  const price = parseFloat(document.getElementById('inq-add-price')?.value) || INQ_ADD_SELECTED.unit_price;
+  if(qty <= 0){ toast('Lagyan ng valid na quantity.', 'error'); return; }
+
+  const { error } = await sb.from('inquiry_items').insert({
+    inquiry_id:       inquiryId,
+    product_brand_id: INQ_ADD_SELECTED.product_brand_id,
+    qty,
+    unit_price:  price,
+    line_total:  qty * price,
+    discount_pct: 0,
+    discount_amt: 0,
+  });
+
+  if(error){ toast('Failed to add item: ' + error.message, 'error'); return; }
+  toast(`${INQ_ADD_SELECTED.product_name} added.`, 'success');
+  INQ_ADD_SELECTED = null;
+  viewInquiryDetail(inquiryId);
 }
 
 async function removeInquiryItem(inquiryId, itemId){
