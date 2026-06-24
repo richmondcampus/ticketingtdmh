@@ -647,16 +647,15 @@ function subscribeTickets() {
         S.tickets = S.tickets.filter(t => t.id !== payload.old.id)
       }
       // Re-render whichever page is active
-      clearTimeout(window._realtimeTimer)
-      window._realtimeTimer = setTimeout(() => {
-        if (['dashboard','all_tickets','open_tickets','my_tickets','kanban'].includes(S.page)) {
-          showPage(S.page)
-        }
+      clearTimeout(window._rt)
+      window._rt = setTimeout(() => {
+        if (['dashboard','all_tickets','open_tickets','my_tickets','kanban'].includes(S.page)) showPage(S.page)
       }, 800)
     }).subscribe()
   S.activeChannels.push(ch)
 
   // Trigger auto-close check on boot (fire and forget)
+  fetch(SUPA_URL + '/functions/v1/auto-close-tickets').catch(() => {})
 }
 
 // ═══════════════════════════════════
