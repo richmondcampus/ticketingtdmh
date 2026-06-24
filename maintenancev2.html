@@ -707,42 +707,6 @@ async function renderDashboard() {
     html += '</div>'
   }
 
-  // Kanban board merged into dashboard (for technician/supervisor/admin)
-  if (role !== 'requester') {
-    html += '<div style="margin-top:24px;">'
-    html += '<div style="font-size:14px;font-weight:700;color:var(--txt);margin-bottom:12px;">📋 Kanban Board</div>'
-    const kanbanCols = [
-      { id:'open',        label:'🔓 Open',        color:'var(--accent)' },
-      { id:'in_progress', label:'🔄 In Progress',  color:'var(--amber)' },
-      { id:'for_parts',   label:'🔩 For Parts',    color:'var(--amber)' },
-      { id:'resolved',    label:'✅ Resolved',     color:'var(--green)' },
-    ]
-    html += '<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;">'
-    kanbanCols.forEach(col => {
-      const colTickets = tickets.filter(t => t.status === col.id)
-      html += '<div style="min-width:200px;flex:1;background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;padding:10px;">'
-      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
-      html += '<span style="font-size:12px;font-weight:600;color:' + col.color + ';">' + col.label + '</span>'
-      html += '<span style="background:var(--surf2);border-radius:10px;padding:1px 8px;font-size:11px;color:var(--txt2);">' + colTickets.length + '</span>'
-      html += '</div>'
-      if (colTickets.length === 0) {
-        html += '<div style="text-align:center;padding:12px 0;font-size:11px;color:var(--txt3);">Empty</div>'
-      } else {
-        colTickets.slice(0, 5).forEach(t => {
-          const claimed = S.users.find(u => u.id === t.claimed_by)
-          html += '<div onclick="viewTicket(\'' + t.id + '\')" style="background:var(--surf2);border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer;">'
-          html += '<div style="font-size:11px;font-family:monospace;color:var(--accent);margin-bottom:3px;">' + t.id + '</div>'
-          html += '<div style="font-size:12px;font-weight:600;line-height:1.3;margin-bottom:4px;">' + t.title + '</div>'
-          html += '<div style="font-size:11px;color:var(--txt3);">' + (claimed ? '👤 ' + claimed.full_name.split(' ')[0] : '—') + '</div>'
-          html += '</div>'
-        })
-        if (colTickets.length > 5) html += '<div style="font-size:11px;color:var(--txt3);text-align:center;">+' + (colTickets.length - 5) + ' more</div>'
-      }
-      html += '</div>'
-    })
-    html += '</div></div>'
-  }
-
   content.innerHTML = html
 }
 
