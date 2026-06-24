@@ -4873,8 +4873,10 @@ const RECEIPT_TYPES = {
 // ---- STATE ----
 const SO_STATE = {
   page: 1, pageSize: 20, search: '', dateFilter: '', total: 0,
-  // new stock out form state
-  items: [], // [{product_brand_id, product_name, brand_name, sku, qty, unit_price, discount_pct, line_total}]
+  overallDiscType: 'pct', overallDiscValue: 0,
+  items: [],
+  overallDiscType: 'pct',   // 'pct' or 'amt'
+  overallDiscValue: 0,
 };
 
 // ---- MAIN RENDER ----
@@ -4971,6 +4973,8 @@ async function refreshSOTable(){
 // ---- NEW STOCK OUT MODAL ----
 async function openNewSOModal(){
   SO_STATE.items = [];
+  SO_STATE.overallDiscType = 'pct';
+  SO_STATE.overallDiscValue = 0;
 
   const { data: productBrands } = await sb.from('product_brands')
     .select('id, price, products(name, sku), brands(name), stock_levels(qty_on_hand, branch_id)')
@@ -5148,10 +5152,16 @@ function soRemoveItem(idx){
 
 function soUpdateItem(idx, field, val){
   if(!SO_STATE.items[idx]) return;
-  SO_STATE.items[idx][field] = parseFloat(val) || 0;
-  if(field === 'qty' && SO_STATE.items[idx].qty < 0.01) SO_STATE.items[idx].qty = 0.01;
-  if(field === 'discount_pct' && SO_STATE.items[idx].discount_pct > 100) SO_STATE.items[idx].discount_pct = 100;
-  if(field === 'discount_pct' && SO_STATE.items[idx].discount_pct < 0) SO_STATE.items[idx].discount_pct = 0;
+  if(field === 'disc_type'){
+    SO_STATE.items[idx].disc_type = val;
+    // Reset discount value when switching type
+    SO_STATE.items[idx].discount_pct = 0;
+    SO_STATE.items[idx].discount_amt = 0;
+  } else {
+    SO_STATE.items[idx][field] = parseFloat(val) || 0;
+    if(field === 'qty' && SO_STATE.items[idx].qty < 0.01) SO_STATE.items[idx].qty = 0.01;
+    if(field === 'discount_pct' && SO_STATE.items[idx].discount_pct > 100) SO_STATE.items[idx].discount_pct = 100;
+  }
   renderSOItemsList();
   renderSOTotals();
 }
@@ -5208,14 +5218,18 @@ function renderSOItemsList(){
           <th>QTY</th>
           <th>UNIT</th>
           ${showUnitPrice ? '<th>UNIT PRICE</th>' : ''}
-          ${showUnitPrice ? '<th>DISC %</th>' : ''}
+          ${showUnitPrice ? '<th>DISC</th>' : ''}
           ${showUnitPrice ? '<th>AMOUNT</th>' : ''}
           <th></th>
         </tr>
       </thead>
       <tbody>
         ${SO_STATE.items.map((item, idx) => {
-          const lineTotal = item.qty * item.unit_price * (1 - (item.discount_pct || 0) / 100);
+          const discAmt = item.disc_type === 'amt'
+            ? Math.min(item.discount_amt || 0, item.unit_price)
+            : item.unit_price * (item.discount_pct || 0) / 100;
+          const effectivePrice = item.unit_price - discAmt;
+          const lineTotal = item.qty * effectivePrice;
           return `<tr>
             <td>
               <div style="font-weight:600;color:var(--navy-900);">${escapeHtml(item.product_name)}</div>
@@ -5224,21 +5238,24 @@ function renderSOItemsList(){
             <td>
               <input type="number" min="0.01" step="0.01" value="${item.qty}"
                 style="width:70px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                onchange="soUpdateItem(${idx},'qty',this.value)">
+                oninput="soUpdateItem(${idx},'qty',this.value)">
             </td>
             <td style="color:var(--slate-500);">pc</td>
             ${showUnitPrice ? `
             <td>
               <input type="number" min="0" step="0.01" value="${item.unit_price}"
                 style="width:90px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                onchange="soUpdateItem(${idx},'unit_price',this.value)">
+                oninput="soUpdateItem(${idx},'unit_price',this.value)">
             </td>
             <td>
-              <div style="display:flex;align-items:center;gap:3px;">
-                <input type="number" min="0" max="100" step="0.01" value="${item.discount_pct || 0}"
-                  style="width:60px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
-                  onchange="soUpdateItem(${idx},'discount_pct',this.value)">
-                <span style="font-size:11px;color:var(--slate-500);">%</span>
+              <div style="display:flex;align-items:center;gap:2px;">
+                <select style="padding:4px 4px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:11px;width:40px;" onchange="soUpdateItem(${idx},'disc_type',this.value)">
+                  <option value="pct" ${(item.disc_type||'pct')==='pct'?'selected':''}>%</option>
+                  <option value="amt" ${item.disc_type==='amt'?'selected':''}>₱</option>
+                </select>
+                <input type="number" min="0" step="0.01" value="${item.disc_type==='amt'?(item.discount_amt||0):(item.discount_pct||0)}"
+                  style="width:65px;padding:5px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;"
+                  oninput="soUpdateItem(${idx},item.disc_type==='amt'?'discount_amt':'discount_pct',this.value)">
               </div>
             </td>
             <td class="mono" style="font-weight:600;white-space:nowrap;">${peso(lineTotal)}</td>
@@ -5251,21 +5268,36 @@ function renderSOItemsList(){
   `;
 }
 
+function soReadOverallDisc(){
+  // Read from DOM if available (live form), else from state
+  const typeEl = document.getElementById('so-disc-type');
+  const valEl = document.getElementById('so-overall-disc');
+  if(typeEl) SO_STATE.overallDiscType = typeEl.value;
+  if(valEl) SO_STATE.overallDiscValue = parseFloat(valEl.value) || 0;
+}
+
 function soCalcTotals(){
   const rt = RECEIPT_TYPES[getSOReceiptType()];
-  const subtotalBeforeDisc = SO_STATE.items.reduce((s, i) => s + (i.qty * i.unit_price * (1 - (i.discount_pct || 0) / 100)), 0);
-  const overallDiscPct = parseFloat(document.getElementById('so-overall-disc')?.value) || 0;
-  const overallDiscAmt = subtotalBeforeDisc * overallDiscPct / 100;
+  const subtotalBeforeDisc = SO_STATE.items.reduce((s, i) => {
+    const da = i.disc_type === 'amt' ? Math.min(i.discount_amt || 0, i.unit_price) : i.unit_price * (i.discount_pct || 0) / 100;
+    return s + i.qty * (i.unit_price - da);
+  }, 0);
+
+  // Read current discount from DOM before recalculating
+  soReadOverallDisc();
+  const discType = SO_STATE.overallDiscType;
+  const discValue = SO_STATE.overallDiscValue;
+  const overallDiscAmt = discType === 'amt'
+    ? Math.min(discValue, subtotalBeforeDisc)
+    : subtotalBeforeDisc * discValue / 100;
+  const overallDiscPct = discType === 'pct' ? discValue : (subtotalBeforeDisc > 0 ? overallDiscAmt / subtotalBeforeDisc * 100 : 0);
   const afterDisc = subtotalBeforeDisc - overallDiscAmt;
 
-  let vatableSale = 0, vatExempt = 0, zeroRated = 0, vatAmount = 0, total = afterDisc;
-
+  let vatableSale = 0, vatAmount = 0, total = afterDisc;
   if(rt.hasVat){
-    // Standard 12% VAT breakdown (VAT-inclusive pricing)
-    vatableSale = afterDisc; // treat all as vatable
-    const netOfVat = vatableSale / 1.12;
-    vatAmount = vatableSale - netOfVat;
-    total = afterDisc; // total stays the same, VAT is extracted from inclusive price
+    vatableSale = afterDisc;
+    vatAmount = vatableSale - (vatableSale / 1.12);
+    total = afterDisc;
   }
 
   return { subtotalBeforeDisc, overallDiscPct, overallDiscAmt, afterDisc, vatableSale, vatAmount, total };
@@ -5287,10 +5319,13 @@ function renderSOTotals(){
       <div style="display:flex;gap:16px;align-items:center;font-size:13px;">
         <span style="color:var(--slate-500);">Overall Discount</span>
         <div style="display:flex;align-items:center;gap:4px;">
-          <input type="number" id="so-overall-disc" min="0" max="100" step="0.01" value="0"
-            style="width:60px;padding:4px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;text-align:right;"
-            onchange="renderSOTotals()">
-          <span style="font-size:11px;color:var(--slate-500);">%</span>
+          <select id="so-disc-type" style="padding:4px 6px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12px;" onchange="SO_STATE.overallDiscType=this.value;renderSOTotals()">
+            <option value="pct" ${SO_STATE.overallDiscType==='pct'?'selected':''}>%</option>
+            <option value="amt" ${SO_STATE.overallDiscType==='amt'?'selected':''}>₱</option>
+          </select>
+          <input type="number" id="so-overall-disc" min="0" step="0.01" value="${SO_STATE.overallDiscValue}"
+            style="width:70px;padding:4px 7px;border:1.5px solid var(--slate-200);border-radius:5px;font-size:12.5px;text-align:right;"
+            oninput="SO_STATE.overallDiscValue=parseFloat(this.value)||0;" onchange="renderSOTotals()">
           <span class="mono" style="min-width:100px;text-align:right;color:var(--red-600);">-${peso(t.overallDiscAmt)}</span>
         </div>
       </div>
@@ -5361,14 +5396,20 @@ async function submitStockOut(){
   }
 
   // Save items
-  const items = SO_STATE.items.map(i => ({
-    stock_out_id: soRecord.id,
-    product_brand_id: i.product_brand_id,
-    qty: i.qty,
-    unit_price: i.unit_price || 0,
-    discount_pct: i.discount_pct || 0,
-    line_total: i.qty * i.unit_price * (1 - (i.discount_pct || 0) / 100),
-  }));
+  const items = SO_STATE.items.map(i => {
+    const da = i.disc_type === 'amt' ? Math.min(i.discount_amt || 0, i.unit_price) : i.unit_price * (i.discount_pct || 0) / 100;
+    const effPrice = i.unit_price - da;
+    return {
+      stock_out_id: soRecord.id,
+      product_brand_id: i.product_brand_id,
+      qty: i.qty,
+      unit_price: i.unit_price || 0,
+      discount_pct: i.disc_type === 'amt'
+        ? (i.unit_price > 0 ? da / i.unit_price * 100 : 0)
+        : (i.discount_pct || 0),
+      line_total: i.qty * effPrice,
+    };
+  });
 
   const { error: itemsErr } = await sb.from('stock_out_items').insert(items);
 
@@ -5377,14 +5418,15 @@ async function submitStockOut(){
   } else {
     // Deduct stock using existing stock_out_movement function
     for(const item of SO_STATE.items){
-      await sb.rpc('stock_out', {
+      const { error: deductErr } = await sb.rpc('stock_out', {
         p_product_brand_id: item.product_brand_id,
         p_branch_id: STATE.currentBranch,
         p_qty: item.qty,
-        p_reference_id: soRecord.id,
         p_reference_type: 'stock_out',
+        p_reference_id: soRecord.id,
         p_notes: `Stock Out: ${soRecord.ref_number || soRecord.id}`,
       });
+      if(deductErr) console.error('Stock deduct error:', deductErr.message);
     }
     toast('Stock out recorded successfully!', 'success');
   }
@@ -5889,7 +5931,11 @@ function renderQTItemsConfig(){
       <thead><tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Disc %</th><th>Line Total</th></tr></thead>
       <tbody>
         ${QT_CONFIG.items.map((item, idx) => {
-          const lineTotal = item.qty * item.unit_price * (1 - (item.discount_pct || 0) / 100);
+          const discAmt = item.disc_type === 'amt'
+            ? Math.min(item.discount_amt || 0, item.unit_price)
+            : item.unit_price * (item.discount_pct || 0) / 100;
+          const effectivePrice = item.unit_price - discAmt;
+          const lineTotal = item.qty * effectivePrice;
           return `<tr>
             <td>
               <div style="font-weight:600;color:var(--navy-900);">${escapeHtml(item.product_name)}</div>
