@@ -1612,17 +1612,17 @@ async function openPartsRequestModal(ticketId, ticketTitle) {
 function buildPartsRow(id, stockList) {
   const list = stockList || window._stockList || []
   const listId = 'stock_list_' + id
-  const units = ['pcs','set','box','pack','roll','meter','liter','gallon','kg','gram','bottle','can','tube','pair','sheet','bag','unit','length','spray']
+  const units = ['pcs','set','box','pack','roll','meter','liter','kg','bottle','can','pair','length']
   let unitOpts = units.map(u => '<option value="' + u + '">' + u + '</option>').join('')
   let datalist = '<datalist id="' + listId + '">'
   list.forEach(s => { datalist += '<option value="' + s.item_name + '" data-qty="' + s.quantity_on_hand + '" data-unit="' + (s.unit||'pcs') + '" data-cost="' + (s.unit_cost||0) + '">' })
   datalist += '</datalist>'
   return datalist +
-    '<div id="prow_' + id + '" style="display:grid;grid-template-columns:1fr 60px 100px 80px 28px;gap:6px;align-items:center;">' +
+    '<div id="prow_' + id + '" style="display:grid;grid-template-columns:minmax(0,1fr) 54px 86px 76px 26px;gap:5px;align-items:center;">' +
     '<input type="text" list="' + listId + '" placeholder="Part name or search stock..." style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-name" oninput="autoFillPartsUnit(this)">' +
     '<input type="number" min="1" value="1" placeholder="Qty" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;text-align:center;" class="parts-qty">' +
     '<select class="parts-unit" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;">' + unitOpts + '</select>' +
-    '<input type="number" min="0" value="" placeholder="₱cost" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-cost">' +
+    '<input type="number" min="0" value="" placeholder="Cost" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-cost">' +
     '<button onclick="document.getElementById(\'prow_' + id + '\').remove()" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--bdr2);background:transparent;color:var(--txt3);cursor:pointer;font-size:14px;">✕</button>' +
     '</div>'
 }
