@@ -1618,11 +1618,10 @@ function buildPartsRow(id, stockList) {
   list.forEach(s => { datalist += '<option value="' + s.item_name + '" data-qty="' + s.quantity_on_hand + '" data-unit="' + (s.unit||'pcs') + '" data-cost="' + (s.unit_cost||0) + '">' })
   datalist += '</datalist>'
   return datalist +
-    '<div id="prow_' + id + '" style="display:grid;grid-template-columns:minmax(0,1fr) 54px 86px 76px 26px;gap:5px;align-items:center;">' +
+    '<div id="prow_' + id + '" style="display:grid;grid-template-columns:minmax(0,1fr) 60px 100px 28px;gap:5px;align-items:center;">' +
     '<input type="text" list="' + listId + '" placeholder="Part name or search stock..." style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-name" oninput="autoFillPartsUnit(this)">' +
     '<input type="number" min="1" value="1" placeholder="Qty" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;text-align:center;" class="parts-qty">' +
     '<select class="parts-unit" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;">' + unitOpts + '</select>' +
-    '<input type="number" min="0" value="" placeholder="Cost" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-cost">' +
     '<button onclick="document.getElementById(\'prow_' + id + '\').remove()" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--bdr2);background:transparent;color:var(--txt3);cursor:pointer;font-size:14px;">✕</button>' +
     '</div>'
 }
@@ -1635,9 +1634,7 @@ function autoFillPartsUnit(input) {
   const row = input.closest('div[id^="prow_"]')
   if (!row) return
   const unitEl = row.querySelector('.parts-unit')
-  const costEl = row.querySelector('.parts-cost')
   if (unitEl && match.unit) unitEl.value = match.unit
-  if (costEl && match.unit_cost) costEl.value = match.unit_cost
 }
 
 function addPartsRow() {
@@ -1659,8 +1656,7 @@ async function submitPartsRequest(ticketId, ticketTitle) {
     const name = row.querySelector('.parts-name')?.value.trim()
     const qty = Number(row.querySelector('.parts-qty')?.value) || 1
     const unit = row.querySelector('.parts-unit')?.value.trim() || 'pcs'
-    const cost = Number(row.querySelector('.parts-cost')?.value) || 0
-    if (name) items.push({ item_name: name, quantity: qty, unit, estimated_cost: cost, category: 'maintenance_material' })
+    if (name) items.push({ item_name: name, quantity: qty, unit, estimated_cost: 0, category: 'maintenance_material' })
   })
   if (items.length === 0) { showToast('error','Required','Please add at least one item.'); return }
 
