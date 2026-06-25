@@ -1979,7 +1979,7 @@ async function checkMaintSLAEscalation() {
     .not('status','in','("resolved","closed","cancelled")')
   if (!openTickets) return
   for (const t of openTickets) {
-    const cfg = configs.find(c => c.category === t.category && c.priority === t.priority)
+    const cfg = configs.find(c => c.priority === t.priority)
     if (!cfg) continue
     const ageHours = (now - new Date(t.created_at)) / 3600000
     if (ageHours < cfg.resolution_hours) continue
