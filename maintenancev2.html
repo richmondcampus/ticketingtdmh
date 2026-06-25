@@ -546,6 +546,7 @@ async function bootApp(session) {
   renderSidebarNav()
   await Promise.all([loadUsers(), loadDepartments()])
   subscribeTickets()
+  _appBooted = true
   subscribeNotifications()  // start realtime notification listener
   loadNotifications()       // load existing notifications on boot
   showPage('dashboard')
@@ -2563,8 +2564,10 @@ function scheduleSessionRefresh() {
 }
 
 // Listen for Supabase auth state changes
+let _appBooted = false
 SB.auth.onAuthStateChange((event, session) => {
-  if (event === 'TOKEN_REFRESHED' && session) {
+  // Only update tokens after app has fully booted — prevents init loop
+  if (event === 'TOKEN_REFRESHED' && session && _appBooted) {
     const stored = getSession()
     if (stored) {
       stored.access_token = session.access_token
