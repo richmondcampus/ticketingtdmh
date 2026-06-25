@@ -544,10 +544,10 @@ async function bootApp(session) {
   document.getElementById('userName').textContent = session.full_name
   document.getElementById('userRoleLabel').textContent = formatMaintRole(session.maintenance_role)
   renderSidebarNav()
-  await Promise.all([loadUsers(), loadDepartments()])
-  subscribeTickets()
+  try { await Promise.all([loadUsers(), loadDepartments()]) } catch(e) { console.error('[Boot] loadUsers/Depts failed:', e) }
+  try { subscribeTickets() } catch(e) { console.error('[Boot] subscribeTickets failed:', e) }
   _appBooted = true
-  subscribeNotifications()  // start realtime notification listener
+  try { subscribeNotifications() } catch(e) { console.error('[Boot] subscribeNotifications failed:', e) }
   loadNotifications()       // load existing notifications on boot
   showPage('dashboard')
 }
@@ -604,7 +604,13 @@ function showPage(page) {
     all_tickets:renderAllTickets, open_tickets:renderOpenTickets,
     kanban:renderKanban, analytics:renderAnalytics, team:renderTeam,
     reports:renderReports }
-  if (pages[page]) pages[page]()
+  if (pages[page]) {
+    try { pages[page]() }
+    catch(e) {
+      console.error('[Page Error] ' + page + ':', e)
+      document.getElementById('mainContent').innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><h3>Error: ' + page + '</h3><p style="color:var(--red);font-size:12px;">' + (e.message||String(e)) + '</p><button class="btn btn-primary btn-sm" onclick="showPage(\'' + page + '\')" style="margin-top:16px;">Retry</button></div>'
+    }
+  }
 }
 
 // ═══════════════════════════════════
