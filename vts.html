@@ -7181,10 +7181,13 @@ async function renderReportContent() {
   // ── SMS COST REPORT TAB ────────────────────────────────────
   let smsHTML = ''
   if (_rptTab === 'sms') {
+    const smsFrom = _rptFrom ? _rptFrom + 'T00:00:00+08:00' : new Date(Date.now() - 30*86400000).toISOString()
+    const smsTo   = _rptTo   ? _rptTo   + 'T23:59:59+08:00' : new Date().toISOString()
+
     const { data: smsLogs } = await SB.from('sms_logs')
       .select('*')
-      .gte('sent_at', from.toISOString())
-      .lte('sent_at', to.toISOString())
+      .gte('sent_at', smsFrom)
+      .lte('sent_at', smsTo)
       .order('sent_at', { ascending: false })
 
     const logs = smsLogs || []
