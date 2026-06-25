@@ -1713,12 +1713,9 @@ function autoFillPartsUnit(input) {
 function addPartsRow() {
   const wrap = document.getElementById('partsRows')
   if (!wrap) return
-  const id = Date.now()
   const tmp = document.createElement('div')
-  tmp.innerHTML = buildPartsRow(id, window._stockList || [])
-  // Append datalist(s) to body so they work globally
+  tmp.innerHTML = buildPartsRow(Date.now(), window._stockList || [])
   tmp.querySelectorAll('datalist').forEach(dl => document.body.appendChild(dl))
-  // Append the prow div to partsRows
   const prow = tmp.querySelector('div[id^="prow_"]')
   if (prow) wrap.appendChild(prow)
 }
