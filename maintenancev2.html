@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TDMH — Maintenance Hub</title>
+<title>TDMH Maintenance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>/* Supabase JS v2.107.0 inline */
@@ -38,25 +38,25 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   --bg:#080e14;--surf1:#0d1520;--surf2:#111d2b;--surf3:#162235;--surf4:#1b2940;
   --bdr:rgba(255,255,255,0.06);--bdr2:rgba(255,255,255,0.11);--bdr3:rgba(255,255,255,0.18);
   --txt:#e2edf8;--txt2:#5f8099;--txt3:#324f66;
-  --shadow:0 2px 20px rgba(0,0,0,0.55);--shadow2:0 8px 32px rgba(0,0,0,0.6);
-  --accent:#22c55e;--accent2:#16a34a;--accent-a:rgba(34,197,94,0.12);--accent-b:rgba(34,197,94,0.22);
-  --red:#f04060;--red-a:rgba(240,64,96,0.12);
-  --amber:#f0a500;--amber-a:rgba(240,165,0,0.12);
-  --blue:#4d9fff;--blue-a:rgba(77,159,255,0.12);
-  --violet:#a070ff;--violet-a:rgba(160,112,255,0.12);
-  --sidebar-w:240px;
+  --shadow:0 2px 20px rgba(0,0,0,0.55);--shadow2:0 8px 32px rgba(0,0,0,0.7);
+  --accent:#4f8ef7;--accent-a:rgba(79,142,247,0.15);--accent-b:rgba(79,142,247,0.3);
+  --green:#3ecf8e;--green-a:rgba(62,207,142,0.15);--green-b:rgba(62,207,142,0.3);
+  --amber:#ef9f27;--amber-a:rgba(239,159,39,0.15);
+  --red:#e24b4a;--red-a:rgba(226,75,74,0.15);
+  --violet:#9b6ef7;--violet-a:rgba(155,110,247,0.15);
+  --blue:#4f8ef7;--blue-a:rgba(79,142,247,0.15);
 }
 [data-theme="light"]{
-  --bg:#f0f5fb;--surf1:#fff;--surf2:#f7fafd;--surf3:#edf3fa;--surf4:#e3ecf5;
-  --bdr:rgba(0,0,0,0.07);--bdr2:rgba(0,0,0,0.13);--bdr3:rgba(0,0,0,0.20);
-  --txt:#0c1e2e;--txt2:#4a6a80;--txt3:#9ab8cc;
-  --shadow:0 2px 16px rgba(0,0,0,0.08);--shadow2:0 8px 28px rgba(0,0,0,0.12);
-  --accent:#16a34a;--accent2:#15803d;--accent-a:rgba(22,163,74,0.10);--accent-b:rgba(22,163,74,0.18);
-  --red:#d03050;--red-a:rgba(208,48,80,0.09);
-  --amber:#c07800;--amber-a:rgba(192,120,0,0.10);
-  --blue:#2070d0;--blue-a:rgba(32,112,208,0.09);
-  --violet:#7040d0;--violet-a:rgba(112,64,208,0.09);
-  --sidebar-w:240px;
+  --bg:#f0f4f9;--surf1:#ffffff;--surf2:#e8eef6;--surf3:#dce5f0;--surf4:#cfdae8;
+  --bdr:rgba(0,0,0,0.08);--bdr2:rgba(0,0,0,0.13);--bdr3:rgba(0,0,0,0.20);
+  --txt:#0d1a2e;--txt2:#3a5068;--txt3:#7a96b0;
+  --shadow:0 2px 12px rgba(0,0,0,0.08);--shadow2:0 8px 24px rgba(0,0,0,0.12);
+  --accent:#2070d8;--accent-a:rgba(32,112,208,0.12);--accent-b:rgba(32,112,208,0.25);
+  --green:#1a9e68;--green-a:rgba(26,158,104,0.12);--green-b:rgba(26,158,104,0.25);
+  --amber:#d4850a;--amber-a:rgba(212,133,10,0.12);
+  --red:#c93d3c;--red-a:rgba(201,61,60,0.12);
+  --violet:#7a4fd4;--violet-a:rgba(122,79,212,0.12);
+  --blue:#2070d8;--blue-a:rgba(32,112,208,0.12);
 }
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
 *{transition:background-color .2s,border-color .2s,color .15s;}
@@ -103,9 +103,9 @@ code,.mono{font-family:'JetBrains Mono',monospace;}
 .sidebar-logo-text h2{font-size:13px;font-weight:700;white-space:nowrap;}
 .sidebar-logo-text p{font-size:11px;color:var(--txt2);}
 .sidebar-nav{flex:1;overflow-y:auto;padding:10px;}
-.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;color:var(--txt2);font-size:13px;font-weight:500;margin-bottom:2px;}
-.nav-item:hover{background:var(--surf3);color:var(--txt);}
-.nav-item.active{background:var(--accent-a);color:var(--accent);border:1px solid var(--accent-b);}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;color:rgba(255,255,255,.9);font-size:13px;font-weight:500;margin-bottom:2px;}
+.nav-item:hover{background:rgba(255,255,255,.08);color:#fff;}
+.nav-item.active{background:var(--sidebar-active);color:var(--tdmh-green);border:1px solid rgba(45,184,75,.3);}
 .nav-icon{font-size:15px;width:18px;text-align:center;flex-shrink:0;}
 .nav-badge{margin-left:auto;background:var(--red);color:#fff;border-radius:20px;padding:1px 6px;font-size:10px;font-weight:700;}
 .sidebar-footer{padding:12px;border-top:1px solid var(--bdr);}
@@ -312,13 +312,7 @@ tr:hover td{background:var(--surf2);}
 <!-- LOGIN -->
 <div id="loginScreen">
   <div class="login-card">
-    <div class="login-logo">
-      <div class="login-logo-mark">🔧</div>
-      <div class="login-logo-text">
-        <h1>TDMH — Maintenance</h1>
-        <p>Maintenance Ticketing Hub v2</p>
-      </div>
-    </div>
+    <div class="login-logo" style="justify-content:center;"></div>
     <h2>Welcome back</h2>
     <p class="sub">Sign in with your employee credentials</p>
     <div class="login-err" id="loginErr"></div>
@@ -342,8 +336,7 @@ tr:hover td{background:var(--surf2);}
 <div id="appShell">
   <div class="shell">
     <div class="sidebar" id="sidebar">
-      <div class="sidebar-logo">
-        <div class="sidebar-logo-mark">🔧</div>
+      
         <div class="sidebar-logo-text">
           <h2>Maintenance Hub</h2>
           <p>v2 · tdmh-core</p>
@@ -551,6 +544,8 @@ async function bootApp(session) {
   renderSidebarNav()
   await Promise.all([loadUsers(), loadDepartments()])
   subscribeTickets()
+  subscribeNotifications()  // start realtime notification listener
+  loadNotifications()       // load existing notifications on boot
   showPage('dashboard')
 }
 
@@ -568,9 +563,10 @@ function renderSidebarNav() {
     { id:'dashboard',    icon:'📊', label:'Dashboard',    roles:['requester','technician','supervisor','admin'] },
     { id:'my_tickets',   icon:'🎫', label:'My Tickets',   roles:['requester','technician','supervisor','admin'] },
     { id:'open_tickets', icon:'🔓', label:'Open Tickets', roles:['technician','supervisor','admin'] },
-    { id:'kanban',       icon:'📋', label:'Kanban Board', roles:['technician','supervisor','admin'] },
     { id:'all_tickets',  icon:'🗂', label:'All Tickets',  roles:['technician','supervisor','admin'] },
+    { id:'kanban',       icon:'📋', label:'Kanban',       roles:['technician','supervisor','admin'] },
     { id:'analytics',    icon:'📈', label:'Analytics',    roles:['supervisor','admin'] },
+    { id:'reports',      icon:'📊', label:'Reports',      roles:['admin'] },
     { id:'team',         icon:'👥', label:'Team',         roles:['supervisor','admin'] },
   ]
   let html = ''
@@ -589,7 +585,7 @@ function renderSidebarNav() {
 // ═══════════════════════════════════
 const PAGE_TITLES = {
   dashboard:'Dashboard', my_tickets:'My Tickets', all_tickets:'All Tickets',
-  open_tickets:'Open Tickets', kanban:'Kanban Board', analytics:'Analytics', team:'Team'
+  open_tickets:'Open Tickets', kanban:'Kanban', analytics:'Analytics', team:'Team', reports:'Reports'
 }
 
 function showPage(page) {
@@ -603,7 +599,8 @@ function showPage(page) {
   content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
   const pages = { dashboard:renderDashboard, my_tickets:renderMyTickets,
     all_tickets:renderAllTickets, open_tickets:renderOpenTickets,
-    kanban:renderKanban, analytics:renderAnalytics, team:renderTeam }
+    kanban:renderKanban, analytics:renderAnalytics, team:renderTeam,
+    reports:renderReports }
   if (pages[page]) pages[page]()
 }
 
@@ -624,6 +621,7 @@ async function loadTickets(filter = {}) {
   if (filter.dept_id) q = q.eq('dept_id', filter.dept_id)
   if (filter.status) q = q.eq('status', filter.status)
   if (filter.claimed_by) q = q.eq('claimed_by', filter.claimed_by)
+
   const { data } = await q
   return data || []
 }
@@ -640,10 +638,21 @@ function subscribeTickets() {
   const ch = SB.channel('maint-tickets-live')
     .on('postgres_changes', { event:'*', schema:'public', table:'maint_tickets' }, (payload) => {
       if (payload.eventType === 'INSERT') S.tickets.unshift(payload.new)
-      if (payload.eventType === 'UPDATE') S.tickets = S.tickets.map(t => t.id === payload.new.id ? { ...t, ...payload.new } : t)
-      if (['dashboard','all_tickets','open_tickets','my_tickets'].includes(S.page)) showPage(S.page)
+      if (payload.eventType === 'UPDATE') {
+        S.tickets = S.tickets.map(t => t.id === payload.new.id ? { ...t, ...payload.new } : t)
+      }
+      if (payload.eventType === 'DELETE') {
+        S.tickets = S.tickets.filter(t => t.id !== payload.old.id)
+      }
+      // Re-render whichever page is active
+      if (['dashboard','all_tickets','open_tickets','my_tickets','kanban'].includes(S.page)) {
+        showPage(S.page)
+      }
     }).subscribe()
   S.activeChannels.push(ch)
+
+  // Trigger auto-close check on boot (fire and forget)
+  fetch(SUPA_URL + '/functions/v1/auto-close-tickets').catch(() => {})
 }
 
 // ═══════════════════════════════════
@@ -921,8 +930,9 @@ async function viewTicket(ticketId) {
     (await SB.from('maint_tickets').select('*').eq('id', ticketId).single()).data
   if (!t) return
 
-  const [notes, team] = await Promise.all([loadTicketNotes(ticketId), loadTicketTeam(ticketId)])
   const role = S.user.maintenance_role
+
+  const [notes, team] = await Promise.all([loadTicketNotes(ticketId), loadTicketTeam(ticketId)])
   const dept = S.departments.find(d => d.id === t.dept_id)
   const submittedBy = S.users.find(u => u.id === t.submitted_by)
   const claimedBy = S.users.find(u => u.id === t.claimed_by)
@@ -1030,49 +1040,70 @@ async function viewTicket(ticketId) {
   // Footer actions
   let footer = '<button class="btn btn-ghost" onclick="closeModal(\'ticketDetailModal\')">Close</button>'
 
-  // Link Asset button — always available for active tickets without asset link
-  if (!t.asset_id && !['closed','resolved'].includes(t.status) && ['technician','supervisor','admin'].includes(role)) {
+  // Check if current user is assigned to this ticket (claimed or in team)
+  const isAssigned = t.claimed_by === S.user.id || (teamMembers || []).some(m => m.user_id === S.user.id)
+  const canAct = isAssigned || ['supervisor','admin'].includes(role)
+
+  // Link Asset button
+  if (!t.asset_id && !['closed','resolved'].includes(t.status) && canAct) {
     footer += '<button class="btn btn-ghost btn-sm" onclick="openLinkAssetModal(\'' + t.id + '\')">🏷️ Link Asset</button>'
   }
 
   if (t.status === 'open' && ['technician','supervisor','admin'].includes(role)) {
-    footer += '<button class="btn btn-primary" onclick="claimTicket(\'' + t.id + '\')">🙋 Claim Ticket</button>'
+    footer += '<button class="btn btn-primary" onclick="claimTicket(\'' + t.id + '\')">🙋 Claim & Start Work</button>'
   }
-  if (t.status === 'in_progress' && (t.claimed_by === S.user.id || ['supervisor','admin'].includes(role))) {
+
+  if (t.status === 'in_progress' && canAct) {
     footer += '<button class="btn btn-ghost" onclick="openTeamModal(\'' + t.id + '\')">👥 Add Team</button>'
     footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts</button>'
     footer += '<button class="btn btn-success" onclick="resolveTicket(\'' + t.id + '\')">✅ Mark Resolved</button>'
   }
-  if (t.status === 'for_parts') {
-    // Check if parts are available from CSR
+
+  if (t.status === 'for_parts' && canAct) {
     const { data: partsReqs } = await SB.from('maint_parts_requests')
-      .select('id,status,part_name')
+      .select('id,status,item_name,quantity')
       .eq('ticket_id', t.id)
     const allParts = partsReqs || []
-    const pendingParts = allParts.filter(p => !['available','received'].includes(p.status))
-    const availableParts = allParts.filter(p => p.status === 'available')
+    const pendingParts = allParts.filter(p => !['available','received','cancelled'].includes(p.status))
+    const cancelledParts = allParts.filter(p => p.status === 'cancelled')
+    const activeParts = allParts.filter(p => p.status !== 'cancelled')
 
-    footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Request Parts via CSR</button>'
+    footer += '<button class="btn btn-ghost" onclick="openPartsRequestModal(\'' + t.id + '\',\'' + t.title.replace(/'/g,"\\'") + '\')">🔩 Add More Parts</button>'
 
-    if (allParts.length === 0) {
-      // No parts requested yet — allow continue
-      footer += '<button class="btn btn-secondary" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">▶ Continue (No Parts Needed)</button>'
-    } else if (pendingParts.length > 0) {
-      // Parts pending from CSR — locked
-      footer += '<button class="btn btn-secondary" disabled title="Waiting for CSR to mark parts as available (' + pendingParts.length + ' pending)">⏳ Waiting for Parts (' + pendingParts.length + ' pending)</button>'
-      // Show which parts are still pending
-      const pendingNames = pendingParts.map(p => p.part_name || 'Part').join(', ')
+    if (activeParts.length > 0 && pendingParts.length > 0) {
+      // Parts still pending — locked, show cancel option
+      const pendingNames = pendingParts.map(p => (p.item_name || 'Part') + ' ×' + p.quantity).join(', ')
+      footer += '<button class="btn btn-secondary" disabled>⏳ Waiting for Parts (' + pendingParts.length + ' pending)</button>'
+      footer += '</div>' // close footer early to show info
       footer += '<div style="font-size:11px;color:var(--amber);margin-top:6px;padding:0 4px;">⚠️ Pending from CSR: ' + pendingNames + '</div>'
-    } else {
-      // All parts available — unlock
-      footer += '<button class="btn btn-success" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">✅ Parts Available — Continue Repair</button>'
+      footer += '<div style="margin-top:8px;"><button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="cancelPartsRequest(\'' + t.id + '\')">🗑️ Cancel Parts Request</button></div>'
+      footer = '<button class="btn btn-ghost" onclick="closeModal(\'ticketDetailModal\')">Close</button>' + footer
+      document.getElementById('ticketDetailFooter').innerHTML = footer
+      openModal('ticketDetailModal')
+      return
+    } else if (activeParts.length > 0 && pendingParts.length === 0) {
+      // All parts available
+      footer += '<button class="btn btn-success" onclick="updateStatus(\'' + t.id + '\',\'in_progress\')">✅ Parts Received — Continue Repair</button>'
     }
+    // Note: NO "Continue without parts" button — if parts were requested, must wait or cancel
   }
+
   if (t.status === 'resolved' && ['supervisor','admin'].includes(role)) {
     footer += '<button class="btn btn-primary" onclick="closeTicket(\'' + t.id + '\')">🔒 Close Ticket</button>'
   }
-  if (['closed','resolved'].includes(t.status) && ['requester','supervisor','admin'].includes(role)) {
+  // Resolved — requester can reopen if issue persists
+  if (t.status === 'resolved' && ['requester','supervisor','admin'].includes(role)) {
     footer += '<button class="btn btn-danger" onclick="reopenTicket(\'' + t.id + '\')">↩ Reopen</button>'
+  }
+  // Closed — view only, no action buttons for tech/dept
+  if (t.status === 'closed') {
+    const autoMsg = t.auto_closed ? ' (auto-closed after 24h)' : ''
+    footer = '<div style="font-size:12px;color:var(--txt3);padding:6px 12px;background:var(--surf2);border-radius:8px;">🔒 Closed' + autoMsg + ' — view only</div>'
+      + '<button class="btn btn-ghost" onclick="closeModal(\'ticketDetailModal\')">Close</button>'
+    // Admin/supervisor can still reopen
+    if (['supervisor','admin'].includes(role)) {
+      footer = '<button class="btn btn-danger" onclick="reopenTicket(\'' + t.id + '\')">↩ Reopen</button>' + footer
+    }
   }
 
   document.getElementById('ticketDetailFooter').innerHTML = footer
@@ -1086,6 +1117,45 @@ function iF(label, value) {
 // ═══════════════════════════════════
 // TICKET ACTIONS
 // ═══════════════════════════════════
+async function cancelPartsRequest(ticketId) {
+  confirm2('Cancel parts request? Ticket will resume to In Progress.', async () => {
+    // Get active parts requests for this ticket
+    const { data: parts } = await SB.from('maint_parts_requests')
+      .select('id,csr_request_id,status')
+      .eq('ticket_id', ticketId)
+      .not('status', 'eq', 'cancelled')
+
+    if (parts?.length) {
+      // Mark parts requests as cancelled
+      await SB.from('maint_parts_requests').update({ status: 'cancelled' })
+        .eq('ticket_id', ticketId).not('status', 'eq', 'cancelled')
+
+      // Cancel linked CSR requests if still pending
+      for (const p of parts) {
+        if (p.csr_request_id) {
+          const { data: csrReq } = await SB.from('requests').select('status').eq('id', p.csr_request_id).single()
+          // Only cancel if not yet ordered/issued
+          if (csrReq && ['pending_approval','approved','for_po'].includes(csrReq.status)) {
+            await SB.from('requests').update({ status: 'cancelled' }).eq('id', p.csr_request_id)
+          }
+        }
+      }
+    }
+
+    // Set ticket back to in_progress
+    await SB.from('maint_tickets').update({ status: 'in_progress', updated_at: new Date().toISOString() }).eq('id', ticketId)
+    await SB.from('maint_ticket_notes').insert({
+      ticket_id: ticketId, user_id: S.user.id,
+      note: 'Parts request cancelled. Ticket resumed — back to In Progress.',
+      note_type: 'system'
+    })
+
+    closeModal('ticketDetailModal')
+    showToast('success', '🔄 Parts Cancelled', 'Ticket is back in progress.')
+    if (['dashboard','my_tickets','all_tickets','open_tickets'].includes(S.page)) showPage(S.page)
+  })
+}
+
 async function addNote(ticketId) {
   const note = document.getElementById('noteInput')?.value.trim()
   if (!note) return
@@ -1615,12 +1685,14 @@ function buildPartsRow(id, stockList) {
   let datalist = '<datalist id="' + listId + '">'
   list.forEach(s => { datalist += '<option value="' + s.item_name + '" data-qty="' + s.quantity_on_hand + '" data-unit="' + (s.unit||'pcs') + '" data-cost="' + (s.unit_cost||0) + '">' })
   datalist += '</datalist>'
+  const units = ['pcs','box','set','roll','bag','pair','sheet','length','meter','liter','gallon','kg','can','bottle','tube','pack','drum','coil','bundle']
+  const unitOpts = units.map(u => '<option value="' + u + '">' + u + '</option>').join('')
   return datalist +
-    '<div id="prow_' + id + '" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;align-items:center;">' +
-    '<input type="text" list="' + listId + '" placeholder="Part name or search stock..." style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-name" oninput="autoFillPartsUnit(this)">' +
-    '<input type="number" min="1" value="1" placeholder="Qty" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;text-align:center;" class="parts-qty">' +
-    '<input type="text" placeholder="unit" value="pcs" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-unit">' +
-    '<input type="number" min="0" value="" placeholder="₱cost" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;" class="parts-cost">' +
+    '<div id="prow_' + id + '" style="display:grid;grid-template-columns:1fr 60px 100px 80px 28px;gap:5px;align-items:center;margin-bottom:5px;">' +
+    '<input type="text" list="' + listId + '" placeholder="Item / part name..." style="padding:7px 8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;min-width:0;width:100%;" class="parts-name" oninput="autoFillPartsUnit(this)">' +
+    '<input type="number" min="1" value="1" placeholder="Qty" style="padding:7px 6px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;text-align:center;width:100%;" class="parts-qty">' +
+    '<select style="padding:7px 4px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;width:100%;" class="parts-unit">' + unitOpts + '</select>' +
+    '<input type="number" min="0" value="" placeholder="₱ est." style="padding:7px 6px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:12px;outline:none;width:100%;" class="parts-cost">' +
     '<button onclick="document.getElementById(\'prow_' + id + '\').remove()" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--bdr2);background:transparent;color:var(--txt3);cursor:pointer;font-size:14px;">✕</button>' +
     '</div>'
 }
@@ -1640,12 +1712,15 @@ function autoFillPartsUnit(input) {
 
 function addPartsRow() {
   const wrap = document.getElementById('partsRows')
-  const div = document.createElement('div')
-  div.innerHTML = buildPartsRow(Date.now(), window._stockList || [])
-  wrap.appendChild(div.firstChild)
-  // Also append any datalist elements
-  const datalists = div.querySelectorAll('datalist')
-  datalists.forEach(dl => wrap.parentNode.appendChild(dl))
+  if (!wrap) return
+  const id = Date.now()
+  const tmp = document.createElement('div')
+  tmp.innerHTML = buildPartsRow(id, window._stockList || [])
+  // Append datalist(s) to body so they work globally
+  tmp.querySelectorAll('datalist').forEach(dl => document.body.appendChild(dl))
+  // Append the prow div to partsRows
+  const prow = tmp.querySelector('div[id^="prow_"]')
+  if (prow) wrap.appendChild(prow)
 }
 
 async function submitPartsRequest(ticketId, ticketTitle) {
@@ -1726,13 +1801,11 @@ async function submitPartsRequest(ticketId, ticketTitle) {
     for (const officer of supplyOfficers) {
       await SB.from('notifications').insert({
         user_id: officer.id,
-        source_system: 'csr',
-        target_ref_id: req.id,
         source_system: 'maintenance',
+        source_ref_id: req.id,
         body: '🔩 Parts request ' + requestNo + ' from Maintenance Ticket ' + ticketId + ' needs your approval.',
         type: 'approval_needed'
       })
-      // SMS to supply officer
       if (officer.phone) {
         sendSMS([officer.phone], '[TDMH] Parts request ' + requestNo + ' from Maintenance Ticket ' + ticketId + ' submitted for approval.')
       }
@@ -1931,6 +2004,84 @@ async function checkMaintSLAEscalation() {
 }
 
 // ═══════════════════════════════════
+// REPORTS (Admin only)
+// ═══════════════════════════════════
+async function renderReports() {
+  const content = document.getElementById('mainContent')
+  content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
+
+  const { data: tickets } = await SB.from('maint_tickets').select('*').order('created_at', { ascending: false })
+  const all = tickets || []
+
+  const total = all.length
+  const byStatus = {}
+  const byCategory = {}
+  const byClaimed = {}
+  const byDept = {}
+
+  all.forEach(t => {
+    byStatus[t.status] = (byStatus[t.status] || 0) + 1
+    byCategory[t.category] = (byCategory[t.category] || 0) + 1
+    if (t.claimed_by) {
+      const tech = S.users.find(u => u.id === t.claimed_by)
+      const name = tech?.full_name || t.claimed_by
+      byClaimed[name] = (byClaimed[name] || 0) + 1
+    }
+    const dept = S.departments.find(d => d.id === t.dept_id)
+    const dname = dept?.dept_name || t.dept_name || '—'
+    byDept[dname] = (byDept[dname] || 0) + 1
+  })
+
+  const avgResolution = (() => {
+    const resolved = all.filter(t => t.resolved_at && t.created_at)
+    if (!resolved.length) return '—'
+    const avg = resolved.reduce((sum, t) => sum + (new Date(t.resolved_at) - new Date(t.created_at)), 0) / resolved.length
+    return Math.round(avg / 3600000) + 'h avg'
+  })()
+
+  let html = '<div class="page-header"><h2>📊 Reports</h2></div>'
+
+  // Summary stats
+  html += '<div class="stat-grid" style="margin-bottom:20px;">'
+  html += statC('📋', 'Total Tickets', total, 'All time', 'var(--txt)')
+  html += statC('🔓', 'Open', byStatus['open'] || 0, 'Awaiting action', 'var(--accent)')
+  html += statC('🔄', 'In Progress', byStatus['in_progress'] || 0, 'Being handled', 'var(--amber)')
+  html += statC('✅', 'Resolved', (byStatus['resolved'] || 0) + (byStatus['closed'] || 0), 'Completed', 'var(--green)')
+  html += statC('⏱️', 'Avg Resolution', avgResolution, 'Time to resolve', 'var(--accent)')
+  html += '</div>'
+
+  // By Status
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">'
+  html += reportTable('By Status', Object.entries(byStatus).sort((a,b) => b[1]-a[1]))
+  html += reportTable('By Category', Object.entries(byCategory).sort((a,b) => b[1]-a[1]))
+  html += reportTable('By Technician', Object.entries(byClaimed).sort((a,b) => b[1]-a[1]))
+  html += reportTable('By Department', Object.entries(byDept).sort((a,b) => b[1]-a[1]).slice(0,10))
+  html += '</div>'
+
+  content.innerHTML = html
+}
+
+function reportTable(title, entries) {
+  let html = '<div style="background:var(--surf1);border:1px solid var(--bdr);border-radius:12px;padding:14px;">'
+  html += '<div style="font-size:13px;font-weight:700;margin-bottom:10px;">' + title + '</div>'
+  if (!entries.length) { html += '<div style="color:var(--txt3);font-size:12px;">No data</div>'; html += '</div>'; return html }
+  const max = entries[0][1]
+  entries.forEach(([label, count]) => {
+    const pct = Math.round((count / max) * 100)
+    html += '<div style="margin-bottom:8px;">'
+    html += '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">'
+    html += '<span style="color:var(--txt);">' + label + '</span>'
+    html += '<span style="color:var(--txt2);font-weight:600;">' + count + '</span>'
+    html += '</div>'
+    html += '<div style="background:var(--surf2);border-radius:4px;height:6px;">'
+    html += '<div style="background:var(--accent);border-radius:4px;height:6px;width:' + pct + '%;"></div>'
+    html += '</div></div>'
+  })
+  html += '</div>'
+  return html
+}
+
+// ═══════════════════════════════════
 // KANBAN BOARD — MAINTENANCE
 // ═══════════════════════════════════
 async function renderKanban() {
@@ -2106,7 +2257,7 @@ function showToast(type, title, body) {
 }
 
 function confirm2(msg, onOk) {
-  document.getElementById('confirmMsg').textContent = msg
+  document.getElementById('confirmMsg').innerHTML = '<p style="color:var(--txt2);font-size:14px;">' + msg + '</p>'
   document.getElementById('confirmOkBtn').textContent = 'Confirm'
   document.getElementById('confirmOkBtn').onclick = () => { closeModal('confirmModal'); onOk() }
   openModal('confirmModal')
