@@ -663,6 +663,7 @@ function subscribeTickets() {
 // ═══════════════════════════════════
 async function renderDashboard() {
   const content = document.getElementById('mainContent')
+  try {
   const role = S.user.maintenance_role
 
   // Requester — dept tickets lang (para makita kung kamusta ang sariling dept)
@@ -716,6 +717,10 @@ async function renderDashboard() {
   }
 
   content.innerHTML = html
+  } catch(err) {
+    console.error('[Dashboard Error]', err)
+    content.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><h3>Dashboard Error</h3><p style="font-size:12px;color:var(--red);">' + (err.message || String(err)) + '</p><button class="btn btn-primary btn-sm" onclick="renderDashboard()" style="margin-top:16px;">Retry</button></div>'
+  }
 }
 
 function statC(icon, label, val, sub, color) {
