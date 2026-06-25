@@ -1805,6 +1805,7 @@ async function submitPartsRequest(ticketId, ticketTitle) {
         body: '🔩 Parts request ' + requestNo + ' from Maintenance Ticket ' + ticketId + ' needs your approval.',
         type: 'approval_needed'
       })
+      // SMS to supply officer
       if (officer.phone) {
         sendSMS([officer.phone], '[TDMH] Parts request ' + requestNo + ' from Maintenance Ticket ' + ticketId + ' submitted for approval.')
       }
