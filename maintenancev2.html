@@ -598,8 +598,7 @@ function renderSidebarNav() {
     { id:'open_tickets', icon:'🔓', label:'Open Tickets', roles:['technician','supervisor','admin'] },
     { id:'kanban',       icon:'📋', label:'Kanban Board', roles:['technician','supervisor','admin'] },
     { id:'all_tickets',  icon:'🗂', label:'All Tickets',  roles:['technician','supervisor','admin'] },
-    { id:'analytics',    icon:'📈', label:'Analytics',    roles:['supervisor','admin'] },
-    { id:'reports',      icon:'📑', label:'Reports',      roles:['supervisor','admin'] },
+    { id:'reports',      icon:'📊', label:'Reports & Analytics', roles:['supervisor','admin'] },
     { id:'team',         icon:'👥', label:'Team',         roles:['supervisor','admin'] },
   ]
   let html = ''
@@ -618,7 +617,7 @@ function renderSidebarNav() {
 // ═══════════════════════════════════
 const PAGE_TITLES = {
   dashboard:'Dashboard', my_tickets:'My Tickets', all_tickets:'All Tickets',
-  open_tickets:'Open Tickets', kanban:'Kanban Board', analytics:'Analytics', reports:'Reports', team:'Team'
+  open_tickets:'Open Tickets', kanban:'Kanban Board', reports:'Reports & Analytics', team:'Team'
 }
 
 function showPage(page) {
@@ -632,7 +631,7 @@ function showPage(page) {
   content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
   const pages = { dashboard:renderDashboard, my_tickets:renderMyTickets,
     all_tickets:renderAllTickets, open_tickets:renderOpenTickets,
-    kanban:renderKanban, analytics:renderAnalytics, reports:renderReports, team:renderTeam }
+    kanban:renderKanban, reports:renderReports, team:renderTeam }
   if (pages[page]) pages[page]()
 }
 
@@ -1437,125 +1436,83 @@ async function openTeamModal(ticketId) {
 // ═══════════════════════════════════
 // ANALYTICS
 // ═══════════════════════════════════
-async function renderAnalytics() {
-  const content = document.getElementById('mainContent')
+// ═══════════════════════════════════
+// LIVE SNAPSHOT (current state)
+// ═══════════════════════════════════
+async function buildSnapshot() {
   const tickets = await loadTickets()
+  const now = Date.now()
+  const ageOf = (t) => Math.floor((now - new Date(t.created_at)) / 3600000)
 
   const total = tickets.length
-  const open = tickets.filter(t => t.status === 'open').length
-  const resolved = tickets.filter(t => ['resolved','closed'].includes(t.status)).length
-  const avgResolution = (() => {
-    const resolved_ts = tickets.filter(t => t.resolved_at && t.created_at)
-    if (!resolved_ts.length) return 0
-    const avg = resolved_ts.reduce((s,t) => s + (new Date(t.resolved_at) - new Date(t.created_at)), 0) / resolved_ts.length
-    return Math.round(avg / 3600000)
-  })()
+  const active = tickets.filter(t => !['resolved','closed'].includes(t.status))
+  const open = active.length
+  const overdue = active.filter(t => ageOf(t) > 48).length
+  const resolvedList = tickets.filter(t => t.resolved_at && t.created_at)
+  const avgRes = resolvedList.length
+    ? Math.round(resolvedList.reduce((s,t) => s + (new Date(t.resolved_at) - new Date(t.created_at)), 0) / resolvedList.length / 3600000)
+    : 0
 
-  // By technician
-  const techMap = {}
-  tickets.filter(t => t.claimed_by).forEach(t => {
-    const u = S.users.find(u => u.id === t.claimed_by)
-    const name = u ? u.full_name : t.claimed_by
-    if (!techMap[name]) techMap[name] = { claimed:0, resolved:0 }
-    techMap[name].claimed++
-    if (['resolved','closed'].includes(t.status)) techMap[name].resolved++
-  })
+  let html = '<div style="font-size:16px;font-weight:700;margin-bottom:4px;">📊 Live Snapshot</div>'
+  html += '<div style="font-size:12px;color:var(--txt3);margin-bottom:16px;">Current state of all tickets — updates in real time.</div>'
 
-  // By category
-  const catMap = {}
-  tickets.forEach(t => { catMap[t.category||'general'] = (catMap[t.category||'general']||0)+1 })
-
-  // By priority
-  const priMap = {}
-  tickets.forEach(t => { priMap[t.priority] = (priMap[t.priority]||0)+1 })
-
-  let html = '<div class="page-header"><h2>📈 Analytics</h2></div>'
-  html += '<div class="stat-grid" style="margin-bottom:24px;">'
+  // Stat cards — Overdue is the one that needs eyes
+  html += '<div class="stat-grid" style="margin-bottom:20px;">'
   html += statC('📋','Total Tickets',total,'All time','var(--txt2)')
-  html += statC('🔓','Currently Open',open,'Needs attention','var(--blue)')
-  html += statC('✅','Resolved/Closed',resolved,'Completed','var(--accent)')
-  html += statC('⏱','Avg Resolution',formatAge(avgResolution),'Avg time to resolve','var(--amber)')
+  html += statC('🔓','Currently Open',open,'Active tickets','var(--blue)')
+  html += statC('⏰','Overdue',overdue, overdue > 0 ? 'Open >48h — act now' : 'None overdue', overdue > 0 ? 'var(--red)' : 'var(--accent)')
+  html += statC('⏱','Avg Resolution',formatAge(avgRes),'Avg time to resolve','var(--amber)')
   html += '</div>'
 
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
 
-  // Technician performance
+  // Technician workload (active tickets only — who's busy now)
+  const techMap = {}
+  active.filter(t => t.claimed_by).forEach(t => {
+    const u = S.users.find(u => u.id === t.claimed_by)
+    const name = u ? u.full_name : '—'
+    techMap[name] = (techMap[name] || 0) + 1
+  })
   html += '<div class="card">'
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">👥 Technician Performance</div>'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">👥 Current Workload</div>'
   html += '<div class="bar-chart">'
-  const maxClaimed = Math.max(...Object.values(techMap).map(v=>v.claimed), 1)
-  Object.entries(techMap).sort((a,b) => b[1].claimed-a[1].claimed).slice(0,8).forEach(([name, data]) => {
-    const pct = Math.round((data.claimed/maxClaimed)*100)
+  const maxT = Math.max(...Object.values(techMap), 1)
+  const techEntries = Object.entries(techMap).sort((a,b) => b[1]-a[1]).slice(0,8)
+  techEntries.forEach(([name, n]) => {
+    const pct = Math.round((n/maxT)*100)
     html += '<div class="bar-row">'
     html += '<div class="bar-label" title="' + name + '">' + name.split(' ')[0] + '</div>'
     html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--accent);"></div></div>'
-    html += '<div class="bar-val">' + data.claimed + '</div>'
+    html += '<div class="bar-val">' + n + '</div>'
     html += '</div>'
   })
-  if (Object.keys(techMap).length === 0) html += '<div style="color:var(--txt3);font-size:13px;">No data yet</div>'
+  if (techEntries.length === 0) html += '<div style="color:var(--txt3);font-size:13px;">No active assigned tickets</div>'
   html += '</div></div>'
 
-  // By category
+  // Open tickets by priority (what needs attention first)
+  const priMap = {}
+  active.forEach(t => { priMap[t.priority] = (priMap[t.priority]||0)+1 })
   html += '<div class="card">'
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">🔧 Tickets by Category</div>'
-  html += '<div class="bar-chart">'
-  const maxCat = Math.max(...Object.values(catMap), 1)
-  Object.entries(catMap).sort((a,b) => b[1]-a[1]).forEach(([cat, count]) => {
-    const pct = Math.round((count/maxCat)*100)
-    html += '<div class="bar-row">'
-    html += '<div class="bar-label">' + cat.replace('_',' ').replace(/\b\w/g,l=>l.toUpperCase()) + '</div>'
-    html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--blue);"></div></div>'
-    html += '<div class="bar-val">' + count + '</div>'
-    html += '</div>'
-  })
-  html += '</div></div>'
-
-  // By priority
-  html += '<div class="card">'
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">⚠️ Tickets by Priority</div>'
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">⚠️ Open by Priority</div>'
   html += '<div class="bar-chart">'
   const priColors = { emergency:'var(--red)', urgent:'var(--amber)', high:'var(--blue)', normal:'var(--accent)', low:'var(--txt2)' }
-  const maxPri = Math.max(...Object.values(priMap), 1)
+  const maxP = Math.max(...Object.values(priMap), 1)
   ;['emergency','urgent','high','normal','low'].forEach(p => {
     if (!priMap[p]) return
-    const pct = Math.round((priMap[p]/maxPri)*100)
+    const pct = Math.round((priMap[p]/maxP)*100)
     html += '<div class="bar-row">'
     html += '<div class="bar-label">' + p.charAt(0).toUpperCase()+p.slice(1) + '</div>'
     html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:' + (priColors[p]||'var(--accent)') + ';"></div></div>'
     html += '<div class="bar-val">' + priMap[p] + '</div>'
     html += '</div>'
   })
+  if (Object.keys(priMap).length === 0) html += '<div style="color:var(--txt3);font-size:13px;">No open tickets 🎉</div>'
   html += '</div></div>'
 
-  // Recent resolved
-  html += '<div class="card">'
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:14px;">✅ Recently Resolved</div>'
-  const recentResolved = tickets.filter(t => t.resolved_at).sort((a,b) => new Date(b.resolved_at)-new Date(a.resolved_at)).slice(0,6)
-  if (recentResolved.length === 0) {
-    html += '<div style="color:var(--txt3);font-size:13px;">No resolved tickets yet</div>'
-  } else {
-    recentResolved.forEach(t => {
-      const hrs = Math.round((new Date(t.resolved_at)-new Date(t.created_at))/3600000)
-      const tech = S.users.find(u => u.id === t.claimed_by)
-      html += '<div style="padding:8px 0;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between;align-items:center;">'
-      html += '<div><div style="font-size:12px;font-weight:600;">' + t.id + ' — ' + t.title + '</div>'
-      html += '<div style="font-size:11px;color:var(--txt2);">' + (tech?tech.full_name:'—') + '</div></div>'
-      html += '<div style="font-size:12px;color:var(--accent);font-weight:600;">' + hrs + 'h</div>'
-      html += '</div>'
-    })
-  }
   html += '</div>'
-
-  html += '</div>'
-  content.innerHTML = html
+  return html
 }
 
-// ═══════════════════════════════════
-// TEAM PAGE
-// ═══════════════════════════════════
-// ═══════════════════════════════════
-// REPORTS
-// ═══════════════════════════════════
 async function renderReports() {
   const content = document.getElementById('mainContent')
   // Default range: last 30 days
@@ -1571,6 +1528,17 @@ async function renderReports() {
   if (!S._repPreset) S._repPreset = '30'
 
   let html = ''
+
+  // ════════════════════════════════════════
+  // LIVE SNAPSHOT (current state — not date-filtered)
+  // ════════════════════════════════════════
+  html += await buildSnapshot()
+
+  // Divider + section heading for the detailed report
+  html += '<div style="margin:28px 0 16px;border-top:1px solid var(--bdr2);"></div>'
+  html += '<div style="font-size:16px;font-weight:700;margin-bottom:4px;">📑 Detailed Report</div>'
+  html += '<div style="font-size:12px;color:var(--txt3);margin-bottom:16px;">Filter by date range and export for meetings or audits.</div>'
+
   html += '<div class="rep-toolbar">'
 
   // Row 1: preset segmented control + export
