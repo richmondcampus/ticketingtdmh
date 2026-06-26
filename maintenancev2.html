@@ -571,6 +571,7 @@ function renderSidebarNav() {
     { id:'kanban',       icon:'📋', label:'Kanban Board', roles:['technician','supervisor','admin'] },
     { id:'all_tickets',  icon:'🗂', label:'All Tickets',  roles:['technician','supervisor','admin'] },
     { id:'analytics',    icon:'📈', label:'Analytics',    roles:['supervisor','admin'] },
+    { id:'reports',      icon:'📑', label:'Reports',      roles:['supervisor','admin'] },
     { id:'team',         icon:'👥', label:'Team',         roles:['supervisor','admin'] },
   ]
   let html = ''
@@ -589,7 +590,7 @@ function renderSidebarNav() {
 // ═══════════════════════════════════
 const PAGE_TITLES = {
   dashboard:'Dashboard', my_tickets:'My Tickets', all_tickets:'All Tickets',
-  open_tickets:'Open Tickets', kanban:'Kanban Board', analytics:'Analytics', team:'Team'
+  open_tickets:'Open Tickets', kanban:'Kanban Board', analytics:'Analytics', reports:'Reports', team:'Team'
 }
 
 function showPage(page) {
@@ -603,7 +604,7 @@ function showPage(page) {
   content.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
   const pages = { dashboard:renderDashboard, my_tickets:renderMyTickets,
     all_tickets:renderAllTickets, open_tickets:renderOpenTickets,
-    kanban:renderKanban, analytics:renderAnalytics, team:renderTeam }
+    kanban:renderKanban, analytics:renderAnalytics, reports:renderReports, team:renderTeam }
   if (pages[page]) pages[page]()
 }
 
@@ -745,10 +746,19 @@ function ticketCard(t) {
     '<span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span>' +
     '<div style="display:flex;align-items:center;gap:8px;">' +
     (claimedBy ? '<span style="font-size:11px;color:var(--txt2);">👤 ' + claimedBy.full_name.split(' ')[0] + '</span>' : '') +
-    '<span style="font-size:11px;color:var(--txt3);">' + age + 'h ago</span>' +
+    '<span style="font-size:11px;color:var(--txt3);">' + formatAge(age) + ' ago</span>' +
     '</div></div>' +
     quickBtn +
     '</div>'
+}
+
+function formatAge(hours) {
+  const h = Math.floor(Number(hours) || 0)
+  if (h < 1) return 'just now'
+  if (h < 24) return h + 'h'
+  const d = Math.floor(h / 24)
+  const rem = h % 24
+  return rem > 0 ? d + 'd ' + rem + 'h' : d + 'd'
 }
 
 function formatStatus(s) {
@@ -855,7 +865,7 @@ function buildTicketRows(tickets) {
     rows += '<td><span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span></td>'
     rows += '<td><span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span></td>'
     rows += '<td style="font-size:12px;color:var(--txt2);">' + (claimed ? claimed.full_name.split(' ')[0] : '—') + '</td>'
-    rows += '<td style="font-size:12px;color:' + (age > 48 ? 'var(--red)' : 'var(--txt2)') + ';">' + age + 'h</td>'
+    rows += '<td style="font-size:12px;color:' + (age > 48 ? 'var(--red)' : 'var(--txt2)') + ';">' + formatAge(age) + '</td>'
     rows += '<td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewTicket(\'' + t.id + '\')">View</button></td>'
     rows += '</tr>'
 
@@ -876,7 +886,7 @@ function buildTicketRows(tickets) {
     if (claimed) cards += '<div>👤 In-charge: <strong>' + claimed.full_name + '</strong></div>'
     cards += '<div style="display:flex;gap:12px;">'
     cards += '<span>🔧 ' + (t.category||'—') + '</span>'
-    cards += '<span style="color:' + (age > 48 ? 'var(--red)' : 'var(--txt3)') + ';">' + (age > 48 ? '⏰ ' : '') + age + 'h ago' + (age > 48 ? ' — OVERDUE' : '') + '</span>'
+    cards += '<span style="color:' + (age > 48 ? 'var(--red)' : 'var(--txt3)') + ';">' + (age > 48 ? '⏰ ' : '') + formatAge(age) + ' ago' + (age > 48 ? ' — OVERDUE' : '') + '</span>'
     cards += '</div>'
     cards += '</div>'
     // Tap hint
@@ -1430,7 +1440,7 @@ async function renderAnalytics() {
   html += statC('📋','Total Tickets',total,'All time','var(--txt2)')
   html += statC('🔓','Currently Open',open,'Needs attention','var(--blue)')
   html += statC('✅','Resolved/Closed',resolved,'Completed','var(--accent)')
-  html += statC('⏱','Avg Resolution',avgResolution + 'h','Hours to resolve','var(--amber)')
+  html += statC('⏱','Avg Resolution',formatAge(avgResolution),'Avg time to resolve','var(--amber)')
   html += '</div>'
 
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
@@ -1509,6 +1519,222 @@ async function renderAnalytics() {
 // ═══════════════════════════════════
 // TEAM PAGE
 // ═══════════════════════════════════
+// ═══════════════════════════════════
+// REPORTS
+// ═══════════════════════════════════
+async function renderReports() {
+  const content = document.getElementById('mainContent')
+  // Default range: last 30 days
+  const today = new Date()
+  const prior = new Date(); prior.setDate(prior.getDate() - 30)
+  const fromDefault = prior.toISOString().slice(0,10)
+  const toDefault = today.toISOString().slice(0,10)
+  if (!S._repFrom) S._repFrom = fromDefault
+  if (!S._repTo) S._repTo = toDefault
+
+  let html = ''
+  html += '<div class="card" style="margin-bottom:18px;">'
+  html += '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;">'
+  html += '<div><label style="display:block;font-size:11px;color:var(--txt2);margin-bottom:4px;">From</label>'
+  html += '<input type="date" id="repFrom" value="' + S._repFrom + '" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;"></div>'
+  html += '<div><label style="display:block;font-size:11px;color:var(--txt2);margin-bottom:4px;">To</label>'
+  html += '<input type="date" id="repTo" value="' + S._repTo + '" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;"></div>'
+  html += '<button onclick="applyReportRange()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;">Apply</button>'
+  // Quick presets
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+  html += '<button onclick="reportPreset(7)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:transparent;color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">7d</button>'
+  html += '<button onclick="reportPreset(30)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:transparent;color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">30d</button>'
+  html += '<button onclick="reportPreset(90)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:transparent;color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">90d</button>'
+  html += '<button onclick="reportPreset(365)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:transparent;color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">1y</button>'
+  html += '</div>'
+  html += '<button onclick="exportReportCSV()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-left:auto;">⬇ Export CSV</button>'
+  html += '</div></div>'
+
+  html += '<div id="reportBody"><div class="empty-state"><div class="empty-icon">⏳</div></div></div>'
+  content.innerHTML = html
+
+  await buildReport()
+}
+
+function applyReportRange() {
+  const f = document.getElementById('repFrom')?.value
+  const t = document.getElementById('repTo')?.value
+  if (f) S._repFrom = f
+  if (t) S._repTo = t
+  if (S._repFrom > S._repTo) { showToast('error','Invalid range','From date must be before To date.'); return }
+  buildReport()
+}
+
+function reportPreset(days) {
+  const today = new Date()
+  const prior = new Date(); prior.setDate(prior.getDate() - days)
+  S._repFrom = prior.toISOString().slice(0,10)
+  S._repTo = today.toISOString().slice(0,10)
+  const fEl = document.getElementById('repFrom'); if (fEl) fEl.value = S._repFrom
+  const tEl = document.getElementById('repTo');   if (tEl) tEl.value = S._repTo
+  buildReport()
+}
+
+function resolutionHours(t) {
+  if (!t.resolved_at || !t.created_at) return null
+  return (new Date(t.resolved_at) - new Date(t.created_at)) / 3600000
+}
+
+async function buildReport() {
+  const body = document.getElementById('reportBody')
+  if (body) body.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>'
+  const all = await loadTickets()
+  // Filter by created_at within [from, to] inclusive
+  const from = new Date(S._repFrom + 'T00:00:00')
+  const to = new Date(S._repTo + 'T23:59:59')
+  const tickets = all.filter(t => {
+    const c = new Date(t.created_at)
+    return c >= from && c <= to
+  })
+  S._reportTickets = tickets
+
+  // ---- Summary ----
+  const total = tickets.length
+  const byStatus = {}
+  tickets.forEach(t => { byStatus[t.status] = (byStatus[t.status]||0) + 1 })
+  const resolvedList = tickets.filter(t => resolutionHours(t) !== null)
+  const avgRes = resolvedList.length
+    ? Math.round(resolvedList.reduce((s,t) => s + resolutionHours(t), 0) / resolvedList.length)
+    : 0
+
+  let html = ''
+  html += '<div style="font-size:12px;color:var(--txt3);margin:14px 0 10px;">Showing tickets created ' + S._repFrom + ' → ' + S._repTo + ' (' + total + ' total)</div>'
+
+  // Summary cards
+  html += '<div class="stat-grid" style="margin-bottom:20px;">'
+  html += statC('📋','Total Tickets',total,S._repFrom + ' → ' + S._repTo,'var(--txt2)')
+  html += statC('🔓','Open',(byStatus['open']||0) + (byStatus['reopened']||0),'Open + Reopened','var(--blue)')
+  html += statC('✅','Resolved/Closed',(byStatus['resolved']||0) + (byStatus['closed']||0),'Completed','var(--accent)')
+  html += statC('⏱','Avg Resolution',formatAge(avgRes),'Avg time to resolve','var(--amber)')
+  html += '</div>'
+
+  // ---- Status breakdown table ----
+  html += reportTable('Status Breakdown', ['Status','Count','% of Total'],
+    Object.keys(byStatus).sort((a,b)=>byStatus[b]-byStatus[a]).map(s => [
+      formatStatus(s), byStatus[s], total ? ((byStatus[s]/total*100).toFixed(1) + '%') : '0%'
+    ]))
+
+  // ---- By Department ----
+  const deptMap = {}
+  tickets.forEach(t => {
+    const name = t.dept_name || (S.departments.find(d => d.id === t.dept_id)?.name) || '—'
+    if (!deptMap[name]) deptMap[name] = { count:0, resSum:0, resN:0 }
+    deptMap[name].count++
+    const rh = resolutionHours(t); if (rh !== null) { deptMap[name].resSum += rh; deptMap[name].resN++ }
+  })
+  html += reportTable('By Department', ['Department','Tickets','Avg Resolution'],
+    Object.keys(deptMap).sort((a,b)=>deptMap[b].count-deptMap[a].count).map(n => [
+      n, deptMap[n].count, deptMap[n].resN ? formatAge(Math.round(deptMap[n].resSum/deptMap[n].resN)) : '—'
+    ]))
+
+  // ---- By Category ----
+  const catMap = {}
+  tickets.forEach(t => {
+    const name = t.category || '—'
+    if (!catMap[name]) catMap[name] = { count:0, resSum:0, resN:0 }
+    catMap[name].count++
+    const rh = resolutionHours(t); if (rh !== null) { catMap[name].resSum += rh; catMap[name].resN++ }
+  })
+  html += reportTable('By Category / Type', ['Category','Tickets','Avg Resolution'],
+    Object.keys(catMap).sort((a,b)=>catMap[b].count-catMap[a].count).map(n => [
+      n, catMap[n].count, catMap[n].resN ? formatAge(Math.round(catMap[n].resSum/catMap[n].resN)) : '—'
+    ]))
+
+  // ---- By Technician ----
+  const techMap = {}
+  tickets.filter(t => t.claimed_by).forEach(t => {
+    const u = S.users.find(u => u.id === t.claimed_by)
+    const name = u ? u.full_name : '—'
+    if (!techMap[name]) techMap[name] = { count:0, resolved:0, resSum:0, resN:0 }
+    techMap[name].count++
+    if (['resolved','closed'].includes(t.status)) techMap[name].resolved++
+    const rh = resolutionHours(t); if (rh !== null) { techMap[name].resSum += rh; techMap[name].resN++ }
+  })
+  html += reportTable('By Technician', ['Technician','Claimed','Resolved','Avg Resolution'],
+    Object.keys(techMap).sort((a,b)=>techMap[b].count-techMap[a].count).map(n => [
+      n, techMap[n].count, techMap[n].resolved, techMap[n].resN ? formatAge(Math.round(techMap[n].resSum/techMap[n].resN)) : '—'
+    ]))
+
+  // ---- Detailed ticket list ----
+  html += '<div style="font-size:14px;font-weight:600;margin:22px 0 10px;">Detailed Tickets (' + total + ')</div>'
+  html += '<div class="table-wrap"><table><thead><tr>'
+  html += '<th>Ticket No.</th><th>Title</th><th>Dept</th><th>Category</th><th>Priority</th><th>Status</th><th>Technician</th><th>Created</th><th>Resolution</th>'
+  html += '</tr></thead><tbody>'
+  tickets.forEach(t => {
+    const u = S.users.find(u => u.id === t.claimed_by)
+    const dept = t.dept_name || (S.departments.find(d => d.id === t.dept_id)?.name) || '—'
+    const rh = resolutionHours(t)
+    html += '<tr>'
+    html += '<td>' + t.id + '</td>'
+    html += '<td>' + (t.title || '—') + '</td>'
+    html += '<td>' + dept + '</td>'
+    html += '<td>' + (t.category || '—') + '</td>'
+    html += '<td>' + (t.priority || '—') + '</td>'
+    html += '<td><span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span></td>'
+    html += '<td>' + (u ? u.full_name.split(' ')[0] : '—') + '</td>'
+    html += '<td>' + new Date(t.created_at).toLocaleDateString() + '</td>'
+    html += '<td>' + (rh !== null ? formatAge(Math.round(rh)) : '—') + '</td>'
+    html += '</tr>'
+  })
+  if (total === 0) html += '<tr><td colspan="9" style="text-align:center;color:var(--txt3);padding:20px;">No tickets in this date range.</td></tr>'
+  html += '</tbody></table></div>'
+
+  if (body) body.innerHTML = html
+}
+
+function reportTable(title, headers, rows) {
+  let h = '<div style="font-size:14px;font-weight:600;margin:18px 0 10px;">' + title + '</div>'
+  h += '<div class="table-wrap"><table><thead><tr>'
+  headers.forEach(hd => h += '<th>' + hd + '</th>')
+  h += '</tr></thead><tbody>'
+  if (!rows.length) h += '<tr><td colspan="' + headers.length + '" style="text-align:center;color:var(--txt3);padding:16px;">No data.</td></tr>'
+  rows.forEach(r => {
+    h += '<tr>'
+    r.forEach(cell => h += '<td>' + cell + '</td>')
+    h += '</tr>'
+  })
+  h += '</tbody></table></div>'
+  return h
+}
+
+function exportReportCSV() {
+  const tickets = S._reportTickets || []
+  if (!tickets.length) { showToast('error','Nothing to export','No tickets in the selected range.'); return }
+  const headers = ['Ticket No.','Title','Department','Location','Category','Priority','Status','Technician','Created','Resolved','Resolution (hours)']
+  const esc = (v) => {
+    const s = (v == null ? '' : String(v))
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s
+  }
+  let csv = headers.join(',') + '\n'
+  tickets.forEach(t => {
+    const u = S.users.find(u => u.id === t.claimed_by)
+    const dept = t.dept_name || (S.departments.find(d => d.id === t.dept_id)?.name) || ''
+    const rh = resolutionHours(t)
+    const row = [
+      t.id, t.title || '', dept, t.location || '', t.category || '', t.priority || '',
+      formatStatus(t.status), u ? u.full_name : '',
+      t.created_at ? new Date(t.created_at).toLocaleString() : '',
+      t.resolved_at ? new Date(t.resolved_at).toLocaleString() : '',
+      rh !== null ? Math.round(rh) : ''
+    ]
+    csv += row.map(esc).join(',') + '\n'
+  })
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'maintenance_report_' + S._repFrom + '_to_' + S._repTo + '.csv'
+  document.body.appendChild(a); a.click(); document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  showToast('success','Exported','Report downloaded as CSV.')
+}
+
+
 async function renderTeam() {
   const content = document.getElementById('mainContent')
   const tickets = await loadTickets()
@@ -1971,7 +2197,7 @@ async function renderKanban() {
       html += '<div style="font-size:11px;color:var(--txt2);margin-bottom:6px;">🔧 ' + (t.category || '—') + '</div>'
       if (t.asset_no) html += '<div style="font-size:11px;color:var(--txt3);margin-bottom:6px;">🏷️ ' + t.asset_no + '</div>'
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">'
-      html += '<span style="font-size:10px;color:var(--txt3);">' + age + 'h ago</span>'
+      html += '<span style="font-size:10px;color:var(--txt3);">' + formatAge(age) + ' ago</span>'
       html += '<div style="display:flex;gap:4px;">'
       if (t.status === 'open' && isTech)
         html += '<button class="btn btn-primary btn-sm" style="padding:3px 9px;font-size:11px;" onclick="event.stopPropagation();quickClaimStartMaint(\'' + t.id + '\')">⚡ Claim & Start</button>'
