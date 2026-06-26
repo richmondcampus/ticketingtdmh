@@ -579,6 +579,7 @@ async function bootApp(session) {
   renderSidebarNav()
   await Promise.all([loadUsers(), loadDepartments()])
   subscribeTickets()
+  subscribeNotifications()
   showPage('dashboard')
 }
 
@@ -667,11 +668,66 @@ async function loadTicketTeam(ticketId) {
 function subscribeTickets() {
   const ch = SB.channel('maint-tickets-live')
     .on('postgres_changes', { event:'*', schema:'public', table:'maint_tickets' }, (payload) => {
-      if (payload.eventType === 'INSERT') S.tickets.unshift(payload.new)
-      if (payload.eventType === 'UPDATE') S.tickets = S.tickets.map(t => t.id === payload.new.id ? { ...t, ...payload.new } : t)
-      if (['dashboard','all_tickets','open_tickets','my_tickets'].includes(S.page)) showPage(S.page)
+      const evt = payload.eventType
+      if (evt === 'INSERT') {
+        if (!S.tickets.find(t => t.id === payload.new.id)) S.tickets.unshift(payload.new)
+      } else if (evt === 'UPDATE') {
+        S.tickets = S.tickets.map(t => t.id === payload.new.id ? { ...t, ...payload.new } : t)
+      } else if (evt === 'DELETE') {
+        S.tickets = S.tickets.filter(t => t.id !== payload.old.id)
+      }
+      applyTicketRealtime(evt, payload.new || payload.old)
     }).subscribe()
   S.activeChannels.push(ch)
+}
+
+// Surgical DOM update — refresh only the affected row/card, not the whole page
+function applyTicketRealtime(evt, t) {
+  if (!t) return
+  const onListPage = ['dashboard','all_tickets','open_tickets','my_tickets'].includes(S.page)
+  const onKanban = S.page === 'kanban'
+
+  // Kanban: rebuild quietly (click-based board, no drag to interrupt)
+  if (onKanban) {
+    if (typeof renderKanban === 'function') renderKanban()
+    return
+  }
+
+  if (!onListPage) return
+
+  // For INSERT or DELETE we can't cheaply splice the list in place — do a quiet re-render
+  if (evt === 'INSERT' || evt === 'DELETE') {
+    showPage(S.page)
+    return
+  }
+
+  // UPDATE: replace just this ticket's row + card if present
+  const full = S.tickets.find(x => x.id === t.id)
+  if (!full) return
+
+  const rowEl = document.getElementById('trow_' + t.id)
+  if (rowEl) {
+    const tmp = document.createElement('tbody')
+    tmp.innerHTML = buildOneRow(full)
+    const newRow = tmp.firstElementChild
+    if (newRow) { rowEl.replaceWith(newRow); flashEl(newRow) }
+  }
+  const cardEl = document.getElementById('tcard_' + t.id)
+  if (cardEl) {
+    const tmp = document.createElement('div')
+    tmp.innerHTML = buildOneCard(full)
+    const newCard = tmp.firstElementChild
+    if (newCard) { cardEl.replaceWith(newCard); flashEl(newCard) }
+  }
+}
+
+// Subtle highlight flash on a changed element
+function flashEl(el) {
+  try {
+    el.style.transition = 'background-color .15s ease'
+    el.style.backgroundColor = 'var(--accent-a)'
+    setTimeout(() => { el.style.backgroundColor = '' }, 900)
+  } catch(e) {}
 }
 
 // ═══════════════════════════════════
@@ -881,50 +937,65 @@ function renderTicketsList(tickets, title) {
   content._tickets = tickets
 }
 
+function buildOneRow(t) {
+  const dept = S.departments.find(d => d.id === t.dept_id)
+  const claimed = S.users.find(u => u.id === t.claimed_by)
+  const age = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
+  // Top row: ticket ID + badges
+  // Title — big and bold
+  // Info row
+  // Tap hint
+  let r = ''
+  r += '<tr id="trow_' + t.id + '" onclick="viewTicket(\'' + t.id + '\')" style="cursor:pointer;">'
+  r += '<td class="td-mono">' + t.id + '</td>'
+  r += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>' + t.title + '</strong></td>'
+  r += '<td style="font-size:12px;color:var(--txt2);">' + (dept ? dept.dept_name : t.dept_name||'—') + '</td>'
+  r += '<td style="font-size:12px;color:var(--txt2);">' + (t.category||'—') + '</td>'
+  r += '<td><span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span></td>'
+  r += '<td><span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span></td>'
+  r += '<td style="font-size:12px;color:var(--txt2);">' + (claimed ? claimed.full_name.split(' ')[0] : '—') + '</td>'
+  r += '<td style="font-size:12px;color:' + (isOverdue(t, age) ? 'var(--red)' : 'var(--txt2)') + ';">' + formatAge(age) + '</td>'
+  r += '<td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewTicket(\'' + t.id + '\')">View</button></td>'
+  r += '</tr>'
+  return r
+}
+
+function buildOneCard(t) {
+  const dept = S.departments.find(d => d.id === t.dept_id)
+  const claimed = S.users.find(u => u.id === t.claimed_by)
+  const age = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
+  // Top row: ticket ID + badges
+  // Title — big and bold
+  // Info row
+  // Tap hint
+  let cd = ''
+  const priorityEmoji = { emergency: '🚨', urgent: '⚠️', high: '🔴', normal: '🟡', low: '🟢' }
+  cd += '<div id="tcard_' + t.id + '" class="ticket-card priority-' + t.priority + '" onclick="viewTicket(\'' + t.id + '\')" style="padding:18px;border-radius:14px;cursor:pointer;">'
+  cd += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+  cd += '<span style="font-family:monospace;font-size:12px;color:var(--accent);">' + t.id + '</span>'
+  cd += '<div style="display:flex;gap:6px;align-items:center;">'
+  cd += (priorityEmoji[t.priority]||'') + ' <span class="badge badge-' + t.status + '" style="font-size:12px;padding:4px 10px;">' + formatStatus(t.status) + '</span>'
+  cd += '</div></div>'
+  cd += '<div style="font-size:16px;font-weight:700;margin-bottom:10px;line-height:1.3;">' + t.title + '</div>'
+  cd += '<div style="font-size:14px;color:var(--txt2);display:flex;flex-direction:column;gap:5px;">'
+  cd += '<div>🏢 <strong>' + (dept ? dept.dept_name : t.dept_name||'—') + '</strong></div>'
+  if (claimed) cd += '<div>👤 In-charge: <strong>' + claimed.full_name + '</strong></div>'
+  cd += '<div style="display:flex;gap:12px;">'
+  cd += '<span>🔧 ' + (t.category||'—') + '</span>'
+  cd += '<span style="color:' + (isOverdue(t, age) ? 'var(--red)' : 'var(--txt3)') + ';">' + (isOverdue(t, age) ? '⏰ ' : '') + formatAge(age) + ' ago' + (isOverdue(t, age) ? ' — OVERDUE' : '') + '</span>'
+  cd += '</div>'
+  cd += '</div>'
+  cd += '<div style="margin-top:12px;text-align:right;font-size:12px;color:var(--txt3);">Tap to view details →</div>'
+  cd += '</div>'
+  return cd
+}
+
 function buildTicketRows(tickets) {
   let rows = ''
   let cards = ''
   tickets.forEach(t => {
-    const dept = S.departments.find(d => d.id === t.dept_id)
-    const claimed = S.users.find(u => u.id === t.claimed_by)
-    const age = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
-
-    // Table row
-    rows += '<tr onclick="viewTicket(\'' + t.id + '\')" style="cursor:pointer;">'
-    rows += '<td class="td-mono">' + t.id + '</td>'
-    rows += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>' + t.title + '</strong></td>'
-    rows += '<td style="font-size:12px;color:var(--txt2);">' + (dept ? dept.dept_name : t.dept_name||'—') + '</td>'
-    rows += '<td style="font-size:12px;color:var(--txt2);">' + (t.category||'—') + '</td>'
-    rows += '<td><span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span></td>'
-    rows += '<td><span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span></td>'
-    rows += '<td style="font-size:12px;color:var(--txt2);">' + (claimed ? claimed.full_name.split(' ')[0] : '—') + '</td>'
-    rows += '<td style="font-size:12px;color:' + (isOverdue(t, age) ? 'var(--red)' : 'var(--txt2)') + ';">' + formatAge(age) + '</td>'
-    rows += '<td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewTicket(\'' + t.id + '\')">View</button></td>'
-    rows += '</tr>'
-
-    // Mobile card — elderly-friendly: bigger text, clearer info, large tap area
-    const priorityEmoji = { emergency: '🚨', urgent: '⚠️', high: '🔴', normal: '🟡', low: '🟢' }
-    cards += '<div class="ticket-card priority-' + t.priority + '" onclick="viewTicket(\'' + t.id + '\')" style="padding:18px;border-radius:14px;cursor:pointer;">'
-    // Top row: ticket ID + badges
-    cards += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
-    cards += '<span style="font-family:monospace;font-size:12px;color:var(--accent);">' + t.id + '</span>'
-    cards += '<div style="display:flex;gap:6px;align-items:center;">'
-    cards += (priorityEmoji[t.priority]||'') + ' <span class="badge badge-' + t.status + '" style="font-size:12px;padding:4px 10px;">' + formatStatus(t.status) + '</span>'
-    cards += '</div></div>'
-    // Title — big and bold
-    cards += '<div style="font-size:16px;font-weight:700;margin-bottom:10px;line-height:1.3;">' + t.title + '</div>'
-    // Info row
-    cards += '<div style="font-size:14px;color:var(--txt2);display:flex;flex-direction:column;gap:5px;">'
-    cards += '<div>🏢 <strong>' + (dept ? dept.dept_name : t.dept_name||'—') + '</strong></div>'
-    if (claimed) cards += '<div>👤 In-charge: <strong>' + claimed.full_name + '</strong></div>'
-    cards += '<div style="display:flex;gap:12px;">'
-    cards += '<span>🔧 ' + (t.category||'—') + '</span>'
-    cards += '<span style="color:' + (isOverdue(t, age) ? 'var(--red)' : 'var(--txt3)') + ';">' + (isOverdue(t, age) ? '⏰ ' : '') + formatAge(age) + ' ago' + (isOverdue(t, age) ? ' — OVERDUE' : '') + '</span>'
-    cards += '</div>'
-    cards += '</div>'
-    // Tap hint
-    cards += '<div style="margin-top:12px;text-align:right;font-size:12px;color:var(--txt3);">Tap to view details →</div>'
-    cards += '</div>'
+    rows += buildOneRow(t)
+    cards += buildOneCard(t)
   })
   if (!tickets.length) {
     const empty = '<tr><td colspan="9" style="text-align:center;color:var(--txt2);padding:30px;">No tickets found</td></tr>'
@@ -1142,13 +1213,21 @@ async function addNote(ticketId) {
 async function claimTicket(ticketId) {
   confirm2('Claim this ticket and start work?', async () => {
     const { data: t } = await SB.from('maint_tickets').select('*').eq('id', ticketId).single()
-    // Auto-set to in_progress immediately — no need for separate "Start Work" step
-    await SB.from('maint_tickets').update({
+    // Atomic claim — only succeeds if nobody has claimed it yet
+    const { data: claimed, error } = await SB.from('maint_tickets').update({
       status: 'in_progress',
       claimed_by: S.user.id,
       claimed_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    }).eq('id', ticketId)
+    }).eq('id', ticketId).is('claimed_by', null).select()
+    if (error) { showToast('error','Error', error.message); return }
+    if (!claimed || claimed.length === 0) {
+      const who = t && t.claimed_by ? (S.users.find(u => u.id === t.claimed_by)?.full_name || 'another technician') : 'another technician'
+      closeModal('ticketDetailModal')
+      showToast('error','Already claimed', ticketId + ' was just claimed by ' + who + '.')
+      if (['all_tickets','open_tickets','my_tickets','dashboard','kanban'].includes(S.page)) showPage(S.page)
+      return
+    }
     await SB.from('maint_ticket_notes').insert({
       ticket_id: ticketId, user_id: S.user.id,
       note: S.user.full_name + ' claimed this ticket and started work.',
@@ -2279,7 +2358,20 @@ async function renderKanban() {
 
 // ─── Quick Actions — Maintenance ───
 async function quickClaimStartMaint(ticketId) {
-  await SB.from('maint_tickets').update({ claimed_by:S.user.id, status:'in_progress', updated_at:new Date().toISOString() }).eq('id',ticketId)
+  // Atomic claim — only succeeds if nobody has claimed it yet
+  const { data: claimed, error } = await SB.from('maint_tickets')
+    .update({ claimed_by:S.user.id, status:'in_progress', claimed_at:new Date().toISOString(), updated_at:new Date().toISOString() })
+    .eq('id',ticketId).is('claimed_by', null)
+    .select()
+  if (error) { showToast('error','Error', error.message); return }
+  if (!claimed || claimed.length === 0) {
+    // Someone beat us to it — find out who and inform the user
+    const { data: cur } = await SB.from('maint_tickets').select('claimed_by').eq('id',ticketId).single()
+    const who = cur && cur.claimed_by ? (S.users.find(u => u.id === cur.claimed_by)?.full_name || 'another technician') : 'another technician'
+    showToast('error','Already claimed', ticketId + ' was just claimed by ' + who + '.')
+    showPage(S.page)
+    return
+  }
   await SB.from('maint_ticket_notes').insert({ ticket_id:ticketId, user_id:S.user.id, note:'⚡ Claimed and started by '+S.user.full_name, note_type:'system' })
   const{data:t}=await SB.from('maint_tickets').select('submitted_by,title').eq('id',ticketId).single()
   if(t?.submitted_by) await SB.from('notifications').insert({ user_id:t.submitted_by, title:'⚡ Ticket In Progress: '+ticketId, body:t.title+' is now being worked on.', type:'info', source_system:'maintenance' })
@@ -2288,41 +2380,7 @@ async function quickClaimStartMaint(ticketId) {
   else showPage(S.page)
 }
 
-async function quickClaimMaint(ticketId) {
-  await SB.from('maint_tickets').update({
-    claimed_by: S.user.id, status: 'claimed',
-    updated_at: new Date().toISOString()
-  }).eq('id', ticketId)
-  await SB.from('maint_ticket_notes').insert({
-    ticket_id: ticketId, user_id: S.user.id,
-    note: '👤 Ticket claimed by ' + S.user.full_name, note_type: 'system'
-  })
-  // Notify requester
-  const { data: t } = await SB.from('maint_tickets').select('submitted_by,title').eq('id', ticketId).single()
-  if (t?.submitted_by) {
-    await SB.from('notifications').insert({
-      user_id: t.submitted_by, title: '👤 Ticket Claimed: ' + ticketId,
-      body: S.user.full_name + ' will handle: ' + t.title,
-      type: 'info', source_system: 'maintenance'
-    })
-  }
-  showToast('success', 'Claimed ✅', ticketId + ' assigned to you.')
-  if (S.page === 'kanban') renderKanban()
-  else showPage(S.page)
-}
 
-async function quickStartMaint(ticketId) {
-  await SB.from('maint_tickets').update({
-    status: 'in_progress', updated_at: new Date().toISOString()
-  }).eq('id', ticketId)
-  await SB.from('maint_ticket_notes').insert({
-    ticket_id: ticketId, user_id: S.user.id,
-    note: '▶ Work started by ' + S.user.full_name, note_type: 'system'
-  })
-  showToast('success', 'Started ▶', ticketId + ' is now in progress.')
-  if (S.page === 'kanban') renderKanban()
-  else showPage(S.page)
-}
 
 async function quickResolveMaint(ticketId) {
   await SB.from('maint_tickets').update({
@@ -2567,24 +2625,6 @@ async function openPortal() {
 
 // ─── Concurrent-safe insert with retry ───
 // Handles rare race conditions on unique constraints
-async function insertWithRetry(table, payload, maxRetries) {
-  maxRetries = maxRetries || 3
-  let lastError = null
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const { data, error } = await SB.from(table).insert(payload).select().single()
-    if (!error) return { data, error: null }
-    // If unique violation on the ID field, regenerate and retry
-    if (error.code === '23505' && error.message.includes('_pkey')) {
-      console.warn('[Retry ' + (attempt+1) + '] Unique conflict on ' + table + ', regenerating ID...')
-      lastError = error
-      // Small random delay before retry
-      await new Promise(r => setTimeout(r, Math.random() * 100 + 50))
-    } else {
-      return { data: null, error }
-    }
-  }
-  return { data: null, error: lastError }
-}
 
 // ═══════════════════════════════════
 // SESSION EXPIRY HANDLING
@@ -2592,25 +2632,6 @@ async function insertWithRetry(table, payload, maxRetries) {
 let _sessionRefreshTimer = null
 
 // Wrap every Supabase call — if 401, try refresh first
-async function sbGuard(fn) {
-  try {
-    const result = await fn()
-    // Check if result indicates auth error
-    if (result?.error?.status === 401 || result?.error?.message?.includes('JWT')) {
-      const refreshed = await tryRefreshSession()
-      if (refreshed) return await fn()
-      else handleSessionExpired()
-    }
-    return result
-  } catch(e) {
-    if (e.status === 401 || e.message?.includes('JWT') || e.message?.includes('token')) {
-      const refreshed = await tryRefreshSession()
-      if (refreshed) return await fn()
-      else handleSessionExpired()
-    }
-    throw e
-  }
-}
 
 async function tryRefreshSession() {
   try {
