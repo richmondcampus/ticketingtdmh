@@ -303,6 +303,34 @@ tr:hover td{background:var(--surf2);}
 .hamburger{display:none;width:34px;height:34px;border-radius:9px;background:var(--surf2);border:1px solid var(--bdr2);align-items:center;justify-content:center;cursor:pointer;font-size:16px;}
 /* Mobile cards hidden by default, shown only on mobile */
 .mobile-cards{display:none;}
+
+/* ── Reports toolbar ─────────────────────── */
+.rep-toolbar { display:flex; flex-direction:column; gap:12px; margin-bottom:20px; }
+.rep-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.rep-seg { display:inline-flex; background:var(--surf2); border:1px solid var(--bdr2); border-radius:10px; padding:3px; gap:2px; }
+.rep-seg-btn { padding:7px 16px; border:none; background:transparent; color:var(--txt2);
+  font-family:inherit; font-size:13px; font-weight:500; border-radius:7px; cursor:pointer;
+  transition:background .15s, color .15s; white-space:nowrap; }
+.rep-seg-btn:hover { color:var(--txt); }
+.rep-seg-on { background:var(--accent); color:#fff; font-weight:600; }
+.rep-seg-on:hover { color:#fff; }
+.rep-export { margin-left:auto; padding:8px 16px; border-radius:9px; border:1px solid var(--bdr2);
+  background:transparent; color:var(--txt2); font-family:inherit; font-size:13px; font-weight:600;
+  cursor:pointer; transition:border-color .15s, color .15s; white-space:nowrap; }
+.rep-export:hover { border-color:var(--accent); color:var(--accent); }
+.rep-dates { background:var(--surf2); border:1px solid var(--bdr2); border-radius:10px; padding:12px 14px; }
+.rep-field { display:flex; flex-direction:column; gap:5px; }
+.rep-field label { font-size:11px; color:var(--txt3); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.rep-field input[type=date] { padding:8px 11px; background:var(--bg); border:1px solid var(--bdr2);
+  border-radius:8px; color:var(--txt); font-family:inherit; font-size:13px; }
+.rep-apply { align-self:flex-end; padding:9px 18px; border-radius:8px; border:none; background:var(--accent);
+  color:#fff; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+.rep-apply:hover { filter:brightness(1.08); }
+@media (max-width:600px) {
+  .rep-seg { width:100%; overflow-x:auto; }
+  .rep-export { margin-left:0; width:100%; }
+  .rep-dates { width:100%; }
+}
 </style>
 </head>
 <body>
@@ -1184,7 +1212,7 @@ async function reopenTicket(ticketId) {
     showToast('warning','Reopened ↩', ticketId + ' has been reopened.')
     // Blast SMS to maintenance team
     const maintStaff = S.users.filter(u => ['technician','supervisor','admin'].includes(u.maintenance_role) && u.phone)
-    sendSMS(maintStaff.map(u=>u.phone), '[TDMH Maintenance] ⚠️ REOPENED: ' + ticketId + ' — "' + (t?t.title:'') + '" needs attention again.')
+    sendSMS(maintStaff.map(u=>u.phone), '[TDMH Maintenance] ⚠️ REOPENED: ' + ticketId + ' — "' + (t?t.title:'') + '" needs attention again.', 'ticket_reopened', ticketId)
     if (['all_tickets','open_tickets','my_tickets','dashboard'].includes(S.page)) showPage(S.page)
   })
 }
@@ -1344,7 +1372,7 @@ async function submitTicket() {
     // SMS blast to all maintenance technicians
     const maintStaff = S.users.filter(u => ['technician','supervisor','admin'].includes(u.maintenance_role) && u.phone)
     const smsMsg = '[TDMH] NEW TICKET ' + ticketId + ' — ' + (priority === 'emergency' ? '🚨 EMERGENCY ' : priority === 'urgent' ? '⚠️ URGENT ' : '') + '"' + title + '" at ' + location + ' (' + (deptName||'—') + ')'
-    if (maintStaff.length > 0) sendSMS(maintStaff.map(u=>u.phone), smsMsg)
+    if (maintStaff.length > 0) sendSMS(maintStaff.map(u=>u.phone), smsMsg, 'ticket_new', ticketId)
 
     if (['dashboard','my_tickets'].includes(S.page)) showPage(S.page)
   } catch(e) { showToast('error','Error', e.message) }
@@ -1392,7 +1420,7 @@ async function openTeamModal(ticketId) {
     const newMembers = selected.filter(uid => !teamIds.includes(uid))
     newMembers.forEach(uid => {
       const u = S.users.find(u => u.id === uid)
-      if (u && u.phone) sendSMS([u.phone], '[TDMH Maintenance] You have been added to ticket ' + ticketId + '. Please check the Maintenance Hub.')
+      if (u && u.phone) sendSMS([u.phone], '[TDMH Maintenance] You have been added to ticket ' + ticketId + '. Please check the Maintenance Hub.', 'team_added', ticketId)
     })
     closeModal('confirmModal')
     showToast('success','Team Updated','Team assignment saved.')
@@ -1532,23 +1560,35 @@ async function renderReports() {
   if (!S._repFrom) S._repFrom = fromDefault
   if (!S._repTo) S._repTo = toDefault
 
+  // Determine active preset (or 'custom')
+  const presetDays = { '7':7, '30':30, '90':90, '365':365 }
+  if (!S._repPreset) S._repPreset = '30'
+
   let html = ''
-  html += '<div class="card" style="margin-bottom:18px;">'
-  html += '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;">'
-  html += '<div><label style="display:block;font-size:11px;color:var(--txt2);margin-bottom:4px;">From</label>'
-  html += '<input type="date" id="repFrom" value="' + S._repFrom + '" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;"></div>'
-  html += '<div><label style="display:block;font-size:11px;color:var(--txt2);margin-bottom:4px;">To</label>'
-  html += '<input type="date" id="repTo" value="' + S._repTo + '" style="padding:7px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;"></div>'
-  html += '<button onclick="applyReportRange()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;">Apply</button>'
-  // Quick presets
-  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
-  html += '<button onclick="reportPreset(7)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:transparent;color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">7d</button>'
-  html += '<button onclick="reportPreset(30)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:transparent;color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">30d</button>'
-  html += '<button onclick="reportPreset(90)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:transparent;color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">90d</button>'
-  html += '<button onclick="reportPreset(365)" style="padding:6px 12px;border-radius:8px;border:1px solid var(--bdr2);background:transparent;color:var(--txt2);font-family:inherit;font-size:12px;cursor:pointer;">1y</button>'
+  html += '<div class="rep-toolbar">'
+
+  // Row 1: preset segmented control + export
+  html += '<div class="rep-row">'
+  html += '<div class="rep-seg">'
+  ;[['7','7 days'],['30','30 days'],['90','90 days'],['365','1 year'],['custom','Custom']].forEach(p => {
+    const active = S._repPreset === p[0] ? ' rep-seg-on' : ''
+    html += '<button class="rep-seg-btn' + active + '" onclick="reportPreset(\'' + p[0] + '\')">' + p[1] + '</button>'
+  })
   html += '</div>'
-  html += '<button onclick="exportReportCSV()" style="padding:8px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-left:auto;">⬇ Export CSV</button>'
-  html += '</div></div>'
+  html += '<button class="rep-export" onclick="exportReportCSV()">⬇ Export CSV</button>'
+  html += '</div>'
+
+  // Row 2: custom date range (only visible when 'custom' selected)
+  const showCustom = S._repPreset === 'custom'
+  html += '<div class="rep-row rep-dates" style="' + (showCustom ? '' : 'display:none;') + '">'
+  html += '<div class="rep-field"><label>From</label>'
+  html += '<input type="date" id="repFrom" value="' + S._repFrom + '"></div>'
+  html += '<div class="rep-field"><label>To</label>'
+  html += '<input type="date" id="repTo" value="' + S._repTo + '"></div>'
+  html += '<button class="rep-apply" onclick="applyReportRange()">Apply range</button>'
+  html += '</div>'
+
+  html += '</div>'
 
   html += '<div id="reportBody"><div class="empty-state"><div class="empty-icon">⏳</div></div></div>'
   content.innerHTML = html
@@ -1562,17 +1602,23 @@ function applyReportRange() {
   if (f) S._repFrom = f
   if (t) S._repTo = t
   if (S._repFrom > S._repTo) { showToast('error','Invalid range','From date must be before To date.'); return }
+  S._repPreset = 'custom'
   buildReport()
 }
 
-function reportPreset(days) {
+function reportPreset(key) {
+  S._repPreset = key
+  if (key === 'custom') {
+    // Just re-render to reveal the custom date row; keep current range
+    renderReports()
+    return
+  }
+  const days = parseInt(key, 10)
   const today = new Date()
   const prior = new Date(); prior.setDate(prior.getDate() - days)
   S._repFrom = prior.toISOString().slice(0,10)
   S._repTo = today.toISOString().slice(0,10)
-  const fEl = document.getElementById('repFrom'); if (fEl) fEl.value = S._repFrom
-  const tEl = document.getElementById('repTo');   if (tEl) tEl.value = S._repTo
-  buildReport()
+  renderReports()
 }
 
 function resolutionHours(t) {
@@ -1683,6 +1729,52 @@ async function buildReport() {
   })
   if (total === 0) html += '<tr><td colspan="9" style="text-align:center;color:var(--txt3);padding:20px;">No tickets in this date range.</td></tr>'
   html += '</tbody></table></div>'
+
+  // ── SMS COST REPORT ──────────────────────────────
+  const { data: smsLogs } = await SB.from('sms_logs')
+    .select('*')
+    .gte('sent_at', from.toISOString())
+    .lte('sent_at', to.toISOString())
+    .order('sent_at', { ascending: false })
+  const logs = smsLogs || []
+  const totalSMS = logs.reduce((s,l) => s + (l.sms_count || 0), 0)
+  const totalCost = totalSMS * 0.50
+  const daysWithSMS = new Set(logs.map(l => new Date(l.sent_at).toLocaleDateString())).size
+
+  html += '<div style="font-size:16px;font-weight:700;margin:28px 0 6px;">💬 SMS Cost</div>'
+  html += '<div style="font-size:12px;color:var(--txt3);margin-bottom:12px;">₱0.50 per SMS · 1 SMS per recipient (blasts count each staff)</div>'
+  html += '<div class="stat-grid" style="margin-bottom:20px;">'
+  html += statC('📤','Total SMS Sent',totalSMS,'In selected range','var(--blue)')
+  html += statC('₱','Total Cost','₱' + totalCost.toFixed(2),totalSMS + ' messages','var(--accent)')
+  html += statC('📅','Days with SMS',daysWithSMS,'Active days','var(--amber)')
+  html += statC('📊','Avg SMS/Day',daysWithSMS ? Math.round(totalSMS/daysWithSMS) : 0,'Average volume','var(--txt2)')
+  html += '</div>'
+
+  // By event type
+  const evMap = {}
+  logs.forEach(l => {
+    const ev = l.event_type || 'general'
+    if (!evMap[ev]) evMap[ev] = { count:0 }
+    evMap[ev].count += (l.sms_count || 0)
+  })
+  const evLabels = { ticket_new:'New Ticket (blast)', ticket_reopened:'Reopened (blast)',
+    team_added:'Team Added', parts_request:'Parts Request', parts_available:'Parts Available', general:'General' }
+  html += reportTable('SMS by Event Type', ['Event','SMS Count','Cost (₱)'],
+    Object.keys(evMap).sort((a,b)=>evMap[b].count-evMap[a].count).map(ev => [
+      evLabels[ev] || ev, evMap[ev].count, '₱' + (evMap[ev].count * 0.50).toFixed(2)
+    ]))
+
+  // Daily breakdown
+  const dayMap = {}
+  logs.forEach(l => {
+    const day = new Date(l.sent_at).toLocaleDateString()
+    if (!dayMap[day]) dayMap[day] = { count:0 }
+    dayMap[day].count += (l.sms_count || 0)
+  })
+  html += reportTable('SMS Daily Breakdown', ['Date','SMS Count','Cost (₱)'],
+    Object.keys(dayMap).sort((a,b)=> new Date(b) - new Date(a)).map(day => [
+      day, dayMap[day].count, '₱' + (dayMap[day].count * 0.50).toFixed(2)
+    ]))
 
   if (body) body.innerHTML = html
 }
@@ -1959,7 +2051,7 @@ async function submitPartsRequest(ticketId, ticketTitle) {
       })
       // SMS to supply officer
       if (officer.phone) {
-        sendSMS([officer.phone], '[TDMH] Parts request ' + requestNo + ' from Maintenance Ticket ' + ticketId + ' submitted for approval.')
+        sendSMS([officer.phone], '[TDMH] Parts request ' + requestNo + ' from Maintenance Ticket ' + ticketId + ' submitted for approval.', 'parts_request', ticketId)
       }
     }
 
@@ -2298,13 +2390,25 @@ async function sendEmail(to, type, ticket, claimer) {
   } catch(e) { console.warn('[Email]', e.message) }
 }
 
-async function sendSMS(phones, message) {
-  if (!phones || phones.filter(Boolean).length === 0) return
+async function sendSMS(phones, message, eventType = 'general', ticketNo = null) {
+  const list = (phones || []).filter(Boolean)
+  if (list.length === 0) return
   try {
     await fetch(SMS_URL, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ phones, message })
+      body: JSON.stringify({ phones: list, message })
     })
+    // Log for cost tracking (₱0.50 per SMS, 1 SMS per recipient)
+    try {
+      await SB.from('sms_logs').insert({
+        recipients: list,
+        sms_count: list.length,
+        message: message,
+        event_type: eventType,
+        ticket_no: ticketNo,
+        sent_by: S.user ? S.user.id : null
+      })
+    } catch(le) { console.warn('[SMS log]', le.message) }
   } catch(e) { console.warn('[SMS]', e.message) }
 }
 
@@ -2412,7 +2516,7 @@ function subscribeNotifications() {
       loadNotifications()
       // SMS tech if it's a parts-available notification
       if (n.source_system === 'maintenance' && n.title?.includes('Parts Available') && S.user.phone) {
-        sendSMS([S.user.phone], '[TDMH Maintenance] ' + n.title + ' — ' + (n.body || '') + ' Open your ticket to continue.')
+        sendSMS([S.user.phone], '[TDMH Maintenance] ' + n.title + ' — ' + (n.body || '') + ' Open your ticket to continue.', 'parts_available', null)
       }
     }).subscribe()
 }
