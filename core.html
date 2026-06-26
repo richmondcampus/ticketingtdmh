@@ -261,6 +261,10 @@ canvas{max-height:220px;}
         </div>
       </div>
       <nav class="sidebar-nav">
+        <div class="nav-section">Hub</div>
+        <div class="nav-item" onclick="showPage('announcements')" id="nav_announcements"><span class="nav-icon">📢</span>Announcements<span class="nav-badge" id="annNavBadge" style="display:none;">0</span></div>
+        <div class="nav-item" onclick="showPage('memos')" id="nav_memos"><span class="nav-icon">📄</span>Memos<span class="nav-badge" id="memoNavBadge" style="display:none;">0</span></div>
+        <div class="nav-item" onclick="showPage('documents')" id="nav_documents"><span class="nav-icon">📁</span>Documents</div>
         <div class="nav-section">My Work</div>
         <div class="nav-item active" onclick="showPage('my_work')" id="nav_my_work"><span class="nav-icon">🎯</span>My Work</div>
         <div class="nav-item" onclick="showPage('notifications')" id="nav_notifications"><span class="nav-icon">🔔</span>Notifications<span class="nav-badge" id="notifNavBadge" style="display:none;">0</span></div>
@@ -405,11 +409,12 @@ async function bootApp(session){
   S.users=users||[]
   subscribeNotifications()
   loadNotifCount()
+  loadHubBadges()
   showPage('my_work')
 }
 
 // ═══ NAV ═══
-const PAGE_TITLES={my_work:'🎯 My Work',notifications:'🔔 Notifications',dept_view:'🏢 Department View',handover:'🔄 Shift Handover',search:'🔍 Global Search',audit_trail:'📋 Audit Trail',reports:'📊 Management Reports',budget:'💰 Budget Tracking',room_view:'📍 Room / Location'}
+const PAGE_TITLES={announcements:'📢 Announcements',memos:'📄 Memos',documents:'📁 Documents',my_work:'🎯 My Work',notifications:'🔔 Notifications',dept_view:'🏢 Department View',handover:'🔄 Shift Handover',search:'🔍 Global Search',audit_trail:'📋 Audit Trail',reports:'📊 Management Reports',budget:'💰 Budget Tracking',room_view:'📍 Room / Location'}
 function showPage(page){
   S.page=page
   document.getElementById('topbarTitle').textContent=PAGE_TITLES[page]||page
@@ -422,7 +427,7 @@ function showPage(page){
   // Destroy old charts
   Object.values(S.charts).forEach(c=>{try{c.destroy()}catch(e){}})
   S.charts={}
-  const pages={my_work:renderMyWork,notifications:renderNotifications,dept_view:renderDeptView,handover:renderHandover,search:renderSearch,audit_trail:renderAuditTrail,reports:renderReports,budget:renderBudget,room_view:renderRoomView}
+  const pages={announcements:renderAnnouncements,memos:renderMemos,documents:renderDocuments,my_work:renderMyWork,notifications:renderNotifications,dept_view:renderDeptView,handover:renderHandover,search:renderSearch,audit_trail:renderAuditTrail,reports:renderReports,budget:renderBudget,room_view:renderRoomView}
   if(pages[page])pages[page]()
 }
 function goSystem(key){window.open(SYSTEMS[key],'_blank')}
@@ -1202,6 +1207,461 @@ async function saveLocation(){
   closeModal('mainModal')
   showToast('success','Location Added','📍 '+name+' added.')
   showPage('room_view')
+}
+
+// ═══════════════════════════════════
+// HUB: ROLE HELPER
+// ═══════════════════════════════════
+function canPost(){
+  const u=S.user||{}
+  // Admin on any system, OR supervisor on maintenance/IT
+  const isAdmin=u.csr_role==='admin'||u.maintenance_role==='admin'||u.it_role==='admin'||u.inventory_role==='admin'
+  const isSupervisor=u.maintenance_role==='supervisor'||u.it_role==='supervisor'
+  return isAdmin||isSupervisor
+}
+
+async function loadHubBadges(){
+  try{
+    // Active announcements posted in last 7 days = "new"
+    const weekAgo=new Date(Date.now()-7*86400000).toISOString()
+    const{data:anns}=await SB.from('announcements').select('id').eq('is_active',true).gte('created_at',weekAgo)
+    const annBadge=document.getElementById('annNavBadge')
+    const ac=(anns||[]).length
+    if(annBadge){annBadge.textContent=ac>9?'9+':ac;annBadge.style.display=ac>0?'':'none'}
+    // Memos requiring my acknowledgment that I haven't acked
+    const{data:memos}=await SB.from('memos').select('id,target,dept_id,requires_ack').eq('is_active',true).eq('requires_ack',true)
+    const mine=(memos||[]).filter(m=>m.target==='all'||(m.target==='department'&&m.dept_id===S.user.dept_id))
+    let pending=0
+    if(mine.length>0){
+      const{data:acks}=await SB.from('memo_acknowledgments').select('memo_id').eq('user_id',S.user.id)
+      const ackedIds=new Set((acks||[]).map(a=>a.memo_id))
+      pending=mine.filter(m=>!ackedIds.has(m.id)).length
+    }
+    const memoBadge=document.getElementById('memoNavBadge')
+    if(memoBadge){memoBadge.textContent=pending>9?'9+':pending;memoBadge.style.display=pending>0?'':'none'}
+  }catch(e){}
+}
+
+// ═══════════════════════════════════
+// HUB: ANNOUNCEMENTS
+// ═══════════════════════════════════
+async function renderAnnouncements(){
+  const content=document.getElementById('mainContent')
+  const{data}=await SB.from('announcements').select('*').eq('is_active',true).order('is_pinned',{ascending:false}).order('created_at',{ascending:false}).limit(100)
+  const all=(data||[]).filter(a=>!a.expires_at||new Date(a.expires_at)>=new Date())
+  const catMeta={
+    general:{icon:'📢',color:'var(--accent)',label:'General'},
+    urgent:{icon:'🚨',color:'var(--red)',label:'Urgent'},
+    event:{icon:'📅',color:'var(--violet)',label:'Event'},
+    system:{icon:'⚙️',color:'var(--amber)',label:'System'},
+    policy:{icon:'📜',color:'var(--green)',label:'Policy'}
+  }
+  let html='<div class="page-header"><h2>📢 Announcements</h2>'
+  if(canPost())html+='<button class="btn btn-primary" onclick="openAnnouncementForm()">＋ Post Announcement</button>'
+  html+='</div>'
+  if(all.length===0){
+    html+='<div class="empty-state"><div class="empty-icon">📢</div><h3>No announcements</h3><p>Walang aktibong announcement sa ngayon.</p></div>'
+  }else{
+    html+='<div style="display:flex;flex-direction:column;gap:10px;">'
+    all.forEach(a=>{
+      const m=catMeta[a.category]||catMeta.general
+      html+='<div class="card" style="border-left:3px solid '+m.color+';">'
+      html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;">'
+      html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+      if(a.is_pinned)html+='<span style="font-size:13px;">📌</span>'
+      html+='<span style="font-size:15px;font-weight:700;">'+m.icon+' '+esc(a.title)+'</span>'
+      html+='<span class="badge" style="background:'+m.color+'22;color:'+m.color+';">'+m.label+'</span>'
+      html+='</div>'
+      if(canPost()){
+        html+='<div style="display:flex;gap:6px;flex-shrink:0;">'
+        html+='<button class="btn btn-ghost btn-sm" onclick="togglePin(\''+a.id+'\','+(a.is_pinned?'false':'true')+')">'+(a.is_pinned?'Unpin':'📌 Pin')+'</button>'
+        html+='<button class="btn btn-danger btn-sm" onclick="deleteAnnouncement(\''+a.id+'\')">🗑</button>'
+        html+='</div>'
+      }
+      html+='</div>'
+      html+='<div style="font-size:13px;color:var(--txt);white-space:pre-wrap;margin-bottom:10px;line-height:1.6;">'+esc(a.body)+'</div>'
+      html+='<div style="font-size:11px;color:var(--txt3);display:flex;gap:12px;flex-wrap:wrap;">'
+      html+='<span>👤 '+esc(a.posted_by_name||'—')+'</span>'
+      html+='<span>🕒 '+formatDate(a.created_at)+'</span>'
+      if(a.expires_at)html+='<span>⏳ Hanggang '+formatDate(a.expires_at)+'</span>'
+      html+='</div></div>'
+    })
+    html+='</div>'
+  }
+  content.innerHTML=html
+}
+
+function openAnnouncementForm(){
+  if(!canPost()){showToast('error','Hindi pwede','Admin/Supervisor lang ang pwedeng mag-post.');return}
+  document.getElementById('modalTitle').textContent='📢 Post Announcement'
+  let html='<div class="field"><label>Title *</label><input type="text" id="a_title" placeholder="Pamagat ng announcement"></div>'
+  html+='<div class="field-row">'
+  html+='<div class="field"><label>Category</label><select id="a_cat">'
+  ;[['general','📢 General'],['urgent','🚨 Urgent'],['event','📅 Event'],['system','⚙️ System'],['policy','📜 Policy']].forEach(c=>{html+='<option value="'+c[0]+'">'+c[1]+'</option>'})
+  html+='</select></div>'
+  html+='<div class="field"><label>Expires (optional)</label><input type="date" id="a_expires"></div>'
+  html+='</div>'
+  html+='<div class="field"><label>Message *</label><textarea id="a_body" rows="6" placeholder="Isulat ang buong mensahe dito..."></textarea></div>'
+  html+='<div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="a_pin" style="width:16px;height:16px;accent-color:var(--accent);"> <span style="font-size:13px;">📌 I-pin sa taas</span></label></div>'
+  document.getElementById('modalBody').innerHTML=html
+  document.getElementById('modalFooter').innerHTML=
+    '<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Cancel</button>'+
+    '<button class="btn btn-primary" onclick="saveAnnouncement()">📢 Post</button>'
+  openModal('mainModal')
+}
+
+async function saveAnnouncement(){
+  const title=document.getElementById('a_title')?.value.trim()
+  const body=document.getElementById('a_body')?.value.trim()
+  const cat=document.getElementById('a_cat')?.value
+  const exp=document.getElementById('a_expires')?.value
+  const pin=document.getElementById('a_pin')?.checked
+  if(!title||!body){showToast('error','Kulang','Title at message ay kailangan.');return}
+  const{error}=await SB.from('announcements').insert({
+    title,body,category:cat||'general',is_pinned:pin||false,
+    expires_at:exp?new Date(exp).toISOString():null,
+    posted_by:S.user.id,posted_by_name:S.user.full_name
+  })
+  if(error){showToast('error','Error',error.message);return}
+  closeModal('mainModal')
+  showToast('success','Posted','📢 Na-post ang announcement.')
+  loadHubBadges()
+  showPage('announcements')
+}
+
+async function togglePin(id,pin){
+  await SB.from('announcements').update({is_pinned:pin==='true'||pin===true,updated_at:new Date().toISOString()}).eq('id',id)
+  showPage('announcements')
+}
+
+async function deleteAnnouncement(id){
+  confirm2('Burahin ang announcement na ito?',async()=>{
+    await SB.from('announcements').update({is_active:false}).eq('id',id)
+    showToast('success','Deleted','Inalis ang announcement.')
+    loadHubBadges()
+    showPage('announcements')
+  })
+}
+
+// ═══════════════════════════════════
+// HUB: MEMOS (with PDF + acknowledgment)
+// ═══════════════════════════════════
+async function renderMemos(){
+  const content=document.getElementById('mainContent')
+  content.innerHTML='<div class="empty-state"><div class="empty-icon">⏳</div><p>Loading memos...</p></div>'
+  const{data}=await SB.from('memos').select('*').eq('is_active',true).order('created_at',{ascending:false}).limit(100)
+  const memos=(data||[]).filter(m=>m.target==='all'||(m.target==='department'&&m.dept_id===S.user.dept_id)||canPost())
+  // My acknowledgments
+  const{data:acks}=await SB.from('memo_acknowledgments').select('memo_id').eq('user_id',S.user.id)
+  const ackedIds=new Set((acks||[]).map(a=>a.memo_id))
+  let html='<div class="page-header"><h2>📄 Memos</h2>'
+  if(canPost())html+='<button class="btn btn-primary" onclick="openMemoForm()">＋ New Memo</button>'
+  html+='</div>'
+  if(memos.length===0){
+    html+='<div class="empty-state"><div class="empty-icon">📄</div><h3>No memos</h3><p>Walang memo sa ngayon.</p></div>'
+  }else{
+    html+='<div style="display:flex;flex-direction:column;gap:10px;">'
+    memos.forEach(m=>{
+      const acked=ackedIds.has(m.id)
+      const needsAck=m.requires_ack&&!acked&&(m.target==='all'||m.dept_id===S.user.dept_id)
+      const deptName=m.dept_id?(S.departments.find(d=>d.id===m.dept_id)||{}).dept_name||'':'All Staff'
+      html+='<div class="card'+(m.is_urgent?'':'')+'" style="'+(m.is_urgent?'border-left:3px solid var(--red);':'')+'">'
+      html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;">'
+      html+='<div style="flex:1;min-width:0;">'
+      html+='<div style="font-size:11px;color:var(--txt3);font-family:monospace;margin-bottom:3px;">'+esc(m.memo_no)+'</div>'
+      html+='<div style="font-size:15px;font-weight:700;">'+(m.is_urgent?'🚨 ':'📄 ')+esc(m.title)+'</div>'
+      html+='</div>'
+      html+='<div style="display:flex;gap:6px;flex-shrink:0;align-items:center;">'
+      if(needsAck)html+='<span class="badge badge-pending">⏳ Acknowledge</span>'
+      else if(m.requires_ack&&acked)html+='<span class="badge badge-resolved">✅ Acknowledged</span>'
+      html+='</div></div>'
+      html+='<div style="font-size:12px;color:var(--txt2);margin-bottom:8px;">📋 '+esc(m.from_office)+' → '+esc(deptName)+'</div>'
+      if(m.body)html+='<div style="font-size:13px;color:var(--txt);white-space:pre-wrap;margin-bottom:10px;line-height:1.6;">'+esc(m.body.substring(0,300))+(m.body.length>300?'...':'')+'</div>'
+      html+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+      if(m.file_url)html+='<a href="'+m.file_url+'" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">📎 View PDF</a>'
+      html+='<button class="btn btn-ghost btn-sm" onclick="viewMemo(\''+m.id+'\')">Open</button>'
+      if(needsAck)html+='<button class="btn btn-success btn-sm" onclick="acknowledgeMemo(\''+m.id+'\')">✅ Acknowledge</button>'
+      if(canPost())html+='<button class="btn btn-ghost btn-sm" onclick="viewMemoAcks(\''+m.id+'\')">👁 Who read ('+'<span id="ackcount_'+m.id+'">…</span>)</button>'
+      if(canPost())html+='<button class="btn btn-danger btn-sm" onclick="deleteMemo(\''+m.id+'\')">🗑</button>'
+      html+='</div>'
+      html+='<div style="font-size:11px;color:var(--txt3);margin-top:8px;">👤 '+esc(m.posted_by_name||'—')+' · 🕒 '+formatDate(m.created_at)+'</div>'
+      html+='</div>'
+    })
+    html+='</div>'
+  }
+  content.innerHTML=html
+  // fill ack counts for posters
+  if(canPost()){
+    memos.forEach(async m=>{
+      const{count}=await SB.from('memo_acknowledgments').select('*',{count:'exact',head:true}).eq('memo_id',m.id)
+      const el=document.getElementById('ackcount_'+m.id)
+      if(el)el.textContent=(count||0)
+    })
+  }
+}
+
+function openMemoForm(){
+  if(!canPost()){showToast('error','Hindi pwede','Admin/Supervisor lang ang pwedeng mag-post.');return}
+  document.getElementById('modalTitle').textContent='📄 New Memo'
+  let html='<div class="field"><label>Title *</label><input type="text" id="m_title" placeholder="Paksa ng memo"></div>'
+  html+='<div class="field-row">'
+  html+='<div class="field"><label>From Office</label><input type="text" id="m_from" value="Administration"></div>'
+  html+='<div class="field"><label>Para kanino</label><select id="m_target" onchange="toggleMemoDept()"><option value="all">📢 All Staff</option><option value="department">🏢 Specific Department</option></select></div>'
+  html+='</div>'
+  html+='<div class="field" id="m_dept_wrap" style="display:none;"><label>Department</label><select id="m_dept"><option value="">— Select —</option>'
+  S.departments.forEach(d=>{html+='<option value="'+d.id+'">'+esc(d.dept_name)+'</option>'})
+  html+='</select></div>'
+  html+='<div class="field"><label>Body</label><textarea id="m_body" rows="5" placeholder="Nilalaman ng memo (optional kung may PDF)"></textarea></div>'
+  html+='<div class="field"><label>Attach PDF (optional)</label><input type="file" id="m_file" accept="application/pdf"></div>'
+  html+='<div class="field-row">'
+  html+='<div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:24px;"><input type="checkbox" id="m_ack" checked style="width:16px;height:16px;accent-color:var(--accent);"> <span style="font-size:13px;">Require acknowledgment</span></label></div>'
+  html+='<div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:24px;"><input type="checkbox" id="m_urgent" style="width:16px;height:16px;accent-color:var(--red);"> <span style="font-size:13px;">🚨 Urgent</span></label></div>'
+  html+='</div>'
+  document.getElementById('modalBody').innerHTML=html
+  document.getElementById('modalFooter').innerHTML=
+    '<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Cancel</button>'+
+    '<button class="btn btn-primary" id="memoSaveBtn" onclick="saveMemo()">📄 Publish</button>'
+  openModal('mainModal')
+}
+
+function toggleMemoDept(){
+  const t=document.getElementById('m_target')?.value
+  const wrap=document.getElementById('m_dept_wrap')
+  if(wrap)wrap.style.display=t==='department'?'':'none'
+}
+
+async function saveMemo(){
+  const title=document.getElementById('m_title')?.value.trim()
+  const from=document.getElementById('m_from')?.value.trim()||'Administration'
+  const target=document.getElementById('m_target')?.value||'all'
+  const deptId=document.getElementById('m_dept')?.value
+  const body=document.getElementById('m_body')?.value.trim()
+  const ack=document.getElementById('m_ack')?.checked
+  const urgent=document.getElementById('m_urgent')?.checked
+  const fileInput=document.getElementById('m_file')
+  if(!title){showToast('error','Kulang','Title ay kailangan.');return}
+  if(target==='department'&&!deptId){showToast('error','Kulang','Pumili ng department.');return}
+  const btn=document.getElementById('memoSaveBtn')
+  if(btn){btn.disabled=true;btn.textContent='Saving...'}
+  try{
+    // Generate memo number via RPC
+    const{data:memoNo,error:rpcErr}=await SB.rpc('generate_memo_no')
+    if(rpcErr)throw rpcErr
+    let fileUrl=null,fileName=null
+    // Upload PDF if present
+    if(fileInput&&fileInput.files&&fileInput.files[0]){
+      const file=fileInput.files[0]
+      if(btn)btn.textContent='Uploading PDF...'
+      const safeName=memoNo+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_')
+      const{error:upErr}=await SB.storage.from('memos').upload(safeName,file,{contentType:'application/pdf',upsert:true})
+      if(upErr)throw upErr
+      const{data:pub}=SB.storage.from('memos').getPublicUrl(safeName)
+      fileUrl=pub.publicUrl;fileName=file.name
+    }
+    if(btn)btn.textContent='Saving...'
+    const{error}=await SB.from('memos').insert({
+      memo_no:memoNo,title,body:body||null,file_url:fileUrl,file_name:fileName,
+      from_office:from,target,dept_id:target==='department'?deptId:null,
+      requires_ack:ack!==false,is_urgent:urgent||false,
+      posted_by:S.user.id,posted_by_name:S.user.full_name
+    })
+    if(error)throw error
+    closeModal('mainModal')
+    showToast('success','Published','📄 '+memoNo+' na-publish.')
+    loadHubBadges()
+    showPage('memos')
+  }catch(e){
+    showToast('error','Error',e.message||'Hindi na-save ang memo.')
+    if(btn){btn.disabled=false;btn.textContent='📄 Publish'}
+  }
+}
+
+async function viewMemo(id){
+  const{data:m}=await SB.from('memos').select('*').eq('id',id).single()
+  if(!m)return
+  const deptName=m.dept_id?(S.departments.find(d=>d.id===m.dept_id)||{}).dept_name||'':'All Staff'
+  document.getElementById('modalTitle').textContent='📄 '+m.memo_no
+  let body='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
+  body+=iF('Title',esc(m.title))
+  body+=iF('From',esc(m.from_office))
+  body+=iF('To',esc(deptName))
+  body+=iF('Date',formatDate(m.created_at))
+  body+=iF('Posted by',esc(m.posted_by_name||'—'))
+  body+=iF('Acknowledgment',m.requires_ack?'Required':'Not required')
+  body+='</div>'
+  if(m.is_urgent)body+='<div style="background:var(--red-a);border:1px solid var(--red);border-radius:8px;padding:8px 12px;margin-bottom:12px;color:var(--red);font-weight:600;">🚨 URGENT</div>'
+  if(m.body)body+='<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;padding:14px;white-space:pre-wrap;font-size:13px;line-height:1.6;margin-bottom:12px;">'+esc(m.body)+'</div>'
+  if(m.file_url)body+='<a href="'+m.file_url+'" target="_blank" class="btn btn-secondary btn-full" style="text-decoration:none;">📎 '+(esc(m.file_name)||'View PDF')+'</a>'
+  document.getElementById('modalBody').innerHTML=body
+  // Acknowledge button in footer if pending
+  const{data:acks}=await SB.from('memo_acknowledgments').select('memo_id').eq('user_id',S.user.id).eq('memo_id',id)
+  const acked=(acks||[]).length>0
+  const needsAck=m.requires_ack&&!acked&&(m.target==='all'||m.dept_id===S.user.dept_id)
+  let footer='<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Close</button>'
+  if(needsAck)footer+='<button class="btn btn-success" onclick="acknowledgeMemo(\''+id+'\',true)">✅ Acknowledge</button>'
+  document.getElementById('modalFooter').innerHTML=footer
+  openModal('mainModal')
+}
+
+async function acknowledgeMemo(id,fromModal){
+  const{error}=await SB.from('memo_acknowledgments').insert({
+    memo_id:id,user_id:S.user.id,user_name:S.user.full_name
+  })
+  if(error&&!String(error.message||'').includes('duplicate')){
+    showToast('error','Error',error.message);return
+  }
+  if(fromModal)closeModal('mainModal')
+  showToast('success','Acknowledged','✅ Na-acknowledge mo ang memo.')
+  loadHubBadges()
+  showPage('memos')
+}
+
+async function viewMemoAcks(id){
+  const{data:m}=await SB.from('memos').select('memo_no,title,target,dept_id').eq('id',id).single()
+  const{data:acks}=await SB.from('memo_acknowledgments').select('*').eq('memo_id',id).order('acknowledged_at',{ascending:false})
+  const ackList=acks||[]
+  const ackedIds=new Set(ackList.map(a=>a.user_id))
+  // Determine target audience
+  let audience=S.users
+  if(m&&m.target==='department'&&m.dept_id)audience=S.users.filter(u=>u.dept_id===m.dept_id)
+  const notYet=audience.filter(u=>!ackedIds.has(u.id))
+  document.getElementById('modalTitle').textContent='👁 Read Status — '+(m?m.memo_no:'')
+  let body='<div style="display:flex;gap:12px;margin-bottom:16px;">'
+  body+='<div style="flex:1;background:var(--green-a);border:1px solid var(--green);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:700;color:var(--green);">'+ackList.length+'</div><div style="font-size:11px;color:var(--txt2);">✅ Acknowledged</div></div>'
+  body+='<div style="flex:1;background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:700;color:var(--amber);">'+notYet.length+'</div><div style="font-size:11px;color:var(--txt2);">⏳ Pending</div></div>'
+  body+='</div>'
+  if(ackList.length>0){
+    body+='<div style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">✅ Nakabasa na</div>'
+    body+='<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:16px;">'
+    ackList.forEach(a=>{
+      body+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 12px;background:var(--surf2);border-radius:8px;"><span>'+esc(a.user_name||'—')+'</span><span style="font-size:11px;color:var(--txt3);">'+formatDate(a.acknowledged_at)+'</span></div>'
+    })
+    body+='</div>'
+  }
+  if(notYet.length>0){
+    body+='<div style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">⏳ Hindi pa nakaka-acknowledge</div>'
+    body+='<div style="display:flex;flex-wrap:wrap;gap:6px;">'
+    notYet.forEach(u=>{body+='<span style="font-size:12px;padding:4px 10px;background:var(--surf3);border-radius:8px;color:var(--txt2);">'+esc(u.full_name)+'</span>'})
+    body+='</div>'
+  }
+  document.getElementById('modalBody').innerHTML=body
+  document.getElementById('modalFooter').innerHTML='<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Close</button>'
+  openModal('mainModal')
+}
+
+async function deleteMemo(id){
+  confirm2('Burahin ang memo na ito?',async()=>{
+    await SB.from('memos').update({is_active:false}).eq('id',id)
+    showToast('success','Deleted','Inalis ang memo.')
+    loadHubBadges()
+    showPage('memos')
+  })
+}
+
+// ═══════════════════════════════════
+// HUB: DOCUMENTS (policy/forms repository)
+// ═══════════════════════════════════
+async function renderDocuments(){
+  const content=document.getElementById('mainContent')
+  const{data}=await SB.from('hub_documents').select('*').eq('is_active',true).order('created_at',{ascending:false}).limit(200)
+  const docs=data||[]
+  const catMeta={
+    policy:{icon:'📜',label:'Policy',color:'var(--green)'},
+    form:{icon:'📝',label:'Form',color:'var(--accent)'},
+    template:{icon:'📋',label:'Template',color:'var(--violet)'},
+    manual:{icon:'📕',label:'Manual',color:'var(--amber)'},
+    guideline:{icon:'📐',label:'Guideline',color:'var(--blue,var(--accent))'},
+    general:{icon:'📁',label:'General',color:'var(--txt2)'}
+  }
+  let html='<div class="page-header"><h2>📁 Documents</h2>'
+  if(canPost())html+='<button class="btn btn-primary" onclick="openDocumentForm()">＋ Upload Document</button>'
+  html+='</div>'
+  if(docs.length===0){
+    html+='<div class="empty-state"><div class="empty-icon">📁</div><h3>No documents</h3><p>Walang naka-upload na dokumento.</p></div>'
+  }else{
+    // group by category
+    const groups={}
+    docs.forEach(d=>{(groups[d.category]=groups[d.category]||[]).push(d)})
+    Object.keys(groups).forEach(cat=>{
+      const m=catMeta[cat]||catMeta.general
+      html+='<div style="font-size:12px;font-weight:700;color:'+m.color+';text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px;">'+m.icon+' '+m.label+'</div>'
+      html+='<div style="display:flex;flex-direction:column;gap:6px;">'
+      groups[cat].forEach(d=>{
+        html+='<div class="card" style="display:flex;align-items:center;gap:12px;padding:14px;">'
+        html+='<div style="font-size:22px;">'+m.icon+'</div>'
+        html+='<div style="flex:1;min-width:0;">'
+        html+='<div style="font-size:14px;font-weight:600;">'+esc(d.title)+'</div>'
+        if(d.description)html+='<div style="font-size:12px;color:var(--txt2);">'+esc(d.description)+'</div>'
+        html+='<div style="font-size:11px;color:var(--txt3);margin-top:2px;">👤 '+esc(d.uploaded_by_name||'—')+' · '+formatDate(d.created_at)+'</div>'
+        html+='</div>'
+        html+='<a href="'+d.file_url+'" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;flex-shrink:0;">⬇ Download</a>'
+        if(canPost())html+='<button class="btn btn-danger btn-sm" style="flex-shrink:0;" onclick="deleteDocument(\''+d.id+'\')">🗑</button>'
+        html+='</div>'
+      })
+      html+='</div>'
+    })
+  }
+  content.innerHTML=html
+}
+
+function openDocumentForm(){
+  if(!canPost()){showToast('error','Hindi pwede','Admin/Supervisor lang ang pwedeng mag-upload.');return}
+  document.getElementById('modalTitle').textContent='📁 Upload Document'
+  let html='<div class="field"><label>Title *</label><input type="text" id="d_title" placeholder="Pangalan ng dokumento"></div>'
+  html+='<div class="field"><label>Category</label><select id="d_cat">'
+  ;[['policy','📜 Policy'],['form','📝 Form'],['template','📋 Template'],['manual','📕 Manual'],['guideline','📐 Guideline'],['general','📁 General']].forEach(c=>{html+='<option value="'+c[0]+'">'+c[1]+'</option>'})
+  html+='</select></div>'
+  html+='<div class="field"><label>Description</label><textarea id="d_desc" rows="2" placeholder="Maikling paglalarawan (optional)"></textarea></div>'
+  html+='<div class="field"><label>File * (PDF, Word, Excel, etc.)</label><input type="file" id="d_file"></div>'
+  document.getElementById('modalBody').innerHTML=html
+  document.getElementById('modalFooter').innerHTML=
+    '<button class="btn btn-ghost" onclick="closeModal(\'mainModal\')">Cancel</button>'+
+    '<button class="btn btn-primary" id="docSaveBtn" onclick="saveDocument()">⬆ Upload</button>'
+  openModal('mainModal')
+}
+
+async function saveDocument(){
+  const title=document.getElementById('d_title')?.value.trim()
+  const cat=document.getElementById('d_cat')?.value||'general'
+  const desc=document.getElementById('d_desc')?.value.trim()
+  const fileInput=document.getElementById('d_file')
+  if(!title){showToast('error','Kulang','Title ay kailangan.');return}
+  if(!fileInput||!fileInput.files||!fileInput.files[0]){showToast('error','Kulang','Pumili ng file.');return}
+  const btn=document.getElementById('docSaveBtn')
+  if(btn){btn.disabled=true;btn.textContent='Uploading...'}
+  try{
+    const file=fileInput.files[0]
+    const safeName=Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_')
+    const{error:upErr}=await SB.storage.from('hub-documents').upload(safeName,file,{upsert:true})
+    if(upErr)throw upErr
+    const{data:pub}=SB.storage.from('hub-documents').getPublicUrl(safeName)
+    const{error}=await SB.from('hub_documents').insert({
+      title,description:desc||null,category:cat,
+      file_url:pub.publicUrl,file_name:file.name,
+      uploaded_by:S.user.id,uploaded_by_name:S.user.full_name
+    })
+    if(error)throw error
+    closeModal('mainModal')
+    showToast('success','Uploaded','📁 Na-upload ang dokumento.')
+    showPage('documents')
+  }catch(e){
+    showToast('error','Error',e.message||'Hindi na-upload.')
+    if(btn){btn.disabled=false;btn.textContent='⬆ Upload'}
+  }
+}
+
+async function deleteDocument(id){
+  confirm2('Burahin ang dokumento na ito?',async()=>{
+    await SB.from('hub_documents').update({is_active:false}).eq('id',id)
+    showToast('success','Deleted','Inalis ang dokumento.')
+    showPage('documents')
+  })
+}
+
+// HTML escape helper (prevent layout break from user content)
+function esc(s){
+  if(s==null)return''
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 }
 
 // ═══════════════════════════════════
