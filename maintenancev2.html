@@ -789,6 +789,12 @@ function formatAge(hours) {
   return rem > 0 ? d + 'd ' + rem + 'h' : d + 'd'
 }
 
+// A ticket is "overdue" only if it's still active (not resolved/closed) and older than 48h
+function isOverdue(t, age) {
+  if (['resolved','closed'].includes(t.status)) return false
+  return age > 48
+}
+
 function formatStatus(s) {
   const m = { open:'Open', claimed:'Claimed', in_progress:'In Progress', for_parts:'For Parts',
     resolved:'Resolved', closed:'Closed', reopened:'Reopened' }
@@ -893,7 +899,7 @@ function buildTicketRows(tickets) {
     rows += '<td><span class="badge badge-' + t.priority + '">' + t.priority.toUpperCase() + '</span></td>'
     rows += '<td><span class="badge badge-' + t.status + '">' + formatStatus(t.status) + '</span></td>'
     rows += '<td style="font-size:12px;color:var(--txt2);">' + (claimed ? claimed.full_name.split(' ')[0] : '—') + '</td>'
-    rows += '<td style="font-size:12px;color:' + (age > 48 ? 'var(--red)' : 'var(--txt2)') + ';">' + formatAge(age) + '</td>'
+    rows += '<td style="font-size:12px;color:' + (isOverdue(t, age) ? 'var(--red)' : 'var(--txt2)') + ';">' + formatAge(age) + '</td>'
     rows += '<td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewTicket(\'' + t.id + '\')">View</button></td>'
     rows += '</tr>'
 
@@ -914,7 +920,7 @@ function buildTicketRows(tickets) {
     if (claimed) cards += '<div>👤 In-charge: <strong>' + claimed.full_name + '</strong></div>'
     cards += '<div style="display:flex;gap:12px;">'
     cards += '<span>🔧 ' + (t.category||'—') + '</span>'
-    cards += '<span style="color:' + (age > 48 ? 'var(--red)' : 'var(--txt3)') + ';">' + (age > 48 ? '⏰ ' : '') + formatAge(age) + ' ago' + (age > 48 ? ' — OVERDUE' : '') + '</span>'
+    cards += '<span style="color:' + (isOverdue(t, age) ? 'var(--red)' : 'var(--txt3)') + ';">' + (isOverdue(t, age) ? '⏰ ' : '') + formatAge(age) + ' ago' + (isOverdue(t, age) ? ' — OVERDUE' : '') + '</span>'
     cards += '</div>'
     cards += '</div>'
     // Tap hint
