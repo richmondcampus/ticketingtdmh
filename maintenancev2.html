@@ -331,6 +331,55 @@ tr:hover td{background:var(--surf2);}
   .rep-export { margin-left:0; width:100%; }
   .rep-dates { width:100%; }
 }
+
+/* ═══ Elderly-friendly mobile (larger, clearer) ═══ */
+@media(max-width:768px){
+  /* Bigger base text everywhere */
+  body{font-size:16px;}
+
+  /* Ticket cards — large, high-contrast, easy to tap */
+  .ticket-card{padding:20px!important;border-radius:16px!important;border-width:2px!important;}
+  .ticket-card .badge{font-size:14px!important;padding:6px 12px!important;}
+
+  /* Make the card title (problem) the most prominent thing */
+  .ticket-card > div:nth-child(3){font-size:19px!important;font-weight:700!important;line-height:1.35!important;}
+
+  /* Info rows inside cards — bigger */
+  .ticket-card div[style*="font-size:14px"]{font-size:16px!important;}
+
+  /* Status badges — big and bold */
+  .badge{font-size:14px!important;padding:6px 12px!important;font-weight:700!important;}
+
+  /* Primary action buttons — large tap targets (min 54px) */
+  .btn{min-height:52px!important;padding:14px 20px!important;font-size:16px!important;font-weight:600!important;}
+  .btn-sm{min-height:46px!important;padding:11px 16px!important;font-size:15px!important;}
+
+  /* The big "New Ticket" / claim buttons full-width and tall */
+  .page-header-actions .btn{min-height:56px!important;font-size:17px!important;}
+
+  /* Nav — bigger rows, easier to hit */
+  .nav-item{padding:18px 18px!important;font-size:17px!important;}
+  .nav-icon{font-size:24px!important;}
+
+  /* Form inputs — tall and readable */
+  input,select,textarea{font-size:17px!important;padding:14px 16px!important;min-height:54px!important;}
+  label,.fl{font-size:15px!important;}
+
+  /* Page title bigger */
+  .page-header h2{font-size:24px!important;}
+
+  /* Modal text bigger */
+  .modal-header h3{font-size:21px!important;}
+  .modal-body{font-size:16px!important;}
+  .modal-footer .btn{min-height:56px!important;font-size:17px!important;}
+
+  /* Stat cards — large numbers */
+  .stat-value{font-size:30px!important;}
+  .stat-label{font-size:15px!important;}
+
+  /* Tap hint inside cards — clearer */
+  .ticket-card div[style*="Tap to view"]{font-size:14px!important;color:var(--accent)!important;font-weight:600!important;}
+}
 </style>
 </head>
 <body>
@@ -580,7 +629,11 @@ async function bootApp(session) {
   await Promise.all([loadUsers(), loadDepartments()])
   subscribeTickets()
   subscribeNotifications()
-  showPage('dashboard')
+  // Role-based landing — go straight to what each user needs (less navigating for older staff)
+  const landRole = S.user.maintenance_role
+  if (landRole === 'technician') showPage('open_tickets')
+  else if (landRole === 'requester') showPage('my_tickets')
+  else showPage('dashboard')
 }
 
 function formatMaintRole(r) {
@@ -995,7 +1048,22 @@ function buildOneCard(t) {
   cd += '<span style="color:' + (isOverdue(t, age) ? 'var(--red)' : 'var(--txt3)') + ';">' + (isOverdue(t, age) ? '⏰ ' : '') + formatAge(age) + ' ago' + (isOverdue(t, age) ? ' — OVERDUE' : '') + '</span>'
   cd += '</div>'
   cd += '</div>'
-  cd += '<div style="margin-top:12px;text-align:right;font-size:12px;color:var(--txt3);">Tap to view details →</div>'
+  // Direct action button — one tap for older staff (no need to open the modal first)
+  const role = S.user.maintenance_role
+  const isTech = ['technician','supervisor','admin'].includes(role)
+  const isMe = t.claimed_by === S.user.id
+  let actionBtn = ''
+  if (t.status === 'open' && isTech) {
+    actionBtn = '<button class="btn btn-primary" style="width:100%;margin-top:14px;min-height:52px;font-size:16px;font-weight:700;" onclick="event.stopPropagation();quickClaimStartMaint(\'' + t.id + '\')">⚡ Claim &amp; Start Work</button>'
+  } else if (t.status === 'in_progress' && isMe) {
+    actionBtn = '<button class="btn btn-success" style="width:100%;margin-top:14px;min-height:52px;font-size:16px;font-weight:700;" onclick="event.stopPropagation();quickResolveMaint(\'' + t.id + '\')">✅ Mark as Done</button>'
+  }
+  if (actionBtn) {
+    cd += actionBtn
+    cd += '<div style="margin-top:8px;text-align:center;font-size:12px;color:var(--txt3);">Tap card for full details</div>'
+  } else {
+    cd += '<div style="margin-top:12px;text-align:right;font-size:12px;color:var(--txt3);">Tap to view details →</div>'
+  }
   cd += '</div>'
   return cd
 }
