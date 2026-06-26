@@ -176,7 +176,7 @@ code,.mono{font-family:'JetBrains Mono',monospace;}
 .modal-close{width:28px;height:28px;border-radius:7px;background:var(--surf3);border:none;cursor:pointer;font-size:16px;color:var(--txt2);display:flex;align-items:center;justify-content:center;}
 .modal-close:hover{background:var(--surf4);}
 .modal-body{padding:20px 24px;}
-.modal-footer{display:flex;justify-content:flex-end;gap:10px;padding:16px 24px;border-top:1px solid var(--bdr);}
+.modal-footer{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;padding:16px 24px;border-top:1px solid var(--bdr);}
 
 /* FORMS */
 .field{margin-bottom:16px;}
@@ -277,7 +277,7 @@ tr:hover td{background:var(--surf2);}
   .modal-header{padding:20px 20px 0;}
   .modal-header h3{font-size:18px!important;}
   .modal-body{padding:16px 20px;font-size:14px;}
-  .modal-footer{padding:16px 20px;gap:10px;}
+  .modal-footer{padding:16px 20px;gap:10px;display:grid!important;grid-template-columns:1fr 1fr;}
   .modal-footer .btn{flex:1;padding:14px;font-size:15px!important;min-height:50px;}
 
   /* Ticket cards — big tap targets, clear text */
@@ -371,7 +371,9 @@ tr:hover td{background:var(--surf2);}
   /* Modal text bigger */
   .modal-header h3{font-size:21px!important;}
   .modal-body{font-size:16px!important;}
-  .modal-footer .btn{min-height:56px!important;font-size:17px!important;}
+  .modal-footer .btn{min-height:56px!important;font-size:16px!important;width:100%;margin:0;justify-content:center;}
+  /* Primary resolve/close action spans full width for prominence */
+  .modal-footer .btn-success,.modal-footer .btn-primary{grid-column:1 / -1;}
 
   /* Stat cards — large numbers */
   .stat-value{font-size:30px!important;}
