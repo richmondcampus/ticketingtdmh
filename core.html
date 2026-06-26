@@ -441,12 +441,16 @@ async function renderMyWork(){
   const now=new Date()
 
   // Load all pending items for this user across systems
-  const[maintRes,itRes,csrRes,notifRes,handoverRes]=await Promise.all([
+  const weekAgo=new Date(Date.now()-7*86400000).toISOString()
+  const[maintRes,itRes,csrRes,notifRes,handoverRes,annRes,memoRes,myAckRes]=await Promise.all([
     u.maintenance_role?SB.from('maint_tickets').select('id,title,status,priority,created_at,dept_name').or('submitted_by.eq.'+u.id+',claimed_by.eq.'+u.id).not('status','in','("closed","cancelled")').order('created_at',{ascending:false}).limit(10):{data:[]},
     u.it_role?SB.from('it_tickets').select('id,subject,status,priority,created_at,dept_id').or('requester_id.eq.'+u.id+',assigned_to.eq.'+u.id).not('status','in','("closed","cancelled")').order('created_at',{ascending:false}).limit(10):{data:[]},
     u.csr_role?SB.from('requests').select('id,request_no,request_type,status,urgency,purpose,created_at').eq('requested_by',u.id).not('status','in','("issued","cancelled")').order('created_at',{ascending:false}).limit(10):{data:[]},
     SB.from('notifications').select('*').eq('user_id',u.id).eq('is_read',false).order('created_at',{ascending:false}).limit(5),
-    SB.from('shift_handover_notes').select('*').eq('received_by',u.id).is('received_at',null).order('created_at',{ascending:false}).limit(3)
+    SB.from('shift_handover_notes').select('*').eq('received_by',u.id).is('received_at',null).order('created_at',{ascending:false}).limit(3),
+    SB.from('announcements').select('*').eq('is_active',true).order('is_pinned',{ascending:false}).order('created_at',{ascending:false}).limit(5),
+    SB.from('memos').select('id,memo_no,title,target,dept_id,requires_ack,is_urgent,created_at').eq('is_active',true).eq('requires_ack',true).order('created_at',{ascending:false}).limit(50),
+    SB.from('memo_acknowledgments').select('memo_id').eq('user_id',u.id)
   ])
 
   const maintTickets=maintRes.data||[]
@@ -454,6 +458,10 @@ async function renderMyWork(){
   const csrRequests=csrRes.data||[]
   const unreadNotifs=notifRes.data||[]
   const pendingHandovers=handoverRes.data||[]
+  // Hub: announcements (pinned/recent) + memos needing my acknowledgment
+  const announcements=(annRes.data||[]).filter(a=>!a.expires_at||new Date(a.expires_at)>=new Date())
+  const ackedIds=new Set((myAckRes.data||[]).map(a=>a.memo_id))
+  const pendingMemos=(memoRes.data||[]).filter(m=>(m.target==='all'||(m.target==='department'&&m.dept_id===u.dept_id))&&!ackedIds.has(m.id))
 
   const totalPending=maintTickets.length+itTickets.length+csrRequests.length
   const critical=maintTickets.filter(t=>t.priority==='emergency'||t.priority==='urgent').length+
@@ -471,6 +479,36 @@ async function renderMyWork(){
     html+='<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">'
     html+='<span style="color:var(--amber);">🔄 <strong>'+pendingHandovers.length+' shift handover note(s)</strong> pending your acknowledgment</span>'
     html+='<button class="btn btn-ghost btn-sm" onclick="showPage(\'handover\')">View →</button></div>'
+  }
+
+  // ── HUB: pending memos (action required) ──
+  if(pendingMemos.length>0){
+    html+='<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:16px;">'
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:'+(pendingMemos.length>0?'8px':'0')+';">'
+    html+='<span style="color:var(--amber);font-weight:600;">📄 '+pendingMemos.length+' memo'+(pendingMemos.length>1?'s':'')+' na kailangang basahin</span>'
+    html+='<button class="btn btn-ghost btn-sm" onclick="showPage(\'memos\')">View all →</button></div>'
+    pendingMemos.slice(0,3).forEach(m=>{
+      html+='<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;border-top:1px solid var(--bdr);cursor:pointer;" onclick="showPage(\'memos\')">'
+      html+='<span>'+(m.is_urgent?'🚨':'📄')+'</span><span style="font-family:monospace;font-size:11px;color:var(--txt3);">'+esc(m.memo_no)+'</span>'
+      html+='<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(m.title)+'</span></div>'
+    })
+    html+='</div>'
+  }
+
+  // ── HUB: announcements ──
+  if(announcements.length>0){
+    const annCat={general:{i:'📢',c:'var(--accent)'},urgent:{i:'🚨',c:'var(--red)'},event:{i:'📅',c:'var(--violet)'},system:{i:'⚙️',c:'var(--amber)'},policy:{i:'📜',c:'var(--green)'}}
+    html+='<div class="work-section"><h3 style="display:flex;align-items:center;justify-content:space-between;">📢 Announcements <button class="btn btn-ghost btn-sm" onclick="showPage(\'announcements\')">See all →</button></h3>'
+    announcements.slice(0,3).forEach(a=>{
+      const cm=annCat[a.category]||annCat.general
+      html+='<div class="work-item" style="border-left:3px solid '+cm.c+';cursor:pointer;" onclick="showPage(\'announcements\')">'
+      html+='<div class="work-icon" style="background:'+cm.c+'22;">'+cm.i+'</div>'
+      html+='<div style="flex:1;min-width:0;">'
+      html+='<div class="work-title">'+(a.is_pinned?'📌 ':'')+esc(a.title)+'</div>'
+      html+='<div class="work-meta">'+esc((a.body||'').substring(0,80))+((a.body||'').length>80?'...':'')+'</div></div>'
+      html+='<span style="font-size:11px;color:var(--txt3);white-space:nowrap;">'+timeAgo(a.created_at)+'</span></div>'
+    })
+    html+='</div>'
   }
 
   // Stats
@@ -528,10 +566,38 @@ async function renderMyWork(){
   }
 
   if(totalPending===0){
-    html+='<div class="empty-state"><div class="empty-icon">🎉</div><h3>All clear!</h3><p>No pending items across all systems.</p></div>'
+    html+='<div class="empty-state" style="padding:24px;"><div class="empty-icon">🎉</div><h3>All clear!</h3><p>No pending items across all systems.</p></div>'
   }
 
+  // ── QUICK LINKS to all systems ──
+  html+='<div class="work-section"><h3>🚀 Systems</h3>'
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;">'
+  const sysLinks=[
+    {key:'maintenance',icon:'🔧',label:'Maintenance',color:'var(--amber)',show:!!u.maintenance_role},
+    {key:'it',icon:'🖥️',label:'IT Helpdesk',color:'var(--accent)',show:!!u.it_role},
+    {key:'csr',icon:'📋',label:'CSR / Supply',color:'var(--green)',show:!!u.csr_role},
+    {key:'inventory',icon:'🏷️',label:'Inventory',color:'var(--violet)',show:!!u.inventory_role},
+    {key:'scan',icon:'📱',label:'Asset Scan',color:'var(--accent)',show:true}
+  ]
+  sysLinks.filter(s=>s.show).forEach(s=>{
+    html+='<div onclick="goSystem(\''+s.key+'\')" style="cursor:pointer;background:var(--surf2);border:1px solid var(--bdr);border-radius:12px;padding:18px 12px;text-align:center;transition:all .15s;" onmouseover="this.style.borderColor=\''+s.color+'\';this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.borderColor=\'var(--bdr)\';this.style.transform=\'none\'">'
+    html+='<div style="font-size:28px;margin-bottom:6px;">'+s.icon+'</div>'
+    html+='<div style="font-size:13px;font-weight:600;color:'+s.color+';">'+s.label+'</div></div>'
+  })
+  html+='</div></div>'
+
   content.innerHTML=html
+}
+
+// Relative time helper for dashboard
+function timeAgo(iso){
+  if(!iso)return''
+  const s=Math.floor((Date.now()-new Date(iso))/1000)
+  if(s<60)return'ngayon lang'
+  if(s<3600)return Math.floor(s/60)+'m'
+  if(s<86400)return Math.floor(s/3600)+'h'
+  if(s<604800)return Math.floor(s/86400)+'d'
+  return new Date(iso).toLocaleDateString('en-PH',{month:'short',day:'numeric'})
 }
 
 // ═══════════════════════════════════
