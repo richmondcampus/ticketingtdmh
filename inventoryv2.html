@@ -1579,7 +1579,7 @@ async function logAcquisitionCost(assetId, amount, sourceSystem, refId) {
     asset_id: assetId, entry_type: 'acquisition',
     amount, source_system: sourceSystem||'manual',
     source_ref_id: refId||null, recorded_by: S.user?.id||null
-  }).catch(() => {})
+  })
 }
 
 // ─── Run background checks on dashboard load ───
@@ -2574,10 +2574,12 @@ async function lookupAssetDirect(code) {
   }
   if (asset) {
     if (S.user) {
-      SB.from('asset_scan_logs').insert({
-        asset_id: asset.id, scanned_by: S.user.id,
-        scanned_by_name: S.user.full_name, scan_purpose: 'lookup'
-      }).catch(() => {})
+      try {
+        await SB.from('asset_scan_logs').insert({
+          asset_id: asset.id, scanned_by: S.user.id,
+          scanned_by_name: S.user.full_name, scan_purpose: 'lookup'
+        })
+      } catch (e) { /* logging is best-effort */ }
     }
     try {
       await viewAsset(asset.id)
@@ -2611,7 +2613,7 @@ async function lookupAsset(code) {
         scanned_by: S.user.id,
         scanned_by_name: S.user.full_name,
         scan_purpose: 'lookup'
-      }).catch(() => {})
+      }).then(null, () => {})
     }
     setTimeout(() => {
       closeScanner()
@@ -3206,7 +3208,7 @@ async function openNotifications() {
 async function sendNotification(userIds, title, body, type, sourceSystem, refType, refId, actionUrl) {
   if (!userIds || userIds.length === 0) return
   const inserts = userIds.map(uid => ({ user_id:uid, title, body:body||null, type:type||'info', source_system:sourceSystem||null, source_ref_type:refType||null, source_ref_id:refId||null, action_url:actionUrl||null }))
-  await SB.from('notifications').insert(inserts).catch(() => {})
+  try { await SB.from('notifications').insert(inserts) } catch (e) { /* best-effort */ }
 }
 async function openPortal() {
   const u = window.S?.user || window.state?.user
