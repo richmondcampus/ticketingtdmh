@@ -2539,44 +2539,40 @@ function closeScanner() {
   closeModal('scannerModal')
 }
 
-// Visible status banner (works even if toasts/console are unavailable)
-function scanBanner(msg, color) {
-  let el = document.getElementById('scanDebugBanner')
-  if (!el) {
-    el = document.createElement('div')
-    el.id = 'scanDebugBanner'
-    el.style.cssText = 'position:fixed;top:64px;left:12px;right:12px;z-index:99999;padding:12px 16px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.3);text-align:center;'
-    document.body.appendChild(el)
+// Lightweight loading toast for QR deep-link open
+function scanLoading(show, msg) {
+  let el = document.getElementById('scanLoadingBar')
+  if (show) {
+    if (!el) {
+      el = document.createElement('div')
+      el.id = 'scanLoadingBar'
+      el.style.cssText = 'position:fixed;top:64px;left:12px;right:12px;z-index:99999;padding:11px 16px;border-radius:10px;font-size:13px;font-weight:600;text-align:center;background:var(--accent,#1c4587);color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.25);'
+      document.body.appendChild(el)
+    }
+    el.textContent = msg || '⏳ Binubuksan ang asset...'
+  } else if (el) {
+    el.remove()
   }
-  el.style.background = color || '#1c4587'
-  el.style.color = '#fff'
-  el.textContent = msg
-  el.onclick = () => { el.remove() }
 }
 
 // Direct asset open from a QR deep-link (no scanner modal needed).
 async function lookupAssetDirect(code) {
-  if (!code || !code.trim()) { scanBanner('⚠️ Walang asset code sa QR.', '#cc3a21'); return }
+  if (!code || !code.trim()) return
   const q = code.trim()
-  scanBanner('🔍 Hinahanap ang asset: ' + q + ' ...', '#1c4587')
+  scanLoading(true, '⏳ Hinahanap ang asset...')
   let asset = null
   try {
-    const r1 = await SB.from('assets').select('*')
-      .or('asset_no.eq.' + q + ',qr_code.eq.' + q)
-      .maybeSingle()
-    asset = r1.data
-    if (!asset) {
-      const r2 = await SB.from('assets').select('*')
-        .or('serial_no.eq.' + q + ',manufacturer_barcode.eq.' + q)
-        .maybeSingle()
-      asset = r2.data
-    }
+    // Single combined query (asset_no / qr_code / serial / barcode)
+    const r = await SB.from('assets').select('*')
+      .or('asset_no.eq.' + q + ',qr_code.eq.' + q + ',serial_no.eq.' + q + ',manufacturer_barcode.eq.' + q)
+      .limit(1)
+    asset = r.data && r.data[0]
   } catch (e) {
-    scanBanner('❌ Error sa paghanap: ' + (e.message || e), '#cc3a21')
+    scanLoading(false)
+    showToast('error', 'Error', 'Hindi mahanap: ' + (e.message || e))
     return
   }
   if (asset) {
-    scanBanner('✅ Nahanap: ' + asset.asset_no + ' — binubuksan...', '#0b804b')
     if (S.user) {
       SB.from('asset_scan_logs').insert({
         asset_id: asset.id, scanned_by: S.user.id,
@@ -2585,13 +2581,12 @@ async function lookupAssetDirect(code) {
     }
     try {
       await viewAsset(asset.id)
-      // Remove banner shortly after the modal opens
-      setTimeout(() => { const b = document.getElementById('scanDebugBanner'); if (b) b.remove() }, 1500)
-    } catch (e) {
-      scanBanner('❌ Error sa pagbukas ng detalye: ' + (e.message || e), '#cc3a21')
+    } finally {
+      scanLoading(false)
     }
   } else {
-    scanBanner('❌ Walang asset na tumugma sa: ' + q + ' (i-tap para isara)', '#cc3a21')
+    scanLoading(false)
+    showToast('warning', 'Not Found', 'Walang asset na tumugma sa: ' + q)
   }
 }
 
