@@ -409,6 +409,13 @@ tr:hover td{background:var(--surf2);}
 // ═══════════════════════════════════
 const SUPA_URL = 'https://zcyhwdulizorgngayxya.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjeWh3ZHVsaXpvcmduZ2F5eHlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNjU0NTgsImV4cCI6MjA5NDg0MTQ1OH0.xLdKGNqjNZNRfjAf5NmXGI1GyTbQZAmbZiKokpgAhUo'
+// Capture QR scan target at the EARLIEST point — before the Supabase client
+// (detectSessionInUrl) can rewrite the URL and drop ?asset=.
+try {
+  const _earlyP = new URLSearchParams(window.location.search)
+  const _earlyQR = _earlyP.get('asset') || _earlyP.get('qr')
+  if (_earlyQR) sessionStorage.setItem('tdmh_pending_scan', _earlyQR.trim())
+} catch(e) {}
 const SB = supabase.createClient(SUPA_URL, SUPA_KEY)
 
 // ═══════════════════════════════════
@@ -2532,33 +2539,59 @@ function closeScanner() {
   closeModal('scannerModal')
 }
 
+// Visible status banner (works even if toasts/console are unavailable)
+function scanBanner(msg, color) {
+  let el = document.getElementById('scanDebugBanner')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'scanDebugBanner'
+    el.style.cssText = 'position:fixed;top:64px;left:12px;right:12px;z-index:99999;padding:12px 16px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.3);text-align:center;'
+    document.body.appendChild(el)
+  }
+  el.style.background = color || '#1c4587'
+  el.style.color = '#fff'
+  el.textContent = msg
+  el.onclick = () => { el.remove() }
+}
+
 // Direct asset open from a QR deep-link (no scanner modal needed).
 async function lookupAssetDirect(code) {
-  if (!code || !code.trim()) return
+  if (!code || !code.trim()) { scanBanner('⚠️ Walang asset code sa QR.', '#cc3a21'); return }
   const q = code.trim()
+  scanBanner('🔍 Hinahanap ang asset: ' + q + ' ...', '#1c4587')
   let asset = null
-  // Try exact match on asset_no / qr_code first (most reliable)
-  const r1 = await SB.from('assets').select('*')
-    .or('asset_no.eq.' + q + ',qr_code.eq.' + q)
-    .maybeSingle()
-  asset = r1.data
-  // Fall back to serial / barcode
-  if (!asset) {
-    const r2 = await SB.from('assets').select('*')
-      .or('serial_no.eq.' + q + ',manufacturer_barcode.eq.' + q)
+  try {
+    const r1 = await SB.from('assets').select('*')
+      .or('asset_no.eq.' + q + ',qr_code.eq.' + q)
       .maybeSingle()
-    asset = r2.data
+    asset = r1.data
+    if (!asset) {
+      const r2 = await SB.from('assets').select('*')
+        .or('serial_no.eq.' + q + ',manufacturer_barcode.eq.' + q)
+        .maybeSingle()
+      asset = r2.data
+    }
+  } catch (e) {
+    scanBanner('❌ Error sa paghanap: ' + (e.message || e), '#cc3a21')
+    return
   }
   if (asset) {
+    scanBanner('✅ Nahanap: ' + asset.asset_no + ' — binubuksan...', '#0b804b')
     if (S.user) {
       SB.from('asset_scan_logs').insert({
         asset_id: asset.id, scanned_by: S.user.id,
         scanned_by_name: S.user.full_name, scan_purpose: 'lookup'
       }).catch(() => {})
     }
-    viewAsset(asset.id)
+    try {
+      await viewAsset(asset.id)
+      // Remove banner shortly after the modal opens
+      setTimeout(() => { const b = document.getElementById('scanDebugBanner'); if (b) b.remove() }, 1500)
+    } catch (e) {
+      scanBanner('❌ Error sa pagbukas ng detalye: ' + (e.message || e), '#cc3a21')
+    }
   } else {
-    showToast('warning', 'Not Found', 'Walang asset na tumugma sa: ' + q)
+    scanBanner('❌ Walang asset na tumugma sa: ' + q + ' (i-tap para isara)', '#cc3a21')
   }
 }
 
