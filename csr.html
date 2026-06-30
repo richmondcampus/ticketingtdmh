@@ -1441,7 +1441,7 @@ function setDashView(view) {
 // ── CSR KANBAN ──
 function buildCSRKanban(requests) {
   const role = state.user.csr_role
-  const cols = [
+  const allCols = [
     { id:'draft',            label:'📝 Draft',             color:'var(--txt3)',   bg:'var(--surf2)',   filter: r => r.status === 'draft' },
     { id:'pending_approval', label:'⏳ Pending Approval',  color:'var(--amber)',  bg:'var(--amber-a)', filter: r => r.status === 'pending_approval' },
     { id:'approved',         label:'⚡ Needs Fulfillment', color:'var(--green)',  bg:'var(--green-a)', filter: r => r.status === 'approved' && r.current_approval_level === 99 },
@@ -1449,6 +1449,9 @@ function buildCSRKanban(requests) {
     { id:'issued',           label:'📦 Issued/Done',       color:'var(--blue)',   bg:'var(--blue-a)',  filter: r => r.status === 'issued' || r.status === 'ordered' || r.status === 'delivered' },
     { id:'cancelled',        label:'❌ Cancelled',         color:'var(--red)',    bg:'var(--red-a)',   filter: r => r.status === 'cancelled' },
   ]
+  // Hide Issued/Done and Cancelled from the active Kanban (less clutter).
+  // For PO stays visible but is view-only for supply officer.
+  const cols = allCols.filter(c => c.id !== 'issued' && c.id !== 'cancelled')
 
   let html = '<style>'
   html += '.csr-kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:16px;min-height:400px;margin-top:16px;}'
@@ -3329,22 +3332,26 @@ async function renderApprovalAdjust(wrap, reqId) {
     unit: it.unit || 'pcs',
     // baseline = original if previously adjusted, else current quantity
     baseline: Number(it.quantity_original != null ? it.quantity_original : it.quantity),
-    current: Number(it.quantity)
+    current: Number(it.quantity),
+    removed: false
   }))
   if (_approvalAdjustItems.length === 0) { wrap.innerHTML = ''; return }
 
   let html = '<details style="margin:12px 0;border:1px solid var(--bdr2);border-radius:10px;overflow:hidden;">'
   html += '<summary style="padding:11px 14px;background:var(--surf2);cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;">'
-  html += '✏️ Adjust quantities <span style="font-size:11px;color:var(--txt2);font-weight:400;">(kontrolin kung sobra ang hiniling)</span></summary>'
+  html += '✏️ Adjust / remove items <span style="font-size:11px;color:var(--txt2);font-weight:400;">(kontrolin kung sobra o di kailangan)</span></summary>'
   html += '<div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px;">'
   _approvalAdjustItems.forEach((it, idx) => {
-    html += '<div style="display:flex;align-items:center;gap:10px;">'
-    html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escAdj(it.item_name) + '</div>'
+    const rowStyle = it.removed ? 'opacity:.45;' : ''
+    html += '<div id="adjrow_' + idx + '" style="display:flex;align-items:center;gap:8px;' + rowStyle + '">'
+    html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' + (it.removed?'text-decoration:line-through;':'') + '">' + escAdj(it.item_name) + '</div>'
     html += '<div style="font-size:11px;color:var(--txt3);">Hiniling: ' + it.baseline + ' ' + escAdj(it.unit) + '</div></div>'
     html += '<input type="number" min="0" step="any" value="' + it.current + '" id="adjqty_' + idx + '" '
-    html += 'oninput="onAdjustQtyInput(' + idx + ',this.value)" '
-    html += 'style="width:90px;padding:8px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-size:13px;text-align:center;">'
-    html += '<span style="font-size:11px;color:var(--txt3);width:30px;">' + escAdj(it.unit) + '</span>'
+    html += (it.removed ? 'disabled ' : '') + 'oninput="onAdjustQtyInput(' + idx + ',this.value)" '
+    html += 'style="width:78px;padding:8px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-size:13px;text-align:center;">'
+    html += '<span style="font-size:11px;color:var(--txt3);width:24px;">' + escAdj(it.unit) + '</span>'
+    html += '<button type="button" onclick="toggleRemoveItem(' + idx + ')" title="' + (it.removed?'Restore':'Remove') + '" '
+    html += 'style="flex-shrink:0;width:32px;height:32px;border:none;border-radius:8px;cursor:pointer;font-size:14px;background:' + (it.removed?'var(--green-a)':'var(--red-a)') + ';color:' + (it.removed?'var(--green)':'var(--red)') + ';">' + (it.removed?'↩':'🗑') + '</button>'
     html += '</div>'
   })
   html += '<div style="margin-top:6px;"><label style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;">Reason (kung binawasan)</label>'
@@ -3362,24 +3369,57 @@ function onAdjustQtyInput(idx, val) {
   updateAdjustHint()
 }
 
+function toggleRemoveItem(idx) {
+  const it = _approvalAdjustItems[idx]
+  if (!it) return
+  it.removed = !it.removed
+  // Re-render just this row's state by toggling DOM
+  const row = document.getElementById('adjrow_' + idx)
+  const qtyInput = document.getElementById('adjqty_' + idx)
+  const btn = row ? row.querySelector('button') : null
+  if (row) {
+    row.style.opacity = it.removed ? '.45' : ''
+    const nameEl = row.querySelector('div > div')
+    if (nameEl) nameEl.style.textDecoration = it.removed ? 'line-through' : ''
+  }
+  if (qtyInput) qtyInput.disabled = it.removed
+  if (btn) {
+    btn.textContent = it.removed ? '↩' : '🗑'
+    btn.title = it.removed ? 'Restore' : 'Remove'
+    btn.style.background = it.removed ? 'var(--green-a)' : 'var(--red-a)'
+    btn.style.color = it.removed ? 'var(--green)' : 'var(--red)'
+  }
+  updateAdjustHint()
+}
+
 function updateAdjustHint() {
   const hint = document.getElementById('adjHint')
   if (!hint) return
-  const reduced = _approvalAdjustItems.filter(it => it.current < it.baseline)
-  if (reduced.length > 0) {
+  const reduced = _approvalAdjustItems.filter(it => !it.removed && it.current < it.baseline)
+  const removed = _approvalAdjustItems.filter(it => it.removed)
+  if (reduced.length > 0 || removed.length > 0) {
     hint.style.display = ''
-    hint.textContent = '⚠️ ' + reduced.length + ' item(s) babawasan. Maglagay ng reason.'
+    const parts = []
+    if (reduced.length > 0) parts.push(reduced.length + ' babawasan')
+    if (removed.length > 0) parts.push(removed.length + ' aalisin')
+    hint.textContent = '⚠️ ' + parts.join(', ') + '. Maglagay ng reason.'
   } else {
     hint.style.display = 'none'
   }
 }
 
 async function saveApprovalAdjustments() {
-  // Persist any changed quantities to request_items. Returns true if any reduced.
-  if (!_approvalAdjustItems || _approvalAdjustItems.length === 0) return { changed: false, reduced: false }
+  // Persist quantity changes + item removals to request_items.
+  if (!_approvalAdjustItems || _approvalAdjustItems.length === 0) return { changed: false, reduced: false, removed: 0 }
   const reason = document.getElementById('adjReason')?.value.trim() || null
-  let changed = false, reduced = false
+  let changed = false, reduced = false, removedCount = 0
   for (const it of _approvalAdjustItems) {
+    if (it.removed) {
+      // Delete the request item entirely
+      await SB.from('request_items').delete().eq('id', it.id)
+      changed = true; reduced = true; removedCount++
+      continue
+    }
     if (it.current !== it.baseline) {
       changed = true
       if (it.current < it.baseline) reduced = true
@@ -3393,7 +3433,7 @@ async function saveApprovalAdjustments() {
       }).eq('id', it.id)
     }
   }
-  return { changed, reduced, reason }
+  return { changed, reduced, reason, removed: removedCount }
 }
 
 function openApprovalModal(reqId, action) {
@@ -5161,19 +5201,38 @@ async function viewIssuance(id) {
   body += infoField('Purpose', reqData?.purpose || '—')
   body += '</div>'
 
-  // ── Items ──
+  // ── Items Issued (full detail: name, specs, qty, unit, category, est. cost) ──
   if (items && items.length > 0) {
     const reqItems = reqData ? (await SB.from('request_items').select('*').eq('request_id', reqData.id)).data || [] : []
+    // Map request items by id for accurate lookup (issuance_items.request_item_id)
+    const riById = {}
+    reqItems.forEach(r => { riById[r.id] = r })
     body += '<div style="margin-bottom:16px;">'
-    body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Items Issued</div>'
-    body += '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Unit</th></tr></thead><tbody>'
+    body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">📦 Items to Receive</div>'
+    body += '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item &amp; Specs</th><th>Qty</th><th>Unit</th><th>Category</th><th>Est. Cost</th></tr></thead><tbody>'
     items.forEach((item, i) => {
-      const ri = reqItems[i] || {}
-      body += '<tr><td>' + (i+1) + '</td>'
-      body += '<td>' + (ri.item_name || '—') + '</td>'
-      body += '<td>' + (item.quantity_issued || ri.quantity || '—') + '</td>'
-      body += '<td>' + (ri.unit || 'pcs') + '</td></tr>'
+      // Prefer accurate mapping by request_item_id, fall back to index
+      const ri = (item.request_item_id && riById[item.request_item_id]) ? riById[item.request_item_id] : (reqItems[i] || {})
+      const qty = item.quantity_issued != null ? item.quantity_issued : (ri.quantity != null ? ri.quantity : '—')
+      body += '<tr><td style="color:var(--txt2);">' + (i+1) + '</td>'
+      body += '<td><strong>' + (ri.item_name || '—') + '</strong>'
+      if (ri.item_description) body += '<br><span style="font-size:11px;color:var(--txt2);">' + ri.item_description + '</span>'
+      body += '</td>'
+      body += '<td><strong>' + qty + '</strong></td>'
+      body += '<td>' + (ri.unit || 'pcs') + '</td>'
+      body += '<td>' + (ri.category ? ri.category : '—') + '</td>'
+      body += '<td>' + (ri.estimated_cost ? '₱' + Number(ri.estimated_cost).toLocaleString() : '—') + '</td>'
+      body += '</tr>'
     })
+    // Total row
+    const totalCost = items.reduce((s, item, i) => {
+      const ri = (item.request_item_id && riById[item.request_item_id]) ? riById[item.request_item_id] : (reqItems[i] || {})
+      const qty = Number(item.quantity_issued != null ? item.quantity_issued : (ri.quantity || 0))
+      return s + (Number(ri.estimated_cost || 0) * qty)
+    }, 0)
+    if (totalCost > 0) {
+      body += '<tr><td colspan="5" style="text-align:right;font-weight:600;">Total Est. Value</td><td><strong>₱' + totalCost.toLocaleString() + '</strong></td></tr>'
+    }
     body += '</tbody></table></div></div>'
   }
 
