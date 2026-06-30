@@ -5383,7 +5383,7 @@ function generateToken() {
 // (inventoryv2 checkScanParam reads ?asset= -> lookupAsset -> viewAsset).
 function assetQRUrl(a) {
   const code = a.qr_code || a.asset_no || ''
-  return 'https://ittdmh.pro/inventory?asset=' + encodeURIComponent(code)
+  return 'https://ittdmh.pro/inventoryv2?asset=' + encodeURIComponent(code)
 }
 
 function buildAssetLabelHTML(a, dept) {
