@@ -5199,6 +5199,60 @@ function generateToken() {
 // ─────────────────────────────
 // ISSUANCE DETAIL
 // ─────────────────────────────
+// ═══════════════════════════════════════════
+// ASSET QR LABEL PRINTING (browser print)
+// ═══════════════════════════════════════════
+function buildAssetLabelHTML(a, dept) {
+  const qrVal = encodeURIComponent(a.qr_code || a.asset_no)
+  const qrImg = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + qrVal
+  let h = ''
+  h += '<div class="label">'
+  h += '<img src="' + qrImg + '" width="120" height="120">'
+  h += '<div class="info">'
+  h += '<div class="asset-no">' + a.asset_no + '</div>'
+  h += '<div class="name">' + (a.asset_name || '') + '</div>'
+  if (dept) h += '<div class="meta">' + dept + '</div>'
+  h += '<div class="hosp">TDMH Asset Inventory</div>'
+  h += '</div></div>'
+  return h
+}
+
+const ASSET_LABEL_CSS = 'body{font-family:Arial,sans-serif;margin:16px;}' +
+  '.label{display:flex;align-items:center;gap:14px;border:2px solid #000;border-radius:8px;padding:12px;width:fit-content;margin-bottom:12px;page-break-inside:avoid;}' +
+  '.asset-no{font-size:15px;font-weight:bold;font-family:monospace;margin-bottom:4px;}' +
+  '.name{font-size:13px;font-weight:600;margin-bottom:3px;}' +
+  '.meta{font-size:11px;color:#666;margin-bottom:2px;}' +
+  '.hosp{font-size:10px;color:#999;margin-top:6px;}' +
+  '@media print{body{margin:0;}}'
+
+async function printAssetLabel(assetId) {
+  const { data: a } = await SB.from('assets').select('*').eq('id', assetId).single()
+  if (!a) { showToast('error','Error','Asset not found'); return }
+  const dept = state.departments.find(d => d.id === a.dept_id)
+  const win = window.open('', '_blank', 'width=420,height=320')
+  win.document.write('<html><head><title>' + a.asset_no + '</title>')
+  win.document.write('<style>' + ASSET_LABEL_CSS + '</style></head><body>')
+  win.document.write(buildAssetLabelHTML(a, dept ? dept.dept_name : null))
+  win.document.write('<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print()},400)}</scr' + 'ipt>')
+  win.document.write('</body></html>')
+  win.document.close()
+}
+
+async function printAllAssetLabels(requestId) {
+  const { data: assets } = await SB.from('assets').select('*').eq('source_csr_id', requestId).order('asset_no')
+  if (!assets || assets.length === 0) { showToast('error','Error','No assets found'); return }
+  const win = window.open('', '_blank', 'width=420,height=600')
+  win.document.write('<html><head><title>Asset Labels</title>')
+  win.document.write('<style>' + ASSET_LABEL_CSS + '</style></head><body>')
+  assets.forEach(a => {
+    const dept = state.departments.find(d => d.id === a.dept_id)
+    win.document.write(buildAssetLabelHTML(a, dept ? dept.dept_name : null))
+  })
+  win.document.write('<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print()},500)}</scr' + 'ipt>')
+  win.document.write('</body></html>')
+  win.document.close()
+}
+
 async function viewIssuance(id) {
   const { data: iss } = await SB.from('issuances').select('*').eq('id', id).single()
   if (!iss) return
@@ -5297,6 +5351,37 @@ async function viewIssuance(id) {
       body += '</tbody></table></div></div>'
     } else {
       body += '<div style="margin-bottom:16px;color:var(--txt2);font-size:13px;">No item details available.</div>'
+    }
+  }
+
+  // ── Registered Assets (auto-created by trigger for equipment/IT/medical) ──
+  if (reqData && reqData.id) {
+    const { data: assets } = await SB.from('assets')
+      .select('id,asset_no,asset_name,qr_code,acquisition_cost,condition,status')
+      .eq('source_csr_id', reqData.id)
+      .order('asset_no')
+    if (assets && assets.length > 0) {
+      body += '<div style="margin-bottom:16px;">'
+      body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏷️ Registered Assets — Inventory Control Numbers</div>'
+      body += '<div style="font-size:12px;color:var(--txt2);margin-bottom:10px;">Awtomatikong nairehistro sa Inventory. I-print ang QR para idikit sa item.</div>'
+      assets.forEach(a => {
+        const qrVal = encodeURIComponent(a.qr_code || a.asset_no)
+        body += '<div style="display:flex;align-items:center;gap:14px;border:1px solid var(--bdr2);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--surf2);">'
+        // QR preview via image API (no library needed)
+        body += '<img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=' + qrVal + '" width="72" height="72" style="border-radius:6px;background:#fff;padding:3px;flex-shrink:0;" alt="QR">'
+        body += '<div style="flex:1;min-width:0;">'
+        body += '<div style="font-family:\'JetBrains Mono\',monospace;font-size:14px;font-weight:700;color:var(--accent);">' + a.asset_no + '</div>'
+        body += '<div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (a.asset_name || '—') + '</div>'
+        if (a.acquisition_cost) body += '<div style="font-size:11px;color:var(--txt3);">₱' + Number(a.acquisition_cost).toLocaleString() + ' · ' + (a.condition || 'good') + '</div>'
+        body += '</div>'
+        body += '<button class="btn btn-secondary btn-sm" style="flex-shrink:0;" onclick="printAssetLabel(\'' + a.id + '\')">🖨️ Print QR</button>'
+        body += '</div>'
+      })
+      // Print-all option when multiple assets
+      if (assets.length > 1) {
+        body += '<button class="btn btn-ghost btn-sm" onclick="printAllAssetLabels(\'' + reqData.id + '\')">🖨️ Print All ' + assets.length + ' Labels</button>'
+      }
+      body += '</div>'
     }
   }
 
