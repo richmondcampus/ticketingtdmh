@@ -3253,30 +3253,73 @@ async function processApproval() {
           notes: 'Direct issuance from stock'
         }).select('id').single()
         const issuanceId = issRow?.id
-        // Deduct from stock + create issuance_items linked to each request item
+        // Build a stock-link lookup from the adjustment session (auto-matched + overrides)
+        const linkByItemId = {}
+        if (Array.isArray(_approvalAdjustItems)) {
+          _approvalAdjustItems.forEach(a => { if (a && a.id) linkByItemId[a.id] = a })
+        }
+        // Deduct from stock (partial-aware) + create issuance_items + stock_movements
         const { data: reqItems } = await SB.from('request_items').select('*').eq('request_id', req.id)
+        let anyPartial = false, anyUnfulfilled = false
         for (const item of (reqItems || [])) {
-          let matchedStockId = null
-          const { data: stock } = await SB.from('stock_items').select('id,quantity_on_hand')
-            .ilike('item_name', '%' + item.item_name.substring(0, 12) + '%').gt('quantity_on_hand', 0).limit(1)
-          if (stock?.[0]) {
-            matchedStockId = stock[0].id
-            const newQty = Math.max(0, Number(stock[0].quantity_on_hand) - Number(item.quantity))
-            await SB.from('stock_items').update({ quantity_on_hand: newQty, last_updated: new Date().toISOString() }).eq('id', stock[0].id)
+          const link = linkByItemId[item.id]
+          const needed = Number(item.quantity) || 1
+          let stockId = link && link.stock_id ? link.stock_id : null
+          let available = 0
+
+          // Resolve current stock level (re-read to be accurate at issue time)
+          if (stockId) {
+            const { data: srow } = await SB.from('stock_items').select('id,quantity_on_hand,unit_cost').eq('id', stockId).maybeSingle()
+            if (srow) available = Number(srow.quantity_on_hand)
+          } else {
+            // No explicit link — fall back to a name guess (best effort)
+            const { data: stock } = await SB.from('stock_items').select('id,quantity_on_hand,unit_cost')
+              .ilike('item_name', '%' + item.item_name.substring(0, 12) + '%').gt('quantity_on_hand', 0).limit(1)
+            if (stock?.[0]) { stockId = stock[0].id; available = Number(stock[0].quantity_on_hand) }
           }
+
+          // Partial issue: only issue what's available (never go negative)
+          const issueQty = Math.max(0, Math.min(needed, available))
+          if (issueQty > 0 && issueQty < needed) anyPartial = true
+          if (issueQty === 0) anyUnfulfilled = true
+
+          if (stockId && issueQty > 0) {
+            const before = available
+            const after = Math.max(0, before - issueQty)
+            await SB.from('stock_items').update({ quantity_on_hand: after, last_updated: new Date().toISOString() }).eq('id', stockId)
+            // Flow 1: record stock movement (issue) for cost/movement tracking
+            await SB.from('stock_movements').insert({
+              stock_item_id: stockId,
+              movement_type: 'issue',
+              quantity: -issueQty,
+              quantity_before: before,
+              quantity_after: after,
+              reference_type: 'issuance',
+              reference_id: issuanceId,
+              performed_by: state.user.id,
+              remarks: 'Issued for ' + req.request_no + (issueQty < needed ? ' (partial: ' + issueQty + ' of ' + needed + ')' : '')
+            })
+          }
+
           if (issuanceId) {
             await SB.from('issuance_items').insert({
               issuance_id: issuanceId,
               request_item_id: item.id,
-              quantity_issued: Number(item.quantity) || 1,
-              from_stock: true,
-              stock_item_id: matchedStockId
+              quantity_issued: issueQty > 0 ? issueQty : needed,
+              from_stock: issueQty > 0,
+              stock_item_id: stockId
             })
           }
         }
+        if (anyPartial || anyUnfulfilled) {
+          toastMsg = '📦 Issued from stock — may partial/kulang na item (tingnan ang detalye).'
+        }
         // Notify requester
         if (req.requested_by) {
-          await SB.from('notifications').insert({ user_id: req.requested_by, title: '📦 Items Ready — ' + req.request_no, body: 'Your request has been fulfilled from stock. Items are ready for pickup.', type: 'success', source_system: 'csr', source_ref_id: req.id })
+          const note = anyPartial || anyUnfulfilled
+            ? 'Bahagi ng request mo ay na-issue from stock. May ilang item na kulang/partial — i-follow up sa Supply Office.'
+            : 'Your request has been fulfilled from stock. Items are ready for pickup.'
+          await SB.from('notifications').insert({ user_id: req.requested_by, title: '📦 Items Ready — ' + req.request_no, body: note, type: 'success', source_system: 'csr', source_ref_id: req.id })
         }
 
       } else if (level === 1) {
@@ -3393,20 +3436,94 @@ function onAdjustCategoryChange(idx, val) {
   if (hint) hint.innerHTML = categoryAssetHint(val)
 }
 
+// Stock list cached for the current approval adjustment session
+let _approvalStockList = []
+
+// Auto-match a request item name to the best stock item (fuzzy contains).
+function autoMatchStock(name, stockList) {
+  if (!name || !stockList || stockList.length === 0) return null
+  const n = name.toLowerCase().trim()
+  // 1. exact (case-insensitive)
+  let m = stockList.find(s => (s.item_name || '').toLowerCase().trim() === n)
+  if (m) return m
+  // 2. stock name contains request name, or vice versa
+  m = stockList.find(s => {
+    const sn = (s.item_name || '').toLowerCase()
+    return sn.includes(n) || n.includes(sn)
+  })
+  if (m) return m
+  // 3. token overlap — share a significant word (>=4 chars)
+  const tokens = n.split(/\s+/).filter(t => t.length >= 4)
+  if (tokens.length > 0) {
+    m = stockList.find(s => {
+      const sn = (s.item_name || '').toLowerCase()
+      return tokens.some(t => sn.includes(t))
+    })
+    if (m) return m
+  }
+  return null
+}
+
+function escStk(s){ if(s==null)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+// Called when supply officer overrides the stock link via dropdown
+function onAdjustStockChange(idx, stockId) {
+  const it = _approvalAdjustItems[idx]
+  if (!it) return
+  if (!stockId) {
+    it.stock_id = null; it.stock_name = null; it.stock_qty = 0; it.stock_cost = 0
+  } else {
+    const s = _approvalStockList.find(x => x.id === stockId)
+    if (s) {
+      it.stock_id = s.id; it.stock_name = s.item_name
+      it.stock_qty = Number(s.quantity_on_hand); it.stock_cost = Number(s.unit_cost || 0)
+    }
+  }
+  // Refresh this row's stock info display
+  const info = document.getElementById('adjstockinfo_' + idx)
+  if (info) info.innerHTML = stockInfoHTML(it)
+}
+
+function stockInfoHTML(it) {
+  if (!it.stock_id) {
+    return '<span style="color:var(--amber);font-size:11px;">⚠️ Walang ka-link sa stock — pumili o purchasing</span>'
+  }
+  const enough = it.stock_qty >= it.current
+  const partial = it.stock_qty > 0 && it.stock_qty < it.current
+  const color = enough ? 'var(--green)' : partial ? 'var(--amber)' : 'var(--red)'
+  const icon = enough ? '✅' : partial ? '⚠️' : '❌'
+  let s = '<span style="color:' + color + ';font-size:11px;">' + icon + ' ' + it.stock_qty + ' available'
+  if (it.stock_cost > 0) s += ' · ₱' + Number(it.stock_cost).toLocaleString() + '/' + escStk(it.unit)
+  if (partial) s += ' · partial lang'
+  else if (!enough) s += ' · kulang'
+  s += '</span>'
+  return s
+}
+
 async function renderApprovalAdjust(wrap, reqId) {
   wrap.innerHTML = '<div style="font-size:12px;color:var(--txt2);padding:8px 0;">Loading items...</div>'
   const { data: items } = await SB.from('request_items').select('*').eq('request_id', reqId).order('item_name')
-  _approvalAdjustItems = (items || []).map(it => ({
-    id: it.id,
-    item_name: it.item_name,
-    unit: it.unit || 'pcs',
-    // baseline = original if previously adjusted, else current quantity
-    baseline: Number(it.quantity_original != null ? it.quantity_original : it.quantity),
-    current: Number(it.quantity),
-    category: it.category || 'consumable',
-    category_original: it.category || 'consumable',
-    removed: false
-  }))
+  // Load active stock items once for auto-matching
+  const { data: allStock } = await SB.from('stock_items').select('id,item_name,quantity_on_hand,unit,unit_cost,item_code,brand').eq('is_active', true)
+  _approvalStockList = allStock || []
+  _approvalAdjustItems = (items || []).map(it => {
+    const match = autoMatchStock(it.item_name, _approvalStockList)
+    return {
+      id: it.id,
+      item_name: it.item_name,
+      unit: it.unit || 'pcs',
+      baseline: Number(it.quantity_original != null ? it.quantity_original : it.quantity),
+      current: Number(it.quantity),
+      category: it.category || 'consumable',
+      category_original: it.category || 'consumable',
+      removed: false,
+      // Stock linkage (auto-matched, overridable)
+      stock_id: match ? match.id : null,
+      stock_name: match ? match.item_name : null,
+      stock_qty: match ? Number(match.quantity_on_hand) : 0,
+      stock_cost: match ? Number(match.unit_cost || 0) : 0
+    }
+  })
   if (_approvalAdjustItems.length === 0) { wrap.innerHTML = ''; return }
 
   let html = '<details style="margin:12px 0;border:1px solid var(--bdr2);border-radius:10px;overflow:hidden;">'
@@ -3435,6 +3552,19 @@ async function renderApprovalAdjust(wrap, reqId) {
     })
     html += '</select>'
     html += '<span id="adjcathint_' + idx + '" style="font-size:11px;">' + categoryAssetHint(it.category) + '</span>'
+    html += '</div>'
+    // Stock-link row (auto-matched, overridable) — for issuing from stock
+    html += '<div style="display:flex;align-items:center;gap:8px;margin:0 0 8px 0;padding-left:2px;flex-wrap:wrap;">'
+    html += '<span style="font-size:11px;color:var(--txt3);">Stock:</span>'
+    html += '<select id="adjstock_' + idx + '" ' + (it.removed?'disabled ':'') + 'onchange="onAdjustStockChange(' + idx + ',this.value)" '
+    html += 'style="padding:5px 8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:7px;color:var(--txt);font-size:12px;max-width:200px;">'
+    html += '<option value=""' + (!it.stock_id ? ' selected' : '') + '>— Walang link —</option>'
+    _approvalStockList.forEach(s => {
+      const lbl = escStk(s.item_name) + ' (' + Number(s.quantity_on_hand) + ' ' + escStk(s.unit||'pcs') + ')'
+      html += '<option value="' + s.id + '"' + (it.stock_id === s.id ? ' selected' : '') + '>' + lbl + '</option>'
+    })
+    html += '</select>'
+    html += '<span id="adjstockinfo_' + idx + '">' + stockInfoHTML(it) + '</span>'
     html += '</div>'
   })
   html += '<div style="margin-top:6px;"><label style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;">Reason (kung binawasan)</label>'
@@ -5248,8 +5378,16 @@ function generateToken() {
 // ═══════════════════════════════════════════
 // ASSET QR LABEL PRINTING (browser print)
 // ═══════════════════════════════════════════
+// Build the scannable URL that the asset QR points to.
+// Scanning opens the Asset Inventory system and jumps to this asset
+// (inventoryv2 checkScanParam reads ?asset= -> lookupAsset -> viewAsset).
+function assetQRUrl(a) {
+  const code = a.qr_code || a.asset_no || ''
+  return 'https://ittdmh.pro/inventory?asset=' + encodeURIComponent(code)
+}
+
 function buildAssetLabelHTML(a, dept) {
-  const qrVal = encodeURIComponent(a.qr_code || a.asset_no)
+  const qrVal = encodeURIComponent(assetQRUrl(a))
   const qrImg = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + qrVal
   let h = ''
   h += '<div class="label">'
@@ -5411,9 +5549,9 @@ async function viewIssuance(id) {
       body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏷️ Registered Assets — Inventory Control Numbers</div>'
       body += '<div style="font-size:12px;color:var(--txt2);margin-bottom:10px;">Awtomatikong nairehistro sa Inventory. I-print ang QR para idikit sa item.</div>'
       assets.forEach(a => {
-        const qrVal = encodeURIComponent(a.qr_code || a.asset_no)
+        const qrVal = encodeURIComponent(assetQRUrl(a))
         body += '<div style="display:flex;align-items:center;gap:14px;border:1px solid var(--bdr2);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--surf2);">'
-        // QR preview via image API (no library needed)
+        // QR preview via image API (encodes redirect URL to inventory system)
         body += '<img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=' + qrVal + '" width="72" height="72" style="border-radius:6px;background:#fff;padding:3px;flex-shrink:0;" alt="QR">'
         body += '<div style="flex:1;min-width:0;">'
         body += '<div style="font-family:\'JetBrains Mono\',monospace;font-size:14px;font-weight:700;color:var(--accent);">' + a.asset_no + '</div>'
