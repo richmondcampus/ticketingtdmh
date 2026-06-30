@@ -3365,6 +3365,34 @@ async function autoCreatePODraft(req) {
 // ═══════════════════════════════════════════
 let _approvalAdjustItems = []
 
+// Category options for CSR request items (matches request_items.category CHECK).
+// Asset-type categories (equipment/it_hardware/medical) trigger auto asset+QR.
+const CSR_CATEGORIES = [
+  { value:'consumable',           label:'Consumable',           asset:false },
+  { value:'office',               label:'Office Supply',        asset:false },
+  { value:'maintenance_material', label:'Maintenance Material', asset:false },
+  { value:'equipment',            label:'Equipment',            asset:true  },
+  { value:'it_hardware',          label:'IT Hardware',          asset:true  },
+  { value:'medical',              label:'Medical',              asset:true  }
+]
+
+function categoryIsAsset(cat) {
+  const c = CSR_CATEGORIES.find(x => x.value === cat)
+  return !!(c && c.asset)
+}
+
+function categoryAssetHint(cat) {
+  return categoryIsAsset(cat)
+    ? '<span style="color:var(--accent);">🏷️ Gagawing asset (may QR)</span>'
+    : '<span style="color:var(--txt3);">📦 Consumable / supply</span>'
+}
+
+function onAdjustCategoryChange(idx, val) {
+  if (_approvalAdjustItems[idx]) _approvalAdjustItems[idx].category = val
+  const hint = document.getElementById('adjcathint_' + idx)
+  if (hint) hint.innerHTML = categoryAssetHint(val)
+}
+
 async function renderApprovalAdjust(wrap, reqId) {
   wrap.innerHTML = '<div style="font-size:12px;color:var(--txt2);padding:8px 0;">Loading items...</div>'
   const { data: items } = await SB.from('request_items').select('*').eq('request_id', reqId).order('item_name')
@@ -3375,6 +3403,8 @@ async function renderApprovalAdjust(wrap, reqId) {
     // baseline = original if previously adjusted, else current quantity
     baseline: Number(it.quantity_original != null ? it.quantity_original : it.quantity),
     current: Number(it.quantity),
+    category: it.category || 'consumable',
+    category_original: it.category || 'consumable',
     removed: false
   }))
   if (_approvalAdjustItems.length === 0) { wrap.innerHTML = ''; return }
@@ -3394,6 +3424,17 @@ async function renderApprovalAdjust(wrap, reqId) {
     html += '<span style="font-size:11px;color:var(--txt3);width:24px;">' + escAdj(it.unit) + '</span>'
     html += '<button type="button" onclick="toggleRemoveItem(' + idx + ')" title="' + (it.removed?'Restore':'Remove') + '" '
     html += 'style="flex-shrink:0;width:32px;height:32px;border:none;border-radius:8px;cursor:pointer;font-size:14px;background:' + (it.removed?'var(--green-a)':'var(--red-a)') + ';color:' + (it.removed?'var(--green)':'var(--red)') + ';">' + (it.removed?'↩':'🗑') + '</button>'
+    html += '</div>'
+    // Category row (supply officer can re-classify; drives asset registration)
+    html += '<div style="display:flex;align-items:center;gap:8px;margin:-2px 0 4px 0;padding-left:2px;">'
+    html += '<span style="font-size:11px;color:var(--txt3);">Category:</span>'
+    html += '<select id="adjcat_' + idx + '" ' + (it.removed?'disabled ':'') + 'onchange="onAdjustCategoryChange(' + idx + ',this.value)" '
+    html += 'style="padding:5px 8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:7px;color:var(--txt);font-size:12px;">'
+    CSR_CATEGORIES.forEach(c => {
+      html += '<option value="' + c.value + '"' + (it.category === c.value ? ' selected' : '') + '>' + c.label + '</option>'
+    })
+    html += '</select>'
+    html += '<span id="adjcathint_' + idx + '" style="font-size:11px;">' + categoryAssetHint(it.category) + '</span>'
     html += '</div>'
   })
   html += '<div style="margin-top:6px;"><label style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;">Reason (kung binawasan)</label>'
@@ -3462,6 +3503,7 @@ async function saveApprovalAdjustments() {
   if (!_approvalAdjustItems || _approvalAdjustItems.length === 0) return { changed: false, reduced: false, removed: 0 }
   const reason = document.getElementById('adjReason')?.value.trim() || null
   let changed = false, reduced = false, removedCount = 0
+  let categoryChanged = 0
   for (const it of _approvalAdjustItems) {
     if (it.removed || it.current <= 0) {
       // Delete the request item entirely (explicitly removed OR set to 0)
@@ -3469,20 +3511,24 @@ async function saveApprovalAdjustments() {
       changed = true; reduced = true; removedCount++
       continue
     }
-    if (it.current !== it.baseline) {
+    const qtyChanged = it.current !== it.baseline
+    const catChanged = it.category && it.category !== it.category_original
+    if (qtyChanged || catChanged) {
       changed = true
       if (it.current < it.baseline) reduced = true
-      await SB.from('request_items').update({
-        quantity: it.current,
-        quantity_original: it.baseline,
-        quantity_adjusted: it.current,
-        adjustment_reason: reason,
-        adjusted_by: state.user.id,
-        adjusted_at: new Date().toISOString()
-      }).eq('id', it.id)
+      if (catChanged) categoryChanged++
+      const upd = { adjusted_by: state.user.id, adjusted_at: new Date().toISOString() }
+      if (qtyChanged) {
+        upd.quantity = it.current
+        upd.quantity_original = it.baseline
+        upd.quantity_adjusted = it.current
+        upd.adjustment_reason = reason
+      }
+      if (catChanged) upd.category = it.category
+      await SB.from('request_items').update(upd).eq('id', it.id)
     }
   }
-  return { changed, reduced, reason, removed: removedCount }
+  return { changed, reduced, reason, removed: removedCount, categoryChanged }
 }
 
 function openApprovalModal(reqId, action) {
