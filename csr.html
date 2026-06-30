@@ -3175,6 +3175,36 @@ async function processApproval() {
     let adjustResult = { changed: false, reduced: false, reason: null }
     if (approvalAction === 'approve' && (level === 2 || isAutoApproved || role === 'admin')) {
       adjustResult = await saveApprovalAdjustments()
+
+      // ── Empty-request guard: if nothing remains, don't issue. ──
+      const { count: remainingItems } = await SB.from('request_items')
+        .select('*', { count: 'exact', head: true })
+        .eq('request_id', req.id)
+      if (!remainingItems || remainingItems === 0) {
+        // Cancel the whole request instead of issuing an empty one
+        await SB.from('approvals').insert({
+          request_id: req.id, approver_id: state.user.id, approver_role: role,
+          level: isAutoApproved ? 2 : level, decision: 'rejected',
+          remarks: (remarks ? remarks + ' — ' : '') + 'Walang natirang item matapos i-adjust/alisin.',
+          decided_at: new Date().toISOString()
+        })
+        await SB.from('requests').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', req.id)
+        if (req.requested_by) {
+          await SB.from('notifications').insert({
+            user_id: req.requested_by,
+            title: '❌ Request Cancelled — ' + req.request_no,
+            body: 'Na-cancel ang request dahil walang natirang item matapos ang pag-adjust ng Supply Officer' + (adjustResult.reason ? ': ' + adjustResult.reason : '.'),
+            type: 'warning', source_system: 'csr', source_ref_id: req.id
+          })
+        }
+        closeModal('approvalModal')
+        closeModal('requestDetailModal')
+        showToast('info', 'Request Cancelled', 'Walang natirang item — na-cancel ang request imbes na i-issue.')
+        if (typeof renderApprovalQueue === 'function' && state.page === 'approvals') renderApprovalQueue()
+        else if (typeof renderDashboard === 'function') renderDashboard()
+        return
+      }
+
       if (adjustResult.reduced && req.requested_by) {
         await SB.from('notifications').insert({
           user_id: req.requested_by,
@@ -3395,10 +3425,17 @@ function toggleRemoveItem(idx) {
 function updateAdjustHint() {
   const hint = document.getElementById('adjHint')
   if (!hint) return
-  const reduced = _approvalAdjustItems.filter(it => !it.removed && it.current < it.baseline)
-  const removed = _approvalAdjustItems.filter(it => it.removed)
-  if (reduced.length > 0 || removed.length > 0) {
+  const reduced = _approvalAdjustItems.filter(it => !it.removed && it.current > 0 && it.current < it.baseline)
+  const removed = _approvalAdjustItems.filter(it => it.removed || it.current <= 0)
+  const remaining = _approvalAdjustItems.filter(it => !it.removed && it.current > 0)
+  if (remaining.length === 0 && _approvalAdjustItems.length > 0) {
+    // Everything removed/zeroed — will cancel, not issue
     hint.style.display = ''
+    hint.style.color = 'var(--red)'
+    hint.textContent = '🚫 Walang matitirang item — ICA-CANCEL ang request imbes na i-issue.'
+  } else if (reduced.length > 0 || removed.length > 0) {
+    hint.style.display = ''
+    hint.style.color = 'var(--amber)'
     const parts = []
     if (reduced.length > 0) parts.push(reduced.length + ' babawasan')
     if (removed.length > 0) parts.push(removed.length + ' aalisin')
@@ -3414,8 +3451,8 @@ async function saveApprovalAdjustments() {
   const reason = document.getElementById('adjReason')?.value.trim() || null
   let changed = false, reduced = false, removedCount = 0
   for (const it of _approvalAdjustItems) {
-    if (it.removed) {
-      // Delete the request item entirely
+    if (it.removed || it.current <= 0) {
+      // Delete the request item entirely (explicitly removed OR set to 0)
       await SB.from('request_items').delete().eq('id', it.id)
       changed = true; reduced = true; removedCount++
       continue
