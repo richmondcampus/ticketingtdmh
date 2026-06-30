@@ -541,8 +541,14 @@ function formatInvRole(r) {
 
 function checkScanParam() {
   const p = new URLSearchParams(window.location.search)
-  const qr = p.get('asset') || p.get('qr')
-  if (qr) { setTimeout(() => lookupAsset(qr), 500) }
+  let qr = p.get('asset') || p.get('qr')
+  // Fall back to the value captured before login
+  if (!qr) { try { qr = sessionStorage.getItem('tdmh_pending_scan') } catch(e) {} }
+  if (qr) {
+    try { sessionStorage.removeItem('tdmh_pending_scan') } catch(e) {}
+    // Give the app shell a moment to finish rendering, then open the asset
+    setTimeout(() => lookupAssetDirect(qr.trim()), 600)
+  }
 }
 
 // ═══════════════════════════════════
@@ -2525,6 +2531,36 @@ function closeScanner() {
   closeModal('scannerModal')
 }
 
+// Direct asset open from a QR deep-link (no scanner modal needed).
+async function lookupAssetDirect(code) {
+  if (!code || !code.trim()) return
+  const q = code.trim()
+  let asset = null
+  // Try exact match on asset_no / qr_code first (most reliable)
+  const r1 = await SB.from('assets').select('*')
+    .or('asset_no.eq.' + q + ',qr_code.eq.' + q)
+    .maybeSingle()
+  asset = r1.data
+  // Fall back to serial / barcode
+  if (!asset) {
+    const r2 = await SB.from('assets').select('*')
+      .or('serial_no.eq.' + q + ',manufacturer_barcode.eq.' + q)
+      .maybeSingle()
+    asset = r2.data
+  }
+  if (asset) {
+    if (S.user) {
+      SB.from('asset_scan_logs').insert({
+        asset_id: asset.id, scanned_by: S.user.id,
+        scanned_by_name: S.user.full_name, scan_purpose: 'lookup'
+      }).catch(() => {})
+    }
+    viewAsset(asset.id)
+  } else {
+    showToast('warning', 'Not Found', 'Walang asset na tumugma sa: ' + q)
+  }
+}
+
 async function lookupAsset(code) {
   if (!code || !code.trim()) return
   const q = code.trim()
@@ -3036,6 +3072,13 @@ document.getElementById('loginPass').addEventListener('keydown', e => { if (e.ke
 ;(async function init() {
   const savedTheme = localStorage.getItem('tdmh_theme') || 'dark'
   document.documentElement.setAttribute('data-theme', savedTheme)
+
+  // Capture QR scan target early so it survives the login flow
+  try {
+    const _p = new URLSearchParams(window.location.search)
+    const _qr = _p.get('asset') || _p.get('qr')
+    if (_qr) sessionStorage.setItem('tdmh_pending_scan', _qr.trim())
+  } catch(e) {}
 
   const stored = getSession()
   if (stored && stored.access_token && stored.refresh_token) {
