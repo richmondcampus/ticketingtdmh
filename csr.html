@@ -3244,22 +3244,34 @@ async function processApproval() {
         const { data: num } = await SB.rpc('generate_issuance_no')
         const issNo = num || ('ISS-' + Date.now())
         const token = Math.random().toString(36).substring(2, 14)
-        await SB.from('issuances').insert({
+        const { data: issRow } = await SB.from('issuances').insert({
           issuance_no: issNo, request_id: req.id,
           issued_by: state.user.id, issued_at: new Date().toISOString(),
           scenario: 'from_stock', prepared_by: state.user.id,
           confirm_token: token,
           confirm_token_expires_at: new Date(Date.now() + 72*3600000).toISOString(),
           notes: 'Direct issuance from stock'
-        })
-        // Deduct from stock
+        }).select('id').single()
+        const issuanceId = issRow?.id
+        // Deduct from stock + create issuance_items linked to each request item
         const { data: reqItems } = await SB.from('request_items').select('*').eq('request_id', req.id)
         for (const item of (reqItems || [])) {
+          let matchedStockId = null
           const { data: stock } = await SB.from('stock_items').select('id,quantity_on_hand')
             .ilike('item_name', '%' + item.item_name.substring(0, 12) + '%').gt('quantity_on_hand', 0).limit(1)
           if (stock?.[0]) {
+            matchedStockId = stock[0].id
             const newQty = Math.max(0, Number(stock[0].quantity_on_hand) - Number(item.quantity))
             await SB.from('stock_items').update({ quantity_on_hand: newQty, last_updated: new Date().toISOString() }).eq('id', stock[0].id)
+          }
+          if (issuanceId) {
+            await SB.from('issuance_items').insert({
+              issuance_id: issuanceId,
+              request_item_id: item.id,
+              quantity_issued: Number(item.quantity) || 1,
+              from_stock: true,
+              stock_item_id: matchedStockId
+            })
           }
         }
         // Notify requester
@@ -5238,39 +5250,54 @@ async function viewIssuance(id) {
   body += infoField('Purpose', reqData?.purpose || '—')
   body += '</div>'
 
-  // ── Items Issued (full detail: name, specs, qty, unit, category, est. cost) ──
-  if (items && items.length > 0) {
+  // ── Items Issued (full detail). Falls back to request_items if
+  //    issuance_items is empty (legacy issuances). ──
+  {
     const reqItems = reqData ? (await SB.from('request_items').select('*').eq('request_id', reqData.id)).data || [] : []
-    // Map request items by id for accurate lookup (issuance_items.request_item_id)
     const riById = {}
     reqItems.forEach(r => { riById[r.id] = r })
-    body += '<div style="margin-bottom:16px;">'
-    body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">📦 Items to Receive</div>'
-    body += '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item &amp; Specs</th><th>Qty</th><th>Unit</th><th>Category</th><th>Est. Cost</th></tr></thead><tbody>'
-    items.forEach((item, i) => {
-      // Prefer accurate mapping by request_item_id, fall back to index
-      const ri = (item.request_item_id && riById[item.request_item_id]) ? riById[item.request_item_id] : (reqItems[i] || {})
-      const qty = item.quantity_issued != null ? item.quantity_issued : (ri.quantity != null ? ri.quantity : '—')
-      body += '<tr><td style="color:var(--txt2);">' + (i+1) + '</td>'
-      body += '<td><strong>' + (ri.item_name || '—') + '</strong>'
-      if (ri.item_description) body += '<br><span style="font-size:11px;color:var(--txt2);">' + ri.item_description + '</span>'
-      body += '</td>'
-      body += '<td><strong>' + qty + '</strong></td>'
-      body += '<td>' + (ri.unit || 'pcs') + '</td>'
-      body += '<td>' + (ri.category ? ri.category : '—') + '</td>'
-      body += '<td>' + (ri.estimated_cost ? '₱' + Number(ri.estimated_cost).toLocaleString() : '—') + '</td>'
-      body += '</tr>'
-    })
-    // Total row
-    const totalCost = items.reduce((s, item, i) => {
-      const ri = (item.request_item_id && riById[item.request_item_id]) ? riById[item.request_item_id] : (reqItems[i] || {})
-      const qty = Number(item.quantity_issued != null ? item.quantity_issued : (ri.quantity || 0))
-      return s + (Number(ri.estimated_cost || 0) * qty)
-    }, 0)
-    if (totalCost > 0) {
-      body += '<tr><td colspan="5" style="text-align:right;font-weight:600;">Total Est. Value</td><td><strong>₱' + totalCost.toLocaleString() + '</strong></td></tr>'
+
+    // Build the display rows: prefer issuance_items, else fall back to request_items
+    let rows = []
+    if (items && items.length > 0) {
+      rows = items.map((item, i) => {
+        const ri = (item.request_item_id && riById[item.request_item_id]) ? riById[item.request_item_id] : (reqItems[i] || {})
+        const qty = item.quantity_issued != null ? item.quantity_issued : (ri.quantity != null ? ri.quantity : '—')
+        return { ri, qty }
+      })
+    } else if (reqItems.length > 0) {
+      // Legacy fallback — no issuance_items recorded, show what was requested
+      rows = reqItems.map(ri => ({ ri, qty: (ri.quantity != null ? ri.quantity : '—') }))
     }
-    body += '</tbody></table></div></div>'
+
+    if (rows.length > 0) {
+      body += '<div style="margin-bottom:16px;">'
+      body += '<div style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">📦 Items to Receive</div>'
+      body += '<div class="table-wrap"><table><thead><tr><th>#</th><th>Item &amp; Specs</th><th>Qty</th><th>Unit</th><th>Category</th><th>Est. Cost</th></tr></thead><tbody>'
+      rows.forEach((row, i) => {
+        const ri = row.ri || {}
+        body += '<tr><td style="color:var(--txt2);">' + (i+1) + '</td>'
+        body += '<td><strong>' + (ri.item_name || '—') + '</strong>'
+        if (ri.item_description) body += '<br><span style="font-size:11px;color:var(--txt2);">' + ri.item_description + '</span>'
+        body += '</td>'
+        body += '<td><strong>' + row.qty + '</strong></td>'
+        body += '<td>' + (ri.unit || 'pcs') + '</td>'
+        body += '<td>' + (ri.category ? ri.category : '—') + '</td>'
+        body += '<td>' + (ri.estimated_cost ? '₱' + Number(ri.estimated_cost).toLocaleString() : '—') + '</td>'
+        body += '</tr>'
+      })
+      const totalCost = rows.reduce((s, row) => {
+        const ri = row.ri || {}
+        const qty = Number(row.qty) || 0
+        return s + (Number(ri.estimated_cost || 0) * qty)
+      }, 0)
+      if (totalCost > 0) {
+        body += '<tr><td colspan="5" style="text-align:right;font-weight:600;">Total Est. Value</td><td><strong>₱' + totalCost.toLocaleString() + '</strong></td></tr>'
+      }
+      body += '</tbody></table></div></div>'
+    } else {
+      body += '<div style="margin-bottom:16px;color:var(--txt2);font-size:13px;">No item details available.</div>'
+    }
   }
 
   // ── Confirmation options (for supply officer, if not yet confirmed) ──
