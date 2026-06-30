@@ -527,9 +527,11 @@ async function bootApp(session) {
   document.getElementById('userRoleLabel').textContent = formatInvRole(session.inventory_role)
   renderSidebarNav()
   await Promise.all([loadCategories(), loadDepartments(), loadUsers()])
-  // Check for QR scan link
-  checkScanParam()
+  // Check for QR scan deep-link FIRST (before dashboard render, so the
+  // asset detail modal isn't overwritten). Returns true if it handled a scan.
+  const handledScan = await checkScanParam()
   showPage('dashboard')
+  if (handledScan) { /* asset modal already opened on top of dashboard */ }
   subscribeNotifications()
   loadNotifications()
 }
@@ -539,16 +541,15 @@ function formatInvRole(r) {
   return m[r] || r || '—'
 }
 
-function checkScanParam() {
+async function checkScanParam() {
   const p = new URLSearchParams(window.location.search)
   let qr = p.get('asset') || p.get('qr')
   // Fall back to the value captured before login
   if (!qr) { try { qr = sessionStorage.getItem('tdmh_pending_scan') } catch(e) {} }
-  if (qr) {
-    try { sessionStorage.removeItem('tdmh_pending_scan') } catch(e) {}
-    // Give the app shell a moment to finish rendering, then open the asset
-    setTimeout(() => lookupAssetDirect(qr.trim()), 600)
-  }
+  if (!qr) return false
+  try { sessionStorage.removeItem('tdmh_pending_scan') } catch(e) {}
+  await lookupAssetDirect(qr.trim())
+  return true
 }
 
 // ═══════════════════════════════════
