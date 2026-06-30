@@ -3168,6 +3168,20 @@ async function processApproval() {
   const isAutoApproved = req.current_approval_level === 99
 
   try {
+    // Save any quantity adjustments made by supply officer / admin
+    let adjustResult = { changed: false, reduced: false, reason: null }
+    if (approvalAction === 'approve' && (level === 2 || isAutoApproved || role === 'admin')) {
+      adjustResult = await saveApprovalAdjustments()
+      if (adjustResult.reduced && req.requested_by) {
+        await SB.from('notifications').insert({
+          user_id: req.requested_by,
+          title: '✏️ Quantity Adjusted — ' + req.request_no,
+          body: 'Binawasan ng Supply Officer ang dami ng ilang item' + (adjustResult.reason ? ': ' + adjustResult.reason : '.'),
+          type: 'info', source_system: 'csr', source_ref_id: req.id
+        })
+      }
+    }
+
     // Insert approval record
     await SB.from('approvals').insert({
       request_id: req.id,
@@ -3301,6 +3315,87 @@ async function autoCreatePODraft(req) {
   }
 }
 
+// ═══════════════════════════════════════════
+// APPROVE-WITH-ADJUSTMENT (supply officer / admin)
+// ═══════════════════════════════════════════
+let _approvalAdjustItems = []
+
+async function renderApprovalAdjust(wrap, reqId) {
+  wrap.innerHTML = '<div style="font-size:12px;color:var(--txt2);padding:8px 0;">Loading items...</div>'
+  const { data: items } = await SB.from('request_items').select('*').eq('request_id', reqId).order('item_name')
+  _approvalAdjustItems = (items || []).map(it => ({
+    id: it.id,
+    item_name: it.item_name,
+    unit: it.unit || 'pcs',
+    // baseline = original if previously adjusted, else current quantity
+    baseline: Number(it.quantity_original != null ? it.quantity_original : it.quantity),
+    current: Number(it.quantity)
+  }))
+  if (_approvalAdjustItems.length === 0) { wrap.innerHTML = ''; return }
+
+  let html = '<details style="margin:12px 0;border:1px solid var(--bdr2);border-radius:10px;overflow:hidden;">'
+  html += '<summary style="padding:11px 14px;background:var(--surf2);cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;">'
+  html += '✏️ Adjust quantities <span style="font-size:11px;color:var(--txt2);font-weight:400;">(kontrolin kung sobra ang hiniling)</span></summary>'
+  html += '<div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px;">'
+  _approvalAdjustItems.forEach((it, idx) => {
+    html += '<div style="display:flex;align-items:center;gap:10px;">'
+    html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escAdj(it.item_name) + '</div>'
+    html += '<div style="font-size:11px;color:var(--txt3);">Hiniling: ' + it.baseline + ' ' + escAdj(it.unit) + '</div></div>'
+    html += '<input type="number" min="0" step="any" value="' + it.current + '" id="adjqty_' + idx + '" '
+    html += 'oninput="onAdjustQtyInput(' + idx + ',this.value)" '
+    html += 'style="width:90px;padding:8px 10px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-size:13px;text-align:center;">'
+    html += '<span style="font-size:11px;color:var(--txt3);width:30px;">' + escAdj(it.unit) + '</span>'
+    html += '</div>'
+  })
+  html += '<div style="margin-top:6px;"><label style="font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;">Reason (kung binawasan)</label>'
+  html += '<input type="text" id="adjReason" placeholder="hal. Sapat na ang 5 para sa buwan na ito" style="width:100%;margin-top:4px;padding:9px 12px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-size:13px;"></div>'
+  html += '<div id="adjHint" style="font-size:12px;color:var(--amber);margin-top:4px;display:none;"></div>'
+  html += '</div></details>'
+  wrap.innerHTML = html
+  updateAdjustHint()
+}
+
+function escAdj(s){ if(s==null)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+function onAdjustQtyInput(idx, val) {
+  if (_approvalAdjustItems[idx]) _approvalAdjustItems[idx].current = Number(val) || 0
+  updateAdjustHint()
+}
+
+function updateAdjustHint() {
+  const hint = document.getElementById('adjHint')
+  if (!hint) return
+  const reduced = _approvalAdjustItems.filter(it => it.current < it.baseline)
+  if (reduced.length > 0) {
+    hint.style.display = ''
+    hint.textContent = '⚠️ ' + reduced.length + ' item(s) babawasan. Maglagay ng reason.'
+  } else {
+    hint.style.display = 'none'
+  }
+}
+
+async function saveApprovalAdjustments() {
+  // Persist any changed quantities to request_items. Returns true if any reduced.
+  if (!_approvalAdjustItems || _approvalAdjustItems.length === 0) return { changed: false, reduced: false }
+  const reason = document.getElementById('adjReason')?.value.trim() || null
+  let changed = false, reduced = false
+  for (const it of _approvalAdjustItems) {
+    if (it.current !== it.baseline) {
+      changed = true
+      if (it.current < it.baseline) reduced = true
+      await SB.from('request_items').update({
+        quantity: it.current,
+        quantity_original: it.baseline,
+        quantity_adjusted: it.current,
+        adjustment_reason: reason,
+        adjusted_by: state.user.id,
+        adjusted_at: new Date().toISOString()
+      }).eq('id', it.id)
+    }
+  }
+  return { changed, reduced, reason }
+}
+
 function openApprovalModal(reqId, action) {
   approvalAction = action
   approvalRequestId = reqId
@@ -3344,6 +3439,16 @@ function openApprovalModal(reqId, action) {
       '</div>'
   } else {
     optionWrap.innerHTML = ''
+  }
+
+  // ── Approve-with-adjustment: supply officer (level 2) or admin ──
+  const canAdjust = action === 'approve' && (level === 2 || isAutoApproved || role === 'admin')
+  const adjWrap = document.getElementById('approvalAdjustWrap') ||
+    (() => { const d = document.createElement('div'); d.id = 'approvalAdjustWrap'; optionWrap.after(d); return d })()
+  if (canAdjust) {
+    renderApprovalAdjust(adjWrap, reqId)
+  } else {
+    adjWrap.innerHTML = ''
   }
 
   document.getElementById('remarksReq').style.display = action === 'approve' ? 'none' : 'inline'
