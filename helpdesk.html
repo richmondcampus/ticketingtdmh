@@ -1316,13 +1316,43 @@ async function guardedClose(ticketId, actionLabel, onProceed) {
     showToast('warning', 'Hindi pwede i-' + actionLabel, g.reason + ' Hintayin ang parts o hilingin sa supervisor/admin na i-override.')
     return
   }
-  // Supervisor/admin — allow override with reason
-  const msg = '⚠️ ' + g.reason + '\n\nBilang supervisor/admin, pwede mong i-override. Magpapatuloy ba?'
-  confirm2(msg, () => onProceed(true))
+  // Supervisor/admin — override via RPC (sets flag + auto-cancels open parts)
+  const newStatus = (actionLabel === 'close') ? 'closed' : 'resolved'
+  const msg = '⚠️ ' + g.reason + '\n\nBilang admin/supervisor, pwede mong i-override. Aautomatikong ma-cancel ang open parts request. Magpapatuloy ba?'
+  confirm2(msg, async () => {
+    try {
+      const { data, error } = await SB.rpc('admin_override_close_it_ticket', {
+        p_ticket_id: ticketId, p_new_status: newStatus, p_actor: S.user.id
+      })
+      if (error) throw error
+      const cancelled = (data && data.cancelled_requests) || 0
+      // Log an internal note about the override
+      await SB.from('it_ticket_replies').insert({
+        ticket_id: ticketId, author_id: S.user.id,
+        body: '⚠️ ' + (newStatus === 'closed' ? 'Closed' : 'Resolved') + ' via admin override. '
+          + (cancelled > 0 ? cancelled + ' open parts request(s) auto-cancelled.' : ''),
+        is_internal: true
+      })
+      closeModal('ticketDetailModal')
+      showToast('success', newStatus === 'closed' ? 'Closed 🔒' : 'Resolved ✅',
+        ticketId + ' — override applied' + (cancelled > 0 ? ', ' + cancelled + ' parts request cancelled.' : '.'))
+      if (S.page === 'kanban') renderKanban()
+      else showPage(S.page)
+    } catch (e) {
+      showToast('error', 'Override failed', e.message || String(e))
+    }
+  })
+}
+
+// Translate the DB guard's raw exception into a clean toast.
+function isPartsGuardError(e) {
+  const m = (e && (e.message || e.hint || e.details)) || ''
+  return m.indexOf('bukas na parts request') !== -1 || (e && e.code === '23514' && m.indexOf('parts') !== -1)
 }
 
 async function quickResolveIT(ticketId) {
   guardedClose(ticketId, 'resolve', async (overridden) => {
+   try {
     await SB.from('it_tickets').update({ status:'resolved', resolved_at:new Date().toISOString(), updated_at:new Date().toISOString() }).eq('id',ticketId)
     await SB.from('it_ticket_replies').insert({ ticket_id:ticketId, author_id:S.user.id, body:'✅ Resolved by '+S.user.full_name+'.' + (overridden ? ' (Override: may bukas na parts request.)' : '') + ' Please rate your experience.', is_internal:false })
     const{data:t}=await SB.from('it_tickets').select('requester_id').eq('id',ticketId).single()
@@ -1330,6 +1360,10 @@ async function quickResolveIT(ticketId) {
     showToast('success','Resolved ✅',ticketId+' marked as done.')
     if(S.page==='kanban')renderKanban()
     else showPage(S.page)
+   } catch(e) {
+    if (isPartsGuardError(e)) showToast('warning','Hindi pwede i-resolve','May bukas na parts request. I-issue muna o i-cancel.')
+    else showToast('error','Error', e.message || String(e))
+   }
   })
 }
 
