@@ -2137,13 +2137,24 @@ async function submitPartsRequest(ticketId, ticketTitle) {
       urgency,
       purpose: 'Parts request for Maintenance Ticket ' + ticketId + ' — "' + ticketTitle + '"',
       status: 'pending_approval',
-      current_approval_level: 1,
+      current_approval_level: 2,
       source_system: 'maintenance',
       source_ref_id: null,
       source_ref_text: ticketId
     }).select().single()
 
     if (error) throw error
+
+    // Audit: log that dept-head (level 1) was auto-skipped for internal maintenance parts requests
+    await SB.from('approvals').insert({
+      request_id: req.id,
+      approver_id: S.user.id,
+      approver_role: 'dept_head',
+      level: 1,
+      decision: 'approved',
+      remarks: 'Auto-skipped — internal Maintenance parts request (Ticket ' + ticketId + '). Routed directly to Supply Officer.',
+      decided_at: new Date().toISOString()
+    })
 
     // Insert items
     await SB.from('request_items').insert(items.map(item => ({
@@ -2181,10 +2192,11 @@ async function submitPartsRequest(ticketId, ticketTitle) {
     for (const officer of supplyOfficers) {
       await SB.from('notifications').insert({
         user_id: officer.id,
+        title: '🔩 Parts Request — ' + requestNo,
         source_system: 'maintenance',
-        target_ref_id: req.id,
+        source_ref_id: req.id,
         body: '🔩 Parts request ' + requestNo + ' from Maintenance Ticket ' + ticketId + ' needs your approval.',
-        type: 'approval_needed'
+        type: 'action_required'
       })
       // SMS to supply officer
       if (officer.phone) {
