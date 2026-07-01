@@ -394,10 +394,9 @@ tr:hover td{background:var(--surf2);}
       <div style="margin-bottom:14px;">
         <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Urgency</label>
         <select id="pr_urgency" style="width:100%;padding:9px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;color:var(--txt);font-family:inherit;font-size:13px;">
-          <option value="low">Low</option>
-          <option value="medium" selected>Medium</option>
-          <option value="high">High</option>
-          <option value="critical">Critical</option>
+          <option value="routine" selected>Routine</option>
+          <option value="urgent">Urgent</option>
+          <option value="emergency">Emergency</option>
         </select>
       </div>
       <!-- Items -->
@@ -2108,7 +2107,7 @@ function openPartsRequest(ticketId) {
   setPartsReqType('parts')
   _partsItems = []
   document.getElementById('pr_notes').value = ''
-  document.getElementById('pr_urgency').value = 'medium'
+  document.getElementById('pr_urgency').value = 'routine'
   addPartsItem()
   openModal('partsReqModal')
 }
