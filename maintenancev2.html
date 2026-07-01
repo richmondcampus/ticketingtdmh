@@ -1338,7 +1338,61 @@ async function updateStatus(ticketId, newStatus) {
   })
 }
 
+// ═══════════════════════════════════════════
+// CLOSE GUARD — block resolve/close while parts requests are still open
+// ═══════════════════════════════════════════
+const MNT_OPEN_REQ_STATUSES = ['pending_approval','pending_evaluation','approved','for_po','for_supply_check','ordered']
+const MNT_DONE_REQ_STATUSES = ['issued','cancelled','rejected','completed','closed']
+
+async function checkPartsBeforeCloseMnt(ticketId) {
+  const { data: reqs } = await SB.from('requests')
+    .select('id,request_no,status')
+    .eq('source_system', 'maintenance')
+    .eq('source_ref_text', ticketId)
+  if (!reqs || reqs.length === 0) return { allowed: true }
+
+  const stillOpen = []
+  const deliveredUnconfirmed = []
+  for (const r of reqs) {
+    if (MNT_DONE_REQ_STATUSES.includes(r.status)) continue
+    if (r.status === 'delivered') {
+      const { data: iss } = await SB.from('issuances')
+        .select('confirmed_at').eq('request_id', r.id).order('created_at', { ascending: false }).limit(1)
+      if (iss && iss[0] && iss[0].confirmed_at) continue
+      deliveredUnconfirmed.push(r)
+    } else if (MNT_OPEN_REQ_STATUSES.includes(r.status)) {
+      stillOpen.push(r)
+    } else {
+      stillOpen.push(r)
+    }
+  }
+
+  const role = S.user.maintenance_role
+  const canOverride = ['supervisor','admin'].includes(role)
+
+  if (stillOpen.length > 0) {
+    return { allowed:false, needsOverride:true, canOverride,
+      reason:'May hindi pa natatapos na parts request (' + stillOpen.map(r=>r.request_no).join(', ') + '). Hindi pa na-issue ang parts.' }
+  }
+  if (deliveredUnconfirmed.length > 0) {
+    return { allowed:false, needsOverride:true, canOverride,
+      reason:'May parts na dumating pero hindi pa na-kumpirma na natanggap (' + deliveredUnconfirmed.map(r=>r.request_no).join(', ') + ').' }
+  }
+  return { allowed: true }
+}
+
+async function guardedCloseMnt(ticketId, actionLabel, onProceed) {
+  const g = await checkPartsBeforeCloseMnt(ticketId)
+  if (g.allowed) { onProceed(false); return }
+  if (!g.canOverride) {
+    showToast('warning', 'Hindi pwede i-' + actionLabel, g.reason + ' Hintayin ang parts o hilingin sa supervisor/admin na i-override.')
+    return
+  }
+  confirm2('⚠️ ' + g.reason + ' Bilang supervisor/admin, pwede mong i-override. Magpapatuloy ba?', () => onProceed(true))
+}
+
 async function resolveTicket(ticketId) {
+ guardedCloseMnt(ticketId, 'resolve', (overridden) => {
   confirm2('Mark this ticket as Resolved?', async () => {
     const { data: t } = await SB.from('maint_tickets').select('*').eq('id', ticketId).single()
     await SB.from('maint_tickets').update({ status: 'resolved', resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', ticketId)
@@ -1357,9 +1411,11 @@ async function resolveTicket(ticketId) {
     }
     if (['all_tickets','open_tickets','my_tickets','dashboard'].includes(S.page)) showPage(S.page)
   })
+ })
 }
 
 async function closeTicket(ticketId) {
+ guardedCloseMnt(ticketId, 'close', (overridden) => {
   confirm2('Close this ticket permanently?', async () => {
     await SB.from('maint_tickets').update({ status: 'closed', closed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', ticketId)
     await SB.from('maint_ticket_notes').insert({ ticket_id: ticketId, user_id: S.user.id, note: 'Ticket closed by ' + S.user.full_name, note_type: 'system' })
@@ -1367,6 +1423,7 @@ async function closeTicket(ticketId) {
     showToast('success','Closed 🔒', ticketId + ' has been closed.')
     if (['all_tickets','open_tickets','my_tickets','dashboard'].includes(S.page)) showPage(S.page)
   })
+ })
 }
 
 async function reopenTicket(ticketId) {
@@ -2575,6 +2632,7 @@ async function quickClaimStartMaint(ticketId) {
 
 
 async function quickResolveMaint(ticketId) {
+ guardedCloseMnt(ticketId, 'resolve', async (overridden) => {
   await SB.from('maint_tickets').update({
     status: 'resolved', resolved_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -2595,6 +2653,7 @@ async function quickResolveMaint(ticketId) {
   showToast('success', 'Resolved ✅', ticketId + ' marked as done.')
   if (S.page === 'kanban') renderKanban()
   else showPage(S.page)
+ })
 }
 
 // UTILITIES
