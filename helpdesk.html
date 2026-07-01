@@ -2178,13 +2178,24 @@ async function submitITPartsRequest() {
       urgency,
       purpose,
       status: 'pending_approval',
-      current_approval_level: 1,
+      current_approval_level: 2,
       source_system: 'it',
       source_ref_id: null,
       source_ref_text: ticketId,
       asset_id: t?.asset_id || null
     }).select().single()
     if (error) throw error
+
+    // Audit: log that dept-head (level 1) was auto-skipped for internal IT requests
+    await SB.from('approvals').insert({
+      request_id: req.id,
+      approver_id: S.user.id,
+      approver_role: 'dept_head',
+      level: 1,
+      decision: 'approved',
+      remarks: 'Auto-skipped — internal IT ' + typeLabel + ' request (Ticket ' + ticketId + '). Routed directly to Supply Officer.',
+      decided_at: new Date().toISOString()
+    })
 
     // Insert request items — replacement => it_hardware (asset), parts => consumable-ish
     const itemCategory = _partsReqType === 'replacement' ? 'it_hardware' : 'maintenance_material'
