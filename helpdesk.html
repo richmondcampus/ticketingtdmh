@@ -1245,14 +1245,92 @@ async function quickStartIT(ticketId) {
   else showPage(S.page)
 }
 
+// ═══════════════════════════════════════════
+// CLOSE GUARD — block resolve/close while parts requests are still open
+// ═══════════════════════════════════════════
+// Open request statuses = parts not yet released.
+const IT_OPEN_REQ_STATUSES = ['pending_approval','pending_evaluation','approved','for_po','for_supply_check','ordered']
+const IT_DONE_REQ_STATUSES = ['issued','cancelled','rejected','completed','closed']
+
+async function checkPartsBeforeClose(ticketId) {
+  // Find all parts requests linked to this ticket
+  const { data: reqs } = await SB.from('requests')
+    .select('id,request_no,status')
+    .eq('source_system', 'it')
+    .eq('source_ref_text', ticketId)
+  if (!reqs || reqs.length === 0) {
+    return { allowed: true }  // no parts requests — free to close
+  }
+
+  // Classify each request
+  const stillOpen = []       // hard block: no parts yet
+  const deliveredUnconfirmed = []  // soft warning: parts arrived, not confirmed received
+  for (const r of reqs) {
+    if (IT_DONE_REQ_STATUSES.includes(r.status)) continue  // finished/cancelled — fine
+    if (r.status === 'delivered') {
+      // Check if the issuance was actually confirmed received
+      const { data: iss } = await SB.from('issuances')
+        .select('confirmed_at').eq('request_id', r.id).order('created_at', { ascending: false }).limit(1)
+      if (iss && iss[0] && iss[0].confirmed_at) continue  // received — fine
+      deliveredUnconfirmed.push(r)
+    } else if (IT_OPEN_REQ_STATUSES.includes(r.status)) {
+      stillOpen.push(r)
+    } else {
+      // Unknown status — treat as open to be safe
+      stillOpen.push(r)
+    }
+  }
+
+  const role = S.user.it_role
+  const canOverride = ['supervisor','admin'].includes(role)
+
+  if (stillOpen.length > 0) {
+    const nos = stillOpen.map(r => r.request_no).join(', ')
+    return {
+      allowed: false,
+      needsOverride: true,
+      canOverride,
+      reason: 'May hindi pa natatapos na parts request (' + nos + '). Hindi pa na-issue ang parts.'
+    }
+  }
+  if (deliveredUnconfirmed.length > 0) {
+    const nos = deliveredUnconfirmed.map(r => r.request_no).join(', ')
+    return {
+      allowed: false,
+      needsOverride: true,
+      canOverride,
+      reason: 'May parts na dumating pero hindi pa na-kumpirma na natanggap (' + nos + ').'
+    }
+  }
+  return { allowed: true }
+}
+
+// Wrapper: run the guard, show a confirm/override dialog if needed.
+// Calls onProceed() when it's OK (or successfully overridden) to close/resolve.
+async function guardedClose(ticketId, actionLabel, onProceed) {
+  const g = await checkPartsBeforeClose(ticketId)
+  if (g.allowed) { onProceed(false); return }
+
+  if (!g.canOverride) {
+    // Hard block for technicians — no override
+    showToast('warning', 'Hindi pwede i-' + actionLabel, g.reason + ' Hintayin ang parts o hilingin sa supervisor/admin na i-override.')
+    return
+  }
+  // Supervisor/admin — allow override with reason
+  const msg = '⚠️ ' + g.reason + '\n\nBilang supervisor/admin, pwede mong i-override. Magpapatuloy ba?'
+  confirm2(msg, () => onProceed(true))
+}
+
 async function quickResolveIT(ticketId) {
-  await SB.from('it_tickets').update({ status:'resolved', resolved_at:new Date().toISOString(), updated_at:new Date().toISOString() }).eq('id',ticketId)
-  await SB.from('it_ticket_replies').insert({ ticket_id:ticketId, author_id:S.user.id, body:'✅ Resolved by '+S.user.full_name+'. Please rate your experience.', is_internal:false })
-  const{data:t}=await SB.from('it_tickets').select('requester_id').eq('id',ticketId).single()
-  if(t?.requester_id) await SB.from('notifications').insert({ user_id:t.requester_id, title:'✅ Ticket Resolved: '+ticketId, body:'Your request has been resolved. Please rate your experience.', type:'success', source_system:'it' })
-  showToast('success','Resolved ✅',ticketId+' marked as done.')
-  if(S.page==='kanban')renderKanban()
-  else showPage(S.page)
+  guardedClose(ticketId, 'resolve', async (overridden) => {
+    await SB.from('it_tickets').update({ status:'resolved', resolved_at:new Date().toISOString(), updated_at:new Date().toISOString() }).eq('id',ticketId)
+    await SB.from('it_ticket_replies').insert({ ticket_id:ticketId, author_id:S.user.id, body:'✅ Resolved by '+S.user.full_name+'.' + (overridden ? ' (Override: may bukas na parts request.)' : '') + ' Please rate your experience.', is_internal:false })
+    const{data:t}=await SB.from('it_tickets').select('requester_id').eq('id',ticketId).single()
+    if(t?.requester_id) await SB.from('notifications').insert({ user_id:t.requester_id, title:'✅ Ticket Resolved: '+ticketId, body:'Your request has been resolved. Please rate your experience.', type:'success', source_system:'it' })
+    showToast('success','Resolved ✅',ticketId+' marked as done.')
+    if(S.page==='kanban')renderKanban()
+    else showPage(S.page)
+  })
 }
 
 // ═══ TICKET DETAIL ═══
@@ -1519,6 +1597,15 @@ async function addReply(ticketId) {
 
 async function updateTicketStatus(ticketId, newStatus) {
   const labels = { in_progress:'In Progress', pending_user:'Pending User', closed:'Closed' }
+  // Guard only the terminal 'closed' status; other transitions are unrestricted.
+  if (newStatus === 'closed') {
+    guardedClose(ticketId, 'close', () => doUpdateTicketStatus(ticketId, newStatus, labels))
+    return
+  }
+  doUpdateTicketStatus(ticketId, newStatus, labels)
+}
+
+async function doUpdateTicketStatus(ticketId, newStatus, labels) {
   confirm2('Update status to "' + (labels[newStatus]||newStatus) + '"?', async () => {
     await SB.from('it_tickets').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', ticketId)
     await SB.from('it_ticket_replies').insert({
@@ -1532,7 +1619,8 @@ async function updateTicketStatus(ticketId, newStatus) {
 }
 
 async function resolveTicket(ticketId) {
-  confirm2('Mark this ticket as Resolved?', async () => {
+  guardedClose(ticketId, 'resolve', (overridden) => {
+   confirm2('Mark this ticket as Resolved?', async () => {
     const { data: t } = await SB.from('it_tickets').select('requester_id').eq('id', ticketId).single()
     await SB.from('it_tickets').update({
       status: 'resolved',
@@ -1553,6 +1641,7 @@ async function resolveTicket(ticketId) {
     closeModal('ticketDetailModal')
     showToast('success','Resolved ✅', ticketId + ' marked as resolved.')
     if (['dashboard','my_tickets','all_tickets','open_tickets','assigned_me'].includes(S.page)) showPage(S.page)
+   })
   })
 }
 
