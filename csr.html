@@ -7360,13 +7360,25 @@ async function triggerDerpCSR(derpId) {
         urgency: derp.urgency,
         purpose: 'Replacement for DERP ' + derp.request_no + ' — ' + (derp.asset_condition_notes || ''),
         status: 'pending_approval',
-        current_approval_level: 1,
+        current_approval_level: 2,
         source_system: 'csr',
         source_ref_id: derpId,
         disposal_action: 'archive'
       }).select().single()
 
       if (error) throw error
+
+      // Audit: log that dept-head (level 1) was auto-skipped — DERP replacement
+      // goes straight to Supply Officer to check stock before purchasing.
+      await SB.from('approvals').insert({
+        request_id: csr.id,
+        approver_id: state.user.id,
+        approver_role: 'dept_head',
+        level: 1,
+        decision: 'approved',
+        remarks: 'Auto-skipped — DERP replacement (' + derp.request_no + '). Routed directly to Supply Officer for stock check.',
+        decided_at: new Date().toISOString()
+      })
 
       // Link DERP to CSR
       await SB.from('requests').update({
