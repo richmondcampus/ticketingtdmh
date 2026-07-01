@@ -1388,7 +1388,36 @@ async function guardedCloseMnt(ticketId, actionLabel, onProceed) {
     showToast('warning', 'Hindi pwede i-' + actionLabel, g.reason + ' Hintayin ang parts o hilingin sa supervisor/admin na i-override.')
     return
   }
-  confirm2('⚠️ ' + g.reason + ' Bilang supervisor/admin, pwede mong i-override. Magpapatuloy ba?', () => onProceed(true))
+  // Supervisor/admin — override via RPC (sets flag + auto-cancels open parts)
+  const newStatus = (actionLabel === 'close') ? 'closed' : 'resolved'
+  confirm2('⚠️ ' + g.reason + ' Bilang admin/supervisor, pwede mong i-override. Aautomatikong ma-cancel ang open parts request. Magpapatuloy ba?', async () => {
+    try {
+      const { data, error } = await SB.rpc('admin_override_close_maint_ticket', {
+        p_ticket_id: ticketId, p_new_status: newStatus, p_actor: S.user.id
+      })
+      if (error) throw error
+      const cancelled = (data && data.cancelled_requests) || 0
+      await SB.from('maint_ticket_notes').insert({
+        ticket_id: ticketId, user_id: S.user.id,
+        note: '⚠️ ' + (newStatus === 'closed' ? 'Closed' : 'Resolved') + ' via admin override. '
+          + (cancelled > 0 ? cancelled + ' open parts request(s) auto-cancelled.' : ''),
+        note_type: 'system'
+      })
+      invalidateTicketCache()
+      closeModal('ticketDetailModal')
+      showToast('success', newStatus === 'closed' ? 'Closed 🔒' : 'Resolved ✅',
+        ticketId + ' — override applied' + (cancelled > 0 ? ', ' + cancelled + ' parts request cancelled.' : '.'))
+      if (S.page === 'kanban') renderKanban()
+      else showPage(S.page)
+    } catch (e) {
+      showToast('error', 'Override failed', e.message || String(e))
+    }
+  })
+}
+
+function isPartsGuardErrorMnt(e) {
+  const m = (e && (e.message || e.hint || e.details)) || ''
+  return m.indexOf('bukas na parts request') !== -1 || (e && e.code === '23514' && m.indexOf('parts') !== -1)
 }
 
 async function resolveTicket(ticketId) {
