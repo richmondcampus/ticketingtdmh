@@ -372,6 +372,52 @@ tr:hover td{background:var(--surf2);}
   </div>
 </div>
 
+<!-- PARTS / REPLACEMENT REQUEST MODAL -->
+<div class="modal-overlay" id="partsReqModal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <h3>🔧 Request Parts / Replacement</h3>
+      <button class="modal-close" onclick="closeModal('partsReqModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--txt2);margin-bottom:12px;">Gagawa ito ng CSR request papunta sa Supply Officer para sa approval. Naka-link sa ticket na ito.</div>
+      <input type="hidden" id="pr_ticket_id">
+      <!-- Request type toggle -->
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Uri ng request</label>
+        <div style="display:flex;gap:8px;">
+          <button type="button" id="pr_type_parts" class="btn btn-primary btn-sm" style="flex:1;" onclick="setPartsReqType('parts')">🔩 Parts / Spare</button>
+          <button type="button" id="pr_type_replacement" class="btn btn-ghost btn-sm" style="flex:1;" onclick="setPartsReqType('replacement')">💻 Full Replacement</button>
+        </div>
+      </div>
+      <!-- Urgency -->
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Urgency</label>
+        <select id="pr_urgency" style="width:100%;padding:9px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;color:var(--txt);font-family:inherit;font-size:13px;">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+        </select>
+      </div>
+      <!-- Items -->
+      <div style="margin-bottom:8px;">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Items na kailangan</label>
+        <div id="pr_items"></div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="addPartsItem()" style="margin-top:6px;">➕ Magdagdag ng item</button>
+      </div>
+      <div style="margin-top:12px;">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Dahilan / Notes</label>
+        <textarea id="pr_notes" rows="2" placeholder="hal. Sirang keyboard, hindi na gumagana ang ilang key" style="width:100%;padding:9px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;color:var(--txt);font-family:inherit;font-size:13px;resize:vertical;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('partsReqModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitITPartsRequest()">📤 I-submit sa CSR</button>
+    </div>
+  </div>
+</div>
+
 <!-- CONFIRM MODAL -->
 <div class="modal-overlay" id="confirmModal">
   <div class="modal" style="max-width:420px;">
@@ -1306,6 +1352,18 @@ async function viewTicket(ticketId) {
     body += '</div></div>'
   }
 
+  // Request Parts / Replacement (assigned technician + supervisor/admin, active tickets)
+  const canRequestParts = isIT && ['technician','supervisor','admin'].includes(role) &&
+    (t.assigned_to === S.user.id || ['supervisor','admin'].includes(role)) &&
+    !['resolved','closed'].includes(t.status)
+  if (canRequestParts) {
+    body += '<div style="background:var(--amber-a);border:1px solid var(--amber);border-radius:10px;padding:14px;margin-bottom:16px;">'
+    body += '<div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:4px;">🔧 Kailangan ng parts o kapalit?</div>'
+    body += '<div style="font-size:12px;color:var(--txt2);margin-bottom:10px;">Mag-request ng parts o full replacement. Gagawa ng CSR request para sa Supply Officer approval.</div>'
+    body += '<button class="btn btn-amber btn-sm" onclick="openPartsRequest(\'' + t.id + '\')">🔧 Request Parts / Replacement</button>'
+    body += '</div>'
+  }
+
   // Rating (for resolved tickets, by requester)
   if (t.status === 'resolved' && t.requester_id === S.user.id && !t.rating) {
     body += '<div style="background:var(--green-a);border:1px solid var(--green);border-radius:10px;padding:14px;margin-bottom:16px;">'
@@ -2038,6 +2096,137 @@ function toggleTheme() {
   document.documentElement.setAttribute('data-theme', t)
   localStorage.setItem('tdmh_theme', t)
 }
+// ═══════════════════════════════════════════
+// IT PARTS / REPLACEMENT REQUEST → CSR
+// ═══════════════════════════════════════════
+let _partsReqType = 'parts'
+let _partsItems = []
+
+function openPartsRequest(ticketId) {
+  document.getElementById('pr_ticket_id').value = ticketId
+  _partsReqType = 'parts'
+  setPartsReqType('parts')
+  _partsItems = []
+  document.getElementById('pr_notes').value = ''
+  document.getElementById('pr_urgency').value = 'medium'
+  addPartsItem()
+  openModal('partsReqModal')
+}
+
+function setPartsReqType(type) {
+  _partsReqType = type
+  const bp = document.getElementById('pr_type_parts')
+  const br = document.getElementById('pr_type_replacement')
+  if (type === 'parts') {
+    bp.className = 'btn btn-primary btn-sm'; br.className = 'btn btn-ghost btn-sm'
+  } else {
+    bp.className = 'btn btn-ghost btn-sm'; br.className = 'btn btn-primary btn-sm'
+  }
+}
+
+function renderPartsItems() {
+  const wrap = document.getElementById('pr_items')
+  if (!wrap) return
+  let h = ''
+  _partsItems.forEach((it, idx) => {
+    h += '<div style="display:flex;gap:6px;margin-bottom:6px;">'
+    h += '<input type="text" value="' + (it.name||'').replace(/"/g,'&quot;') + '" placeholder="Item name" oninput="_partsItems[' + idx + '].name=this.value" style="flex:2;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;">'
+    h += '<input type="number" min="1" value="' + (it.qty||1) + '" oninput="_partsItems[' + idx + '].qty=this.value" style="width:64px;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;text-align:center;">'
+    h += '<input type="text" value="' + (it.unit||'pcs').replace(/"/g,'&quot;') + '" placeholder="unit" oninput="_partsItems[' + idx + '].unit=this.value" style="width:64px;padding:8px;background:var(--surf2);border:1px solid var(--bdr2);border-radius:8px;color:var(--txt);font-family:inherit;font-size:13px;">'
+    h += '<button type="button" onclick="removePartsItem(' + idx + ')" style="width:34px;border:none;border-radius:8px;cursor:pointer;background:var(--red-a);color:var(--red);font-size:14px;">🗑</button>'
+    h += '</div>'
+  })
+  wrap.innerHTML = h
+}
+
+function addPartsItem() {
+  _partsItems.push({ name:'', qty:1, unit:'pcs' })
+  renderPartsItems()
+}
+
+function removePartsItem(idx) {
+  _partsItems.splice(idx, 1)
+  if (_partsItems.length === 0) addPartsItem()
+  else renderPartsItems()
+}
+
+async function submitITPartsRequest() {
+  const ticketId = document.getElementById('pr_ticket_id').value
+  const urgency = document.getElementById('pr_urgency').value
+  const notes = document.getElementById('pr_notes').value.trim()
+  const items = _partsItems.filter(i => i.name && i.name.trim())
+  if (items.length === 0) { showToast('error','Required','Maglagay ng kahit isang item.'); return }
+
+  try {
+    // Get ticket context (dept, subject, asset)
+    const { data: t } = await SB.from('it_tickets')
+      .select('id,subject,dept_id,asset_id,asset_no,requester_id').eq('id', ticketId).single()
+
+    // Generate CSR request number
+    const { data: numData } = await SB.rpc('generate_request_no')
+    const requestNo = numData || ('CSR-' + new Date().getFullYear() + '-' + Date.now().toString().slice(-4))
+
+    const typeLabel = _partsReqType === 'replacement' ? 'Replacement' : 'Parts'
+    const purpose = 'IT ' + typeLabel + ' request for Ticket ' + ticketId + ' — "' + (t?.subject || '') + '"' +
+      (t?.asset_no ? ' [Asset: ' + t.asset_no + ']' : '') + (notes ? ' — ' + notes : '')
+
+    // Create CSR request linked to this IT ticket
+    const { data: req, error } = await SB.from('requests').insert({
+      request_no: requestNo,
+      request_type: 'purchase',
+      dept_id: t?.dept_id || null,
+      requested_by: S.user.id,
+      urgency,
+      purpose,
+      status: 'pending_approval',
+      current_approval_level: 1,
+      source_system: 'it',
+      source_ref_id: null,
+      source_ref_text: ticketId,
+      asset_id: t?.asset_id || null
+    }).select().single()
+    if (error) throw error
+
+    // Insert request items — replacement => it_hardware (asset), parts => consumable-ish
+    const itemCategory = _partsReqType === 'replacement' ? 'it_hardware' : 'maintenance_material'
+    await SB.from('request_items').insert(items.map(item => ({
+      request_id: req.id,
+      item_name: item.name.trim(),
+      quantity: Number(item.qty) || 1,
+      unit: (item.unit || 'pcs').trim(),
+      estimated_cost: 0,
+      category: itemCategory
+    })))
+
+    // Note on the ticket (internal reply)
+    await SB.from('it_ticket_replies').insert({
+      ticket_id: ticketId, author_id: S.user.id,
+      body: '🔧 ' + typeLabel + ' request submitted to CSR (' + requestNo + '): ' +
+        items.map(i => (i.qty||1) + ' ' + (i.unit||'pcs') + ' ' + i.name).join(', '),
+      is_internal: true
+    })
+
+    // Notify CSR supply officers (correct notification type)
+    const supplyOfficers = S.users.filter(u => u.csr_role === 'supply_officer' || u.csr_role === 'admin')
+    for (const officer of supplyOfficers) {
+      await SB.from('notifications').insert({
+        user_id: officer.id,
+        title: '🔧 IT ' + typeLabel + ' Request — ' + requestNo,
+        body: 'IT ' + typeLabel + ' request ' + requestNo + ' from Ticket ' + ticketId + ' needs your approval.',
+        type: 'action_required',
+        source_system: 'it',
+        source_ref_id: req.id
+      })
+    }
+
+    closeModal('partsReqModal')
+    showToast('success', 'Request Submitted ✅', requestNo + ' sent to CSR for approval.')
+    viewTicket(ticketId)
+  } catch(e) {
+    showToast('error', 'Error', e.message)
+  }
+}
+
 function openModal(id) { document.getElementById(id).classList.add('open') }
 function closeModal(id) { document.getElementById(id).classList.remove('open') }
 function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open') }
