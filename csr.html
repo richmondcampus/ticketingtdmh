@@ -1321,7 +1321,7 @@ async function renderDashboard() {
     { requested_by: state.user.id }
   )
   state.requests = requests
-  state._dashView = state._dashView || 'list' // persist view toggle
+  state._dashView = 'kanban' // kanban-only dashboard
 
   const recent = requests.slice(0, 5)
   const deptCounts = {}
@@ -1339,11 +1339,6 @@ async function renderDashboard() {
   html += '<div class="page-header">'
   html += '<h2>👋 Good day, ' + state.user.full_name.split(' ')[0] + '</h2>'
   html += '<div class="page-header-actions" style="display:flex;gap:8px;">'
-  // View toggle
-  html += '<div style="display:flex;background:var(--surf2);border:1px solid var(--bdr2);border-radius:9px;overflow:hidden;">'
-  html += '<button onclick="setDashView(\'list\')" style="padding:6px 12px;border:none;background:' + (state._dashView==='list'?'var(--accent)':'transparent') + ';color:' + (state._dashView==='list'?'#fff':'var(--txt2)') + ';font-family:inherit;font-size:12px;cursor:pointer;">≡ List</button>'
-  html += '<button onclick="setDashView(\'kanban\')" style="padding:6px 12px;border:none;background:' + (state._dashView==='kanban'?'var(--accent)':'transparent') + ';color:' + (state._dashView==='kanban'?'#fff':'var(--txt2)') + ';font-family:inherit;font-size:12px;cursor:pointer;">⬛ Kanban</button>'
-  html += '</div>'
   if (['requester','dept_head','supply_officer','admin'].includes(role)) {
     html += '<button class="btn btn-primary" onclick="openNewRequestModal()">＋ New Request</button>'
   }
@@ -1361,11 +1356,10 @@ async function renderDashboard() {
   }
   html += '</div>'
 
-  if (state._dashView === 'kanban') {
-    // ── KANBAN VIEW ──
-    html += buildCSRKanban(requests)
-  } else {
-    // ── LIST VIEW ──
+  // ── KANBAN VIEW (only) ──
+  html += buildCSRKanban(requests)
+  if (false) {
+    // (legacy list view removed)
     html += '<div class="chart-grid">'
     html += '<div class="chart-card"><div class="chart-title">Requests by Status</div><div class="bar-chart">'
     const statusColors = { pending_approval:'var(--amber)', approved:'var(--green)', for_po:'var(--violet)', ordered:'var(--violet)', delivered:'var(--blue)', issued:'var(--blue)', draft:'var(--txt3)', cancelled:'var(--txt3)' }
@@ -1429,7 +1423,14 @@ async function renderDashboard() {
 
   content.innerHTML = html
   if (state.page === 'dashboard') {
-    subscribeRequests(() => { if (state.page === 'dashboard') renderDashboard() })
+    subscribeRequests(() => {
+      if (state.page !== 'dashboard') return
+      // Debounce: avoid re-rendering while the user is mid-interaction
+      clearTimeout(state._dashRerenderT)
+      state._dashRerenderT = setTimeout(() => {
+        if (state.page === 'dashboard') renderDashboard()
+      }, 600)
+    })
   }
 }
 
@@ -1477,7 +1478,7 @@ function buildCSRKanban(requests) {
     colReqs.forEach(r => {
       const dept = state.departments.find(d => d.id === r.dept_id)
       const age = Math.floor((Date.now() - new Date(r.created_at)) / 3600000)
-      html += '<div class="csr-kcard urgency-' + r.urgency + '" onclick="viewRequest(\'' + r.id + '\')">'
+      html += '<div class="csr-kcard urgency-' + r.urgency + '" data-req-id="' + r.id + '" onclick="viewRequest(\'' + r.id + '\')">'
       html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;">'
       html += '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--accent);">' + r.request_no + '</span>'
       html += '<span class="badge badge-' + r.urgency + '" style="font-size:10px;padding:2px 6px;">' + r.urgency.toUpperCase() + '</span>'
@@ -1490,6 +1491,18 @@ function buildCSRKanban(requests) {
     html += '</div></div>'
   })
   html += '</div>'
+  // Attach a delegated click handler (survives realtime re-renders better
+  // than relying solely on inline onclick).
+  setTimeout(() => {
+    const kb = document.querySelector('.csr-kanban')
+    if (kb && !kb._delegated) {
+      kb._delegated = true
+      kb.addEventListener('click', (e) => {
+        const card = e.target.closest('.csr-kcard')
+        if (card && card.dataset.reqId) viewRequest(card.dataset.reqId)
+      })
+    }
+  }, 0)
   return html
 }
 
