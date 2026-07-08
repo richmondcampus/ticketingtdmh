@@ -436,7 +436,50 @@ tr:hover td{background:var(--surf2);}
 const SUPA_URL = 'https://zcyhwdulizorgngayxya.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjeWh3ZHVsaXpvcmduZ2F5eHlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNjU0NTgsImV4cCI6MjA5NDg0MTQ1OH0.xLdKGNqjNZNRfjAf5NmXGI1GyTbQZAmbZiKokpgAhUo'
 const SMS_URL = SUPA_URL + '/functions/v1/send-sms'
-const SB = supabase.createClient(SUPA_URL, SUPA_KEY)
+const SB = supabase.createClient(SUPA_URL, SUPA_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+    storageKey: 'tdmh-helpdesk-auth'
+  }
+})
+
+// Ensure there's a live, non-expired auth session before critical queries.
+// Returns true if authenticated; if the session can't be refreshed, prompts re-login.
+async function ensureAuth() {
+  try {
+    const { data: { session } } = await SB.auth.getSession()
+    if (session && session.access_token) {
+      // Refresh proactively if expiring within 60s
+      const expMs = (session.expires_at || 0) * 1000
+      if (expMs && (expMs - Date.now()) < 60000) {
+        const { data: { session: refreshed } } = await SB.auth.refreshSession()
+        return !!(refreshed && refreshed.access_token)
+      }
+      return true
+    }
+    // No active session — try restoring from stored tokens
+    const stored = getSession()
+    if (stored && stored.access_token && stored.refresh_token) {
+      const { data: { session: restored }, error } = await SB.auth.setSession({
+        access_token: stored.access_token,
+        refresh_token: stored.refresh_token
+      })
+      if (restored && !error) return true
+    }
+    return false
+  } catch (e) {
+    console.warn('ensureAuth failed:', e && e.message)
+    return false
+  }
+}
+
+// Show a clear message + send back to login when the session is gone.
+function handleAuthLost() {
+  showToast('warning', 'Session expired', 'Nag-expire ang session. Mag-login ulit.')
+  setTimeout(() => { clearSession(); location.reload() }, 1500)
+}
 
 let S = {
   user: null, page: 'dashboard',
@@ -1267,7 +1310,9 @@ async function renderKanban() {
 
 // ─── Quick Actions — IT ───
 async function quickClaimStartIT(ticketId) {
-  await SB.from('it_tickets').update({ assigned_to:S.user.id, status:'in_progress', updated_at:new Date().toISOString() }).eq('id',ticketId)
+  if (!(await ensureAuth())) { handleAuthLost(); return }
+  const { error: e1 } = await SB.from('it_tickets').update({ assigned_to:S.user.id, status:'in_progress', updated_at:new Date().toISOString() }).eq('id',ticketId)
+  if (e1) { showToast('error','Error', e1.message); return }
   await SB.from('it_ticket_replies').insert({ ticket_id:ticketId, author_id:S.user.id, body:'⚡ Claimed and started by '+S.user.full_name+'.', is_internal:true })
   const{data:t}=await SB.from('it_tickets').select('requester_id,subject').eq('id',ticketId).single()
   if(t?.requester_id) await SB.from('notifications').insert({ user_id:t.requester_id, title:'⚡ Ticket In Progress: '+ticketId, body:S.user.full_name+' is now working on: '+t.subject, type:'info', source_system:'it' })
@@ -1278,7 +1323,9 @@ async function quickClaimStartIT(ticketId) {
 }
 
 async function quickClaimIT(ticketId) {
-  await SB.from('it_tickets').update({ assigned_to:S.user.id, status:'assigned', updated_at:new Date().toISOString() }).eq('id',ticketId)
+  if (!(await ensureAuth())) { handleAuthLost(); return }
+  const { error: e1 } = await SB.from('it_tickets').update({ assigned_to:S.user.id, status:'assigned', updated_at:new Date().toISOString() }).eq('id',ticketId)
+  if (e1) { showToast('error','Error', e1.message); return }
   const{data:t}=await SB.from('it_tickets').select('requester_id,subject').eq('id',ticketId).single()
   if(t?.requester_id) await SB.from('notifications').insert({ user_id:t.requester_id, title:'👤 Ticket Assigned: '+ticketId, body:S.user.full_name+' will handle: '+t.subject, type:'info', source_system:'it' })
   showToast('success','Claimed ✅',ticketId+' assigned to you.')
@@ -1401,6 +1448,7 @@ function isPartsGuardError(e) {
 }
 
 async function quickResolveIT(ticketId) {
+  if (!(await ensureAuth())) { handleAuthLost(); return }
   guardedClose(ticketId, 'resolve', async (overridden) => {
    try {
     await SB.from('it_tickets').update({ status:'resolved', resolved_at:new Date().toISOString(), updated_at:new Date().toISOString() }).eq('id',ticketId)
