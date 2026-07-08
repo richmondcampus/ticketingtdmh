@@ -8423,6 +8423,7 @@ function toggleDeptHeadAssign(role) {
 }
 
 async function saveUser() {
+  if (!(await ensureAuth())) { handleAuthLost(); return }
   const name = document.getElementById('u_name').value.trim()
   const empNo = document.getElementById('u_empno').value.trim()
   const dept = document.getElementById('u_dept').value
@@ -8451,7 +8452,12 @@ async function saveUser() {
 
   try {
     if (userId) {
-      await SB.from('users').update(payload).eq('id', userId)
+      const { data: updatedRows, error: updErr } = await SB.from('users').update(payload).eq('id', userId).select()
+      if (updErr) { showToast('error','Hindi na-update', updErr.message); return }
+      if (!updatedRows || updatedRows.length === 0) {
+        showToast('error','Hindi na-update', 'Walang pahintulot i-edit ang user na ito. Kailangan ng admin account.')
+        return
+      }
 
       // Auto-assign as dept head if selected
       const headOfDept = document.getElementById('u_head_of_dept')?.value
@@ -8499,7 +8505,9 @@ async function saveUser() {
 async function toggleUserActive(userId, currentStatus) {
   const action = currentStatus ? 'deactivate' : 'activate'
   confirm2('Are you sure you want to ' + action + ' this user?', async () => {
-    await SB.from('users').update({ is_active: !currentStatus }).eq('id', userId)
+    const { data: toggledRows, error: togErr } = await SB.from('users').update({ is_active: !currentStatus }).eq('id', userId).select()
+    if (togErr) { showToast('error','Hindi na-update', togErr.message); return }
+    if (!toggledRows || toggledRows.length === 0) { showToast('error','Hindi na-update','Walang pahintulot. Kailangan ng admin account.'); return }
     showToast('success','Updated', 'User ' + action + 'd.')
     renderSettings()
   })
