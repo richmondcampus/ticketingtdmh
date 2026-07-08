@@ -416,7 +416,46 @@ try {
   const _earlyQR = _earlyP.get('asset') || _earlyP.get('qr')
   if (_earlyQR) sessionStorage.setItem('tdmh_pending_scan', _earlyQR.trim())
 } catch(e) {}
-const SB = supabase.createClient(SUPA_URL, SUPA_KEY)
+const SB = supabase.createClient(SUPA_URL, SUPA_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+    storageKey: 'tdmh-inv-auth'
+  }
+})
+
+// Ensure a live, non-expired auth session before critical writes.
+async function ensureAuth() {
+  try {
+    const { data: { session } } = await SB.auth.getSession()
+    if (session && session.access_token) {
+      const expMs = (session.expires_at || 0) * 1000
+      if (expMs && (expMs - Date.now()) < 60000) {
+        const { data: { session: refreshed } } = await SB.auth.refreshSession()
+        return !!(refreshed && refreshed.access_token)
+      }
+      return true
+    }
+    const stored = getSession()
+    if (stored && stored.access_token && stored.refresh_token) {
+      const { data: { session: restored }, error } = await SB.auth.setSession({
+        access_token: stored.access_token,
+        refresh_token: stored.refresh_token
+      })
+      if (restored && !error) return true
+    }
+    return false
+  } catch (e) {
+    console.warn('ensureAuth failed:', e && e.message)
+    return false
+  }
+}
+
+function handleAuthLost() {
+  try { showToast('warning', 'Session expired', 'Nag-expire ang session. Mag-login ulit.') } catch(e) {}
+  setTimeout(() => { try { clearSession() } catch(e) {}; location.reload() }, 1500)
+}
 
 // ═══════════════════════════════════
 // STATE
