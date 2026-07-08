@@ -574,7 +574,7 @@ function renderSidebarNav() {
     <div class="nav-item" onclick="showPage('my_tickets')" id="nav_my_tickets"><span class="nav-icon">🎫</span>My Tickets</div>
     ${['technician','supervisor','admin'].includes(role) ? `
     <div class="nav-section">Queue</div>
-    <div class="nav-item" onclick="showPage('open_tickets')" id="nav_open_tickets"><span class="nav-icon">🔓</span>Open Tickets</div>
+    <div class="nav-item" onclick="showPage('open_tickets')" id="nav_open_tickets"><span class="nav-icon">🔓</span>Open Tickets<span id="openTicketBadge" style="display:none;margin-left:auto;background:var(--red);color:#fff;border-radius:10px;min-width:18px;height:18px;padding:0 5px;font-size:10px;font-weight:700;align-items:center;justify-content:center;"></span></div>
     <div class="nav-item" onclick="showPage('kanban')" id="nav_kanban"><span class="nav-icon">📋</span>Kanban Board</div>
     <div class="nav-item" onclick="showPage('all_tickets')" id="nav_all_tickets"><span class="nav-icon">🗂️</span>All Tickets</div>
     <div class="nav-item" onclick="showPage('assigned_me')" id="nav_assigned_me"><span class="nav-icon">👤</span>Assigned to Me</div>
@@ -588,6 +588,25 @@ function renderSidebarNav() {
     <div class="nav-item" onclick="showPage('knowledge_base')" id="nav_knowledge_base"><span class="nav-icon">📚</span>Knowledge Base</div>
   `
   document.getElementById('sidebarNav').innerHTML = navHTML
+  refreshOpenTicketBadge()
+}
+
+// Count unassigned/open tickets and show on the sidebar badge
+async function refreshOpenTicketBadge() {
+  try {
+    const { count } = await SB.from('it_tickets')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['open','reopened'])
+    const badge = document.getElementById('openTicketBadge')
+    if (badge) {
+      if (count && count > 0) {
+        badge.textContent = count > 99 ? '99+' : count
+        badge.style.display = 'inline-flex'
+      } else {
+        badge.style.display = 'none'
+      }
+    }
+  } catch(e) { /* non-critical */ }
 }
 
 // ═══ NAVIGATION ═══
@@ -745,7 +764,7 @@ function buildTicketTable(tickets) {
     return { table: empty, cards: empty }
   }
   let tableHTML = '<div class="table-wrap"><table><thead><tr>'
-  tableHTML += '<th>ID</th><th>Subject</th><th>Category</th><th>Requester</th><th>Assigned</th><th>Priority</th><th>Status</th><th>SLA</th><th>Asset</th><th>Created</th>'
+  tableHTML += '<th>ID</th><th>Subject</th><th>Category</th><th>Requester</th><th>Assigned</th><th>Priority</th><th>Status</th><th>SLA</th><th>Asset</th><th>Created</th><th>Actions</th>'
   tableHTML += '</tr></thead><tbody>'
   let cardsHTML = ''
   tickets.forEach(t => {
@@ -766,6 +785,16 @@ function buildTicketTable(tickets) {
     tableHTML += '<td style="color:' + (slaBreached?'var(--red)':'var(--txt2)') + ';font-size:11px;">' + (slaDue ? (slaBreached ? '⚠️ ' : '') + formatDate(slaDue) : '—') + '</td>'
     tableHTML += '<td style="font-size:11px;color:var(--txt2);">' + (t.asset_no || '—') + '</td>'
     tableHTML += '<td style="color:var(--txt2);">' + formatDate(t.created_at) + '</td>'
+    // Actions cell — quick claim for unassigned open tickets
+    const canClaimRow = ['technician','supervisor','admin'].includes(S.user.it_role)
+    if (canClaimRow && !t.assigned_to && ['open','reopened'].includes(t.status)) {
+      tableHTML += '<td onclick="event.stopPropagation()" style="white-space:nowrap;">'
+      tableHTML += '<button class="btn btn-primary btn-sm" onclick="quickClaimStartIT(\'' + t.id + '\')" title="Claim and start">⚡ Start</button> '
+      tableHTML += '<button class="btn btn-ghost btn-sm" onclick="quickClaimIT(\'' + t.id + '\')" title="Claim only">👤</button>'
+      tableHTML += '</td>'
+    } else {
+      tableHTML += '<td style="color:var(--txt3);font-size:11px;">' + (t.assigned_to ? '✓ claimed' : '—') + '</td>'
+    }
     tableHTML += '</tr>'
     cardsHTML += '<div class="ticket-card priority-' + t.priority + '" onclick="viewTicket(\'' + t.id + '\')">'
     cardsHTML += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
@@ -779,7 +808,16 @@ function buildTicketTable(tickets) {
     if (asgn) cardsHTML += '<span>🔧 ' + asgn.full_name.split(' ')[0] + '</span>'
     cardsHTML += '<span style="color:' + (slaBreached?'var(--red)':'var(--txt3)') + ';">' + age + 'h ago</span>'
     if (t.asset_no) cardsHTML += '<span>🏷️ ' + t.asset_no + '</span>'
-    cardsHTML += '</div></div>'
+    cardsHTML += '</div>'
+    // Quick claim/start for unassigned open tickets (IT staff only)
+    const canClaim = ['technician','supervisor','admin'].includes(S.user.it_role)
+    if (canClaim && !t.assigned_to && ['open','reopened'].includes(t.status)) {
+      cardsHTML += '<div style="display:flex;gap:6px;margin-top:10px;" onclick="event.stopPropagation()">'
+      cardsHTML += '<button class="btn btn-primary btn-sm" style="flex:1;" onclick="quickClaimStartIT(\'' + t.id + '\')">⚡ Claim & Start</button>'
+      cardsHTML += '<button class="btn btn-ghost btn-sm" style="flex:1;" onclick="quickClaimIT(\'' + t.id + '\')">👤 Claim</button>'
+      cardsHTML += '</div>'
+    }
+    cardsHTML += '</div>'
   })
   tableHTML += '</tbody></table></div>'
   return { table: tableHTML, cards: cardsHTML }
@@ -1224,6 +1262,7 @@ async function quickClaimStartIT(ticketId) {
   const{data:t}=await SB.from('it_tickets').select('requester_id,subject').eq('id',ticketId).single()
   if(t?.requester_id) await SB.from('notifications').insert({ user_id:t.requester_id, title:'⚡ Ticket In Progress: '+ticketId, body:S.user.full_name+' is now working on: '+t.subject, type:'info', source_system:'it' })
   showToast('success','⚡ Started!',ticketId+' claimed and started.')
+  refreshOpenTicketBadge()
   if(S.page==='kanban')renderKanban()
   else showPage(S.page)
 }
@@ -1233,6 +1272,7 @@ async function quickClaimIT(ticketId) {
   const{data:t}=await SB.from('it_tickets').select('requester_id,subject').eq('id',ticketId).single()
   if(t?.requester_id) await SB.from('notifications').insert({ user_id:t.requester_id, title:'👤 Ticket Assigned: '+ticketId, body:S.user.full_name+' will handle: '+t.subject, type:'info', source_system:'it' })
   showToast('success','Claimed ✅',ticketId+' assigned to you.')
+  refreshOpenTicketBadge()
   if(S.page==='kanban')renderKanban()
   else showPage(S.page)
 }
