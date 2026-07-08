@@ -748,7 +748,46 @@ tr:hover td{background:var(--surf2);}
 // ═══════════════════════════════════════════
 const SUPA_URL = 'https://zcyhwdulizorgngayxya.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjeWh3ZHVsaXpvcmduZ2F5eHlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNjU0NTgsImV4cCI6MjA5NDg0MTQ1OH0.xLdKGNqjNZNRfjAf5NmXGI1GyTbQZAmbZiKokpgAhUo'
-const SB = supabase.createClient(SUPA_URL, SUPA_KEY)
+const SB = supabase.createClient(SUPA_URL, SUPA_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+    storageKey: 'tdmh-csr-auth'
+  }
+})
+
+// Ensure a live, non-expired auth session before critical writes.
+async function ensureAuth() {
+  try {
+    const { data: { session } } = await SB.auth.getSession()
+    if (session && session.access_token) {
+      const expMs = (session.expires_at || 0) * 1000
+      if (expMs && (expMs - Date.now()) < 60000) {
+        const { data: { session: refreshed } } = await SB.auth.refreshSession()
+        return !!(refreshed && refreshed.access_token)
+      }
+      return true
+    }
+    const stored = getSession()
+    if (stored && stored.access_token && stored.refresh_token) {
+      const { data: { session: restored }, error } = await SB.auth.setSession({
+        access_token: stored.access_token,
+        refresh_token: stored.refresh_token
+      })
+      if (restored && !error) return true
+    }
+    return false
+  } catch (e) {
+    console.warn('ensureAuth failed:', e && e.message)
+    return false
+  }
+}
+
+function handleAuthLost() {
+  try { showToast('warning', 'Session expired', 'Nag-expire ang session. Mag-login ulit.') } catch(e) {}
+  setTimeout(() => { try { clearSession() } catch(e) {}; location.reload() }, 1500)
+}
 
 const SMS_URL = SUPA_URL + '/functions/v1/send-sms'
 const EMAIL_URL = SUPA_URL + '/functions/v1/send-email'
@@ -1499,7 +1538,12 @@ function buildCSRKanban(requests) {
       kb._delegated = true
       kb.addEventListener('click', (e) => {
         const card = e.target.closest('.csr-kcard')
-        if (card && card.dataset.reqId) viewRequest(card.dataset.reqId)
+        if (card && card.dataset.reqId) {
+          Promise.resolve(viewRequest(card.dataset.reqId)).catch(err => {
+            console.error('viewRequest failed:', err)
+            showToast('error', 'Hindi mabuksan', 'May error: ' + (err && err.message ? err.message : err))
+          })
+        }
       })
     }
   }, 0)
@@ -1836,6 +1880,7 @@ async function viewRequest(id) {
       })
       body += '</div></div>'
     }
+  }
 
   // Source badge — enhanced for IT/Maintenance auto-generated requests
   if (req.source_system && req.source_system !== 'manual') {
@@ -1958,9 +2003,6 @@ async function viewRequest(id) {
   }
   document.getElementById('requestDetailFooter').innerHTML = footer
   openModal('requestDetailModal')
-}
-
-
 }
 
 function buildApprovalStepper(req, approvals) {
@@ -3174,6 +3216,7 @@ async function notifyApprovers(req, level) {
 
 // ─── processApproval ───
 async function processApproval() {
+  if (!(await ensureAuth())) { handleAuthLost(); return }
   const remarks = document.getElementById('approvalRemarks')?.value.trim() || ''
   const role = state.user.csr_role
   const level = roleApprovalLevel(role)
@@ -6312,6 +6355,7 @@ function openAddItemModal(itemId) {
 }
 
 async function saveStockItem() {
+  if (!(await ensureAuth())) { handleAuthLost(); return }
   const name = document.getElementById('si_name').value.trim()
   const code = document.getElementById('si_code').value.trim()
   const cat = document.getElementById('si_cat').value
@@ -7367,6 +7411,7 @@ async function closeDerp(id) {
 }
 
 async function triggerDerpCSR(derpId) {
+  if (!(await ensureAuth())) { handleAuthLost(); return }
   confirm2('Generate a CSR Purchase Request for this equipment replacement?', async () => {
     try {
       const { data: derp } = await SB.from('requests').select('*').eq('id', derpId).single()
