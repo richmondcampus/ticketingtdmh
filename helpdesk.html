@@ -785,15 +785,19 @@ function buildTicketTable(tickets) {
     tableHTML += '<td style="color:' + (slaBreached?'var(--red)':'var(--txt2)') + ';font-size:11px;">' + (slaDue ? (slaBreached ? '⚠️ ' : '') + formatDate(slaDue) : '—') + '</td>'
     tableHTML += '<td style="font-size:11px;color:var(--txt2);">' + (t.asset_no || '—') + '</td>'
     tableHTML += '<td style="color:var(--txt2);">' + formatDate(t.created_at) + '</td>'
-    // Actions cell — quick claim for unassigned open tickets
-    const canClaimRow = ['technician','supervisor','admin'].includes(S.user.it_role)
-    if (canClaimRow && !t.assigned_to && ['open','reopened'].includes(t.status)) {
+    // Actions cell — quick claim (open) or quick resolve (active)
+    const canActRow = ['technician','supervisor','admin'].includes(S.user.it_role)
+    if (canActRow && !t.assigned_to && ['open','reopened'].includes(t.status)) {
       tableHTML += '<td onclick="event.stopPropagation()" style="white-space:nowrap;">'
       tableHTML += '<button class="btn btn-primary btn-sm" onclick="quickClaimStartIT(\'' + t.id + '\')" title="Claim and start">⚡ Start</button> '
       tableHTML += '<button class="btn btn-ghost btn-sm" onclick="quickClaimIT(\'' + t.id + '\')" title="Claim only">👤</button>'
       tableHTML += '</td>'
+    } else if (canActRow && ['assigned','in_progress','pending_user'].includes(t.status)) {
+      tableHTML += '<td onclick="event.stopPropagation()" style="white-space:nowrap;">'
+      tableHTML += '<button class="btn btn-success btn-sm" onclick="quickResolveIT(\'' + t.id + '\')" title="Mark resolved">✅ Resolve</button>'
+      tableHTML += '</td>'
     } else {
-      tableHTML += '<td style="color:var(--txt3);font-size:11px;">' + (t.assigned_to ? '✓ claimed' : '—') + '</td>'
+      tableHTML += '<td style="color:var(--txt3);font-size:11px;">' + (['resolved','closed'].includes(t.status) ? '✓ done' : (t.assigned_to ? '✓ claimed' : '—')) + '</td>'
     }
     tableHTML += '</tr>'
     cardsHTML += '<div class="ticket-card priority-' + t.priority + '" onclick="viewTicket(\'' + t.id + '\')">'
@@ -809,12 +813,18 @@ function buildTicketTable(tickets) {
     cardsHTML += '<span style="color:' + (slaBreached?'var(--red)':'var(--txt3)') + ';">' + age + 'h ago</span>'
     if (t.asset_no) cardsHTML += '<span>🏷️ ' + t.asset_no + '</span>'
     cardsHTML += '</div>'
-    // Quick claim/start for unassigned open tickets (IT staff only)
-    const canClaim = ['technician','supervisor','admin'].includes(S.user.it_role)
-    if (canClaim && !t.assigned_to && ['open','reopened'].includes(t.status)) {
+    // Quick actions (IT staff only)
+    const canAct = ['technician','supervisor','admin'].includes(S.user.it_role)
+    if (canAct && !t.assigned_to && ['open','reopened'].includes(t.status)) {
+      // Unassigned open → claim
       cardsHTML += '<div style="display:flex;gap:6px;margin-top:10px;" onclick="event.stopPropagation()">'
       cardsHTML += '<button class="btn btn-primary btn-sm" style="flex:1;" onclick="quickClaimStartIT(\'' + t.id + '\')">⚡ Claim & Start</button>'
       cardsHTML += '<button class="btn btn-ghost btn-sm" style="flex:1;" onclick="quickClaimIT(\'' + t.id + '\')">👤 Claim</button>'
+      cardsHTML += '</div>'
+    } else if (canAct && ['assigned','in_progress','pending_user'].includes(t.status)) {
+      // Active/claimed → resolve (guard handles open parts requests)
+      cardsHTML += '<div style="display:flex;gap:6px;margin-top:10px;" onclick="event.stopPropagation()">'
+      cardsHTML += '<button class="btn btn-success btn-sm" style="flex:1;" onclick="quickResolveIT(\'' + t.id + '\')">✅ Resolve</button>'
       cardsHTML += '</div>'
     }
     cardsHTML += '</div>'
