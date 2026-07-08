@@ -534,7 +534,46 @@ const SUPA_URL = 'https://zcyhwdulizorgngayxya.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjeWh3ZHVsaXpvcmduZ2F5eHlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNjU0NTgsImV4cCI6MjA5NDg0MTQ1OH0.xLdKGNqjNZNRfjAf5NmXGI1GyTbQZAmbZiKokpgAhUo'
 const SMS_URL   = SUPA_URL + '/functions/v1/send-sms'
 const EMAIL_URL = SUPA_URL + '/functions/v1/send-email'
-const SB = supabase.createClient(SUPA_URL, SUPA_KEY)
+const SB = supabase.createClient(SUPA_URL, SUPA_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+    storageKey: 'tdmh-maint-auth'
+  }
+})
+
+// Ensure a live, non-expired auth session before critical writes.
+async function ensureAuth() {
+  try {
+    const { data: { session } } = await SB.auth.getSession()
+    if (session && session.access_token) {
+      const expMs = (session.expires_at || 0) * 1000
+      if (expMs && (expMs - Date.now()) < 60000) {
+        const { data: { session: refreshed } } = await SB.auth.refreshSession()
+        return !!(refreshed && refreshed.access_token)
+      }
+      return true
+    }
+    const stored = getSession()
+    if (stored && stored.access_token && stored.refresh_token) {
+      const { data: { session: restored }, error } = await SB.auth.setSession({
+        access_token: stored.access_token,
+        refresh_token: stored.refresh_token
+      })
+      if (restored && !error) return true
+    }
+    return false
+  } catch (e) {
+    console.warn('ensureAuth failed:', e && e.message)
+    return false
+  }
+}
+
+function handleAuthLost() {
+  try { showToast('warning', 'Session expired', 'Nag-expire ang session. Mag-login ulit.') } catch(e) {}
+  setTimeout(() => { try { clearSession() } catch(e) {}; location.reload() }, 1500)
+}
 
 // ═══════════════════════════════════
 // STATE
@@ -1291,6 +1330,7 @@ async function addNote(ticketId) {
 }
 
 async function claimTicket(ticketId) {
+  if (!(await ensureAuth())) { handleAuthLost(); return }
   confirm2('Claim this ticket and start work?', async () => {
     const { data: t } = await SB.from('maint_tickets').select('*').eq('id', ticketId).single()
     // Atomic claim — only succeeds if nobody has claimed it yet
@@ -2635,6 +2675,7 @@ async function kanbanDrop(e, toStatus) {
 
 // ─── Quick Actions — Maintenance ───
 async function quickClaimStartMaint(ticketId) {
+  if (!(await ensureAuth())) { handleAuthLost(); return }
   // Atomic claim — only succeeds if nobody has claimed it yet
   const { data: claimed, error } = await SB.from('maint_tickets')
     .update({ claimed_by:S.user.id, status:'in_progress', claimed_at:new Date().toISOString(), updated_at:new Date().toISOString() })
@@ -2661,6 +2702,7 @@ async function quickClaimStartMaint(ticketId) {
 
 
 async function quickResolveMaint(ticketId) {
+ if (!(await ensureAuth())) { handleAuthLost(); return }
  guardedCloseMnt(ticketId, 'resolve', async (overridden) => {
   await SB.from('maint_tickets').update({
     status: 'resolved', resolved_at: new Date().toISOString(),
