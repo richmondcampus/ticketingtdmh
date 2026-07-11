@@ -6716,9 +6716,20 @@ async function renderDerp() {
   const content = document.getElementById('mainContent')
   const role = state.user.csr_role
 
-  // Load DERP requests
-  const { data: derpRequests } = await SB.from('requests')
+  // Load DERP requests — department-scoped for requesters/dept heads.
+  // Processing roles (supply_officer, purchasing_officer, admin, evaluator) see all.
+  let derpQuery = SB.from('requests')
     .select('*').eq('request_type', 'derp').order('created_at', { ascending: false })
+  const deptScopedRoles = ['requester', 'dept_head']
+  if (deptScopedRoles.includes(role)) {
+    if (state.user.dept_id) {
+      derpQuery = derpQuery.eq('dept_id', state.user.dept_id)
+    } else {
+      // No department assigned → show only own requests as a safe fallback
+      derpQuery = derpQuery.eq('requested_by', state.user.id)
+    }
+  }
+  const { data: derpRequests } = await derpQuery
   const requests = derpRequests || []
 
   // Stats per category
