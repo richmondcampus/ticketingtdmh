@@ -7601,7 +7601,8 @@ async function renderReportContent() {
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.2)" onclick="exportAllReports()">⬇ Export All (CSV)</button>
-      <button class="btn btn-ghost btn-sm" style="background:rgba(201,168,76,.15);color:#c9a84c;border-color:#c9a84c" onclick="printReport('full')">🖨 Print Report</button>
+      <button class="btn btn-ghost btn-sm" style="background:rgba(201,168,76,.15);color:#c9a84c;border-color:#c9a84c" onclick="printReport('full')">🖨 Print Audit</button>
+      <button class="btn btn-pri btn-sm" onclick="openTripPrintReport()">🖨 Print Trip Report</button>
     </div>
   </div>
 
@@ -7805,6 +7806,103 @@ function printReport(section) {
   if (tabMap[section]) { _rptTab=tabMap[section]; renderReportContent().then(()=>setTimeout(()=>window.print(),400)) }
   else window.print()
 }
+
+async function openTripPrintReport() {
+  openMO('🖨 Print Trip Report',
+    `<div style="font-size:12px;color:var(--text2);margin-bottom:14px">Select filters to generate a printable landscape report.</div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Vehicle Type</label>
+         <select class="fs" id="prVtype">
+           <option value="">All Types</option>
+           <option value="ambulance">🚑 Ambulance only</option>
+           <option value="regular">🚙 Regular only</option>
+           <option value="motorcycle">🏍 Motorcycle only</option>
+         </select>
+       </div>
+       <div class="fg"><label class="fl">Status</label>
+         <select class="fs" id="prStatus">
+           <option value="">All Statuses</option>
+           <option value="completed">Completed</option>
+           <option value="cancelled">Cancelled</option>
+           <option value="on-trip">On Trip</option>
+           <option value="assigned">Assigned</option>
+           <option value="approved">Approved</option>
+           <option value="pending-approval">Pending Approval</option>
+         </select>
+       </div>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Date From</label>
+         <input class="fi" type="date" id="prFrom" value="${_rptFrom||''}">
+       </div>
+       <div class="fg"><label class="fl">Date To</label>
+         <input class="fi" type="date" id="prTo" value="${_rptTo||new Date().toISOString().slice(0,10)}">
+       </div>
+     </div>
+     <div class="fg"><label class="fl">Department (optional)</label>
+       <input class="fi" id="prDept" placeholder="Leave blank for all departments">
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="prBtn" onclick="doGeneratePrintReport()">🖨 Generate & Print</button>`
+  )
+}
+
+async function doGeneratePrintReport() {
+  const btn = document.getElementById('prBtn'); btn.disabled=true; btn.textContent='Loading...'
+  const vtype  = document.getElementById('prVtype')?.value  || ''
+  const status = document.getElementById('prStatus')?.value || ''
+  const from   = document.getElementById('prFrom')?.value   || ''
+  const to     = document.getElementById('prTo')?.value     || ''
+  const dept   = document.getElementById('prDept')?.value?.trim() || ''
+
+  let q = SB.from('trips').select('id,ticket_no,created_at,department,purpose,destination,stops,priority,vehicle_type_needed,status,requester_name,approval_remarks,approved_at,driver_name,vehicle_name,vehicle_plate,gate_out_at,gate_in_at,departure_at,odometer_out,odometer_in,distance_km,fuel_out,fuel_in,condition_out,condition_in,fuel_consumed_liters,fuel_cost,trip_duration_minutes,guard_out_remarks,guard_in_remarks').order('departure_at',{ascending:true})
+
+  if (vtype)  q = q.eq('vehicle_type_needed', vtype)
+  if (status) q = q.eq('status', status)
+  if (from)   q = q.gte('departure_at', from + 'T00:00:00+08:00')
+  if (to)     q = q.lte('departure_at', to   + 'T23:59:59+08:00')
+  if (dept)   q = q.ilike('department', '%'+dept+'%')
+
+  const { data: trips } = await q
+  const T = trips || []
+
+  btn.disabled=false; btn.textContent='🖨 Generate & Print'
+  closeMO()
+  if (!T.length) { alert('No trips found for the selected filters.'); return }
+
+  const filterLabel = [
+    vtype  ? 'Type: '+vtype.charAt(0).toUpperCase()+vtype.slice(1) : 'All Types',
+    status ? 'Status: '+status : 'All Statuses',
+    dept   ? 'Dept: '+dept : '',
+    from && to ? 'Period: '+from+' to '+to : from ? 'From: '+from : to ? 'To: '+to : 'All Dates'
+  ].filter(Boolean).join(' · ')
+
+  const totalCost = T.reduce((s,t)=>s+(parseFloat(t.fuel_cost)||0),0)
+  const totalDist = T.reduce((s,t)=>s+(t.distance_km||0),0)
+  const completed = T.filter(t=>t.status==='completed').length
+  const fmtDt = (v) => v ? new Date(v).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}) : '—'
+
+  const rows = T.map((t,i)=>{
+    const stops = (Array.isArray(t.stops)&&t.stops.length?t.stops:[t.destination]).filter(Boolean)
+    const dur = t.trip_duration_minutes ? Math.floor(t.trip_duration_minutes/60)+'h '+Math.round(t.trip_duration_minutes%60)+'m' : '—'
+    const bg = i%2===0?'#f9fafb':'#ffffff'
+    const pColor = t.priority==='emergency'?'#dc2626':t.priority==='urgent'?'#d97706':'#374151'
+    const sColor = t.status==='completed'?'#16a34a':t.status==='cancelled'?'#dc2626':'#374151'
+    return '<tr style="background:'+bg+';border-bottom:1px solid #e5e7eb"><td>'+t.ticket_no+'</td><td>'+t.department+'</td><td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t.purpose+'</td><td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+stops.join(' → ')+'</td><td style="color:'+pColor+';font-weight:700;text-transform:uppercase;font-size:8px">'+t.priority+'</td><td>'+t.vehicle_type_needed+'</td><td style="font-weight:700;color:'+sColor+'">'+t.status+'</td><td>'+t.requester_name+'</td><td>'+t.driver_name+'</td><td style="font-family:monospace">'+t.vehicle_plate+'</td><td>'+t.vehicle_name+'</td><td style="white-space:nowrap">'+fmtDt(t.gate_out_at)+'</td><td style="white-space:nowrap">'+fmtDt(t.gate_in_at)+'</td><td style="text-align:right">'+(t.distance_km!=null?t.distance_km+' km':'—')+'</td><td style="text-align:right">'+dur+'</td><td style="text-align:right">'+(t.fuel_consumed_liters!=null?parseFloat(t.fuel_consumed_liters).toFixed(1)+'L':'—')+'</td><td style="text-align:right;font-weight:700">'+(t.fuel_cost?'₱'+parseFloat(t.fuel_cost).toLocaleString('en-PH',{minimumFractionDigits:2}):'—')+'</td></tr>'
+  }).join('')
+
+  const printWin = window.open('','_blank','width=1400,height=900')
+  printWin.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>TDMH VTS — Trip Report</title><style>@page{size:landscape;margin:10mm 8mm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:9px;color:#111;background:#fff}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:8px;border-bottom:2.5px solid #0C2340}.hosp{font-size:16px;font-weight:800;color:#0C2340}.rpt-title{font-size:12px;font-weight:700;color:#0C2340;margin-top:2px}.filter-lbl{font-size:8px;color:#6b7280;margin-top:2px}.meta{text-align:right;font-size:8px;color:#6b7280}.summary{display:flex;gap:12px;margin-bottom:10px}.sum-item{background:#f3f4f6;border-radius:6px;padding:6px 14px;text-align:center}.sum-num{font-size:17px;font-weight:800;color:#0C2340}.sum-lbl{font-size:7.5px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.5px}table{width:100%;border-collapse:collapse}thead tr{background:#0C2340;color:#fff}th{padding:5px 4px;text-align:left;font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}td{padding:4px 4px;font-size:8.5px;vertical-align:top}tfoot tr{background:#f3f4f6;font-weight:700;border-top:2px solid #0C2340}tfoot td{padding:5px 4px;font-size:8.5px}.footer{margin-top:12px;padding-top:6px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:7.5px;color:#9ca3af}@media print{.no-print{display:none!important}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>')
+  printWin.document.write('<div class="no-print" style="text-align:right;margin-bottom:8px"><button onclick="window.print()" style="background:#0C2340;color:#fff;border:none;padding:6px 16px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">🖨 Print</button> <button onclick="window.close()" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">✕ Close</button></div>')
+  printWin.document.write('<div class="header"><div><div class="hosp">Taytay Doctors Multispecialty Hospital</div><div class="rpt-title">Vehicle Trip Report</div><div class="filter-lbl">'+filterLabel+'</div></div><div class="meta"><div style="font-weight:700;font-size:9px">Generated: '+new Date().toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Manila'})+'</div><div>By: '+(currentProfile?.full_name||'—')+' · '+T.length+' records</div></div></div>')
+  printWin.document.write('<div class="summary"><div class="sum-item"><div class="sum-num">'+T.length+'</div><div class="sum-lbl">Total Trips</div></div><div class="sum-item"><div class="sum-num">'+completed+'</div><div class="sum-lbl">Completed</div></div><div class="sum-item"><div class="sum-num">'+(T.length-completed)+'</div><div class="sum-lbl">Other Status</div></div><div class="sum-item"><div class="sum-num">'+totalDist.toLocaleString()+' km</div><div class="sum-lbl">Total Distance</div></div><div class="sum-item"><div class="sum-num">₱'+totalCost.toLocaleString('en-PH',{minimumFractionDigits:2})+'</div><div class="sum-lbl">Total Fuel Cost</div></div></div>')
+  printWin.document.write('<table><thead><tr><th>Ticket</th><th>Department</th><th>Purpose</th><th>Destination/Stops</th><th>Priority</th><th>Type</th><th>Status</th><th>Requested By</th><th>Driver</th><th>Plate</th><th>Vehicle</th><th>Gate Out</th><th>Gate In</th><th>Distance</th><th>Duration</th><th>Fuel (L)</th><th>Fuel Cost</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><td colspan="13" style="text-align:right;color:#6b7280">TOTALS →</td><td>'+totalDist.toLocaleString()+' km</td><td>—</td><td>'+T.reduce((s,t)=>s+(parseFloat(t.fuel_consumed_liters)||0),0).toFixed(1)+'L</td><td style="color:#16a34a">₱'+totalCost.toLocaleString('en-PH',{minimumFractionDigits:2})+'</td></tr></tfoot></table>')
+  printWin.document.write('<div class="footer"><div>TDMH Vehicle Ticketing System · Confidential · For internal use only</div><div>'+filterLabel+'</div></div>')
+  printWin.document.write('</body></html>')
+  printWin.document.close()
+  setTimeout(()=>printWin.print(),600)
+}
+
 
 function filterRawReport(q) { filterFullAuditTable(q) }
 
