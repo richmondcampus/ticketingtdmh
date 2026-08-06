@@ -1035,6 +1035,8 @@ function TDMHParking(){
   const [manualFee,setManualFee] = useState(null);
   const [lostTicket,setLostTicket] = useState(false);
   const [pwdSc,setPwdSc] = useState(false);
+  const [revertTxn,setRevertTxn] = useState(null);
+  const [reverting,setReverting] = useState(false);
   const [lf,setLf]           = useState({username:"",password:"",err:"",loading:false});
   const [dbReady,setDbReady] = useState(false);
   const [rtConnected,setRtConnected] = useState(false);
@@ -1208,6 +1210,48 @@ function TDMHParking(){
       user_name:user?.name||"—",
       role:user?.role||"—"
     }).then(({error})=>{if(error)console.warn("Log save failed:",error.message);});
+  }
+
+  async function doRevert(){
+    if(!revertTxn||reverting) return;
+    setReverting(true);
+    try{
+      const t=revertTxn;
+      const locSlots=slots[t.loc_id]||[];
+      // Original slot kung free; kung occupied na, unang free slot ng same type sa same location
+      let target=locSlots.find(s=>s.number===t.slot_number&&s.type===t.vtype&&!s.occupied);
+      let moved=false;
+      if(!target){
+        target=locSlots.find(s=>s.type===t.vtype&&!s.occupied);
+        moved=!!target;
+      }
+      if(!target){
+        toast("⚠️ Walang free slot ("+t.vtype+") sa "+(LOCS.find(l=>l.id===t.loc_id)?.name||t.loc_id)+" — hindi ma-revert.","err");
+        setReverting(false);return;
+      }
+      // 1. Delete the wrong transaction
+      const{error:delErr}=await sb.from("transactions").delete().eq("id",t.id);
+      if(delErr){toast("⚠️ Revert failed: "+delErr.message,"err");setReverting(false);return;}
+      // 2. Restore the slot
+      const{error:slErr}=await sb.from("slots").update({
+        occupied:true,
+        v_plate:t.plate,
+        v_name:(t.name&&t.name!=="—")?t.name:null,
+        v_vtype:t.vtype,
+        v_checkin:t.checkin_at||t.checkin_time,
+        v_ticket:t.ticket_no,
+        v_checkin_by:t.checkin_by||null
+      }).eq("id",target.id);
+      if(slErr){toast("⚠️ Transaction removed pero slot restore failed: "+slErr.message,"err");setReverting(false);return;}
+      // 3. Local state
+      setTxns(p=>p.filter(x=>x.id!==t.id));
+      setSlots(p=>{const c={...p};c[t.loc_id]=c[t.loc_id].map(s=>s.id===target.id?{...s,occupied:true,vehicle:{plate:t.plate,name:(t.name&&t.name!=="—")?t.name:null,vtype:t.vtype,checkin:t.checkin_at||t.checkin_time,ticketNo:t.ticket_no,checkinBy:t.checkin_by}}:s);return c;});
+      const locName2=LOCS.find(l=>l.id===t.loc_id)?.name||t.loc_id;
+      addLog(`↩️ REVERT CHECKOUT: ${t.plate} · ${locName2} Slot #${target.number}${moved?" (moved from #"+t.slot_number+")":""} · ${t.ticket_no} · ${P(t.fee||0)} removed · by ${user.name}`,"#8b5cf6");
+      toast("↩️ "+t.plate+" ibinalik sa "+locName2+" Slot #"+target.number+(moved?" (orig slot occupied)":"")+" — transaction removed.","ok");
+      setRevertTxn(null);
+    }catch(e){toast("⚠️ Revert error: "+e.message,"err");}
+    setReverting(false);
   }
 
   async function doLogin(){
@@ -1723,7 +1767,7 @@ function TDMHParking(){
           </div>
           {todayE.length===0?<div className="emp"><div className="ei">💸</div><p>No transactions today yet</p></div>:(
             <div style={{overflowX:"auto"}}><table className="etbl">
-              <thead><tr><th>Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Duration</th><th>Checked In By</th><th>Checked Out By</th><th>Amount</th></tr></thead>
+              <thead><tr><th>Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Duration</th><th>Checked In By</th><th>Checked Out By</th><th>Amount</th>{user?.role==="admin"&&<th></th>}</tr></thead>
               <tbody>{[...todayE].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).map((e,i)=>(
                 <tr key={i}>
                   <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{fmtT(e.checkout_at||e.checkout_time||e.checkin_at)}</td>
@@ -1735,6 +1779,7 @@ function TDMHParking(){
                   <td style={{fontSize:10,color:"var(--mu)"}}>{(e.checkin_by||"—").split(" ")[0]}</td>
                   <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
                   <td><span className="eam">{P(e.fee||0)}</span>{e.overnight&&<span style={{fontSize:9,color:"#8b5cf6",marginLeft:3}}>🌙</span>}</td>
+                  {user?.role==="admin"&&<td>{e.status!=="voided"&&<button className="btn bg" title="Revert checkout — ibalik sa slot" style={{padding:"4px 8px",fontSize:11,background:"#f5f3ff",color:"#6d28d9",border:"1px solid #ddd6fe"}} onClick={()=>setRevertTxn(e)}>↩️</button>}</td>}
                 </tr>
               ))}</tbody>
             </table></div>
@@ -1859,6 +1904,29 @@ function TDMHParking(){
           </div>
         );
       })()}
+
+      {/* MODAL: REVERT CHECKOUT */}
+      {revertTxn&&(
+        <div className="ov" onClick={e=>e.target===e.currentTarget&&!reverting&&setRevertTxn(null)}>
+          <div className="mo">
+            <div className="mh"><h2>↩️ Revert Checkout</h2><p>Ibabalik ang sasakyan sa slot — buburahin ang transaction</p></div>
+            <div className="mb">
+              <div style={{background:"#f5f3ff",border:"1.5px solid #ddd6fe",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+                <div style={{fontFamily:"'Space Mono',monospace",fontWeight:900,fontSize:18}}>{revertTxn.plate}</div>
+                <div style={{fontSize:12,color:"var(--mu)",marginTop:4}}>
+                  {revertTxn.ticket_no} · {VT[revertTxn.vtype]?.icon} {VT[revertTxn.vtype]?.label} · {LOCS.find(l=>l.id===revertTxn.loc_id)?.name} Slot #{revertTxn.slot_number}
+                </div>
+                <div style={{fontSize:12,color:"var(--mu)",marginTop:2}}>Fee na mabubura: <b style={{color:"#dc2626"}}>{P(revertTxn.fee||0)}</b> · Out by {revertTxn.cashier||"—"}</div>
+              </div>
+              <div className="phint" style={{background:"#fff8e1",borderColor:"#fcd34d",color:"#92400e"}}>⚠️ Gamitin lang ito kung nagkamali ng checkout ang cashier. Ang sasakyan ay babalik sa slot na naka-check in pa rin (same ticket, same time in). Kung occupied na ang original slot, ililipat sa unang free slot.</div>
+            </div>
+            <div className="mf">
+              <button className="btn bg" onClick={()=>setRevertTxn(null)} disabled={reverting}>Cancel</button>
+              <button className="btn" style={{background:"#6d28d9",color:"#fff",border:"none"}} onClick={doRevert} disabled={reverting}>{reverting&&<span className="spin"/>}{reverting?"Reverting…":"↩️ Confirm Revert"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: RECEIPT */}
       {modal==="receipt"&&receipt&&(
