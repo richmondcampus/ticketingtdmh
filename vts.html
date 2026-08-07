@@ -1881,7 +1881,7 @@ function renderTicketsTable() {
         acts.push(`<button class="tbl-act tbl-act-purple" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
       if ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-      if ((role==='admin' || role==='super_approver' || (role==='approver_admin' && t.vehicle_type_needed!=='ambulance')) && !['completed','cancelled'].includes(t.status))
+      if ((role==='admin' || role==='super_approver' || (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') || (role==='approver_amb' && t.vehicle_type_needed==='ambulance')) && !['completed','cancelled'].includes(t.status))
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
       // Trip Pool — only show if this ticket's date has 2+ poolable tickets
       if (['admin','super_approver','approver_admin','approver_amb'].includes(role) && ['approved','assigned'].includes(t.status) && !t.pool_id) {
@@ -2164,9 +2164,10 @@ function buildMobCards(filtered, role) {
       (role==='approver_amb' && t.vehicle_type_needed==='ambulance')
     )
     const canCancel = (
-      ((role==='requester' || role==='approver_amb') && isPending && isOwnTicket) ||
+      (role==='requester' && isPending && isOwnTicket) ||
       ((role==='admin' || role==='super_approver') && !isCompleted && !isCancelled) ||
-      (role==='approver_admin' && t.vehicle_type_needed!=='ambulance' && !isCompleted && !isCancelled)
+      (role==='approver_admin' && t.vehicle_type_needed!=='ambulance' && !isCompleted && !isCancelled) ||
+      (role==='approver_amb' && t.vehicle_type_needed==='ambulance' && !isCompleted && !isCancelled)
     )
 
     // Status color for left border
@@ -2301,6 +2302,8 @@ async function openViewModal(id) {
     ...(t.odometer_out&&t.odometer_in?[['Distance',`${t.odometer_in-t.odometer_out} km`]]:[]),
     ...(t.fuel_consumed_liters?[['Fuel Used', t.fuel_consumed_liters + 'L' + (t.fuel_cost ? ' — ₱' + parseFloat(t.fuel_cost).toLocaleString('en-PH',{minimumFractionDigits:2}) : '')]]:[]),
     ...(t.remarks?[['Remarks',t.remarks,'span2']]:[]),
+    ...(t.status==='rejected' && t.rejection_reason ? [['❌ Rejection Reason', `<span style="color:var(--red);font-weight:600">${t.rejection_reason}</span>`, 'span2']] : []),
+    ...(t.status==='cancelled' && t.rejection_reason ? [['🚫 Cancellation Reason', `<span style="color:var(--amber);font-weight:600">${t.rejection_reason}</span>`, 'span2']] : []),
   ]
 
   // Rating display for completed trips
@@ -2373,7 +2376,8 @@ async function openViewModal(id) {
       // Cancel ticket
       if (!['completed','cancelled','rejected'].includes(t.status) && (
         r === 'admin' || r === 'super_approver' ||
-        (r === 'approver_admin' && t.vehicle_type_needed !== 'ambulance')
+        (r === 'approver_admin' && t.vehicle_type_needed !== 'ambulance') ||
+        (r === 'approver_amb' && t.vehicle_type_needed === 'ambulance')
       )) {
         btns.push(`<button class="btn btn-amber btn-sm" onclick="closeMO();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">✕ Cancel Trip</button>`)
       }
@@ -3079,6 +3083,36 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
     window._rsaVtypeOverride = override
   }
 
+  // Store data for pull-regular-driver toggle (ambulance reassign)
+  window._rsaBusyDIds    = busyDIds
+  window._rsaBusyDLabel  = busyDLabel
+  window._rsaCurDriverId = curDriverId
+  window.rsaTogglePullRegular = () => {
+    const checked = document.getElementById('rsaPullRegular')?.checked
+    const sel = document.getElementById('rsaDrv')
+    if (!sel) return
+    const optHTML = (d, isPulled) => {
+      const busy = busyDIds.has(d.id) && d.id !== curDriverId
+      const lbl  = busyDLabel[d.id]
+      const cur  = d.id === curDriverId
+      return `<option value="${d.id}|${d.full_name}"${cur?' style="font-weight:700;color:var(--pri)"':''}>${cur?'★ (Current) ':''}${isPulled?'🚙 ':''}${d.full_name} · ${d.license_no||'—'}${isPulled?' (Regular)':''}${busy&&lbl?' ⚠ Busy: '+lbl:''}</option>`
+    }
+    const ambDrivers = (_drivers||[]).filter(d => {
+      if (d.status === 'off-duty') return false
+      const dt = d.driver_type || 'regular'
+      return dt === 'ambulance' || dt === 'both'
+    })
+    const regDrivers = (_drivers||[]).filter(d => {
+      if (d.status === 'off-duty') return false
+      return (d.driver_type || 'regular') === 'regular'
+    })
+    let html = '<option value="">-- Select New Driver --</option>' + ambDrivers.map(d=>optHTML(d,false)).join('')
+    if (checked) {
+      html += '<option disabled>──── Regular Drivers (pulled) ────</option>' + regDrivers.map(d=>optHTML(d,true)).join('')
+    }
+    sel.innerHTML = html
+  }
+
   const depStr = tripData?.departure_at
     ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
     : '—'
@@ -3124,6 +3158,11 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
          <option value="">-- Select New Driver --</option>
          ${buildDriverOpts(vtype)}
        </select>
+       ${vtype==='ambulance' ? `
+       <label style="display:flex;align-items:center;gap:7px;margin-top:8px;cursor:pointer;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 11px">
+         <input type="checkbox" id="rsaPullRegular" onchange="rsaTogglePullRegular()" style="width:15px;height:15px;accent-color:#ea580c">
+         <span style="font-size:11.5px;color:#9a3412;font-weight:600">🚙 No ambulance driver available — pull from regular drivers</span>
+       </label>` : ''}
      </div>
 
      <div class="fg"><label class="fl">New Vehicle *
@@ -3996,31 +4035,40 @@ async function doReject(id, ticketNo) {
 // CANCEL TICKET
 async function cancelTicket(id, ticketNo, driverId, vehicleId) {
   openMO(`Cancel Ticket`,
-    `<div style="text-align:center;padding:8px 0">
-       <div style="font-size:40px;margin-bottom:12px">⚠️</div>
-       <div style="font-size:16px;font-weight:700;margin-bottom:8px">Cancel ${ticketNo}?</div>
-       <div style="font-size:13px;color:var(--text2)">This action cannot be undone. The ticket will be marked as cancelled.</div>
+    `<div style="text-align:center;padding:4px 0 12px">
+       <div style="font-size:40px;margin-bottom:8px">⚠️</div>
+       <div style="font-size:16px;font-weight:700;margin-bottom:6px">Cancel ${ticketNo}?</div>
+       <div style="font-size:13px;color:var(--text2)">This action cannot be undone. The requester will see the reason below.</div>
+     </div>
+     <div class="fg"><label class="fl">Reason for cancellation *</label>
+       <textarea class="ft" id="cancelReason" placeholder="e.g. Schedule changed, vehicle unavailable, duplicate request..." style="min-height:60px"></textarea>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Keep Ticket</button>
      <button class="btn btn-red" onclick="doCancelTicket('${id}','${ticketNo}','${driverId}','${vehicleId}')">Yes, Cancel Ticket</button>`
   )
 }
 async function doCancelTicket(id, ticketNo, driverId, vehicleId) {
+  const reason = document.getElementById('cancelReason')?.value.trim()
+  if (!reason) { alert('Please provide a reason for cancellation.'); return }
+  const cancelMsg = reason + ' (Cancelled by ' + (currentProfile?.full_name || currentProfile?.username) + ')'
   const { error } = await SB.from('trips').update({
     status: 'cancelled',
     rejected_by: currentProfile?.id,
     rejected_at: new Date().toISOString(),
-    rejection_reason: 'Cancelled by ' + (currentProfile?.full_name || currentProfile?.username)
+    rejection_reason: cancelMsg
   }).eq('id', id)
   if (error) { alert(error.message); return }
   if (driverId && driverId !== 'null') await SB.from('drivers').update({ status:'available' }).eq('id', driverId)
   if (vehicleId && vehicleId !== 'null') await SB.from('vehicles').update({ status:'available' }).eq('id', vehicleId)
-  await addAudit(id, ticketNo, 'Ticket Cancelled', 'Cancelled by ' + (currentProfile?.full_name || currentProfile?.username))
+  await addAudit(id, ticketNo, 'Ticket Cancelled', cancelMsg)
+  // Notify requester
+  const requester = await getRequesterContacts(id)
+  if (requester.emails?.length) await sendEmail(requester.emails, 'ticket_rejected', { ticket_no: ticketNo, purpose: '', reason: cancelMsg })
   if (driverId && driverId !== 'null') {
     const { data: drvRow } = await SB.from('drivers').select('phone').eq('id', driverId).single()
-    if (drvRow?.phone) await sendSMS([drvRow.phone], `[TDMH VTS] Trip ${ticketNo} has been CANCELLED. You are no longer assigned to this trip.`)
+    if (drvRow?.phone) await sendSMS([drvRow.phone], `[TDMH VTS] Trip ${ticketNo} has been CANCELLED. You are no longer assigned to this trip.`, 'cancelled', ticketNo)
     const drvEmails = await getEmailsForRole('driver')
-    if (drvEmails.length) await sendEmail(drvEmails, 'trip_cancelled_driver', { ticket_no: ticketNo, reason: 'Trip cancelled' })
+    if (drvEmails.length) await sendEmail(drvEmails, 'trip_cancelled_driver', { ticket_no: ticketNo, reason: cancelMsg })
   }
   closeMO(); renderTickets()
 }
@@ -4099,6 +4147,11 @@ async function openAssignModal(id, ticketNo, vtype) {
   const avV_all = filterVehicles(allVehicles, false)
   const avD_all = filterDrivers(allDrivers, false)
 
+  // Store for pull-regular-driver toggle (ambulance tickets)
+  window._asAllDrivers = allDrivers
+  window._asBusyDrvLabel = busyDrvLabel
+  window._asBusyDrvIdSet = busyDrvIds
+
   const depStr = dep ? new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
   const scopeLabel = isAmb ? '🚑 Ambulance' : isMoto ? '🏍 Motorcycle' : '🚙 Regular'
 
@@ -4138,12 +4191,14 @@ async function openAssignModal(id, ticketNo, vtype) {
        <div id="drvConflictWarn" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#92400e;margin-top:5px">
          ⚠ This driver already has a trip at that time. You can still assign — consider pooling both trips for efficiency.
        </div>
+       ${isAmb ? `
+       <label style="display:flex;align-items:center;gap:7px;margin-top:8px;cursor:pointer;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 11px">
+         <input type="checkbox" id="asPullRegular" onchange="togglePullRegularDriver('asDrv')" style="width:15px;height:15px;accent-color:#ea580c">
+         <span style="font-size:11.5px;color:#9a3412;font-weight:600">🚙 No ambulance driver available — pull from regular drivers</span>
+       </label>` : ''}
        <button type="button" onclick="openAddRelieverModal('asDrv')" style="margin-top:6px;font-size:11px;color:var(--pri);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">
          + Add reliever / temporary driver
        </button>
-     </div>
-         ${avD.length === 0 ? '<option disabled>No available drivers at this time</option>' : ''}
-       </select>
      </div>
 
      <div class="fg"><label class="fl">Select Vehicle *
@@ -4208,6 +4263,41 @@ function toggleLastResort(id, ticketNo, vtype, allV, allD) {
   const vlabel = vSel.closest('.fg')?.querySelector('label span')
   if (label) label.textContent = ` — ${dList.length} available`
   if (vlabel) vlabel.textContent = ` — ${vList.length} available`
+}
+
+function togglePullRegularDriver(selectId) {
+  const checked = document.getElementById('asPullRegular')?.checked
+  const sel = document.getElementById(selectId)
+  if (!sel) return
+  const allDrivers   = window._asAllDrivers || []
+  const busyDrvLabel = window._asBusyDrvLabel || {}
+  const busyDrvIds   = window._asBusyDrvIdSet || new Set()
+
+  // Build ambulance-qualified drivers (always shown)
+  const ambDrivers = allDrivers.filter(d => {
+    if (d.status === 'off-duty') return false
+    const dt = d.driver_type || 'regular'
+    return dt === 'ambulance' || dt === 'both'
+  })
+
+  // Regular drivers (added when checkbox checked)
+  const regDrivers = allDrivers.filter(d => {
+    if (d.status === 'off-duty') return false
+    const dt = d.driver_type || 'regular'
+    return dt === 'regular'
+  })
+
+  const optHTML = (d, isPulled) => {
+    const busy = busyDrvIds.has(d.id)
+    const lbl  = busyDrvLabel[d.id]
+    return `<option value="${d.id}|${d.full_name}" ${busy?'style="color:var(--amber)"':''}>${isPulled?'🚙 ':''}${d.full_name} · ${d.license_no||'—'}${isPulled?' (Regular)':''}${busy&&lbl?' ⚠ '+lbl:''}</option>`
+  }
+
+  let html = '<option value="">-- Select Driver --</option>' + ambDrivers.map(d=>optHTML(d,false)).join('')
+  if (checked) {
+    html += '<option disabled>──── Regular Drivers (pulled) ────</option>' + regDrivers.map(d=>optHTML(d,true)).join('')
+  }
+  sel.innerHTML = html
 }
 
 function checkAssignConflict() {
