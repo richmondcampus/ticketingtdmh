@@ -1254,6 +1254,32 @@ function TDMHParking(){
     setReverting(false);
   }
 
+  async function doApplyPwd(){
+    if(!revertTxn||reverting) return;
+    const t=revertTxn;
+    if(t.overnight){toast("⚠️ PWD/SC exemption ay hindi applicable sa overnight stays.","err");return;}
+    if(t.notes&&t.notes.includes("PWD_SC_EXEMPT")){toast("⚠️ May PWD/SC discount na ang transaction na ito.","err");return;}
+    setReverting(true);
+    try{
+      const vtR=VT[t.vtype]||VT.car;
+      const cin=new Date(t.checkin_at||t.checkin_time);
+      const cout=new Date(t.checkout_at||t.checkout_time);
+      const hrs=Math.max(0,(cout-cin)/3600000);
+      const hasLost=!!(t.notes&&t.notes.includes("LOST_TICKET"));
+      const pwdBase=hrs<=3?0:Math.ceil(hrs-3)*vtR.sr;
+      const newFee=pwdBase+(hasLost?50:0);
+      const refund=Math.max(0,Number(t.fee||0)-newFee);
+      const newNotes=[t.notes,"PWD_SC_EXEMPT"].filter(Boolean).join("+");
+      const{error:upErr}=await sb.from("transactions").update({fee:newFee,notes:newNotes}).eq("id",t.id);
+      if(upErr){toast("⚠️ Update failed: "+upErr.message,"err");setReverting(false);return;}
+      setTxns(p=>p.map(x=>x.id===t.id?{...x,fee:newFee,notes:newNotes}:x));
+      addLog(`♿ PWD/SC APPLIED: ${t.plate} · ${t.ticket_no} · fee ${P(t.fee||0)} → ${P(newFee)} · refund ${P(refund)} · by ${user.name}`,"#0ea5e9");
+      toast("♿ PWD/SC applied — bagong fee: "+P(newFee)+" · I-refund sa customer: "+P(refund),"ok");
+      setRevertTxn(null);
+    }catch(e){toast("⚠️ Error: "+e.message,"err");}
+    setReverting(false);
+  }
+
   async function doLogin(){
     setLf(p=>({...p,loading:true,err:""}));
     const{data,error}=await sb.from("users").select("*").eq("username",lf.username).eq("password",lf.password).maybeSingle();
@@ -1909,7 +1935,7 @@ function TDMHParking(){
       {revertTxn&&(
         <div className="ov" onClick={e=>e.target===e.currentTarget&&!reverting&&setRevertTxn(null)}>
           <div className="mo">
-            <div className="mh"><h2>↩️ Revert Checkout</h2><p>Ibabalik ang sasakyan sa slot — buburahin ang transaction</p></div>
+            <div className="mh"><h2>🛠️ Fix Transaction</h2><p>Piliin ang tamang correction para sa maling checkout</p></div>
             <div className="mb">
               <div style={{background:"#f5f3ff",border:"1.5px solid #ddd6fe",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
                 <div style={{fontFamily:"'Space Mono',monospace",fontWeight:900,fontSize:18}}>{revertTxn.plate}</div>
@@ -1918,11 +1944,13 @@ function TDMHParking(){
                 </div>
                 <div style={{fontSize:12,color:"var(--mu)",marginTop:2}}>Fee na mabubura: <b style={{color:"#dc2626"}}>{P(revertTxn.fee||0)}</b> · Out by {revertTxn.cashier||"—"}</div>
               </div>
-              <div className="phint" style={{background:"#fff8e1",borderColor:"#fcd34d",color:"#92400e"}}>⚠️ Gamitin lang ito kung nagkamali ng checkout ang cashier. Ang sasakyan ay babalik sa slot na naka-check in pa rin (same ticket, same time in). Kung occupied na ang original slot, ililipat sa unang free slot.</div>
+              <div className="phint" style={{background:"#fff8e1",borderColor:"#fcd34d",color:"#92400e",marginBottom:8}}>↩️ <b>Revert to Slot</b> — namali ng out, nandyan pa ang sasakyan. Buburahin ang transaction at ibabalik sa slot (same ticket at time in). Kung occupied na ang slot, ililipat sa unang free slot.</div>
+              <div className="phint" style={{background:"#e0f2fe",borderColor:"#7dd3fc",color:"#0369a1"}}>♿ <b>Apply PWD/SC</b> — nakalimutan i-apply ang first-3-hrs-free discount. Ire-recompute ang fee, mananatili ang transaction, at i-re-refund ng cashier ang sobra sa customer.{revertTxn.overnight?" ⚠️ Overnight ito — hindi applicable.":""}</div>
             </div>
             <div className="mf">
               <button className="btn bg" onClick={()=>setRevertTxn(null)} disabled={reverting}>Cancel</button>
-              <button className="btn" style={{background:"#6d28d9",color:"#fff",border:"none"}} onClick={doRevert} disabled={reverting}>{reverting&&<span className="spin"/>}{reverting?"Reverting…":"↩️ Confirm Revert"}</button>
+              <button className="btn" style={{background:"#0ea5e9",color:"#fff",border:"none"}} onClick={doApplyPwd} disabled={reverting||revertTxn.overnight||(revertTxn.notes&&revertTxn.notes.includes("PWD_SC_EXEMPT"))}>{reverting?"…":"♿ Apply PWD/SC"}</button>
+              <button className="btn" style={{background:"#6d28d9",color:"#fff",border:"none"}} onClick={doRevert} disabled={reverting}>{reverting&&<span className="spin"/>}{reverting?"Processing…":"↩️ Revert to Slot"}</button>
             </div>
           </div>
         </div>
