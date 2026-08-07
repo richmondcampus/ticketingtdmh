@@ -659,6 +659,19 @@ function ReportsPanel({currentUser}){
   const lostTxns=useMemo(()=>filtered.filter(e=>e.notes&&(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking Ticket")||e.notes.toLowerCase().includes("lost"))),[filtered]);
   const lostTotal=lostTxns.length*50;
   const pwdTxns=useMemo(()=>filtered.filter(e=>e.notes&&e.notes.includes("PWD_SC_EXEMPT")),[filtered]);
+  // Recompute discount per PWD txn from actual times: normal fee minus PWD fee (first 3hrs free)
+  const pwdCalc=e=>{
+    try{
+      const vt=VT[e.vtype];if(!vt)return{normal:0,disc:0};
+      const cin=new Date(e.checkin_at||e.checkin_time);
+      const cout=new Date(e.checkout_at||e.checkout_time);
+      const hrs=Math.max(0,(cout-cin)/3600000);
+      const normal=hrs<=vt.fh?vt.fr:vt.fr+Math.ceil(hrs-vt.fh)*vt.sr;
+      const pwd=hrs<=3?0:Math.ceil(hrs-3)*vt.sr;
+      return{normal,disc:Math.max(0,normal-pwd)};
+    }catch(err){return{normal:0,disc:0};}
+  };
+  const pwdDiscTotal=useMemo(()=>pwdTxns.reduce((s,e)=>s+pwdCalc(e).disc,0),[pwdTxns]);
 
   const total=filtered.reduce((s,e)=>s+Number(e.fee||0),0);
   const cnt=filtered.length;
@@ -729,7 +742,7 @@ function ReportsPanel({currentUser}){
           <div className="rkpi" style={{"--kc":"#8b5cf6"}}><div className="kl">Overnight</div><div className="kv">{ovrCnt}</div><div className="ks">{P(filtered.filter(e=>e.overnight).reduce((s,e)=>s+Number(e.fee||0),0))}</div></div>
           <div className="rkpi" style={{"--kc":"#ef4444"}}><div className="kl">⚠️ Voided</div><div className="kv">{voided.length}</div><div className="ks" style={{color:"#ef4444"}}>{P(lossTotal)} lost</div></div>
           <div className="rkpi" style={{"--kc":"#f59e0b"}}><div className="kl">🎫 Lost Tickets</div><div className="kv">{lostTxns.length}</div><div className="ks" style={{color:"#d97706"}}>{P(lostTotal)} collected</div></div>
-          <div className="rkpi" style={{"--kc":"#0ea5e9"}}><div className="kl">♿ PWD/SC Exempted</div><div className="kv">{pwdTxns.length}</div><div className="ks" style={{color:"#0369a1"}}>first 3hrs free</div></div>
+          <div className="rkpi" style={{"--kc":"#0ea5e9"}}><div className="kl">♿ PWD/SC Exempted</div><div className="kv">{pwdTxns.length}</div><div className="ks" style={{color:"#0369a1"}}>{P(pwdDiscTotal)} discounted</div></div>
         </div>
         <div className="rcc">
           <h4>📈 Daily Revenue Trend</h4>
@@ -845,6 +858,34 @@ function ReportsPanel({currentUser}){
                   </tr>
                 );})}
                 </tbody>
+              </table></div>
+            </div>
+          )}
+          {pwdTxns.length>0&&(
+            <div className="rcc" style={{marginTop:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11,flexWrap:"wrap",gap:7}}>
+                <h4 style={{margin:0,color:"#0369a1"}}>♿ PWD/SC Transactions — {P(pwdDiscTotal)} total discount given</h4>
+                <span style={{fontSize:11,color:"var(--mu)"}}>{pwdTxns.length} records · first 3 hrs free per Taytay ordinance</span>
+              </div>
+              <div style={{overflowX:"auto",maxHeight:300,overflowY:"auto"}}><table className="rtbl">
+                <thead><tr><th>Date/Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Duration</th><th>Cashier</th><th>Normal Fee</th><th>Discount</th><th>Paid</th></tr></thead>
+                <tbody>{pwdTxns.map((e,i)=>{
+                  const pc=pwdCalc(e);
+                  return(
+                  <tr key={i} style={{background:"#f0f9ff"}}>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_at||e.checkout_time||e.checkin_at)}</td>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#7c3aed"}}>{e.ticket_no||"—"}</td>
+                    <td><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700}}>{e.plate}</span></td>
+                    <td>{VT[e.vtype]?.icon} {VT[e.vtype]?.label||e.vtype}</td>
+                    <td style={{fontSize:10}}>{LOCS.find(l=>l.id===e.loc_id)?.short||e.loc_id}</td>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{e.dur||e.duration||"—"}</td>
+                    <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
+                    <td style={{fontFamily:"'Space Mono',monospace",fontSize:10}}>{P(pc.normal)}</td>
+                    <td><span style={{background:"#e0f2fe",color:"#0369a1",padding:"2px 6px",borderRadius:100,fontSize:10,fontWeight:700}}>-{P(pc.disc)}</span></td>
+                    <td><span className="eam">{P(e.fee||0)}</span></td>
+                  </tr>
+                  );
+                })}</tbody>
               </table></div>
             </div>
           )}
