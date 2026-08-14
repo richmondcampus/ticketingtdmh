@@ -1078,6 +1078,7 @@ function TDMHParking(){
   const [pwdSc,setPwdSc] = useState(false);
   const [revertTxn,setRevertTxn] = useState(null);
   const [reverting,setReverting] = useState(false);
+  const [delArm,setDelArm] = useState(false);
   const [lf,setLf]           = useState({username:"",password:"",err:"",loading:false});
   const [dbReady,setDbReady] = useState(false);
   const [rtConnected,setRtConnected] = useState(false);
@@ -1318,6 +1319,22 @@ function TDMHParking(){
       toast("♿ PWD/SC applied — bagong fee: "+P(newFee)+" · I-refund sa customer: "+P(refund),"ok");
       setRevertTxn(null);
     }catch(e){toast("⚠️ Error: "+e.message,"err");}
+    setReverting(false);
+  }
+
+  async function doDeleteRecord(){
+    if(!revertTxn||reverting) return;
+    if(!delArm){setDelArm(true);return;}
+    setReverting(true);
+    try{
+      const t=revertTxn;
+      const{error:delErr}=await sb.from("transactions").delete().eq("id",t.id);
+      if(delErr){toast("⚠️ Delete failed: "+delErr.message,"err");setReverting(false);return;}
+      setTxns(p=>p.filter(x=>x.id!==t.id));
+      addLog(`🗑️ DELETE RECORD: ${t.plate} · ${t.ticket_no} · ${P(t.fee||0)} removed (duplicate/error) · by ${user.name}`,"#dc2626");
+      toast("🗑️ Record deleted — "+t.plate+" · "+t.ticket_no+" · "+P(t.fee||0)+" removed from earnings.","ok");
+      setRevertTxn(null);setDelArm(false);
+    }catch(e){toast("⚠️ Delete error: "+e.message,"err");}
     setReverting(false);
   }
 
@@ -1846,7 +1863,7 @@ function TDMHParking(){
                   <td style={{fontSize:10,color:"var(--mu)"}}>{(e.checkin_by||"—").split(" ")[0]}</td>
                   <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
                   <td><span className="eam">{P(e.fee||0)}</span>{e.overnight&&<span style={{fontSize:9,color:"#8b5cf6",marginLeft:3}}>🌙</span>}</td>
-                  {user?.role==="admin"&&<td>{e.status!=="voided"&&<button className="btn bg" title="Revert checkout — ibalik sa slot" style={{padding:"4px 8px",fontSize:11,background:"#f5f3ff",color:"#6d28d9",border:"1px solid #ddd6fe"}} onClick={()=>setRevertTxn(e)}>↩️</button>}</td>}
+                  {user?.role==="admin"&&<td>{e.status!=="voided"&&<button className="btn bg" title="Revert checkout — ibalik sa slot" style={{padding:"4px 8px",fontSize:11,background:"#f5f3ff",color:"#6d28d9",border:"1px solid #ddd6fe"}} onClick={()=>{setRevertTxn(e);setDelArm(false);}}>↩️</button>}</td>}
                 </tr>
               ))}</tbody>
             </table></div>
@@ -1987,6 +2004,10 @@ function TDMHParking(){
               </div>
               <div className="phint" style={{background:"#fff8e1",borderColor:"#fcd34d",color:"#92400e",marginBottom:8}}>↩️ <b>Revert to Slot</b> — namali ng out, nandyan pa ang sasakyan. Buburahin ang transaction at ibabalik sa slot (same ticket at time in). Kung occupied na ang slot, ililipat sa unang free slot.</div>
               <div className="phint" style={{background:"#e0f2fe",borderColor:"#7dd3fc",color:"#0369a1"}}>♿ <b>Apply PWD/SC</b> — nakalimutan i-apply ang first-3-hrs-free discount. Ire-recompute ang fee, mananatili ang transaction, at i-re-refund ng cashier ang sobra sa customer.{revertTxn.overnight?" ⚠️ Overnight ito — hindi applicable.":""}</div>
+              <div style={{marginTop:8,background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:9,padding:"10px 13px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontSize:12,color:"#991b1b"}}>🗑️ <b>Duplicate o maling record?</b> Buburahin lang ang transaction — hindi gagalawin ang slot.</div>
+                <button className="btn" style={{background:delArm?"#dc2626":"#fee2e2",color:delArm?"#fff":"#991b1b",border:"1px solid "+(delArm?"#dc2626":"#fca5a5"),padding:"6px 12px",fontSize:12}} onClick={doDeleteRecord} disabled={reverting}>{delArm?"⚠️ Click ulit para burahin":"🗑️ Delete Record"}</button>
+              </div>
             </div>
             <div className="mf">
               <button className="btn bg" onClick={()=>setRevertTxn(null)} disabled={reverting}>Cancel</button>
