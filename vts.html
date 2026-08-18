@@ -2382,6 +2382,11 @@ async function openViewModal(id) {
         btns.push(`<button class="btn btn-amber btn-sm" onclick="closeMO();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">✕ Cancel Trip</button>`)
       }
 
+      // Correct gate data (guards + admin) — any ticket with gate data
+      if ((r === 'guard' || r === 'admin') && (t.gate_out_at || t.gate_in_at)) {
+        btns.push(`<button class="btn btn-ghost" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa" onclick="closeMO();openCorrectGateData('${t.id}','${t.ticket_no}')">✏ Correct Gate Data</button>`)
+      }
+
       return btns.join('') || `<span></span>`
     })()
   )
@@ -2390,6 +2395,113 @@ async function openViewModal(id) {
 // ════════════════════════════════════════════════
 // GUARD — PASSENGER MANIFEST EDITOR
 // ════════════════════════════════════════════════
+async function openCorrectGateData(tripId, ticketNo) {
+  const { data: t } = await SB.from('trips').select('*').eq('id', tripId).single()
+  if (!t) { alert('Trip not found.'); return }
+
+  const hasOut = !!t.gate_out_at
+  const hasIn  = !!t.gate_in_at
+  const condOpts = (sel) => ['Good','Fair','Needs Attention','Damaged'].map(c=>`<option value="${c}"${sel===c?' selected':''}>${c}</option>`).join('')
+
+  openMO(`✏ Correct Gate Data — ${ticketNo}`,
+    `<div class="info info-amber" style="margin-bottom:14px;font-size:12px">
+       <strong>Correcting recorded gate data.</strong><br>
+       <span style="font-size:11px">Use this to fix wrong odometer, fuel, or condition entries. Distance auto-recalculates. All changes are logged.</span>
+     </div>
+
+     ${hasOut ? `
+     <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
+       <div style="font-size:11px;font-weight:800;color:var(--pri);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🚀 Gate-Out Data</div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Odometer Out (km)</label><input class="fi" type="number" id="cgOdoOut" value="${t.odometer_out??''}"></div>
+         <div class="fg"><label class="fl">Fuel Out</label><input class="fi" id="cgFuelOut" value="${(t.fuel_out||'').replace(/"/g,'&quot;')}" placeholder="e.g. Full, 3/4, 1/2"></div>
+       </div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Condition Out</label><select class="fs" id="cgCondOut">${condOpts(t.condition_out)}</select></div>
+         <div class="fg"><label class="fl">Gate-Out Remarks</label><input class="fi" id="cgRemOut" value="${(t.guard_out_remarks||'').replace(/"/g,'&quot;')}"></div>
+       </div>
+     </div>` : ''}
+
+     ${hasIn ? `
+     <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
+       <div style="font-size:11px;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">← Gate-In Data</div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Odometer In (km)</label><input class="fi" type="number" id="cgOdoIn" value="${t.odometer_in??''}"></div>
+         <div class="fg"><label class="fl">Fuel In</label><input class="fi" id="cgFuelIn" value="${(t.fuel_in||'').replace(/"/g,'&quot;')}" placeholder="e.g. Full, 3/4, 1/2"></div>
+       </div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Condition In</label><select class="fs" id="cgCondIn">${condOpts(t.condition_in)}</select></div>
+         <div class="fg"><label class="fl">Fuel Consumed (L)</label><input class="fi" type="number" step="0.1" id="cgFuelL" value="${t.fuel_consumed_liters??''}"></div>
+       </div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Fuel Price/Liter (₱)</label><input class="fi" type="number" step="0.01" id="cgFuelP" value="${t.fuel_price_per_liter??''}"></div>
+         <div class="fg"><label class="fl">Gate-In Remarks</label><input class="fi" id="cgRemIn" value="${(t.guard_in_remarks||'').replace(/"/g,'&quot;')}"></div>
+       </div>
+     </div>` : ''}
+
+     <div class="fg"><label class="fl">Correction Reason *</label>
+       <textarea class="ft" id="cgReason" placeholder="e.g. Wrong odometer entered during gate-out, corrected to actual reading..." style="min-height:50px"></textarea>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="cgBtn" onclick="doCorrectGateData('${tripId}','${ticketNo}')">Save Corrections</button>`,
+    { confirmClose: true }
+  )
+}
+
+async function doCorrectGateData(tripId, ticketNo) {
+  const reason = document.getElementById('cgReason')?.value.trim()
+  if (!reason) { alert('Please provide a reason for the correction.'); return }
+  const btn = document.getElementById('cgBtn'); btn.disabled=true; btn.textContent='Saving...'
+
+  // Fetch current values for the audit diff
+  const { data: old } = await SB.from('trips').select('odometer_out,odometer_in,fuel_out,fuel_in,condition_out,condition_in,fuel_consumed_liters,fuel_price_per_liter,guard_out_remarks,guard_in_remarks').eq('id', tripId).single()
+
+  const g = (id) => document.getElementById(id)
+  const payload = {}
+  const changes = []
+  const setNum = (elId, field, label) => {
+    const el = g(elId); if (!el) return
+    const v = el.value === '' ? null : Number(el.value)
+    if (v !== old[field]) { payload[field] = v; changes.push(`${label}: ${old[field]??'—'} → ${v??'—'}`) }
+  }
+  const setTxt = (elId, field, label) => {
+    const el = g(elId); if (!el) return
+    const v = el.value.trim() || null
+    if (v !== (old[field]||null)) { payload[field] = v; changes.push(`${label}: ${old[field]||'—'} → ${v||'—'}`) }
+  }
+
+  setNum('cgOdoOut','odometer_out','Odo-Out')
+  setNum('cgOdoIn','odometer_in','Odo-In')
+  setTxt('cgFuelOut','fuel_out','Fuel-Out')
+  setTxt('cgFuelIn','fuel_in','Fuel-In')
+  setTxt('cgCondOut','condition_out','Cond-Out')
+  setTxt('cgCondIn','condition_in','Cond-In')
+  setNum('cgFuelL','fuel_consumed_liters','Fuel-L')
+  setNum('cgFuelP','fuel_price_per_liter','Fuel-Price')
+  setTxt('cgRemOut','guard_out_remarks','Remarks-Out')
+  setTxt('cgRemIn','guard_in_remarks','Remarks-In')
+
+  // Recompute fuel_cost if fuel liters or price changed
+  if ('fuel_consumed_liters' in payload || 'fuel_price_per_liter' in payload) {
+    const liters = 'fuel_consumed_liters' in payload ? payload.fuel_consumed_liters : old.fuel_consumed_liters
+    const price  = 'fuel_price_per_liter' in payload ? payload.fuel_price_per_liter : old.fuel_price_per_liter
+    if (liters != null && price != null) payload.fuel_cost = +(liters * price).toFixed(2)
+  }
+
+  if (!Object.keys(payload).length) { alert('No changes made.'); btn.disabled=false; btn.textContent='Save Corrections'; return }
+
+  // NOTE: distance_km is GENERATED — never include it; DB auto-recomputes from odometer_out/in
+  const { error } = await SB.from('trips').update(payload).eq('id', tripId)
+  if (error) { alert('Error: ' + error.message); btn.disabled=false; btn.textContent='Save Corrections'; return }
+
+  await addAudit(tripId, ticketNo, '✏ Gate Data Corrected',
+    `${changes.join(' | ')} | Reason: ${reason} | By: ${currentProfile?.full_name}`)
+
+  closeMO()
+  alert(`✅ Gate data corrected for ${ticketNo}.`)
+  renderTickets()
+}
+
 async function openManifestEditor(tripId, ticketNo) {
   // Fetch current passengers
   const { data: passengers } = await SB.from('trip_passengers')
