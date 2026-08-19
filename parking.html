@@ -84,7 +84,7 @@ function initSlotsLocal(){
   return d;
 }
 function calcFee(iso,vt){
-  const v=VT[vt];if(!v)return{fee:0,dur:"0h 0m",overnight:false};
+  const v=VT[vt];if(!v)return{fee:0,pwdFee:0,dur:"0h 0m",overnight:false};
   const cin=new Date(iso);const cout=new Date();
   const ms=cout-cin;const hrs=ms/3600000;
   const tm=Math.floor(ms/60000);
@@ -100,22 +100,26 @@ function calcFee(iso,vt){
     winStart=new Date(winEnd);winStart.setHours(22,0,0,0);
   }
   const isO=overnightCount>0;
-  let fee;
+  let fee,pwdFee;
   if(isO){
     // Each overnight window charged at flat rate, remaining hours at regular rate
     const ovrHrs=overnightCount*9;
     const regHrs=Math.max(0,hrs-ovrHrs);
     const regFee=regHrs<=v.fh?v.fr:v.fr+Math.ceil(regHrs-v.fh)*v.sr;
     fee=(overnightCount*v.ovr)+(regHrs>0?regFee:0);
+    // PWD/SC: first 3 REGULAR hrs free — overnight windows still fully charged
+    const pwdReg=regHrs<=3?0:Math.ceil(regHrs-3)*v.sr;
+    pwdFee=(overnightCount*v.ovr)+pwdReg;
   }else{
     fee=hrs<=v.fh?v.fr:v.fr+Math.ceil(hrs-v.fh)*v.sr;
+    pwdFee=hrs<=3?0:Math.ceil(hrs-3)*v.sr;
   }
-  return{fee,dur:Math.floor(tm/60)+'h '+tm%60+'m',overnight:isO};
+  return{fee,pwdFee,dur:Math.floor(tm/60)+'h '+tm%60+'m',overnight:isO};
 }
 function calcFeeManual(checkinISO, vtype, checkoutISO){
-  const v=VT[vtype];if(!v)return{fee:0,dur:"0h 0m",overnight:false};
+  const v=VT[vtype];if(!v)return{fee:0,pwdFee:0,dur:"0h 0m",overnight:false};
   const cin=new Date(checkinISO);const cout=checkoutISO?new Date(checkoutISO):new Date();
-  const ms=cout-cin;if(ms<=0)return{fee:0,dur:"0h 0m",overnight:false};
+  const ms=cout-cin;if(ms<=0)return{fee:0,pwdFee:0,dur:"0h 0m",overnight:false};
   const hrs=ms/3600000;
   const tm=Math.floor(ms/60000);
   let overnightCount=0;
@@ -129,16 +133,19 @@ function calcFeeManual(checkinISO, vtype, checkoutISO){
     winStart=new Date(winEnd);winStart.setHours(22,0,0,0);
   }
   const isO=overnightCount>0;
-  let fee;
+  let fee,pwdFee;
   if(isO){
     const ovrHrs=overnightCount*9;
     const regHrs=Math.max(0,hrs-ovrHrs);
     const regFee=regHrs<=v.fh?v.fr:v.fr+Math.ceil(regHrs-v.fh)*v.sr;
     fee=(overnightCount*v.ovr)+(regHrs>0?regFee:0);
+    const pwdReg=regHrs<=3?0:Math.ceil(regHrs-3)*v.sr;
+    pwdFee=(overnightCount*v.ovr)+pwdReg;
   }else{
     fee=hrs<=v.fh?v.fr:v.fr+Math.ceil(hrs-v.fh)*v.sr;
+    pwdFee=hrs<=3?0:Math.ceil(hrs-3)*v.sr;
   }
-  return{fee,dur:Math.floor(tm/60)+'h '+tm%60+'m',overnight:isO};
+  return{fee,pwdFee,dur:Math.floor(tm/60)+'h '+tm%60+'m',overnight:isO};
 }
 const fmtT   =iso=>new Date(iso).toLocaleTimeString("en-PH",{hour:"2-digit",minute:"2-digit"});
 const fmtDT  =iso=>new Date(iso).toLocaleString("en-PH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
@@ -662,13 +669,8 @@ function ReportsPanel({currentUser}){
   // Recompute discount per PWD txn from actual times: normal fee minus PWD fee (first 3hrs free)
   const pwdCalc=e=>{
     try{
-      const vt=VT[e.vtype];if(!vt)return{normal:0,disc:0};
-      const cin=new Date(e.checkin_at||e.checkin_time);
-      const cout=new Date(e.checkout_at||e.checkout_time);
-      const hrs=Math.max(0,(cout-cin)/3600000);
-      const normal=hrs<=vt.fh?vt.fr:vt.fr+Math.ceil(hrs-vt.fh)*vt.sr;
-      const pwd=hrs<=3?0:Math.ceil(hrs-3)*vt.sr;
-      return{normal,disc:Math.max(0,normal-pwd)};
+      const rc=calcFeeManual(e.checkin_at||e.checkin_time,e.vtype,e.checkout_at||e.checkout_time);
+      return{normal:rc.fee||0,disc:Math.max(0,(rc.fee||0)-(rc.pwdFee||0))};
     }catch(err){return{normal:0,disc:0};}
   };
   const pwdDiscTotal=useMemo(()=>pwdTxns.reduce((s,e)=>s+pwdCalc(e).disc,0),[pwdTxns]);
@@ -1299,17 +1301,13 @@ function TDMHParking(){
   async function doApplyPwd(){
     if(!revertTxn||reverting) return;
     const t=revertTxn;
-    if(t.overnight){toast("⚠️ PWD/SC exemption ay hindi applicable sa overnight stays.","err");return;}
     if(t.notes&&t.notes.includes("PWD_SC_EXEMPT")){toast("⚠️ May PWD/SC discount na ang transaction na ito.","err");return;}
     setReverting(true);
     try{
-      const vtR=VT[t.vtype]||VT.car;
-      const cin=new Date(t.checkin_at||t.checkin_time);
-      const cout=new Date(t.checkout_at||t.checkout_time);
-      const hrs=Math.max(0,(cout-cin)/3600000);
       const hasLost=!!(t.notes&&t.notes.includes("LOST_TICKET"));
-      const pwdBase=hrs<=3?0:Math.ceil(hrs-3)*vtR.sr;
-      const newFee=pwdBase+(hasLost?50:0);
+      // Recompute via calcFeeManual — handles overnight windows correctly (first 3 REGULAR hrs free)
+      const rc=calcFeeManual(t.checkin_at||t.checkin_time,t.vtype,t.checkout_at||t.checkout_time);
+      const newFee=(rc.pwdFee||0)+(hasLost?50:0);
       const refund=Math.max(0,Number(t.fee||0)-newFee);
       const newNotes=[t.notes,"PWD_SC_EXEMPT"].filter(Boolean).join("+");
       const{error:upErr}=await sb.from("transactions").update({fee:newFee,notes:newNotes}).eq("id",t.id);
@@ -1404,15 +1402,9 @@ function TDMHParking(){
     if(processing) return;  // prevent double-click
     setProcessing(true);
     try{
-      const v=sel.vehicle;const{fee:baseFee,dur,overnight}=calcFee(v.checkin,v.vtype);
-      // PWD/SC: first 3 hours FREE (Taytay ordinance) — not applicable to overnight stays
-      let pwdDisc=0;
-      if(pwdSc&&!overnight){
-        const vtR=VT[v.vtype];
-        const hrsP=(new Date()-new Date(v.checkin))/3600000;
-        const pwdFee=hrsP<=3?0:Math.ceil(hrsP-3)*vtR.sr;
-        pwdDisc=Math.max(0,baseFee-pwdFee);
-      }
+      const v=sel.vehicle;const{fee:baseFee,pwdFee:basePwdFee,dur,overnight}=calcFee(v.checkin,v.vtype);
+      // PWD/SC: first 3 REGULAR hrs FREE (Taytay ordinance) — overnight windows still charged
+      const pwdDisc=pwdSc?Math.max(0,baseFee-basePwdFee):0;
       const fee=Math.max(0,baseFee-pwdDisc)+(lostTicket?50:0);
       const l=sel.locId;const locName=LOCS.find(x=>x.id===l)?.name;
       const origTix=v.ticketNo||"";
@@ -1712,15 +1704,8 @@ function TDMHParking(){
         async function doManualPrint(){
           if(!manualForm.plate.trim()||!manualForm.checkin){return;}
           if(coInvalid){toast("⚠️ Time Out must be after Time In","err");return;}
-          const{fee:baseFee2,dur,overnight}=computed||{fee:0,dur:"0h 0m",overnight:false};
-          let pwdDisc2=0;
-          if(pwdSc&&!overnight){
-            const vtM=VT[manualForm.vtype];
-            const coM=manualForm.checkout?new Date(manualForm.checkout):new Date();
-            const hrsM=(coM-new Date(manualForm.checkin))/3600000;
-            const pwdFeeM=hrsM<=3?0:Math.ceil(hrsM-3)*vtM.sr;
-            pwdDisc2=Math.max(0,baseFee2-pwdFeeM);
-          }
+          const{fee:baseFee2,pwdFee:pwdFee2,dur,overnight}=computed||{fee:0,pwdFee:0,dur:"0h 0m",overnight:false};
+          const pwdDisc2=pwdSc?Math.max(0,baseFee2-(pwdFee2||0)):0;
           const fee2=Math.max(0,baseFee2-pwdDisc2)+(lostTicket?50:0);
           const plate=manualForm.plate.toUpperCase().trim();
           const checkinISO=new Date(manualForm.checkin).toISOString();
@@ -1935,15 +1920,10 @@ function TDMHParking(){
 
       {/* MODAL: CHECK OUT */}
       {modal==="checkout"&&sel?.vehicle&&(()=>{
-        const{fee,dur,overnight}=calcFee(sel.vehicle.checkin,sel.vehicle.vtype);
+        const{fee,pwdFee,dur,overnight}=calcFee(sel.vehicle.checkin,sel.vehicle.vtype);
         const vt=VT[sel.vehicle.vtype];
-        // Live PWD/SC discount preview — first 3 hrs free, not for overnight
-        let mPwdDisc=0;
-        if(pwdSc&&!overnight){
-          const mHrs=(new Date()-new Date(sel.vehicle.checkin))/3600000;
-          const mPwdFee=mHrs<=3?0:Math.ceil(mHrs-3)*vt.sr;
-          mPwdDisc=Math.max(0,fee-mPwdFee);
-        }
+        // Live PWD/SC discount preview — first 3 regular hrs free; overnight windows still charged
+        const mPwdDisc=pwdSc?Math.max(0,fee-pwdFee):0;
         const displayFee=Math.max(0,fee-mPwdDisc)+(lostTicket?50:0);
         return(
           <div className="ov" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
@@ -1975,7 +1955,7 @@ function TDMHParking(){
                 {pwdSc&&mPwdDisc>0&&<span style={{marginLeft:"auto",fontFamily:"'Space Mono',monospace",fontWeight:700,color:"#0369a1",fontSize:13}}>-₱{mPwdDisc}</span>}
               </label>
                 </div>
-                <div className="fb"><div className="fbl">Total Fee</div><div className="fbv">{P(displayFee)}</div><div className="fbn">{overnight?"🌙 Overnight rate (10PM–7AM)":"Regular rate applied"}{pwdSc&&!overnight?" · ♿ PWD/SC first 3hrs free":""}{pwdSc&&overnight?" · ⚠️ PWD/SC not applicable to overnight":""}{lostTicket?" · +₱50 Lost Ticket Fee":""}</div></div>
+                <div className="fb"><div className="fbl">Total Fee</div><div className="fbv">{P(displayFee)}</div><div className="fbn">{overnight?"🌙 Overnight rate (10PM–7AM)":"Regular rate applied"}{pwdSc&&!overnight?" · ♿ PWD/SC first 3hrs free":""}{pwdSc&&overnight?" · ♿ PWD/SC: first 3 regular hrs free (overnight windows charged)":""}{lostTicket?" · +₱50 Lost Ticket Fee":""}</div></div>
                 <div className="phint">🖨️ Payment receipt will print automatically.</div>
               </div>
               <div className="mf">
@@ -2003,7 +1983,7 @@ function TDMHParking(){
                 <div style={{fontSize:12,color:"var(--mu)",marginTop:2}}>Fee na mabubura: <b style={{color:"#dc2626"}}>{P(revertTxn.fee||0)}</b> · Out by {revertTxn.cashier||"—"}</div>
               </div>
               <div className="phint" style={{background:"#fff8e1",borderColor:"#fcd34d",color:"#92400e",marginBottom:8}}>↩️ <b>Revert to Slot</b> — namali ng out, nandyan pa ang sasakyan. Buburahin ang transaction at ibabalik sa slot (same ticket at time in). Kung occupied na ang slot, ililipat sa unang free slot.</div>
-              <div className="phint" style={{background:"#e0f2fe",borderColor:"#7dd3fc",color:"#0369a1"}}>♿ <b>Apply PWD/SC</b> — nakalimutan i-apply ang first-3-hrs-free discount. Ire-recompute ang fee, mananatili ang transaction, at i-re-refund ng cashier ang sobra sa customer.{revertTxn.overnight?" ⚠️ Overnight ito — hindi applicable.":""}</div>
+              <div className="phint" style={{background:"#e0f2fe",borderColor:"#7dd3fc",color:"#0369a1"}}>♿ <b>Apply PWD/SC</b> — nakalimutan i-apply ang first-3-hrs-free discount. Ire-recompute ang fee, mananatili ang transaction, at i-re-refund ng cashier ang sobra sa customer.{revertTxn.overnight?" 🌙 Overnight: first 3 regular hrs pa rin ang libre — overnight windows babayaran.":""}</div>
               <div style={{marginTop:8,background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:9,padding:"10px 13px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
                 <div style={{fontSize:12,color:"#991b1b"}}>🗑️ <b>Duplicate o maling record?</b> Buburahin lang ang transaction — hindi gagalawin ang slot.</div>
                 <button className="btn" style={{background:delArm?"#dc2626":"#fee2e2",color:delArm?"#fff":"#991b1b",border:"1px solid "+(delArm?"#dc2626":"#fca5a5"),padding:"6px 12px",fontSize:12}} onClick={doDeleteRecord} disabled={reverting}>{delArm?"⚠️ Click ulit para burahin":"🗑️ Delete Record"}</button>
@@ -2011,7 +1991,7 @@ function TDMHParking(){
             </div>
             <div className="mf">
               <button className="btn bg" onClick={()=>setRevertTxn(null)} disabled={reverting}>Cancel</button>
-              <button className="btn" style={{background:"#0ea5e9",color:"#fff",border:"none"}} onClick={doApplyPwd} disabled={reverting||revertTxn.overnight||(revertTxn.notes&&revertTxn.notes.includes("PWD_SC_EXEMPT"))}>{reverting?"…":"♿ Apply PWD/SC"}</button>
+              <button className="btn" style={{background:"#0ea5e9",color:"#fff",border:"none"}} onClick={doApplyPwd} disabled={reverting||(revertTxn.notes&&revertTxn.notes.includes("PWD_SC_EXEMPT"))}>{reverting?"…":"♿ Apply PWD/SC"}</button>
               <button className="btn" style={{background:"#6d28d9",color:"#fff",border:"none"}} onClick={doRevert} disabled={reverting}>{reverting&&<span className="spin"/>}{reverting?"Processing…":"↩️ Revert to Slot"}</button>
             </div>
           </div>
