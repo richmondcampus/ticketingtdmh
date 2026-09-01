@@ -3104,6 +3104,16 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
 
+  // Ensure drivers and vehicles are loaded (may be empty if opened from dashboard)
+  if (!_drivers.length || !_vehicles.length) {
+    const [{ data: drvs }, { data: vehs }] = await Promise.all([
+      SB.from('drivers').select('*').order('full_name'),
+      SB.from('vehicles').select('*').order('name')
+    ])
+    if (drvs) _drivers = drvs
+    if (vehs) _vehicles = vehs
+  }
+
   const { data: tripData } = await SB.from('trips')
     .select('departure_at,expected_return_at,pool_id')
     .eq('id', id).single()
