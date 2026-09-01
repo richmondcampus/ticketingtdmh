@@ -2382,8 +2382,8 @@ async function openViewModal(id) {
         btns.push(`<button class="btn btn-amber btn-sm" onclick="closeMO();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">✕ Cancel Trip</button>`)
       }
 
-      // Correct gate data (guards + admin) — any ticket with gate data
-      if ((r === 'guard' || r === 'admin') && (t.gate_out_at || t.gate_in_at)) {
+      // Correct gate data (guards + admin + approvers) — any ticket with gate data
+      if (['guard','admin','super_approver','approver_admin','approver_amb'].includes(r) && (t.gate_out_at || t.gate_in_at)) {
         btns.push(`<button class="btn btn-ghost" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa" onclick="closeMO();openCorrectGateData('${t.id}','${t.ticket_no}')">✏ Correct Gate Data</button>`)
       }
 
