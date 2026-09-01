@@ -1341,7 +1341,7 @@ async function renderDashboard() {
       <!-- Tabs -->
       <div style="display:flex;gap:4px;background:var(--bg);border-radius:12px;padding:4px;margin-bottom:14px">
         ${[
-          ['today',   'Today',        active.length + pending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd}).length + onTrip.length, pending.length > 0],
+          ['today',   'Today',        (pending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd}).length + approvedNoDriver.length + assignedToday.length + onTrip.length), pending.length > 0],
           ['pending', 'Needs action', pending.length, pending.length > 0],
           ['upcoming','Upcoming',     scheduled.length, false],
           ['done',    'Done',         thisWeekDone.length, false],
