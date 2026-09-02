@@ -249,8 +249,8 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 /* Animated hourglass — sand drains from top, fills bottom, then flips */
 .hourglass-anim{display:inline-block;width:48px;height:48px;position:relative;animation:hg-flip 2.4s ease-in-out infinite}
 .hourglass-anim svg{display:block;width:100%;height:100%}
-.hg-sand-top{transform-origin:center;animation:hg-drain 2.4s ease-in-out infinite}
-.hg-sand-bot{transform-origin:center;animation:hg-fill 2.4s ease-in-out infinite}
+.hg-sand-top{transform-origin:center top;animation:hg-drain 2.4s ease-in-out infinite}
+.hg-sand-bot{transform-origin:center bottom;animation:hg-fill 2.4s ease-in-out infinite}
 .hg-stream{animation:hg-stream 2.4s ease-in-out infinite}
 @keyframes hg-flip{0%,45%{transform:rotate(0deg)}55%,100%{transform:rotate(180deg)}}
 @keyframes hg-drain{0%{transform:scaleY(1);opacity:1}45%{transform:scaleY(.05);opacity:.85}55%,100%{transform:scaleY(.05);opacity:0}}
@@ -494,10 +494,34 @@ function hourglass(){
   return '<span class="hourglass-anim" role="img" aria-label="Loading">'
     + '<svg viewBox="0 0 24 24" fill="none">'
     + '<path d="M6 2h12M6 22h12M6 2c0 5 6 6 6 10 0-4 6-5 6-10M6 22c0-5 6-6 6-10 0 4 6 5 6 10" stroke="var(--pri,#0c6fdb)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
-    + '<rect class="hg-sand-top" x="8" y="4" width="8" height="6" rx="1" fill="var(--pri,#0c6fdb)"/>'
-    + '<rect class="hg-sand-bot" x="8" y="14" width="8" height="6" rx="1" fill="var(--pri,#0c6fdb)"/>'
-    + '<rect class="hg-stream" x="11.4" y="10" width="1.2" height="4" fill="var(--pri,#0c6fdb)"/>'
+    + '<polygon class="hg-sand-top" points="7.5,4 16.5,4 12,10.5" fill="var(--pri,#0c6fdb)"/>'
+    + '<polygon class="hg-sand-bot" points="12,13.5 16.5,20 7.5,20" fill="var(--pri,#0c6fdb)"/>'
+    + '<rect class="hg-stream" x="11.55" y="10" width="0.9" height="4" fill="var(--pri,#0c6fdb)"/>'
     + '</svg></span>'
+}
+
+// Guard a button against double-click: disables it, shows a spinner label,
+// runs the async task, then re-enables on failure. On success the modal/page
+// usually closes so re-enable is moot. Returns whatever the task returns.
+// If the button is already disabled (mid-flight), the call is ignored.
+async function guardBtn(btnEl, task, busyLabel){
+  if (!btnEl) { return await task() }
+  if (btnEl.disabled) return   // already running — ignore duplicate click
+  const orig = btnEl.innerHTML
+  btnEl.disabled = true
+  btnEl.style.opacity = '0.7'
+  btnEl.style.cursor = 'wait'
+  btnEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:spin .7s linear infinite"></span>' + (busyLabel || 'Processing…') + '</span>'
+  try {
+    return await task()
+  } catch (e) {
+    // Re-enable so the user can retry
+    btnEl.disabled = false
+    btnEl.style.opacity = ''
+    btnEl.style.cursor = ''
+    btnEl.innerHTML = orig
+    throw e
+  }
 }
 
 async function sendSMS(phones, message, eventType='general', ticketNo=null) {
@@ -2759,7 +2783,7 @@ async function openApproveModal(id, ticketNo, vtype) {
         <span style="color:var(--text3);margin-left:6px">${new Date(t.departure_at).toLocaleString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}</span>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}</div>
       </div>
-      <button class="btn btn-pri btn-sm" onclick="doApproveAndPool('${id}','${ticketNo}','${t.pool_id}','${t.driver_id}','${t.driver_name}','${t.vehicle_id}','${t.vehicle_plate}','${t.vehicle_name}')">
+      <button class="btn btn-pri btn-sm" onclick="doApproveAndPool('${id}','${ticketNo}','${t.pool_id}','${t.driver_id}','${t.driver_name}','${t.vehicle_id}','${t.vehicle_plate}','${t.vehicle_name}', this)">
         🚌 Approve + Add to Pool
       </button>
     </div>`).join('<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">')}
@@ -4100,8 +4124,9 @@ async function showPoolDetails(poolId) {
 }
 
 // Approve + immediately add to an existing trip pool — one click
-async function doApproveAndPool(id, ticketNo, poolId, driverId, driverName, vehicleId, vehiclePlate, vehicleName) {
+async function doApproveAndPool(id, ticketNo, poolId, driverId, driverName, vehicleId, vehiclePlate, vehicleName, btnEl) {
   if (!confirm(`Approve ${ticketNo} and add to existing Trip Pool?\n\nDriver: ${driverName}\nVehicle: ${vehiclePlate}\n\nThis ticket will share the same driver and vehicle.`)) return
+  if (btnEl) { if (btnEl.disabled) return; btnEl.disabled = true; btnEl.style.opacity='0.7'; btnEl.style.cursor='wait'; btnEl.textContent='Processing…' }
 
   const rem = document.getElementById('apRem')?.value || ''
   const approver = currentProfile
@@ -4216,12 +4241,13 @@ async function cancelTicket(id, ticketNo, driverId, vehicleId) {
        <textarea class="ft" id="cancelReason" placeholder="e.g. Schedule changed, vehicle unavailable, duplicate request..." style="min-height:60px"></textarea>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Keep Ticket</button>
-     <button class="btn btn-red" onclick="doCancelTicket('${id}','${ticketNo}','${driverId}','${vehicleId}')">Yes, Cancel Ticket</button>`
+     <button class="btn btn-red" onclick="doCancelTicket('${id}','${ticketNo}','${driverId}','${vehicleId}', this)">Yes, Cancel Ticket</button>`
   )
 }
-async function doCancelTicket(id, ticketNo, driverId, vehicleId) {
+async function doCancelTicket(id, ticketNo, driverId, vehicleId, btnEl) {
   const reason = document.getElementById('cancelReason')?.value.trim()
   if (!reason) { alert('Please provide a reason for cancellation.'); return }
+  await guardBtn(btnEl, async () => {
   const cancelMsg = reason + ' (Cancelled by ' + (currentProfile?.full_name || currentProfile?.username) + ')'
   const { error } = await SB.from('trips').update({
     status: 'cancelled',
@@ -4229,7 +4255,7 @@ async function doCancelTicket(id, ticketNo, driverId, vehicleId) {
     rejected_at: new Date().toISOString(),
     rejection_reason: cancelMsg
   }).eq('id', id)
-  if (error) { alert(error.message); return }
+  if (error) { alert(error.message); throw error }
   if (driverId && driverId !== 'null') await SB.from('drivers').update({ status:'available' }).eq('id', driverId)
   if (vehicleId && vehicleId !== 'null') await SB.from('vehicles').update({ status:'available' }).eq('id', vehicleId)
   await addAudit(id, ticketNo, 'Ticket Cancelled', cancelMsg)
@@ -4243,6 +4269,7 @@ async function doCancelTicket(id, ticketNo, driverId, vehicleId) {
     if (drvEmails.length) await sendEmail(drvEmails, 'trip_cancelled_driver', { ticket_no: ticketNo, reason: cancelMsg })
   }
   closeMO(); renderTickets()
+  }, 'Cancelling…')
 }
 
 // ASSIGN DRIVER
@@ -6671,7 +6698,7 @@ async function renderTemplates() {
           <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">${t.name}</div>
           <div style="display:flex;gap:5px;flex-wrap:wrap">${typeBadge(t.vehicle_type)}${t.is_recurring?`<span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:var(--pri-s);color:var(--pri)">🔁 ${t.recur_type||'Recurring'}</span>`:''}</div>
         </div>
-        ${isAdmin ? `<button onclick="deleteTemplate('${t.id}','${t.name.replace(/'/g,"\\'")}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text3)'">✕</button>` : ''}
+        ${isAdmin ? `<button onclick="deleteTemplate('${t.id}','${t.name.replace(/'/g,"\\'")}', this)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text3)'">✕</button>` : ''}
       </div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">${t.purpose||'—'}</div>
       <div style="font-size:11.5px;color:var(--text3)">→ ${t.destination||'—'}</div>
@@ -6686,13 +6713,13 @@ async function renderTemplates() {
   `
 }
 
-async function deleteTemplate(id, name) {
+async function deleteTemplate(id, name, btnEl) {
   if (!confirm(`Delete template "${name}"?\n\nExisting tickets generated from this template will not be affected. Future auto-generation will stop.`)) return
-  // Soft delete — set is_active=false instead of hard delete
-  // This preserves the template_id reference on existing generated trips
-  // and prevents re-generation while keeping audit history intact
-  await SB.from('trip_templates').update({ is_active: false, is_recurring: false }).eq('id', id)
-  renderTemplates()
+  await guardBtn(btnEl, async () => {
+    // Soft delete — set is_active=false; preserves template_id on generated trips
+    await SB.from('trip_templates').update({ is_active: false, is_recurring: false }).eq('id', id)
+    renderTemplates()
+  }, '…')
 }
 
 function previewRecurring(id) {
@@ -6837,7 +6864,7 @@ async function renderDrivers() {
       <td>${badge(d.status||'available')}</td>
       <td>
         <button class="tbl-act" onclick="openEditDriver('${d.id}')">Edit</button>
-        ${d.is_reliever?`<button class="tbl-act tbl-act-red" onclick="removeReliever('${d.id}','${d.full_name.replace(/'/g,"\\'")}')">Remove</button>`:''}
+        ${d.is_reliever?`<button class="tbl-act tbl-act-red" onclick="removeReliever('${d.id}','${d.full_name.replace(/'/g,"\\'")}', this)">Remove</button>`:''}
       </td>
     </tr>`).join('')}
     </tbody></table>
@@ -6908,10 +6935,12 @@ async function doAddReliever(targetSelectId) {
   alert(`✅ ${name} added as reliever driver and selected.`)
 }
 
-async function removeReliever(id, name) {
+async function removeReliever(id, name, btnEl) {
   if (!confirm(`Remove reliever driver "${name}"?\n\nThis will permanently delete their profile. Any trips they were assigned to will retain their name for records.`)) return
-  await SB.from('drivers').delete().eq('id', id).eq('is_reliever', true)
-  renderDrivers()
+  await guardBtn(btnEl, async () => {
+    await SB.from('drivers').delete().eq('id', id).eq('is_reliever', true)
+    renderDrivers()
+  }, 'Removing…')
 }
 
 async function openAddDriver() {
@@ -7039,7 +7068,7 @@ async function openEditDriver(driverId) {
        <input class="fi" id="edPhone" value="${d.phone||''}" placeholder="+63 9XX XXX XXXX">
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-red btn-sm" onclick="doDeleteDriver('${d.id}','${(d.full_name||'').replace(/'/g,"\\'")}')">Delete</button>
+     <button class="btn btn-red btn-sm" onclick="doDeleteDriver('${d.id}','${(d.full_name||'').replace(/'/g,"\\'")}', this)">Delete</button>
      <button class="btn btn-pri" id="edDBtn" onclick="doEditDriver('${d.id}')">Save Changes</button>`
   , { confirmClose: true })
 }
@@ -7063,11 +7092,13 @@ async function doEditDriver(id) {
   closeMO(); renderDrivers()
 }
 
-async function doDeleteDriver(id, name) {
+async function doDeleteDriver(id, name, btnEl) {
   if (!confirm(`Delete driver "${name}"? This cannot be undone.`)) return
-  const { error } = await SB.from('drivers').delete().eq('id', id)
-  if (error) { alert(error.message); return }
-  closeMO(); renderDrivers()
+  await guardBtn(btnEl, async () => {
+    const { error } = await SB.from('drivers').delete().eq('id', id)
+    if (error) { alert(error.message); throw error }
+    closeMO(); renderDrivers()
+  }, 'Deleting…')
 }
 
 // ════════════════════════════════════════════════
