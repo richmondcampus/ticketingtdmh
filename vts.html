@@ -242,6 +242,22 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 @keyframes pinga{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(2.3)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* Success checkmark animations (used in Request Submitted modal) */
+@keyframes circleIn{from{stroke-dashoffset:213}to{stroke-dashoffset:0}}
+@keyframes checkIn{from{stroke-dashoffset:40}to{stroke-dashoffset:0}}
+
+/* Animated hourglass — sand drains from top, fills bottom, then flips */
+.hourglass-anim{display:inline-block;width:48px;height:48px;position:relative;animation:hg-flip 2.4s ease-in-out infinite}
+.hourglass-anim svg{display:block;width:100%;height:100%}
+.hg-sand-top{transform-origin:center;animation:hg-drain 2.4s ease-in-out infinite}
+.hg-sand-bot{transform-origin:center;animation:hg-fill 2.4s ease-in-out infinite}
+.hg-stream{animation:hg-stream 2.4s ease-in-out infinite}
+@keyframes hg-flip{0%,45%{transform:rotate(0deg)}55%,100%{transform:rotate(180deg)}}
+@keyframes hg-drain{0%{transform:scaleY(1);opacity:1}45%{transform:scaleY(.05);opacity:.85}55%,100%{transform:scaleY(.05);opacity:0}}
+@keyframes hg-fill{0%{transform:scaleY(.05);opacity:0}45%{transform:scaleY(1);opacity:1}55%,100%{transform:scaleY(1);opacity:.9}}
+@keyframes hg-stream{0%,45%{opacity:.9}50%,100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.hourglass-anim,.hg-sand-top,.hg-sand-bot,.hg-stream{animation:none!important}}
+
 /* ── Floating Action Button (mobile new ticket) ── */
 .fab{display:none;position:fixed;right:16px;bottom:calc(var(--bot-nav) + var(--safe-bottom) + 12px);width:52px;height:52px;border-radius:50%;background:var(--pri);color:#fff;font-size:26px;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(12,111,219,.45);z-index:145;align-items:center;justify-content:center;transition:transform .15s;touch-action:manipulation;line-height:1;font-weight:300}
 .fab:active{transform:scale(.92)}
@@ -472,6 +488,17 @@ const SB = createClient ? createClient(SB_URL, SB_ANON) : null
 // SMS — TextBee via Edge Function
 // ════════════════════════════════════════════════
 const SMS_URL = 'https://blgscwtseqvhgdoksvjh.supabase.co/functions/v1/send-sms'
+
+// Animated hourglass markup — reusable loading indicator
+function hourglass(){
+  return '<span class="hourglass-anim" role="img" aria-label="Loading">'
+    + '<svg viewBox="0 0 24 24" fill="none">'
+    + '<path d="M6 2h12M6 22h12M6 2c0 5 6 6 6 10 0-4 6-5 6-10M6 22c0-5 6-6 6-10 0 4 6 5 6 10" stroke="var(--pri,#0c6fdb)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<rect class="hg-sand-top" x="8" y="4" width="8" height="6" rx="1" fill="var(--pri,#0c6fdb)"/>'
+    + '<rect class="hg-sand-bot" x="8" y="14" width="8" height="6" rx="1" fill="var(--pri,#0c6fdb)"/>'
+    + '<rect class="hg-stream" x="11.4" y="10" width="1.2" height="4" fill="var(--pri,#0c6fdb)"/>'
+    + '</svg></span>'
+}
 
 async function sendSMS(phones, message, eventType='general', ticketNo=null) {
   const validPhones = Array.isArray(phones) ? phones.filter(Boolean) : [phones].filter(Boolean)
@@ -1094,7 +1121,7 @@ async function showNotifs() {
 // DASHBOARD
 // ════════════════════════════════════════════════
 async function renderDashboard() {
-  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>'
+  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">'+hourglass()+'<div style="margin-top:10px">Loading...</div></div>'
   const role = currentProfile?.role
 
   // Owner gets their own executive dashboard
@@ -1706,7 +1733,7 @@ async function renderDashboard() {
 let _tickets = [], _drivers = [], _vehicles = []
 
 async function renderTickets() {
-  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>`
+  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">${hourglass()}<div style="margin-top:10px">Loading...</div></div>`
   const role = currentProfile?.role
   // Build query filtered by role
   let tripsQuery = SB.from('trips').select('*,vehicle:vehicles(id,plate,type,name)').order('created_at',{ascending:false})
@@ -7063,7 +7090,7 @@ function deptCard(d, i) {
 }
 
 async function renderDepts() {
-  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>`
+  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">${hourglass()}<div style="margin-top:10px">Loading...</div></div>`
   const { data } = await SB.from('departments').select('*').order('name')
   const depts = data || []
   const canEdit = ['admin'].includes(currentProfile?.role)
@@ -7240,7 +7267,7 @@ function rbar2(label, val, max, color, suffix='') {
 let _rptFrom = '', _rptTo = '', _rptTab = 'overview'
 
 async function renderReports() {
-  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center">Loading reports...</div>'
+  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center">'+hourglass()+'<div style="margin-top:10px">Loading reports...</div></div>'
   // Default date range: last 30 days
   if (!_rptFrom) {
     const d = new Date(); d.setDate(d.getDate()-30)
