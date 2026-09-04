@@ -1,336 +1,311 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IT Helpdesk Support</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
-    
-    <style>
-      :root {
-        /* LIGHT THEME PALETTE */
-        --primary-gradient: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-        --glass-bg: rgba(255, 255, 255, 0.85); /* White Glass */
-        --glass-border: rgba(255, 255, 255, 0.6);
-        --input-bg: #ffffff;
-        --input-border: #cbd5e1;
-        --text-main: #1e293b; /* Dark Slate for Text */
-        --text-label: #475569;
-      }
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IT Helpdesk has moved — TDMH</title>
+<meta name="description" content="The TDMH IT Helpdesk has moved to tdmhcore.io. Use the new address to file and track your tickets.">
+<meta name="robots" content="noindex">
 
-      body {
-        min-height: 100vh;
-        /* Building Background */
-        background: url('https://drive.google.com/thumbnail?id=1M4jvbq7qMI2wILd-txSBQlnq-g9mHJct&sz=w1000') no-repeat center center fixed;
-        background-size: cover;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-family: 'Inter', sans-serif;
-        color: var(--text-main);
-        padding: 20px;
-      }
-      
-      /* White Overlay to make text readable */
-      body::before {
-        content: "";
-        position: absolute;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(240, 249, 255, 0.4); /* Light Blue/White Tint */
-        z-index: -1;
-      }
+<!-- ============================================================
+     ⚙️  PALITAN DITO KUNG IBA ANG URL NG BAGONG HELPDESK
+     Nasa 3 lugar: (1) href sa baba, (2) .to text, (3) fallback link
+     ============================================================ -->
 
-      .glass-card {
-        width: 100%;
-        max-width: 600px;
-        background: var(--glass-bg);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid var(--glass-border);
-        border-radius: 16px;
-        padding: 2.5rem;
-        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1); /* Softer Shadow */
-        text-align: center;
-      }
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800&display=swap" rel="stylesheet">
 
-      /* Logo Styling & Zoom Effect */
-      .logo-link {
-        display: inline-block;
-        transition: transform 0.3s ease;
-        cursor: pointer;
-      }
-      
-      .logo-link:hover {
-        transform: scale(1.1); /* Zooms in by 10% */
-      }
+<style>
+  :root{
+    --ink:#0D2B24;
+    --paper:#E9EEEC;
+    --white:#FFFFFF;
+    --sign:#0B6E4F;
+    --sign-dark:#06503A;
+    --amber:#F0B429;
+    --muted:#5A6E68;
+    --line:#CBD6D1;
+  }
 
-      .logo-img {
-        max-width: 100%;
-        height: auto;
-        margin-bottom: 1rem;
-        max-height: 120px; 
-        object-fit: contain;
-      }
+  *{box-sizing:border-box;}
 
-      h1.title {
-        font-family: 'Poppins', sans-serif;
-        font-weight: 700;
-        font-size: 2rem;
-        margin-bottom: 0.5rem;
-        color: #1e3a8a; /* Dark Blue */
-      }
-      
-      .subtitle {
-        color: #64748b;
-        margin-bottom: 1rem;
-        font-size: 0.95rem;
-      }
+  html,body{margin:0;padding:0;}
 
-      /* Light Theme Inputs */
-      .form-label {
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        color: var(--text-label);
-        font-size: 0.9rem;
-        display: block;
-        text-align: left;
-      }
+  body{
+    background:var(--paper);
+    background-image:linear-gradient(var(--paper) 0 0);
+    color:var(--ink);
+    font-family:"Archivo","Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:17px;
+    line-height:1.55;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:32px 20px;
+    -webkit-font-smoothing:antialiased;
+  }
 
-      .form-control, .form-select {
-        background-color: var(--input-bg);
-        border: 1px solid var(--input-border);
-        color: #334155;
-        border-radius: 8px;
-        padding: 12px;
-        font-size: 0.95rem;
-        transition: all 0.2s;
-      }
+  .sign{
+    width:100%;
+    max-width:720px;
+    background:var(--white);
+    border:1px solid var(--line);
+    border-top:8px solid var(--sign);
+    border-radius:4px;
+    padding:40px 44px 34px;
+    box-shadow:0 1px 0 var(--line);
+  }
 
-      .form-control:focus, .form-select:focus {
-        background-color: #fff;
-        border-color: #007bff;
-        box-shadow: 0 0 0 4px rgba(0, 123, 255, 0.1);
-        color: #0f172a;
-      }
+  .plate{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    padding-bottom:18px;
+    border-bottom:1px solid var(--line);
+    margin-bottom:30px;
+    flex-wrap:wrap;
+  }
+  .plate .dept{
+    font-weight:800;
+    font-size:15px;
+    letter-spacing:.04em;
+    color:var(--sign-dark);
+  }
+  .plate .org{
+    font-size:14px;
+    color:var(--muted);
+  }
 
-      /* Submit Button */
-      .btn-primary-custom {
-        background: var(--primary-gradient);
-        border: none;
-        width: 100%;
-        padding: 12px;
-        border-radius: 8px;
-        font-weight: 600;
-        margin-top: 1rem;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        box-shadow: 0 4px 6px rgba(0, 123, 255, 0.2);
-      }
+  h1{
+    font-size:38px;
+    line-height:1.12;
+    font-weight:800;
+    letter-spacing:-.022em;
+    margin:0 0 16px;
+    max-width:15ch;
+  }
 
-      .btn-primary-custom:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 20px rgba(0, 123, 255, 0.3);
-        color: white;
-      }
-      
-      .btn-primary-custom:disabled {
-        background: #94a3b8;
-        transform: none;
-      }
+  .lede{
+    font-size:18px;
+    color:var(--muted);
+    margin:0 0 30px;
+    max-width:62ch;
+  }
+  .lede strong{color:var(--ink);font-weight:600;}
 
-      /* Agimat Top Button Styling */
-      .btn-agimat {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background-color: transparent;
-        border: 2px solid #007bff;
-        color: #007bff;
-        padding: 8px 20px;
-        border-radius: 50px;
-        font-weight: 600;
-        font-size: 0.9rem;
-        text-decoration: none;
-        margin-bottom: 2rem; /* Spacing before form starts */
-        transition: all 0.2s ease;
-      }
+  /* ---- old → new address strip ---- */
+  .route{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex-wrap:wrap;
+    background:#F4F7F5;
+    border:1px solid var(--line);
+    border-radius:3px;
+    padding:14px 16px;
+    margin-bottom:38px;
+    font-size:15px;
+  }
+  .route .from{
+    color:#94A5A0;
+    text-decoration:line-through;
+    text-decoration-thickness:1.5px;
+  }
+  .route .step{
+    color:var(--amber);
+    font-weight:800;
+    letter-spacing:-.05em;
+  }
+  .route .to{
+    color:var(--sign-dark);
+    font-weight:600;
+  }
 
-      .btn-agimat:hover {
-        background-color: #007bff;
-        color: white;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 10px rgba(0, 123, 255, 0.2);
-      }
+  /* ---- CTA zone with converging arrows ---- */
+  .cta-zone{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    margin:0 0 34px;
+  }
 
-      .animate-fade-up {
-        animation: fadeInUp 0.8s ease-out;
-      }
-      
-      @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-    </style>
-  </head>
-  <body>
+  .rail{display:flex;align-items:center;gap:2px;}
+  .rail svg{display:block;}
+  .chev{stroke:var(--amber);stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round;fill:none;}
 
-    <div class="glass-card animate-fade-up">
-      <!-- Clickable Logo with Zoom Effect (Links to itself/Home) -->
-      <a href="https://ittdmh.pro/index.html" class="logo-link" title="Refresh Page">
-        <img src="https://drive.google.com/thumbnail?id=1O3MDwv9ASot6R_NjpeZR8dIP-s2zAueF&sz=w1000" alt="Taytay Doctors Logo" class="logo-img">
-      </a>
-      
-      <h1 class="title">IT HELPDESK</h1>
-      <p class="subtitle">Submit your technical concern below</p>
+  .rail .c1{animation:nudge 1.5s ease-in-out infinite;}
+  .rail .c2{animation:nudge 1.5s ease-in-out .16s infinite;}
+  .rail .c3{animation:nudge 1.5s ease-in-out .32s infinite;}
 
-      <!-- NEW PLACEMENT: Agimat Account Button -->
-      <a href="agimat.html" class="btn-agimat">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-person-plus-fill" viewBox="0 0 16 16">
-          <path d="M1 14s-1 0-1-1 1-4 6-4 6 3 6 4-1 1-1 1zm5-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6"/>
-          <path fill-rule="evenodd" d="M13.5 5a.5.5 0 0 1 .5.5V7h1.5a.5.5 0 0 1 0 1H14v1.5a.5.5 0 0 1-1 0V8h-1.5a.5.5 0 0 1 0-1H13V5.5a.5.5 0 0 1 .5-.5"/>
-        </svg>
-        Create Agimat Account
-      </a>
-      
-      <form id="form" method="POST" style="text-align: left;">
-        
-        <div class="mb-3">
-          <label for="email" class="form-label">Email</label>
-          <input type="email" class="form-control" id="email" placeholder="Your Email" name="Email" required />
-        </div>
+  .rail-down{display:none;flex-direction:column;gap:0;margin-bottom:4px;}
+  .rail-down .c1,.rail-down .c2,.rail-down .c3{animation-name:nudge-down;}
 
-        <div class="mb-3">
-          <label for="department" class="form-label">Department</label>
-          <select class="form-select" id="department" name="Department" required>
-            <option value="" disabled selected>Select your department</option>
-            <option value="Accounting">Accounting</option>
-            <option value="Admin">Admin</option>
-            <option value="Admitting">Admitting</option>
-            <option value="APE">APE</option>
-            <option value="Billing">Billing</option>
-            <option value="Cardio">Cardio</option>
-            <option value="Canteen">Canteen</option>
-            <option value="Cashier">Cashier</option>
-            <option value="CT-Scan">CT-Scan</option>
-            <option value="CSR">CSR</option>
-            <option value="CQI">CQI</option>
-            <option value="EKONSULTA">EKONSULTA</option>
-            <option value="ER">ER</option>
-            <option value="HMO">HMO</option>
-            <option value="HR">HR</option>
-            <option value="HOMES">HOMES</option>
-            <option value="Information">Information</option>
-            <option value="Laboratory">Laboratory</option>
-            <option value="Linen">Linen</option>
-            <option value="Maintenance">Maintenance</option>
-            <option value="Medical Records">Medical Records</option>
-            <option value="NICU">NICU</option>
-            <option value="NSO">NSO</option>
-            <option value="OPD">OPD</option>
-            <option value="OPD-Encoder">OPD-Encoder</option>
-            <option value="OPD-HMO">OPD-HMO</option>
-            <option value="OPD-Screener">OPD-Screener</option>
-            <option value="OR">OR</option>
-            <option value="Pharmacy">Pharmacy</option>
-            <option value="Philhealth">Philhealth</option>
-            <option value="Purchasing">Purchasing</option>
-            <option value="Releasing">Releasing</option>
-            <option value="Security">Security</option>
-            <option value="Social Service">Social Service</option>
-            <option value="Station 3">Station 3</option>
-            <option value="Station 4b">Station 4b</option>
-            <option value="Station 5a">Station 5a</option>
-            <option value="Station 5b">Station 5b</option>
-            <option value="Ultrasound">Ultrasound</option>
-            <option value="Xray">Xray</option>
-            <option value="Others">Others</option>
-          </select>
-        </div>
+  @keyframes nudge{
+    0%,100%{opacity:.28;transform:translateX(0);}
+    50%{opacity:1;transform:translateX(4px);}
+  }
+  @keyframes nudge-down{
+    0%,100%{opacity:.28;transform:translateY(0);}
+    50%{opacity:1;transform:translateY(4px);}
+  }
+  .rail-right .c1,.rail-right .c2,.rail-right .c3{animation-name:nudge-rev;}
+  @keyframes nudge-rev{
+    0%,100%{opacity:.28;transform:translateX(0);}
+    50%{opacity:1;transform:translateX(-4px);}
+  }
 
-        <div class="mb-3">
-          <label for="category" class="form-label">Category of Issue</label>
-          <select class="form-select" id="category" name="Category of Issue" required>
-            <option value="" disabled selected>Select issue category</option>
-            <option value="Hardware Issues">Hardware Issues</option>
-            <option value="Software Issues">Software Issues</option>
-            <option value="Network Issues">Network Issues</option>
-            <option value="Others">Others</option>
-          </select>
-        </div>
+  .btn{
+    display:inline-block;
+    background:var(--sign);
+    color:#fff;
+    text-decoration:none;
+    font-weight:600;
+    font-size:18px;
+    padding:18px 30px;
+    border-radius:3px;
+    border:1px solid var(--sign-dark);
+    white-space:nowrap;
+    transition:background .15s ease;
+  }
+  .btn:hover,.btn:focus-visible{background:var(--sign-dark);}
+  .btn:focus-visible{outline:3px solid var(--amber);outline-offset:3px;}
 
-        <div class="mb-4">
-          <label for="issues" class="form-label">Please specify Issues/Concern</label>
-          <textarea class="form-control" id="issues" rows="3" placeholder="Describe the problem..." name="Please specify Issues/Concern" required></textarea>
-        </div>
+  /* ---- notes ---- */
+  .notes{
+    list-style:none;
+    margin:0 0 30px;
+    padding:0;
+    border-top:1px solid var(--line);
+  }
+  .notes li{
+    padding:14px 0 14px 26px;
+    border-bottom:1px solid var(--line);
+    position:relative;
+    font-size:16px;
+    color:var(--muted);
+  }
+  .notes li::before{
+    content:"";
+    position:absolute;
+    left:0;top:23px;
+    width:8px;height:8px;
+    background:var(--sign);
+    border-radius:50%;
+  }
+  .notes strong{color:var(--ink);font-weight:600;}
 
-        <div class="d-grid">
-          <button type="submit" class="btn btn-primary btn-primary-custom" id="submit-button">Submit Ticket</button>
-        </div>
+  .notes li.flag{
+    background:#FDF6E3;
+    color:var(--ink);
+    padding-left:34px;
+    padding-right:16px;
+    border-left:4px solid var(--amber);
+  }
+  .notes li.flag::before{
+    background:var(--amber);
+    left:16px;
+  }
 
-        <!-- REMOVED THE OLD BOTTOM LINK FROM HERE -->
-      </form>
+  footer{
+    font-size:15px;
+    color:var(--muted);
+  }
+  footer a{color:var(--sign-dark);}
+  .fallback{
+    margin:0 0 10px;
+    font-size:15px;
+    color:var(--muted);
+    word-break:break-all;
+  }
 
-      <div
-        id="message"
-        class="alert alert-success mt-3 animate__animated animate__fadeInUp"
-        style="display: none;"
-      ></div>
+  @media (max-width:620px){
+    body{padding:18px 14px;align-items:flex-start;}
+    .sign{padding:28px 22px 26px;}
+    h1{font-size:29px;max-width:none;}
+    .lede{font-size:17px;}
+    .cta-zone{flex-direction:column;gap:0;}
+    .rail-left,.rail-right{display:none;}
+    .rail-down{display:flex;}
+    .btn{white-space:normal;text-align:center;width:100%;padding:18px 20px;}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .rail .c1,.rail .c2,.rail .c3{animation:none;opacity:.85;}
+  }
+</style>
+</head>
+<body>
+
+<main class="sign">
+
+  <div class="plate">
+    <span class="dept">TDMH IT Helpdesk</span>
+    <span class="org">Taytay Doctors Multispecialty Hospital</span>
+  </div>
+
+  <h1>The IT Helpdesk has moved</h1>
+
+  <p class="lede">
+    Nasa <strong>TDMH Core</strong> na ang IT ticketing system.
+    Hindi na tumatanggap ng bagong ticket ang lumang page na ito, at
+    <strong>may account na kailangan</strong> sa bagong system — dati kasi wala.
+  </p>
+
+  <div class="route">
+    <span class="from">ittdmh.pro/helpdesk</span>
+    <span class="step">&rarr;</span>
+    <span class="to">tdmhcore.io/helpdesk</span>
+  </div>
+
+  <div class="cta-zone">
+
+    <!-- mobile: arrows pointing down at the button -->
+    <div class="rail rail-down" aria-hidden="true">
+      <svg width="30" height="16" viewBox="0 0 30 16"><polyline class="chev c1" points="8,4 15,11 22,4"/></svg>
+      <svg width="30" height="16" viewBox="0 0 30 16"><polyline class="chev c2" points="8,4 15,11 22,4"/></svg>
+      <svg width="30" height="16" viewBox="0 0 30 16"><polyline class="chev c3" points="8,4 15,11 22,4"/></svg>
     </div>
 
-    <script>
-      document.getElementById("form").addEventListener("submit", function (e) {
-        e.preventDefault(); 
-        
-        var msgBox = document.getElementById("message");
-        var btn = document.getElementById("submit-button");
-        
-        msgBox.textContent = "Submitting...";
-        msgBox.style.display = "block";
-        msgBox.className = "alert alert-info mt-3 animate__animated animate__fadeInUp"; 
-        
-        btn.disabled = true;
-        btn.textContent = "Sending...";
+    <!-- desktop: arrows converging from both sides -->
+    <div class="rail rail-left" aria-hidden="true">
+      <svg width="16" height="30" viewBox="0 0 16 30"><polyline class="chev c1" points="4,8 11,15 4,22"/></svg>
+      <svg width="16" height="30" viewBox="0 0 16 30"><polyline class="chev c2" points="4,8 11,15 4,22"/></svg>
+      <svg width="16" height="30" viewBox="0 0 16 30"><polyline class="chev c3" points="4,8 11,15 4,22"/></svg>
+    </div>
 
-        var formData = new FormData(this);
-        var keyValuePairs = [];
+    <a class="btn" href="https://tdmhcore.io/helpdesk">Open the new IT Helpdesk</a>
 
-        for (var pair of formData.entries()) {
-          keyValuePairs.push(pair[0] + "=" + pair[1]);
-        }
+    <div class="rail rail-right" aria-hidden="true">
+      <svg width="16" height="30" viewBox="0 0 16 30"><polyline class="chev c3" points="12,8 5,15 12,22"/></svg>
+      <svg width="16" height="30" viewBox="0 0 16 30"><polyline class="chev c2" points="12,8 5,15 12,22"/></svg>
+      <svg width="16" height="30" viewBox="0 0 16 30"><polyline class="chev c1" points="12,8 5,15 12,22"/></svg>
+    </div>
 
-        var formDataString = keyValuePairs.join("&");
+  </div>
 
-        fetch(
-          "https://script.google.com/macros/s/AKfycbxZvDvT5v3yD_Q16QbA_zf1SUHhU31GXQTxtfVu0ltDKpRTqoN0gZ8QoFqLyDG0G9_HgA/exec",
-          {
-            redirect: "follow",
-            method: "POST",
-            body: formDataString,
-            headers: {
-              "Content-Type": "text/plain;charset=utf-8",
-            },
-          }
-        )
-          .then(function (response) {
-            if (response) {
-              return response; 
-            } else {
-              throw new Error("Failed to submit the form.");
-            }
-          })
-          .then(function (data) {
-            window.location.href = "thankyou.html";
-          })
-          .catch(function (error) {
-            console.error(error);
-            msgBox.textContent = "An error occurred while submitting the form.";
-            msgBox.style.display = "block";
-            msgBox.className = "alert alert-danger mt-3 animate__animated animate__fadeInUp"; 
-            btn.disabled = false;
-            btn.textContent = "Submit Ticket";
-          });
-      });
-    </script>
-  </body>
+  <ul class="notes">
+    <li class="flag"><strong>May login na ngayon.</strong> Dati, diretso lang ang pag-file ng ticket — sa TDMH Core, may sariling account na ang bawat isa. Itanong sa <strong>department head mo</strong> ang email at password na naka-assign sa'yo.</li>
+    <li><strong>Buo ang lumang tickets.</strong> Nailipat lahat ng open at closed tickets, kasama ang attachments at SLA timers.</li>
+    <li><strong>I-update ang bookmark.</strong> Palitan ang naka-save mong link para hindi ka na bumalik dito.</li>
+    <li><strong>Isang login na lang.</strong> Nasa iisang site na ang Helpdesk, CSR, Inventory, at Maintenance.</li>
+  </ul>
+
+  <p class="fallback">
+    Kung ayaw gumana ng button, i-type ito sa browser:
+    <a href="https://tdmhcore.io/helpdesk">https://tdmhcore.io/helpdesk</a>
+  </p>
+
+  <footer>
+    Walang account sa listahan ng head mo, o hindi gumagana ang login? Mag-email sa
+    <a href="mailto:it@taytaydoctorshospital.com">it@taytaydoctorshospital.com</a>
+    o lapitan ang IT Department.
+  </footer>
+
+</main>
+
+</body>
 </html>
