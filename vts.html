@@ -1171,10 +1171,14 @@ async function renderDashboard() {
 
   // Filter pending by approver type
   let pending = T.filter(t => t.status==='pending-approval').sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))
-  // NOTE: pending shown to all — action buttons restricted per role in UI
-  // if (role === 'approver_admin')   pending = pending.filter(t => t.vehicle_type_needed !== 'ambulance')
-  // if (role === 'approver_amb')     pending = pending.filter(t => t.vehicle_type_needed === 'ambulance')
-  // super_approver sees all pending (no filter)
+  // pending (all) shown in kanban — out-of-scope cards are view-only.
+  // myPending = the ones THIS role can actually act on → used for badge & "Needs action" count
+  let myPending = pending.filter(t => {
+    if (role === 'admin' || role === 'super_approver') return true
+    if (role === 'approver_admin') return t.vehicle_type_needed !== 'ambulance'
+    if (role === 'approver_amb')   return t.vehicle_type_needed === 'ambulance'
+    return false
+  })
 
   // Active = currently happening — exclude advance bookings that depart in the future
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
@@ -1189,7 +1193,8 @@ async function renderDashboard() {
     t.departure_at && new Date(t.departure_at) > todayEnd
   )
   const done   = T.filter(t => t.status==='completed')
-  if (['admin','approver_admin','approver_amb','super_approver'].includes(role)) updateNavBadge(pending.length)
+  // Badge counts ONLY what this role can act on (role-scoped, not overall)
+  if (['admin','approver_admin','approver_amb','super_approver'].includes(role)) updateNavBadge(myPending.length)
 
   const overdue = active.filter(t => isOverdue(t))
   const next7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -1371,8 +1376,8 @@ async function renderDashboard() {
 
       <!-- Stats -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">
-        <div style="background:${pending.length?'#fef9eb':'var(--card)'};border:1px solid ${pending.length?'#fde68a':'var(--border)'};border-radius:12px;padding:12px;text-align:center">
-          <div style="font-size:26px;font-weight:800;color:${pending.length?'#92400e':'var(--text2)'}">${pending.length}</div>
+        <div style="background:${myPending.length?'#fef9eb':'var(--card)'};border:1px solid ${myPending.length?'#fde68a':'var(--border)'};border-radius:12px;padding:12px;text-align:center">
+          <div style="font-size:26px;font-weight:800;color:${myPending.length?'#92400e':'var(--text2)'}">${myPending.length}</div>
           <div style="font-size:10px;font-weight:600;color:var(--text3)">Pending approval</div>
         </div>
         <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center">
@@ -1392,8 +1397,8 @@ async function renderDashboard() {
       <!-- Tabs -->
       <div style="display:flex;gap:4px;background:var(--bg);border-radius:12px;padding:4px;margin-bottom:14px">
         ${[
-          ['today',   'Today',        (pending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd}).length + approvedNoDriver.length + assignedToday.length + onTrip.length), pending.length > 0],
-          ['pending', 'Needs action', pending.length, pending.length > 0],
+          ['today',   'Today',        (myPending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd}).length + approvedNoDriver.length + assignedToday.length + onTrip.length), myPending.length > 0],
+          ['pending', 'Needs action', myPending.length, myPending.length > 0],
           ['upcoming','Upcoming',     scheduled.length, false],
           ['done',    'Done',         thisWeekDone.length, false],
         ].map(([id,lbl,cnt,urgent]) => {
@@ -1407,7 +1412,7 @@ async function renderDashboard() {
       <!-- Today Panel -->
       <div data-kbPanel="today">
         ${(()=>{
-          const pendingToday = pending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd})
+          const pendingToday = myPending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd})
           const col1 = [...pendingToday,...approvedNoDriver]
           const col2 = assignedToday
           const col3 = onTrip
@@ -1423,8 +1428,9 @@ async function renderDashboard() {
 
       <!-- Pending Panel -->
       <div data-kbPanel="pending" style="display:none">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:10px">${pending.length} ticket${pending.length!==1?'s':''} awaiting your action — oldest first</div>
-        ${pending.length?pending.map(t=>tripCard(t,approverActions(t))).join(''):emptyCol('✅ No pending approvals!')}
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px">${myPending.length} ticket${myPending.length!==1?'s':''} awaiting your action — oldest first${pending.length>myPending.length?` <span style="color:var(--text3)">(${pending.length-myPending.length} other-type shown below, view-only)</span>`:''}</div>
+        ${myPending.length?myPending.map(t=>tripCard(t,approverActions(t))).join(''):emptyCol('✅ No pending approvals for you!')}
+        ${pending.length>myPending.length?pending.filter(t=>!myPending.includes(t)).map(t=>tripCard(t,approverActions(t))).join(''):''}
       </div>
 
       <!-- Upcoming Panel -->
@@ -1772,9 +1778,17 @@ async function renderTickets() {
     SB.from('vehicles').select('*').neq('status','maintenance')
   ])
   _tickets = trips || []; _drivers = drvs || []; _vehicles = vehs || []
-  // Only admin/approver see the pending badge count
-  if (['admin','approver_admin','super_approver'].includes(role))
-    updateNavBadge(_tickets.filter(t=>t.status==='pending-approval').length)
+  // Badge counts ONLY what this role can act on (role-scoped)
+  if (['admin','approver_admin','approver_amb','super_approver'].includes(role)) {
+    const myPend = (_tickets||[]).filter(t => {
+      if (t.status !== 'pending-approval') return false
+      if (role === 'admin' || role === 'super_approver') return true
+      if (role === 'approver_admin') return t.vehicle_type_needed !== 'ambulance'
+      if (role === 'approver_amb')   return t.vehicle_type_needed === 'ambulance'
+      return false
+    })
+    updateNavBadge(myPend.length)
+  }
   renderTicketsTable()
 }
 
