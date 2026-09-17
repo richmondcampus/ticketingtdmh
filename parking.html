@@ -1805,13 +1805,17 @@ function TDMHParking(){
                 </div>
               </label>
             </div>
-            {computed&&(
+            {computed&&(()=>{
+              const mvDisc=pwdSc?Math.max(0,computed.fee-(computed.pwdFee||0)):0;
+              const mvTotal=Math.max(0,computed.fee-mvDisc)+(lostTicket?50:0);
+              return(
               <div className="fb" style={{marginBottom:12}}>
                 <div className="fbl">Computed Fee</div>
-                <div className="fbv">{P(computed.fee+(lostTicket?50:0))}</div>
-                <div className="fbn">Duration: {computed.dur} · {computed.overnight?"🌙 Overnight Rate":"Regular Rate"}{lostTicket?" · +₱50 Lost Ticket Fee":""}</div>
+                <div className="fbv">{P(mvTotal)}</div>
+                <div className="fbn">Duration: {computed.dur} · {computed.overnight?"🌙 Overnight Rate":"Regular Rate"}{pwdSc?" · ♿ PWD/SC: -"+P(mvDisc)+(computed.overnight?" (overnight windows charged)":" (first 3hrs free)"):""}{lostTicket?" · +₱50 Lost Ticket Fee":""}</div>
               </div>
-            )}
+              );
+            })()}
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <button className="btn bg" onClick={()=>{setManualForm({plate:"",name:"",vtype:"car",locId:"compound",slotNum:"",checkin:"",checkout:""});setLostTicket(false);setPwdSc(false);}}>🗑️ Clear</button>
               <button className="btn bp" style={{background:"#d97706",boxShadow:"0 3px 10px rgba(217,119,6,.3)"}} onClick={doManualPrint} disabled={!manualForm.plate.trim()||!manualForm.checkin}>🖨️ Print Manual Receipt</button>
