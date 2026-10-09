@@ -574,7 +574,7 @@ function DonutChart({data,size=110}){
 
 // ─── REPORTS PANEL ───────────────────────────────────────────────────────────
 // Fetches its own data directly from Supabase — always shows latest records
-function ReportsPanel({currentUser}){
+function ReportsPanel({currentUser,onFix}){
   const [from,setFrom]=useState(todayStr());
   const [to,setTo]=useState(todayStr());
 
@@ -795,7 +795,7 @@ function ReportsPanel({currentUser}){
           </div>
           {fetching?<div className="nod"><div className="ni">⏳</div>Loading transactions…</div>:filtered.length===0?<div className="nod"><div className="ni">📭</div>No transactions found</div>:(
             <div style={{overflowX:"auto",maxHeight:400,overflowY:"auto"}}><table className="rtbl">
-              <thead><tr><th>Date/Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Dur</th><th>Type</th><th>Checked In By</th><th>Checked Out By</th><th>Notes</th><th>Amount</th></tr></thead>
+              <thead><tr><th>Date/Time</th><th>Ticket</th><th>Plate</th><th>Vehicle</th><th>Location</th><th>Dur</th><th>Type</th><th>Checked In By</th><th>Checked Out By</th><th>Notes</th><th>Amount</th>{currentUser?.role==="admin"&&<th></th>}</tr></thead>
               <tbody>{[...filtered].sort((a,b)=>new Date(b.checkout_at||b.checkout_time||b.checkin_at)-new Date(a.checkout_at||a.checkout_time||a.checkin_at)).map((e,i)=>(
                 <tr key={i}>
                   <td style={{fontFamily:"'Space Mono',monospace",fontSize:10,whiteSpace:"nowrap"}}>{fmtDT(e.checkout_at||e.checkout_time||e.checkin_at)}</td>
@@ -809,6 +809,7 @@ function ReportsPanel({currentUser}){
                   <td style={{fontSize:10,color:"var(--mu)"}}>{(e.cashier||"—").split(" ")[0]}</td>
                   <td>{e.notes?<span style={{fontSize:9,background:(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking"))?"#fff8e1":e.notes.includes("MANUAL")?"#f0f9ff":"#f1f5f9",color:(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking"))?"#d97706":e.notes.includes("MANUAL")?"#0369a1":"#64748b",padding:"2px 6px",borderRadius:100,fontWeight:700,whiteSpace:"nowrap"}}>{(e.notes.includes("LOST_TICKET")||e.notes.includes("Lost Parking"))?"🎫 Lost Ticket":(e.notes.includes("MANUAL")||e.notes.includes("Manual"))?"🧾 Manual":"📝 "+e.notes.substring(0,15)}</span>:"—"}</td>
                   <td><span className="eam">{P(e.fee||0)}</span></td>
+                  {currentUser?.role==="admin"&&<td><button className="btn bg" title="Fix transaction — revert / PWD / delete" style={{padding:"3px 7px",fontSize:11,background:"#f5f3ff",color:"#6d28d9",border:"1px solid #ddd6fe"}} onClick={()=>onFix&&onFix(e)}>↩️</button></td>}
                 </tr>
               ))}</tbody>
             </table></div>
@@ -1861,7 +1862,7 @@ function TDMHParking(){
       )}
 
       {/* REPORTS — no props needed, fetches own data */}
-      {tab==="reports"&&perms.rep&&<ReportsPanel currentUser={user}/>}
+      {tab==="reports"&&perms.rep&&<ReportsPanel currentUser={user} onFix={e=>{setRevertTxn(e);setDelArm(false);}}/>}
 
       {/* ACTIVITY */}
       {tab==="activity"&&<ActivityLog actLog={actLog}/>}
