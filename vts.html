@@ -4432,7 +4432,7 @@ async function openAssignModal(id, ticketNo, vtype) {
      <div style="border-top:1px solid var(--border);margin:14px 0 12px"></div>
      <div style="display:flex;align-items:center;gap:8px;background:var(--amber-s);border:1px solid rgba(217,119,6,.2);border-radius:9px;padding:10px 13px">
        <input type="checkbox" id="lastResortToggle" style="width:15px;height:15px;accent-color:var(--amber)"
-         onchange="toggleLastResort('${id}','${ticketNo}','${vtype}',${JSON.stringify(avV_all)},${JSON.stringify(avD_all)})">
+         onchange="toggleLastResort('${id}','${ticketNo}','${vtype}')">
        <label for="lastResortToggle" style="font-size:12px;cursor:pointer">
          <span style="font-weight:700;color:var(--amber)">⚠ Last Resort</span>
          <span style="color:var(--text2)"> — Show all available drivers and vehicles regardless of type</span>
@@ -4449,7 +4449,7 @@ async function openAssignModal(id, ticketNo, vtype) {
   window._asTypedDrivers  = avD
 }
 
-function toggleLastResort(id, ticketNo, vtype, allV, allD) {
+function toggleLastResort(id, ticketNo, vtype) {
   const checked = document.getElementById('lastResortToggle')?.checked
   if (checked) {
     if (!confirm('⚠ LAST RESORT MODE\n\nThis will show ALL available drivers and vehicles regardless of type assignment.\n\nThis is for emergency use only. The override will be recorded in the audit log.\n\nProceed?')) {
