@@ -3354,11 +3354,15 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
        </div>
      </div>
 
-     <div class="fg"><label class="fl">New Driver *
-       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — busy drivers shown with ⚠</span>
+     <div class="info info-blue" style="margin-bottom:12px;font-size:11.5px">
+       💡 Change the driver, the vehicle, or both. Leave one unchanged to keep the current assignment.
+     </div>
+
+     <div class="fg"><label class="fl">New Driver
+       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — leave blank to keep current · busy shown with ⚠</span>
      </label>
        <select class="fs" id="rsaDrv">
-         <option value="">-- Select New Driver --</option>
+         <option value="">-- Keep current driver --</option>
          ${buildDriverOpts(vtype)}
        </select>
        ${vtype==='ambulance' ? `
@@ -3368,11 +3372,11 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
        </label>` : ''}
      </div>
 
-     <div class="fg"><label class="fl">New Vehicle *
-       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — busy vehicles shown with ⚠</span>
+     <div class="fg"><label class="fl">New Vehicle
+       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — leave blank to keep current · busy shown with ⚠</span>
      </label>
        <select class="fs" id="rsaVeh">
-         <option value="">-- Select New Vehicle --</option>
+         <option value="">-- Keep current vehicle --</option>
          ${buildVehicleOpts(vtype)}
        </select>
      </div>
@@ -3390,19 +3394,37 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
 }
 
 async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
-  const dv     = document.getElementById('rsaDrv')?.value
-  const vv     = document.getElementById('rsaVeh')?.value
+  const dvRaw  = document.getElementById('rsaDrv')?.value
+  const vvRaw  = document.getElementById('rsaVeh')?.value
   const reason = document.getElementById('rsaReason')?.value?.trim()
 
-  if (!dv || !vv)    { alert('Please select both a new driver and vehicle.'); return }
-  if (!reason)       { alert('Please provide a reason for the reassignment.'); return }
+  // At least one of driver/vehicle must change — the other defaults to current
+  if (!dvRaw && !vvRaw) { alert('Please select a new driver and/or a new vehicle to reassign.'); return }
+  if (!reason)          { alert('Please provide a reason for the reassignment.'); return }
 
-  const [newDriverId, newDriverName] = dv.split('|')
+  // Resolve new driver — blank keeps the current driver
+  let newDriverId, newDriverName
+  if (dvRaw) {
+    [newDriverId, newDriverName] = dvRaw.split('|')
+  } else {
+    newDriverId   = curDriverId
+    newDriverName = _drivers.find(d => d.id === curDriverId)?.full_name || 'Current driver'
+  }
+
+  // Resolve new vehicle — blank keeps the current vehicle
+  const vv = vvRaw || curVehicleId
   const newVehicle = _vehicles.find(v => v.id === vv)
 
-  // Explicit confirmation — prevents wrong-driver selection on mobile pickers
+  // Guard: if both resolve to the current values, nothing changed
+  if (newDriverId === curDriverId && vv === curVehicleId) {
+    alert('No change — please select a different driver or vehicle.'); return
+  }
+
+  // Explicit confirmation — show what changes vs stays
   const newVehLabel = newVehicle ? `${newVehicle.name||newVehicle.plate} (${newVehicle.plate})` : vv
-  if (!confirm(`Confirm reassignment of ${ticketNo}:\n\n👤 New Driver: ${newDriverName}\n🚗 New Vehicle: ${newVehLabel}\n\nProceed?`)) {
+  const drvLine = newDriverId === curDriverId ? `👤 Driver: ${newDriverName} (unchanged)` : `👤 New Driver: ${newDriverName}`
+  const vehLine = vv === curVehicleId         ? `🚗 Vehicle: ${newVehLabel} (unchanged)`   : `🚗 New Vehicle: ${newVehLabel}`
+  if (!confirm(`Confirm reassignment of ${ticketNo}:\n\n${drvLine}\n${vehLine}\n\nProceed?`)) {
     return
   }
 
