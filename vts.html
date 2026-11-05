@@ -3169,8 +3169,9 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
 
-  // Ensure drivers and vehicles are loaded (may be empty if opened from dashboard)
-  if (!_drivers.length || !_vehicles.length) {
+  // Always fetch FRESH drivers and vehicles — so status (available/on-trip) and
+  // newly-added relievers are current, not stale from the tickets page cache
+  {
     const [{ data: drvs }, { data: vehs }] = await Promise.all([
       SB.from('drivers').select('*').order('full_name'),
       SB.from('vehicles').select('*').order('name')
