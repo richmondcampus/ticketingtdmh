@@ -3241,20 +3241,31 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
 
   const buildDriverOpts = (typeOverride) => {
     const isA = typeOverride === 'ambulance'
-    return (_drivers||[]).filter(d => {
-      if (d.status === 'off-duty') return false
-      if (d.id === curDriverId) return false  // exclude current driver — reassigning to same makes no sense
+    const isM = typeOverride === 'motorcycle'
+    const typeLabel = isA ? 'ambulance' : isM ? 'motorcycle' : 'regular'
+    // Is this driver the right type for the ticket?
+    const matchesType = (d) => {
       const dt = d.driver_type || 'regular'
       if (dt === 'both') return true
       if (isA) return dt === 'ambulance'
+      if (isM) return dt === 'regular'   // motorcycle handled by regular drivers
       return dt === 'regular'
-    }).map(d => {
+    }
+    const pool = (_drivers||[]).filter(d => d.status !== 'off-duty' && d.id !== curDriverId)
+    const mkOpt = (d, offType) => {
       const busy = busyDIds.has(d.id)
       const lbl  = busyDLabel[d.id]
-      return `<option value="${d.id}|${d.full_name}">
-        ${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ Busy: '+lbl:''}
-      </option>`
-    }).join('')
+      const typeTag = offType ? ` 🔸${d.driver_type||'regular'}` : ''
+      return `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}${typeTag}${busy&&lbl?' ⚠ Busy: '+lbl:''}</option>`
+    }
+    const matched = pool.filter(matchesType)
+    const others  = pool.filter(d => !matchesType(d))
+    let html = matched.map(d => mkOpt(d, false)).join('')
+    if (others.length) {
+      html += `<option disabled>──── Other driver types (off-${typeLabel}) ────</option>`
+      html += others.map(d => mkOpt(d, true)).join('')
+    }
+    return html
   }
 
   const buildVehicleOpts = (typeOverride) => {
@@ -3366,11 +3377,6 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
          <option value="">-- Keep current driver --</option>
          ${buildDriverOpts(vtype)}
        </select>
-       ${vtype==='ambulance' ? `
-       <label style="display:flex;align-items:center;gap:7px;margin-top:8px;cursor:pointer;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 11px">
-         <input type="checkbox" id="rsaPullRegular" onchange="rsaTogglePullRegular()" style="width:15px;height:15px;accent-color:#ea580c">
-         <span style="font-size:11.5px;color:#9a3412;font-weight:600">🚙 No ambulance driver available — pull from regular drivers</span>
-       </label>` : ''}
      </div>
 
      <div class="fg"><label class="fl">New Vehicle
@@ -4379,9 +4385,7 @@ async function openAssignModal(id, ticketNo, vtype) {
   }) : []
 
   const avV = filterVehicles(allVehicles, true)
-  const avD = filterDrivers(allDrivers, true)
   const avV_all = filterVehicles(allVehicles, false)
-  const avD_all = filterDrivers(allDrivers, false)
 
   // Store for pull-regular-driver toggle (ambulance tickets)
   window._asAllDrivers = allDrivers
@@ -4390,14 +4394,35 @@ async function openAssignModal(id, ticketNo, vtype) {
 
   const depStr = dep ? new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
   const scopeLabel = isAmb ? '🚑 Ambulance' : isMoto ? '🏍 Motorcycle' : '🚙 Regular'
+  const typeLabel  = isAmb ? 'ambulance' : isMoto ? 'motorcycle' : 'regular'
 
-  const driverOpts = (drivers) => drivers.map(d => {
+  // Does this driver match the ticket type?
+  const drvMatches = (d) => {
+    const dt = d.driver_type || 'regular'
+    if (dt === 'both') return true
+    if (isAmb) return dt === 'ambulance'
+    return dt === 'regular'   // regular + motorcycle both handled by regular drivers
+  }
+  // All non-off-duty drivers, grouped: matching type first, others below
+  const allAvailDrivers = (allDrivers||[]).filter(d => d.status !== 'off-duty')
+  const matchedDrv = allAvailDrivers.filter(drvMatches)
+  const otherDrv   = allAvailDrivers.filter(d => !drvMatches(d))
+  const avD = matchedDrv  // count badge reflects matching-type drivers
+
+  const mkDrvOpt = (d, offType) => {
     const busy = busyDrvIds.has(d.id)
     const lbl  = busyDrvLabel[d.id]
-    return `<option value="${d.id}|${d.full_name}" ${busy?'style="color:var(--amber)"':''}>
-      ${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ Has trip at '+lbl:''}
-    </option>`
-  }).join('')
+    const typeTag = offType ? ` 🔸${d.driver_type||'regular'}` : ''
+    return `<option value="${d.id}|${d.full_name}" ${busy?'style="color:var(--amber)"':''}>${d.full_name} · ${d.license_no||'—'}${typeTag}${busy&&lbl?' ⚠ Has trip at '+lbl:''}</option>`
+  }
+  const driverOptsGrouped = () => {
+    let html = matchedDrv.map(d => mkDrvOpt(d, false)).join('')
+    if (otherDrv.length) {
+      html += `<option disabled>──── Other driver types (off-${typeLabel}) ────</option>`
+      html += otherDrv.map(d => mkDrvOpt(d, true)).join('')
+    }
+    return html
+  }
 
   const vehicleOpts = (vehicles) => vehicles.map(v => {
     const busy = busyVehIds.has(v.id)
@@ -4418,20 +4443,15 @@ async function openAssignModal(id, ticketNo, vtype) {
      </div>
 
      <div class="fg"><label class="fl">Select Driver *
-       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} driver${avD.length!==1?'s':''} available</span>
+       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} ${typeLabel}-type available${otherDrv.length?` · +${otherDrv.length} other-type below`:''}</span>
      </label>
        <select class="fs" id="asDrv" onchange="checkAssignConflict()">
          <option value="">-- Select Driver --</option>
-         ${driverOpts(avD)}
+         ${driverOptsGrouped()}
        </select>
        <div id="drvConflictWarn" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#92400e;margin-top:5px">
          ⚠ This driver already has a trip at that time. You can still assign — consider pooling both trips for efficiency.
        </div>
-       ${isAmb ? `
-       <label style="display:flex;align-items:center;gap:7px;margin-top:8px;cursor:pointer;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 11px">
-         <input type="checkbox" id="asPullRegular" onchange="togglePullRegularDriver('asDrv')" style="width:15px;height:15px;accent-color:#ea580c">
-         <span style="font-size:11.5px;color:#9a3412;font-weight:600">🚙 No ambulance driver available — pull from regular drivers</span>
-       </label>` : ''}
        <button type="button" onclick="openAddRelieverModal('asDrv')" style="margin-top:6px;font-size:11px;color:var(--pri);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">
          + Add reliever / temporary driver
        </button>
@@ -4458,47 +4478,34 @@ async function openAssignModal(id, ticketNo, vtype) {
          onchange="toggleLastResort('${id}','${ticketNo}','${vtype}')">
        <label for="lastResortToggle" style="font-size:12px;cursor:pointer">
          <span style="font-weight:700;color:var(--amber)">⚠ Last Resort</span>
-         <span style="color:var(--text2)"> — Show all available drivers and vehicles regardless of type</span>
+         <span style="color:var(--text2)"> — Show all vehicles regardless of type (drivers already all shown)</span>
        </label>
      </div>` : ''}`,
 
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="asBtn" onclick="doAssign('${id}','${ticketNo}')">Assign & Notify Driver</button>`
   )
-  // Store full lists on window for last resort toggle
+  // Store full lists on window for last resort toggle (VEHICLES only now — drivers always grouped)
   window._asAllVehicles = avV_all
-  window._asAllDrivers  = avD_all
   window._asTypedVehicles = avV
-  window._asTypedDrivers  = avD
 }
 
+// Last Resort now only affects VEHICLES (all drivers are already shown grouped by type)
 function toggleLastResort(id, ticketNo, vtype) {
   const checked = document.getElementById('lastResortToggle')?.checked
   if (checked) {
-    if (!confirm('⚠ LAST RESORT MODE\n\nThis will show ALL available drivers and vehicles regardless of type assignment.\n\nThis is for emergency use only. The override will be recorded in the audit log.\n\nProceed?')) {
+    if (!confirm('⚠ LAST RESORT MODE\n\nThis shows ALL vehicles regardless of type.\n\nFor emergency use. The override is recorded in the audit log.\n\nProceed?')) {
       document.getElementById('lastResortToggle').checked = false
       return
     }
   }
-  const isAmb  = vtype === 'ambulance'
-  const isMoto = vtype === 'motorcycle'
-  const dSel = document.getElementById('asDrv')
   const vSel = document.getElementById('asVeh')
-  if (!dSel || !vSel) return
-
-  const dList = checked ? (window._asAllDrivers||[])  : (window._asTypedDrivers||[])
+  if (!vSel) return
   const vList = checked ? (window._asAllVehicles||[]) : (window._asTypedVehicles||[])
-
-  const driverOpts = dList.map(d => `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}</option>`).join('')
   const vehicleOpts = vList.map(v => `<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)</option>`).join('')
-
-  dSel.innerHTML = `<option value="">-- Select Driver --</option>${driverOpts}`
   vSel.innerHTML = `<option value="">-- Select Vehicle --</option>${vehicleOpts}`
-
-  const label = dSel.closest('.fg')?.querySelector('label span')
   const vlabel = vSel.closest('.fg')?.querySelector('label span')
-  if (label) label.textContent = ` — ${dList.length} available`
-  if (vlabel) vlabel.textContent = ` — ${vList.length} available`
+  if (vlabel) vlabel.textContent = ` — ${vList.length} available (all types)`
 }
 
 function togglePullRegularDriver(selectId) {
