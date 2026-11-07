@@ -242,6 +242,22 @@ body.dark .b-overdue{background:rgba(225,29,72,.15);color:#fb7185;border-color:r
 @keyframes pinga{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(2.3)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* Success checkmark animations (used in Request Submitted modal) */
+@keyframes circleIn{from{stroke-dashoffset:213}to{stroke-dashoffset:0}}
+@keyframes checkIn{from{stroke-dashoffset:40}to{stroke-dashoffset:0}}
+
+/* Animated hourglass — sand drains from top, fills bottom, then flips */
+.hourglass-anim{display:inline-block;width:48px;height:48px;position:relative;animation:hg-flip 2.4s ease-in-out infinite}
+.hourglass-anim svg{display:block;width:100%;height:100%}
+.hg-sand-top{transform-origin:center top;animation:hg-drain 2.4s ease-in-out infinite}
+.hg-sand-bot{transform-origin:center bottom;animation:hg-fill 2.4s ease-in-out infinite}
+.hg-stream{animation:hg-stream 2.4s ease-in-out infinite}
+@keyframes hg-flip{0%,45%{transform:rotate(0deg)}55%,100%{transform:rotate(180deg)}}
+@keyframes hg-drain{0%{transform:scaleY(1);opacity:1}45%{transform:scaleY(.05);opacity:.85}55%,100%{transform:scaleY(.05);opacity:0}}
+@keyframes hg-fill{0%{transform:scaleY(.05);opacity:0}45%{transform:scaleY(1);opacity:1}55%,100%{transform:scaleY(1);opacity:.9}}
+@keyframes hg-stream{0%,45%{opacity:.9}50%,100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.hourglass-anim,.hg-sand-top,.hg-sand-bot,.hg-stream{animation:none!important}}
+
 /* ── Floating Action Button (mobile new ticket) ── */
 .fab{display:none;position:fixed;right:16px;bottom:calc(var(--bot-nav) + var(--safe-bottom) + 12px);width:52px;height:52px;border-radius:50%;background:var(--pri);color:#fff;font-size:26px;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(12,111,219,.45);z-index:145;align-items:center;justify-content:center;transition:transform .15s;touch-action:manipulation;line-height:1;font-weight:300}
 .fab:active{transform:scale(.92)}
@@ -473,14 +489,59 @@ const SB = createClient ? createClient(SB_URL, SB_ANON) : null
 // ════════════════════════════════════════════════
 const SMS_URL = 'https://blgscwtseqvhgdoksvjh.supabase.co/functions/v1/send-sms'
 
-async function sendSMS(phones, message) {
-  if (!phones || (Array.isArray(phones) && phones.filter(Boolean).length === 0)) return
+// Animated hourglass markup — reusable loading indicator
+function hourglass(){
+  return '<span class="hourglass-anim" role="img" aria-label="Loading">'
+    + '<svg viewBox="0 0 24 24" fill="none">'
+    + '<path d="M6 2h12M6 22h12M6 2c0 5 6 6 6 10 0-4 6-5 6-10M6 22c0-5 6-6 6-10 0 4 6 5 6 10" stroke="var(--pri,#0c6fdb)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<polygon class="hg-sand-top" points="7.5,4 16.5,4 12,10.5" fill="var(--pri,#0c6fdb)"/>'
+    + '<polygon class="hg-sand-bot" points="12,13.5 16.5,20 7.5,20" fill="var(--pri,#0c6fdb)"/>'
+    + '<rect class="hg-stream" x="11.55" y="10" width="0.9" height="4" fill="var(--pri,#0c6fdb)"/>'
+    + '</svg></span>'
+}
+
+// Guard a button against double-click: disables it, shows a spinner label,
+// runs the async task, then re-enables on failure. On success the modal/page
+// usually closes so re-enable is moot. Returns whatever the task returns.
+// If the button is already disabled (mid-flight), the call is ignored.
+async function guardBtn(btnEl, task, busyLabel){
+  if (!btnEl) { return await task() }
+  if (btnEl.disabled) return   // already running — ignore duplicate click
+  const orig = btnEl.innerHTML
+  btnEl.disabled = true
+  btnEl.style.opacity = '0.7'
+  btnEl.style.cursor = 'wait'
+  btnEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:spin .7s linear infinite"></span>' + (busyLabel || 'Processing…') + '</span>'
+  try {
+    return await task()
+  } catch (e) {
+    // Re-enable so the user can retry
+    btnEl.disabled = false
+    btnEl.style.opacity = ''
+    btnEl.style.cursor = ''
+    btnEl.innerHTML = orig
+    throw e
+  }
+}
+
+async function sendSMS(phones, message, eventType='general', ticketNo=null) {
+  const validPhones = Array.isArray(phones) ? phones.filter(Boolean) : [phones].filter(Boolean)
+  if (!validPhones.length) return
   try {
     await fetch(SMS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phones, message })
+      body: JSON.stringify({ phones: validPhones, message })
     })
+    // Log to sms_logs — fire and forget, don't block on error
+    SB.from('sms_logs').insert({
+      recipients:  validPhones,
+      sms_count:   validPhones.length,
+      message:     message.slice(0, 500),
+      event_type:  eventType,
+      ticket_no:   ticketNo,
+      sent_by:     currentProfile?.full_name || 'System'
+    }).then(() => {}).catch(() => {})
   } catch(e) {
     console.warn('[SMS]', e.message)
   }
@@ -1084,7 +1145,7 @@ async function showNotifs() {
 // DASHBOARD
 // ════════════════════════════════════════════════
 async function renderDashboard() {
-  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>'
+  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">'+hourglass()+'<div style="margin-top:10px">Loading...</div></div>'
   const role = currentProfile?.role
 
   // Owner gets their own executive dashboard
@@ -1110,10 +1171,14 @@ async function renderDashboard() {
 
   // Filter pending by approver type
   let pending = T.filter(t => t.status==='pending-approval').sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))
-  // NOTE: pending shown to all — action buttons restricted per role in UI
-  // if (role === 'approver_admin')   pending = pending.filter(t => t.vehicle_type_needed !== 'ambulance')
-  // if (role === 'approver_amb')     pending = pending.filter(t => t.vehicle_type_needed === 'ambulance')
-  // super_approver sees all pending (no filter)
+  // pending (all) shown in kanban — out-of-scope cards are view-only.
+  // myPending = the ones THIS role can actually act on → used for badge & "Needs action" count
+  let myPending = pending.filter(t => {
+    if (role === 'admin' || role === 'super_approver') return true
+    if (role === 'approver_admin') return t.vehicle_type_needed !== 'ambulance'
+    if (role === 'approver_amb')   return t.vehicle_type_needed === 'ambulance'
+    return false
+  })
 
   // Active = currently happening — exclude advance bookings that depart in the future
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
@@ -1128,7 +1193,8 @@ async function renderDashboard() {
     t.departure_at && new Date(t.departure_at) > todayEnd
   )
   const done   = T.filter(t => t.status==='completed')
-  if (['admin','approver_admin','approver_amb','super_approver'].includes(role)) updateNavBadge(pending.length)
+  // Badge counts ONLY what this role can act on (role-scoped, not overall)
+  if (['admin','approver_admin','approver_amb','super_approver'].includes(role)) updateNavBadge(myPending.length)
 
   const overdue = active.filter(t => isOverdue(t))
   const next7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -1266,10 +1332,16 @@ async function renderDashboard() {
       const approvedNoDriver = active.filter(t => t.status==='approved')
       const assignedToday    = active.filter(t => t.status==='assigned')
       const onTrip           = T.filter(t => t.status==='on-trip')
-      const thisWeekDone     = done.filter(t => {
+      const thisWeekDone = done.filter(t => {
         if (!t.departure_at) return false
-        const w = new Date(); w.setDate(w.getDate()-7)
-        return new Date(t.departure_at) >= w
+        // Start of current week = Monday 12:00AM PHT
+        const now = new Date()
+        const dayOfWeek = now.getDay() // 0=Sun, 1=Mon...6=Sat
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Sunday = 6 days back
+        const monday = new Date(now)
+        monday.setDate(now.getDate() - daysFromMonday)
+        monday.setHours(0, 0, 0, 0)
+        return new Date(t.departure_at) >= monday
       })
 
       const approverActions = (t) => {
@@ -1304,8 +1376,8 @@ async function renderDashboard() {
 
       <!-- Stats -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">
-        <div style="background:${pending.length?'#fef9eb':'var(--card)'};border:1px solid ${pending.length?'#fde68a':'var(--border)'};border-radius:12px;padding:12px;text-align:center">
-          <div style="font-size:26px;font-weight:800;color:${pending.length?'#92400e':'var(--text2)'}">${pending.length}</div>
+        <div style="background:${myPending.length?'#fef9eb':'var(--card)'};border:1px solid ${myPending.length?'#fde68a':'var(--border)'};border-radius:12px;padding:12px;text-align:center">
+          <div style="font-size:26px;font-weight:800;color:${myPending.length?'#92400e':'var(--text2)'}">${myPending.length}</div>
           <div style="font-size:10px;font-weight:600;color:var(--text3)">Pending approval</div>
         </div>
         <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center">
@@ -1325,8 +1397,8 @@ async function renderDashboard() {
       <!-- Tabs -->
       <div style="display:flex;gap:4px;background:var(--bg);border-radius:12px;padding:4px;margin-bottom:14px">
         ${[
-          ['today',   'Today',        active.length + pending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd}).length + onTrip.length, pending.length > 0],
-          ['pending', 'Needs action', pending.length, pending.length > 0],
+          ['today',   'Today',        (myPending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd}).length + approvedNoDriver.length + assignedToday.length + onTrip.length), myPending.length > 0],
+          ['pending', 'Needs action', myPending.length, myPending.length > 0],
           ['upcoming','Upcoming',     scheduled.length, false],
           ['done',    'Done',         thisWeekDone.length, false],
         ].map(([id,lbl,cnt,urgent]) => {
@@ -1340,7 +1412,7 @@ async function renderDashboard() {
       <!-- Today Panel -->
       <div data-kbPanel="today">
         ${(()=>{
-          const pendingToday = pending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd})
+          const pendingToday = myPending.filter(t=>{const d=t.departure_at?new Date(t.departure_at):null;return!d||d<=todayEnd})
           const col1 = [...pendingToday,...approvedNoDriver]
           const col2 = assignedToday
           const col3 = onTrip
@@ -1356,8 +1428,9 @@ async function renderDashboard() {
 
       <!-- Pending Panel -->
       <div data-kbPanel="pending" style="display:none">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:10px">${pending.length} ticket${pending.length!==1?'s':''} awaiting your action — oldest first</div>
-        ${pending.length?pending.map(t=>tripCard(t,approverActions(t))).join(''):emptyCol('✅ No pending approvals!')}
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px">${myPending.length} ticket${myPending.length!==1?'s':''} awaiting your action — oldest first${pending.length>myPending.length?` <span style="color:var(--text3)">(${pending.length-myPending.length} other-type shown below, view-only)</span>`:''}</div>
+        ${myPending.length?myPending.map(t=>tripCard(t,approverActions(t))).join(''):emptyCol('✅ No pending approvals for you!')}
+        ${pending.length>myPending.length?pending.filter(t=>!myPending.includes(t)).map(t=>tripCard(t,approverActions(t))).join(''):''}
       </div>
 
       <!-- Upcoming Panel -->
@@ -1690,7 +1763,7 @@ async function renderDashboard() {
 let _tickets = [], _drivers = [], _vehicles = []
 
 async function renderTickets() {
-  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>`
+  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">${hourglass()}<div style="margin-top:10px">Loading...</div></div>`
   const role = currentProfile?.role
   // Build query filtered by role
   let tripsQuery = SB.from('trips').select('*,vehicle:vehicles(id,plate,type,name)').order('created_at',{ascending:false})
@@ -1705,9 +1778,17 @@ async function renderTickets() {
     SB.from('vehicles').select('*').neq('status','maintenance')
   ])
   _tickets = trips || []; _drivers = drvs || []; _vehicles = vehs || []
-  // Only admin/approver see the pending badge count
-  if (['admin','approver_admin','approver_amb'].includes(role))
-    updateNavBadge(_tickets.filter(t=>t.status==='pending-approval').length)
+  // Badge counts ONLY what this role can act on (role-scoped)
+  if (['admin','approver_admin','approver_amb','super_approver'].includes(role)) {
+    const myPend = (_tickets||[]).filter(t => {
+      if (t.status !== 'pending-approval') return false
+      if (role === 'admin' || role === 'super_approver') return true
+      if (role === 'approver_admin') return t.vehicle_type_needed !== 'ambulance'
+      if (role === 'approver_amb')   return t.vehicle_type_needed === 'ambulance'
+      return false
+    })
+    updateNavBadge(myPend.length)
+  }
   renderTicketsTable()
 }
 
@@ -1865,7 +1946,7 @@ function renderTicketsTable() {
         acts.push(`<button class="tbl-act tbl-act-purple" onclick="event.stopPropagation();openGateInModal('${t.id}','${t.ticket_no}','${(t.destination||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}','${t.driver_id||''}')">Gate In</button>`)
       if ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && t.status==='pending-approval' && t.requester_id===currentProfile?.id)
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
-      if ((role==='admin' || role==='super_approver') && !['completed','cancelled'].includes(t.status))
+      if ((role==='admin' || role==='super_approver' || (role==='approver_admin' && t.vehicle_type_needed!=='ambulance') || (role==='approver_amb' && t.vehicle_type_needed==='ambulance')) && !['completed','cancelled'].includes(t.status))
         acts.push(`<button class="tbl-act tbl-act-amber" onclick="event.stopPropagation();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">Cancel</button>`)
       // Trip Pool — only show if this ticket's date has 2+ poolable tickets
       if (['admin','super_approver','approver_admin','approver_amb'].includes(role) && ['approved','assigned'].includes(t.status) && !t.pool_id) {
@@ -2148,8 +2229,10 @@ function buildMobCards(filtered, role) {
       (role==='approver_amb' && t.vehicle_type_needed==='ambulance')
     )
     const canCancel = (
-      ((role==='requester' || role==='approver_admin' || role==='approver_amb' || role==='super_approver') && isPending && isOwnTicket) ||
-      ((role==='admin' || role==='super_approver') && !isCompleted && !isCancelled)
+      (role==='requester' && isPending && isOwnTicket) ||
+      ((role==='admin' || role==='super_approver') && !isCompleted && !isCancelled) ||
+      (role==='approver_admin' && t.vehicle_type_needed!=='ambulance' && !isCompleted && !isCancelled) ||
+      (role==='approver_amb' && t.vehicle_type_needed==='ambulance' && !isCompleted && !isCancelled)
     )
 
     // Status color for left border
@@ -2252,7 +2335,7 @@ async function openViewModal(id) {
   ])
   if (!t) return
   const fields = [
-    ['Department',t.department],['Requester',t.requester_name],
+    ['Department',t.department],['Requester',t.requester_name + (t.template_id ? ' <span style="background:var(--pri-s);color:var(--pri);border-radius:20px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:4px">🔁 Recurring Auto</span>' : '')],
     ['Purpose',t.purpose,'span2'],
     ['Route', (() => {
       const s = t.stops && Array.isArray(t.stops) && t.stops.length > 0 ? t.stops : (t.destination ? [t.destination] : [])
@@ -2284,6 +2367,8 @@ async function openViewModal(id) {
     ...(t.odometer_out&&t.odometer_in?[['Distance',`${t.odometer_in-t.odometer_out} km`]]:[]),
     ...(t.fuel_consumed_liters?[['Fuel Used', t.fuel_consumed_liters + 'L' + (t.fuel_cost ? ' — ₱' + parseFloat(t.fuel_cost).toLocaleString('en-PH',{minimumFractionDigits:2}) : '')]]:[]),
     ...(t.remarks?[['Remarks',t.remarks,'span2']]:[]),
+    ...(t.status==='rejected' && t.rejection_reason ? [['❌ Rejection Reason', `<span style="color:var(--red);font-weight:600">${t.rejection_reason}</span>`, 'span2']] : []),
+    ...(t.status==='cancelled' && t.rejection_reason ? [['🚫 Cancellation Reason', `<span style="color:var(--amber);font-weight:600">${t.rejection_reason}</span>`, 'span2']] : []),
   ]
 
   // Rating display for completed trips
@@ -2314,15 +2399,174 @@ async function openViewModal(id) {
      ${ratingHTML}
      <div style="font-size:10.5px;color:var(--text3);margin-top:13px">Created: ${fmtDT(t.created_at)} · Approver: ${t.vehicle_type_needed==='ambulance'?'Ambulance Approver':'Admin Approver'}</div>`,
     // Footer buttons
-    `${(['admin','super_approver','approver_admin','approver_amb'].includes(currentProfile?.role) && t.status === 'assigned' && (currentProfile?.role==='admin'||currentProfile?.role==='super_approver'||(currentProfile?.role==='approver_admin'&&t.vehicle_type_needed!=='ambulance')||(currentProfile?.role==='approver_amb'&&t.vehicle_type_needed==='ambulance')))
-      ? `<button class="btn" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.25)" onclick="closeMO();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${(t.driver_name||'').replace(/'/g,"\\'")}','${t.driver_id||''}','${(t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")}','${t.vehicle_id||''}')">↻ Reassign</button>`
-      : ''}`
+    (() => {
+      const r = currentProfile?.role
+      const btns = []
+
+      // Approve + Reject (pending)
+      if (t.status === 'pending-approval' && (
+        r==='admin' || r==='super_approver' ||
+        (r==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (r==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      )) {
+        btns.push(`<button class="btn btn-green" onclick="closeMO();openApproveModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">✓ Approve</button>`)
+        btns.push(`<button class="btn btn-red"   onclick="closeMO();openRejectModal('${t.id}','${t.ticket_no}')">✕ Reject</button>`)
+      }
+
+      // Assign Driver (approved, no driver yet)
+      if (t.status === 'approved' && (
+        r==='admin' || r==='super_approver' ||
+        (r==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (r==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      )) {
+        btns.push(`<button class="btn btn-pri" onclick="closeMO();openAssignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}')">+ Assign Driver</button>`)
+      }
+
+      // Reassign (already assigned)
+      if (t.status === 'assigned' && (
+        r==='admin' || r==='super_approver' ||
+        (r==='approver_admin' && t.vehicle_type_needed!=='ambulance') ||
+        (r==='approver_amb'   && t.vehicle_type_needed==='ambulance')
+      )) {
+        const dn = (t.driver_name||'').replace(/'/g,"\\'")
+        const vn = (t.vehicle_name||t.vehicle_plate||'').replace(/'/g,"\\'")
+        btns.push(`<button class="btn" style="background:var(--purple-s);color:var(--purple);border:1px solid rgba(124,58,237,.25)" onclick="closeMO();openReassignModal('${t.id}','${t.ticket_no}','${t.vehicle_type_needed}','${dn}','${t.driver_id||''}','${vn}','${t.vehicle_id||''}')">↻ Reassign</button>`)
+      }
+
+      // Guard manifest editor
+      if (r === 'guard' && !['completed','cancelled','rejected'].includes(t.status)) {
+        btns.push(`<button class="btn btn-ghost" onclick="closeMO();openManifestEditor('${t.id}','${t.ticket_no}')">✏ Edit Manifest</button>`)
+      }
+
+      // Cancel ticket
+      if (!['completed','cancelled','rejected'].includes(t.status) && (
+        r === 'admin' || r === 'super_approver' ||
+        (r === 'approver_admin' && t.vehicle_type_needed !== 'ambulance') ||
+        (r === 'approver_amb' && t.vehicle_type_needed === 'ambulance')
+      )) {
+        btns.push(`<button class="btn btn-amber btn-sm" onclick="closeMO();cancelTicket('${t.id}','${t.ticket_no}','${t.driver_id||''}','${t.vehicle_id||''}')">✕ Cancel Trip</button>`)
+      }
+
+      // Correct gate data (guards + admin + approvers) — any ticket with gate data
+      if (['guard','admin','super_approver','approver_admin','approver_amb'].includes(r) && (t.gate_out_at || t.gate_in_at)) {
+        btns.push(`<button class="btn btn-ghost" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa" onclick="closeMO();openCorrectGateData('${t.id}','${t.ticket_no}')">✏ Correct Gate Data</button>`)
+      }
+
+      return btns.join('') || `<span></span>`
+    })()
   )
 }
 
 // ════════════════════════════════════════════════
 // GUARD — PASSENGER MANIFEST EDITOR
 // ════════════════════════════════════════════════
+async function openCorrectGateData(tripId, ticketNo) {
+  const { data: t } = await SB.from('trips').select('*').eq('id', tripId).single()
+  if (!t) { alert('Trip not found.'); return }
+
+  const hasOut = !!t.gate_out_at
+  const hasIn  = !!t.gate_in_at
+  const condOpts = (sel) => ['Good','Fair','Needs Attention','Damaged'].map(c=>`<option value="${c}"${sel===c?' selected':''}>${c}</option>`).join('')
+
+  openMO(`✏ Correct Gate Data — ${ticketNo}`,
+    `<div class="info info-amber" style="margin-bottom:14px;font-size:12px">
+       <strong>Correcting recorded gate data.</strong><br>
+       <span style="font-size:11px">Use this to fix wrong odometer, fuel, or condition entries. Distance auto-recalculates. All changes are logged.</span>
+     </div>
+
+     ${hasOut ? `
+     <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
+       <div style="font-size:11px;font-weight:800;color:var(--pri);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🚀 Gate-Out Data</div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Odometer Out (km)</label><input class="fi" type="number" id="cgOdoOut" value="${t.odometer_out??''}"></div>
+         <div class="fg"><label class="fl">Fuel Out</label><input class="fi" id="cgFuelOut" value="${(t.fuel_out||'').replace(/"/g,'&quot;')}" placeholder="e.g. Full, 3/4, 1/2"></div>
+       </div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Condition Out</label><select class="fs" id="cgCondOut">${condOpts(t.condition_out)}</select></div>
+         <div class="fg"><label class="fl">Gate-Out Remarks</label><input class="fi" id="cgRemOut" value="${(t.guard_out_remarks||'').replace(/"/g,'&quot;')}"></div>
+       </div>
+     </div>` : ''}
+
+     ${hasIn ? `
+     <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
+       <div style="font-size:11px;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">← Gate-In Data</div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Odometer In (km)</label><input class="fi" type="number" id="cgOdoIn" value="${t.odometer_in??''}"></div>
+         <div class="fg"><label class="fl">Fuel In</label><input class="fi" id="cgFuelIn" value="${(t.fuel_in||'').replace(/"/g,'&quot;')}" placeholder="e.g. Full, 3/4, 1/2"></div>
+       </div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Condition In</label><select class="fs" id="cgCondIn">${condOpts(t.condition_in)}</select></div>
+         <div class="fg"><label class="fl">Fuel Consumed (L)</label><input class="fi" type="number" step="0.1" id="cgFuelL" value="${t.fuel_consumed_liters??''}"></div>
+       </div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Fuel Price/Liter (₱)</label><input class="fi" type="number" step="0.01" id="cgFuelP" value="${t.fuel_price_per_liter??''}"></div>
+         <div class="fg"><label class="fl">Gate-In Remarks</label><input class="fi" id="cgRemIn" value="${(t.guard_in_remarks||'').replace(/"/g,'&quot;')}"></div>
+       </div>
+     </div>` : ''}
+
+     <div class="fg"><label class="fl">Correction Reason *</label>
+       <textarea class="ft" id="cgReason" placeholder="e.g. Wrong odometer entered during gate-out, corrected to actual reading..." style="min-height:50px"></textarea>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="cgBtn" onclick="doCorrectGateData('${tripId}','${ticketNo}')">Save Corrections</button>`,
+    { confirmClose: true }
+  )
+}
+
+async function doCorrectGateData(tripId, ticketNo) {
+  const reason = document.getElementById('cgReason')?.value.trim()
+  if (!reason) { alert('Please provide a reason for the correction.'); return }
+  const btn = document.getElementById('cgBtn'); btn.disabled=true; btn.textContent='Saving...'
+
+  // Fetch current values for the audit diff
+  const { data: old } = await SB.from('trips').select('odometer_out,odometer_in,fuel_out,fuel_in,condition_out,condition_in,fuel_consumed_liters,fuel_price_per_liter,guard_out_remarks,guard_in_remarks').eq('id', tripId).single()
+
+  const g = (id) => document.getElementById(id)
+  const payload = {}
+  const changes = []
+  const setNum = (elId, field, label) => {
+    const el = g(elId); if (!el) return
+    const v = el.value === '' ? null : Number(el.value)
+    if (v !== old[field]) { payload[field] = v; changes.push(`${label}: ${old[field]??'—'} → ${v??'—'}`) }
+  }
+  const setTxt = (elId, field, label) => {
+    const el = g(elId); if (!el) return
+    const v = el.value.trim() || null
+    if (v !== (old[field]||null)) { payload[field] = v; changes.push(`${label}: ${old[field]||'—'} → ${v||'—'}`) }
+  }
+
+  setNum('cgOdoOut','odometer_out','Odo-Out')
+  setNum('cgOdoIn','odometer_in','Odo-In')
+  setTxt('cgFuelOut','fuel_out','Fuel-Out')
+  setTxt('cgFuelIn','fuel_in','Fuel-In')
+  setTxt('cgCondOut','condition_out','Cond-Out')
+  setTxt('cgCondIn','condition_in','Cond-In')
+  setNum('cgFuelL','fuel_consumed_liters','Fuel-L')
+  setNum('cgFuelP','fuel_price_per_liter','Fuel-Price')
+  setTxt('cgRemOut','guard_out_remarks','Remarks-Out')
+  setTxt('cgRemIn','guard_in_remarks','Remarks-In')
+
+  // Recompute fuel_cost if fuel liters or price changed
+  if ('fuel_consumed_liters' in payload || 'fuel_price_per_liter' in payload) {
+    const liters = 'fuel_consumed_liters' in payload ? payload.fuel_consumed_liters : old.fuel_consumed_liters
+    const price  = 'fuel_price_per_liter' in payload ? payload.fuel_price_per_liter : old.fuel_price_per_liter
+    if (liters != null && price != null) payload.fuel_cost = +(liters * price).toFixed(2)
+  }
+
+  if (!Object.keys(payload).length) { alert('No changes made.'); btn.disabled=false; btn.textContent='Save Corrections'; return }
+
+  // NOTE: distance_km is GENERATED — never include it; DB auto-recomputes from odometer_out/in
+  const { error } = await SB.from('trips').update(payload).eq('id', tripId)
+  if (error) { alert('Error: ' + error.message); btn.disabled=false; btn.textContent='Save Corrections'; return }
+
+  await addAudit(tripId, ticketNo, '✏ Gate Data Corrected',
+    `${changes.join(' | ')} | Reason: ${reason} | By: ${currentProfile?.full_name}`)
+
+  closeMO()
+  alert(`✅ Gate data corrected for ${ticketNo}.`)
+  renderTickets()
+}
+
 async function openManifestEditor(tripId, ticketNo) {
   // Fetch current passengers
   const { data: passengers } = await SB.from('trip_passengers')
@@ -2430,7 +2674,7 @@ async function openApproveModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
   const role   = currentProfile?.role
-  const canLastResort = ['admin','approver_admin','approver_amb'].includes(role)
+  const canLastResort = ['admin','approver_admin','super_approver'].includes(role)
 
   // Fetch ticket details + all needed data in parallel
   const [
@@ -2553,7 +2797,7 @@ async function openApproveModal(id, ticketNo, vtype) {
         <span style="color:var(--text3);margin-left:6px">${new Date(t.departure_at).toLocaleString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})}</span>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">👤 ${t.driver_name||'—'} · 🚗 ${t.vehicle_plate||'—'}</div>
       </div>
-      <button class="btn btn-pri btn-sm" onclick="doApproveAndPool('${id}','${ticketNo}','${t.pool_id}','${t.driver_id}','${t.driver_name}','${t.vehicle_id}','${t.vehicle_plate}','${t.vehicle_name}')">
+      <button class="btn btn-pri btn-sm" onclick="doApproveAndPool('${id}','${ticketNo}','${t.pool_id}','${t.driver_id}','${t.driver_name}','${t.vehicle_id}','${t.vehicle_plate}','${t.vehicle_name}', this)">
         🚌 Approve + Add to Pool
       </button>
     </div>`).join('<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">')}
@@ -2896,11 +3140,12 @@ async function doApproveAndAssign(id, ticketNo) {
 
   // Notifications
   const vehiclePlate = _vehicles.find(v => v.id === vv)?.plate || ''
+  const vehicleName  = vehicle?.name || vehiclePlate
   const { data: driverRow } = await SB.from('drivers').select('phone,user_id').eq('id', driverId).single()
 
   // SMS → driver (time-critical)
   if (driverRow?.phone) await sendSMS([driverRow.phone],
-    `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${trip?.purpose||''}\nDestination: ${trip?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(trip?.departure_at)}\nPlease report to the motor pool.`
+    `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${trip?.purpose||''}\nDestination: ${trip?.destination||''}\nVehicle: ${vehicle?.name||vehicle?.plate||'—'} (${vehicle?.plate||'—'})\nDeparture: ${fmtDT(trip?.departure_at)}\nPlease report to the motor pool.`
   )
   // Email → driver
   if (driverRow?.user_id) {
@@ -2924,9 +3169,39 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
 
+  // Always fetch FRESH drivers and vehicles — so status (available/on-trip) and
+  // newly-added relievers are current, not stale from the tickets page cache
+  {
+    const [{ data: drvs }, { data: vehs }] = await Promise.all([
+      SB.from('drivers').select('*').order('full_name'),
+      SB.from('vehicles').select('*').order('name')
+    ])
+    if (drvs) _drivers = drvs
+    if (vehs) _vehicles = vehs
+  }
+
   const { data: tripData } = await SB.from('trips')
-    .select('departure_at,expected_return_at')
+    .select('departure_at,expected_return_at,pool_id,driver_id,driver_name,vehicle_id,vehicle_plate,vehicle_name,status')
     .eq('id', id).single()
+
+  // GUARD: reassign only allowed before gate-out
+  if (tripData && tripData.status !== 'assigned') {
+    openMO('⚠ Cannot Reassign',
+      `<div class="info info-amber">
+        <strong>This ticket can no longer be reassigned.</strong><br>
+        <span style="font-size:12px">Current status: <strong>${tripData.status}</strong>. Reassignment is only allowed before the vehicle has gated out.</span>
+      </div>`,
+      `<button class="btn btn-pri" onclick="closeMO()">OK</button>`)
+    return
+  }
+
+  // Use LIVE current driver/vehicle from DB — never trust passed-in params (may be stale)
+  curDriverId   = tripData?.driver_id   || curDriverId
+  curDriverName = tripData?.driver_name || curDriverName
+  curVehicleId  = tripData?.vehicle_id  || curVehicleId
+  curVehicleName = tripData?.vehicle_name || tripData?.vehicle_plate || curVehicleName
+
+  window._rsaPoolId = tripData?.pool_id || null
 
   const depISO = tripData?.departure_at || new Date().toISOString()
   const retISO = tripData?.expected_return_at || new Date(new Date(depISO).getTime() + 4*3600000).toISOString()
@@ -2966,20 +3241,31 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
 
   const buildDriverOpts = (typeOverride) => {
     const isA = typeOverride === 'ambulance'
-    return (_drivers||[]).filter(d => {
-      if (d.status === 'off-duty') return false
+    const isM = typeOverride === 'motorcycle'
+    const typeLabel = isA ? 'ambulance' : isM ? 'motorcycle' : 'regular'
+    // Is this driver the right type for the ticket?
+    const matchesType = (d) => {
       const dt = d.driver_type || 'regular'
       if (dt === 'both') return true
       if (isA) return dt === 'ambulance'
+      if (isM) return dt === 'regular'   // motorcycle handled by regular drivers
       return dt === 'regular'
-    }).map(d => {
-      const busy = busyDIds.has(d.id) && d.id !== curDriverId
+    }
+    const pool = (_drivers||[]).filter(d => d.status !== 'off-duty' && d.id !== curDriverId)
+    const mkOpt = (d, offType) => {
+      const busy = busyDIds.has(d.id)
       const lbl  = busyDLabel[d.id]
-      const cur  = d.id === curDriverId
-      return `<option value="${d.id}|${d.full_name}"${cur?' style="font-weight:700;color:var(--pri)"':''}>
-        ${cur?'★ (Current) ':''}${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ Busy: '+lbl:''}
-      </option>`
-    }).join('')
+      const typeTag = offType ? ` 🔸${d.driver_type||'regular'}` : ''
+      return `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}${typeTag}${busy&&lbl?' ⚠ Busy: '+lbl:''}</option>`
+    }
+    const matched = pool.filter(matchesType)
+    const others  = pool.filter(d => !matchesType(d))
+    let html = matched.map(d => mkOpt(d, false)).join('')
+    if (others.length) {
+      html += `<option disabled>──── Other driver types (off-${typeLabel}) ────</option>`
+      html += others.map(d => mkOpt(d, true)).join('')
+    }
+    return html
   }
 
   const buildVehicleOpts = (typeOverride) => {
@@ -2987,16 +3273,16 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
     const isM = typeOverride === 'motorcycle'
     return (_vehicles||[]).filter(v => {
       if (v.status === 'maintenance') return false
+      if (v.id === curVehicleId) return false  // exclude current vehicle
       const t = (v.type||'').toLowerCase()
       if (isA) return t.includes('ambulance') || t.includes('bls')
       if (isM) return t.includes('motorcycle')
       return !t.includes('ambulance') && !t.includes('motorcycle')
     }).map(v => {
-      const busy = busyVIds.has(v.id) && v.id !== curVehicleId
+      const busy = busyVIds.has(v.id)
       const lbl  = busyVLabel[v.id]
-      const cur  = v.id === curVehicleId
-      return `<option value="${v.id}"${cur?' style="font-weight:700;color:var(--pri)"':''}>
-        ${cur?'★ (Current) ':''}${v.name||v.plate} — ${v.plate}${busy&&lbl?' ⚠ Busy: '+lbl:''}
+      return `<option value="${v.id}">
+        ${v.name||v.plate} — ${v.plate}${busy&&lbl?' ⚠ Busy: '+lbl:''}
       </option>`
     }).join('')
   }
@@ -3013,13 +3299,50 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
     window._rsaVtypeOverride = override
   }
 
+  // Store data for pull-regular-driver toggle (ambulance reassign)
+  window._rsaBusyDIds    = busyDIds
+  window._rsaBusyDLabel  = busyDLabel
+  window._rsaCurDriverId = curDriverId
+  window.rsaTogglePullRegular = () => {
+    const checked = document.getElementById('rsaPullRegular')?.checked
+    const sel = document.getElementById('rsaDrv')
+    if (!sel) return
+    const optHTML = (d, isPulled) => {
+      const busy = busyDIds.has(d.id)
+      const lbl  = busyDLabel[d.id]
+      return `<option value="${d.id}|${d.full_name}">${isPulled?'🚙 ':''}${d.full_name} · ${d.license_no||'—'}${isPulled?' (Regular)':''}${busy&&lbl?' ⚠ Busy: '+lbl:''}</option>`
+    }
+    const ambDrivers = (_drivers||[]).filter(d => {
+      if (d.status === 'off-duty' || d.id === curDriverId) return false
+      const dt = d.driver_type || 'regular'
+      return dt === 'ambulance' || dt === 'both'
+    })
+    const regDrivers = (_drivers||[]).filter(d => {
+      if (d.status === 'off-duty' || d.id === curDriverId) return false
+      return (d.driver_type || 'regular') === 'regular'
+    })
+    let html = '<option value="">-- Select New Driver --</option>' + ambDrivers.map(d=>optHTML(d,false)).join('')
+    if (checked) {
+      html += '<option disabled>──── Regular Drivers (pulled) ────</option>' + regDrivers.map(d=>optHTML(d,true)).join('')
+    }
+    sel.innerHTML = html
+  }
+
   const depStr = tripData?.departure_at
     ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
     : '—'
 
   const canOverrideType = ['admin','approver_admin','super_approver'].includes(currentProfile?.role) && vtype !== 'ambulance'
 
+  const poolInfo = window._rsaPoolId
+    ? `<div class="info info-purple" style="margin-bottom:14px">
+        <strong>🚌 This is a pooled trip.</strong><br>
+        <span style="font-size:12px">Reassigning will update the driver and vehicle for <strong>ALL tickets</strong> in this pool at once.</span>
+      </div>`
+    : ''
+
   openMO(`↻ Reassign — ${ticketNo}`,
+    poolInfo +
     `<div class="info info-amber" style="margin-bottom:14px">
        <strong>⚠ Reassigning an already-assigned ticket.</strong><br>
        <span style="font-size:11px">The current driver and vehicle will be released back to available status. Old driver will be notified via SMS.</span>
@@ -3043,20 +3366,24 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
        </div>
      </div>
 
-     <div class="fg"><label class="fl">New Driver *
-       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — busy drivers shown with ⚠</span>
+     <div class="info info-blue" style="margin-bottom:12px;font-size:11.5px">
+       💡 Change the driver, the vehicle, or both. Leave one unchanged to keep the current assignment.
+     </div>
+
+     <div class="fg"><label class="fl">New Driver
+       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — leave blank to keep current · busy shown with ⚠</span>
      </label>
        <select class="fs" id="rsaDrv">
-         <option value="">-- Select New Driver --</option>
+         <option value="">-- Keep current driver --</option>
          ${buildDriverOpts(vtype)}
        </select>
      </div>
 
-     <div class="fg"><label class="fl">New Vehicle *
-       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — busy vehicles shown with ⚠</span>
+     <div class="fg"><label class="fl">New Vehicle
+       <span style="font-size:10px;font-weight:400;color:var(--text3)"> — leave blank to keep current · busy shown with ⚠</span>
      </label>
        <select class="fs" id="rsaVeh">
-         <option value="">-- Select New Vehicle --</option>
+         <option value="">-- Keep current vehicle --</option>
          ${buildVehicleOpts(vtype)}
        </select>
      </div>
@@ -3074,15 +3401,40 @@ async function openReassignModal(id, ticketNo, vtype, curDriverName, curDriverId
 }
 
 async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
-  const dv     = document.getElementById('rsaDrv')?.value
-  const vv     = document.getElementById('rsaVeh')?.value
+  const dvRaw  = document.getElementById('rsaDrv')?.value
+  const vvRaw  = document.getElementById('rsaVeh')?.value
   const reason = document.getElementById('rsaReason')?.value?.trim()
 
-  if (!dv || !vv)    { alert('Please select both a new driver and vehicle.'); return }
-  if (!reason)       { alert('Please provide a reason for the reassignment.'); return }
+  // At least one of driver/vehicle must change — the other defaults to current
+  if (!dvRaw && !vvRaw) { alert('Please select a new driver and/or a new vehicle to reassign.'); return }
+  if (!reason)          { alert('Please provide a reason for the reassignment.'); return }
 
-  const [newDriverId, newDriverName] = dv.split('|')
+  // Resolve new driver — blank keeps the current driver
+  let newDriverId, newDriverName
+  if (dvRaw) {
+    [newDriverId, newDriverName] = dvRaw.split('|')
+  } else {
+    newDriverId   = curDriverId
+    newDriverName = _drivers.find(d => d.id === curDriverId)?.full_name || 'Current driver'
+  }
+
+  // Resolve new vehicle — blank keeps the current vehicle
+  const vv = vvRaw || curVehicleId
   const newVehicle = _vehicles.find(v => v.id === vv)
+
+  // Guard: if both resolve to the current values, nothing changed
+  if (newDriverId === curDriverId && vv === curVehicleId) {
+    alert('No change — please select a different driver or vehicle.'); return
+  }
+
+  // Explicit confirmation — show what changes vs stays
+  const newVehLabel = newVehicle ? `${newVehicle.name||newVehicle.plate} (${newVehicle.plate})` : vv
+  const drvLine = newDriverId === curDriverId ? `👤 Driver: ${newDriverName} (unchanged)` : `👤 New Driver: ${newDriverName}`
+  const vehLine = vv === curVehicleId         ? `🚗 Vehicle: ${newVehLabel} (unchanged)`   : `🚗 New Vehicle: ${newVehLabel}`
+  if (!confirm(`Confirm reassignment of ${ticketNo}:\n\n${drvLine}\n${vehLine}\n\nProceed?`)) {
+    return
+  }
+
   const btn = document.getElementById('rsaBtn')
   btn.disabled=true; btn.textContent='Reassigning...'
 
@@ -3129,7 +3481,77 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
     }
   }
 
-  // Atomic reassign via DB function
+  // Check if this ticket is part of a pool
+  const { data: poolCheck } = await SB.from('trips').select('pool_id').eq('id', id).single()
+  const poolId = poolCheck?.pool_id
+
+  if (poolId) {
+    // POOL REASSIGN — update ALL tickets in the pool + trip_pools record
+    const { data: poolTickets } = await SB.from('trips')
+      .select('id,ticket_no,driver_id,vehicle_id')
+      .eq('pool_id', poolId)
+
+    const ticketNos = (poolTickets||[]).map(t => t.ticket_no).join(', ')
+    const ticketIds = (poolTickets||[]).map(t => t.id)
+
+    // Batch update all pool tickets
+    await SB.from('trips').update({
+      driver_id:     newDriverId,
+      driver_name:   newDriverName,
+      vehicle_id:    vv,
+      vehicle_plate: newVehicle?.plate || '',
+      vehicle_name:  newVehicle?.name  || '',
+      assigned_by:   currentProfile?.id,
+      assigned_at:   new Date().toISOString()
+    }).eq('pool_id', poolId)
+
+    // Update trip_pools record
+    await SB.from('trip_pools').update({
+      driver_id:    newDriverId,
+      driver_name:  newDriverName,
+      vehicle_id:   vv,
+      vehicle_plate: newVehicle?.plate || '',
+      vehicle_name:  newVehicle?.name  || ''
+    }).eq('id', poolId)
+
+    // Release old driver + vehicle → available
+    if (curDriverId && curDriverId !== newDriverId)
+      await SB.from('drivers').update({ status:'available' }).eq('id', curDriverId)
+    if (curVehicleId && curVehicleId !== vv)
+      await SB.from('vehicles').update({ status:'available' }).eq('id', curVehicleId)
+
+    // Set new driver + vehicle → on-trip
+    if (newDriverId !== curDriverId)
+      await SB.from('drivers').update({ status:'on-trip' }).eq('id', newDriverId)
+    if (vv !== curVehicleId)
+      await SB.from('vehicles').update({ status:'on-trip' }).eq('id', vv)
+
+    // Audit log for the pool
+    const changes = []
+    if (newDriverId !== curDriverId) changes.push(`Driver: ${_drivers.find(d=>d.id===curDriverId)?.full_name||curDriverId} → ${newDriverName}`)
+    if (vv !== curVehicleId)         changes.push(`Vehicle: ${_vehicles.find(v=>v.id===curVehicleId)?.plate||curVehicleId} → ${newVehicle?.plate||vv}`)
+    await addAudit(poolTickets?.[0]?.id, ticketNos,
+      '↻ Pool Reassigned',
+      `${changes.join(' | ')} | All ${(poolTickets||[]).length} pool tickets updated | Reason: ${reason} | By: ${currentProfile?.full_name}`)
+
+    // SMS old driver
+    if (curDriverId && curDriverId !== newDriverId) {
+      const { data: oldDrv } = await SB.from('drivers').select('phone').eq('id', curDriverId).single()
+      if (oldDrv?.phone) await sendSMS([oldDrv.phone], `[TDMH VTS] You have been UNASSIGNED from pool trip.\nTickets: ${ticketNos}\nReason: ${reason}`)
+    }
+    // SMS new driver
+    if (newDriverId !== curDriverId) {
+      const { data: newDrv } = await SB.from('drivers').select('phone').eq('id', newDriverId).single()
+      const dep = tripData?.departure_at ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
+      if (newDrv?.phone) await sendSMS([newDrv.phone], `[TDMH VTS] POOL TRIP ASSIGNMENT\nTickets: ${ticketNos}\nVehicle: ${newVehicle?.name||newVehicle?.plate||'—'} (${newVehicle?.plate||'—'})\nDeparture: ${dep}\nReport to motor pool.`)
+    }
+
+    closeMO(true)
+    renderTickets()
+    return
+  }
+
+  // SINGLE TICKET REASSIGN (non-pool) — atomic via DB function
   const { data: result, error: rErr } = await SB.rpc('reassign_trip_atomic', {
     p_trip_id:          id,
     p_admin_id:         currentProfile?.id,
@@ -3175,12 +3597,12 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
   if (vv !== curVehicleId)
     await SB.from('vehicles').update({ status:'on-trip' }).eq('id', vv)
 
-  // Audit log
-  const oldDriverName = _drivers.find(d=>d.id===curDriverId)?.full_name || curDriverId
-  const oldVehicleName = _vehicles.find(v=>v.id===curVehicleId)?.plate || curVehicleId
+  // Audit log — use the TRUE old driver/vehicle from the atomic function's locked row
+  const oldDriverName = res.old_driver_name || _drivers.find(d=>d.id===oldDriverId)?.full_name || oldDriverId
+  const oldVehicleName = _vehicles.find(v=>v.id===oldVehicleId)?.plate || oldVehicleId
   const changes = []
-  if (newDriverId !== curDriverId)  changes.push(`Driver: ${oldDriverName} → ${newDriverName}`)
-  if (vv !== curVehicleId)          changes.push(`Vehicle: ${oldVehicleName} → ${newVehicle?.plate||vv}`)
+  if (newDriverId !== oldDriverId)  changes.push(`Driver: ${oldDriverName} → ${newDriverName}`)
+  if (vv !== oldVehicleId)          changes.push(`Vehicle: ${oldVehicleName} → ${newVehicle?.plate||vv}`)
   await addAudit(id, ticketNo, '↻ Reassigned', `${changes.join(' | ')} | Reason: ${reason} | By: ${currentProfile?.full_name}`)
 
   // Notify old driver via SMS (if changed and has phone)
@@ -3193,7 +3615,7 @@ async function doReassign(id, ticketNo, curDriverId, curVehicleId) {
   if (newDriverId !== curDriverId) {
     const { data: newDrv } = await SB.from('drivers').select('phone').eq('id', newDriverId).single()
     const dep = tripData?.departure_at ? new Date(tripData.departure_at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
-    if (newDrv?.phone) await sendSMS([newDrv.phone], `[TDMH VTS] You have been ASSIGNED to trip ${ticketNo}.\nVehicle: ${newVehicle?.plate||'—'}\nDeparture: ${dep}\nPlease report to the motor pool.`)
+    if (newDrv?.phone) await sendSMS([newDrv.phone], `[TDMH VTS] You have been ASSIGNED to trip ${ticketNo}.\nVehicle: ${newVehicle?.name||newVehicle?.plate||'—'} (${newVehicle?.plate||'—'})\nDeparture: ${dep}\nPlease report to the motor pool.`)
   }
 
   closeMO(true)
@@ -3471,7 +3893,7 @@ async function doFormPool() {
   const { data: drvRow } = await SB.from('drivers').select('phone').eq('id',driverId).single()
   const depStr = new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'})
   if (drvRow?.phone) {
-    await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL ASSIGNMENT\nPool: ${pool_no}\nTickets: ${checked.length} departments\nDeparture: ${depStr}\nVehicle: ${vehicle.plate||'—'}\n\nReport to motor pool for briefing.`)
+    await sendSMS([drvRow.phone], `[TDMH VTS] TRIP POOL ASSIGNMENT\nPool: ${pool_no}\nTickets: ${checked.length} departments\nDeparture: ${depStr}\nVehicle: ${vehicle.name||vehicle.plate||'—'} (${vehicle.plate||'—'})\n\nReport to motor pool for briefing.`)
   }
 
   // Email each requester — notify them their trip is now part of a pool
@@ -3679,7 +4101,6 @@ async function doPoolGateIn(poolId, ticketCount) {
       fuel_consumed_liters:  fuelLPerTicket,
       fuel_cost:             fuelPerTicket,
       fuel_price_per_liter:  fuelP || null,
-      distance_km:           distPerTicket,
       trip_duration_minutes: durationMins
     }).eq('pool_id', poolId)  // ← updates ALL tickets in pool at once
   ])
@@ -3746,8 +4167,9 @@ async function showPoolDetails(poolId) {
 }
 
 // Approve + immediately add to an existing trip pool — one click
-async function doApproveAndPool(id, ticketNo, poolId, driverId, driverName, vehicleId, vehiclePlate, vehicleName) {
+async function doApproveAndPool(id, ticketNo, poolId, driverId, driverName, vehicleId, vehiclePlate, vehicleName, btnEl) {
   if (!confirm(`Approve ${ticketNo} and add to existing Trip Pool?\n\nDriver: ${driverName}\nVehicle: ${vehiclePlate}\n\nThis ticket will share the same driver and vehicle.`)) return
+  if (btnEl) { if (btnEl.disabled) return; btnEl.disabled = true; btnEl.style.opacity='0.7'; btnEl.style.cursor='wait'; btnEl.textContent='Processing…' }
 
   const rem = document.getElementById('apRem')?.value || ''
   const approver = currentProfile
@@ -3853,33 +4275,44 @@ async function doReject(id, ticketNo) {
 // CANCEL TICKET
 async function cancelTicket(id, ticketNo, driverId, vehicleId) {
   openMO(`Cancel Ticket`,
-    `<div style="text-align:center;padding:8px 0">
-       <div style="font-size:40px;margin-bottom:12px">⚠️</div>
-       <div style="font-size:16px;font-weight:700;margin-bottom:8px">Cancel ${ticketNo}?</div>
-       <div style="font-size:13px;color:var(--text2)">This action cannot be undone. The ticket will be marked as cancelled.</div>
+    `<div style="text-align:center;padding:4px 0 12px">
+       <div style="font-size:40px;margin-bottom:8px">⚠️</div>
+       <div style="font-size:16px;font-weight:700;margin-bottom:6px">Cancel ${ticketNo}?</div>
+       <div style="font-size:13px;color:var(--text2)">This action cannot be undone. The requester will see the reason below.</div>
+     </div>
+     <div class="fg"><label class="fl">Reason for cancellation *</label>
+       <textarea class="ft" id="cancelReason" placeholder="e.g. Schedule changed, vehicle unavailable, duplicate request..." style="min-height:60px"></textarea>
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Keep Ticket</button>
-     <button class="btn btn-red" onclick="doCancelTicket('${id}','${ticketNo}','${driverId}','${vehicleId}')">Yes, Cancel Ticket</button>`
+     <button class="btn btn-red" onclick="doCancelTicket('${id}','${ticketNo}','${driverId}','${vehicleId}', this)">Yes, Cancel Ticket</button>`
   )
 }
-async function doCancelTicket(id, ticketNo, driverId, vehicleId) {
+async function doCancelTicket(id, ticketNo, driverId, vehicleId, btnEl) {
+  const reason = document.getElementById('cancelReason')?.value.trim()
+  if (!reason) { alert('Please provide a reason for cancellation.'); return }
+  await guardBtn(btnEl, async () => {
+  const cancelMsg = reason + ' (Cancelled by ' + (currentProfile?.full_name || currentProfile?.username) + ')'
   const { error } = await SB.from('trips').update({
     status: 'cancelled',
     rejected_by: currentProfile?.id,
     rejected_at: new Date().toISOString(),
-    rejection_reason: 'Cancelled by ' + (currentProfile?.full_name || currentProfile?.username)
+    rejection_reason: cancelMsg
   }).eq('id', id)
-  if (error) { alert(error.message); return }
+  if (error) { alert(error.message); throw error }
   if (driverId && driverId !== 'null') await SB.from('drivers').update({ status:'available' }).eq('id', driverId)
   if (vehicleId && vehicleId !== 'null') await SB.from('vehicles').update({ status:'available' }).eq('id', vehicleId)
-  await addAudit(id, ticketNo, 'Ticket Cancelled', 'Cancelled by ' + (currentProfile?.full_name || currentProfile?.username))
+  await addAudit(id, ticketNo, 'Ticket Cancelled', cancelMsg)
+  // Notify requester
+  const requester = await getRequesterContacts(id)
+  if (requester.emails?.length) await sendEmail(requester.emails, 'ticket_rejected', { ticket_no: ticketNo, purpose: '', reason: cancelMsg })
   if (driverId && driverId !== 'null') {
     const { data: drvRow } = await SB.from('drivers').select('phone').eq('id', driverId).single()
-    if (drvRow?.phone) await sendSMS([drvRow.phone], `[TDMH VTS] Trip ${ticketNo} has been CANCELLED. You are no longer assigned to this trip.`)
+    if (drvRow?.phone) await sendSMS([drvRow.phone], `[TDMH VTS] Trip ${ticketNo} has been CANCELLED. You are no longer assigned to this trip.`, 'cancelled', ticketNo)
     const drvEmails = await getEmailsForRole('driver')
-    if (drvEmails.length) await sendEmail(drvEmails, 'trip_cancelled_driver', { ticket_no: ticketNo, reason: 'Trip cancelled' })
+    if (drvEmails.length) await sendEmail(drvEmails, 'trip_cancelled_driver', { ticket_no: ticketNo, reason: cancelMsg })
   }
   closeMO(); renderTickets()
+  }, 'Cancelling…')
 }
 
 // ASSIGN DRIVER
@@ -3887,7 +4320,7 @@ async function openAssignModal(id, ticketNo, vtype) {
   const isAmb  = vtype === 'ambulance'
   const isMoto = vtype === 'motorcycle'
   const role   = currentProfile?.role
-  const canLastResort = ['admin','approver_admin','approver_amb'].includes(role)
+  const canLastResort = ['admin','approver_admin','super_approver'].includes(role)
 
   // Fetch trip's departure/return for time-based filtering
   const { data: tripData } = await SB.from('trips')
@@ -3928,6 +4361,10 @@ async function openAssignModal(id, ticketNo, vtype) {
     }
   })
 
+  // Build busy ID Sets for .has() checks
+  const busyDrvIds = new Set((busyDrivers||[]).map(t => t.driver_id).filter(Boolean))
+  const busyVehIds = new Set((busyVehicles||[]).map(t => t.vehicle_id).filter(Boolean))
+
   // Filter by type only — show ALL non-off-duty drivers, busy ones get warning label
   const filterVehicles = (all, typeOnly) => all ? all.filter(v => {
     if (v.status === 'maintenance') return false
@@ -3948,32 +4385,56 @@ async function openAssignModal(id, ticketNo, vtype) {
   }) : []
 
   const avV = filterVehicles(allVehicles, true)
-  const avD = filterDrivers(allDrivers, true)
   const avV_all = filterVehicles(allVehicles, false)
-  const avD_all = filterDrivers(allDrivers, false)
+
+  // Store for pull-regular-driver toggle (ambulance tickets)
+  window._asAllDrivers = allDrivers
+  window._asBusyDrvLabel = busyDrvLabel
+  window._asBusyDrvIdSet = busyDrvIds
 
   const depStr = dep ? new Date(dep).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}) : '—'
   const scopeLabel = isAmb ? '🚑 Ambulance' : isMoto ? '🏍 Motorcycle' : '🚙 Regular'
+  const typeLabel  = isAmb ? 'ambulance' : isMoto ? 'motorcycle' : 'regular'
 
-  const driverOpts = (drivers) => drivers.map(d => {
-    const busy = busyDriverIds.has(d.id)
+  // Does this driver match the ticket type?
+  const drvMatches = (d) => {
+    const dt = d.driver_type || 'regular'
+    if (dt === 'both') return true
+    if (isAmb) return dt === 'ambulance'
+    return dt === 'regular'   // regular + motorcycle both handled by regular drivers
+  }
+  // All non-off-duty drivers, grouped: matching type first, others below
+  const allAvailDrivers = (allDrivers||[]).filter(d => d.status !== 'off-duty')
+  const matchedDrv = allAvailDrivers.filter(drvMatches)
+  const otherDrv   = allAvailDrivers.filter(d => !drvMatches(d))
+  const avD = matchedDrv  // count badge reflects matching-type drivers
+
+  const mkDrvOpt = (d, offType) => {
+    const busy = busyDrvIds.has(d.id)
     const lbl  = busyDrvLabel[d.id]
-    return `<option value="${d.id}|${d.full_name}" ${busy?'style="color:var(--amber)"':''}>
-      ${d.full_name} · ${d.license_no||'—'}${busy&&lbl?' ⚠ Has trip at '+lbl:''}
-    </option>`
-  }).join('')
+    const typeTag = offType ? ` 🔸${d.driver_type||'regular'}` : ''
+    return `<option value="${d.id}|${d.full_name}" ${busy?'style="color:var(--amber)"':''}>${d.full_name} · ${d.license_no||'—'}${typeTag}${busy&&lbl?' ⚠ Has trip at '+lbl:''}</option>`
+  }
+  const driverOptsGrouped = () => {
+    let html = matchedDrv.map(d => mkDrvOpt(d, false)).join('')
+    if (otherDrv.length) {
+      html += `<option disabled>──── Other driver types (off-${typeLabel}) ────</option>`
+      html += otherDrv.map(d => mkDrvOpt(d, true)).join('')
+    }
+    return html
+  }
 
   const vehicleOpts = (vehicles) => vehicles.map(v => {
-    const busy = busyVehicleIds.has(v.id)
+    const busy = busyVehIds.has(v.id)
     const lbl  = busyVehLabel[v.id]
     return `<option value="${v.id}" ${busy?'style="color:var(--amber)"':''}>
       ${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)${busy&&lbl?' ⚠ Has trip at '+lbl:''}
     </option>`
-  }).join()
+  }).join('')
 
   // Store busy sets for conflict warnings
-  window._asBusyDriverIds  = busyDriverIds
-  window._asBusyVehicleIds = busyVehicleIds
+  window._asBusyDriverIds  = busyDrvIds
+  window._asBusyVehicleIds = busyVehIds
 
   openMO(`Assign Driver & Vehicle — ${ticketNo}`,
     `<div style="background:var(--bg);border-radius:9px;padding:10px 13px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
@@ -3982,18 +4443,18 @@ async function openAssignModal(id, ticketNo, vtype) {
      </div>
 
      <div class="fg"><label class="fl">Select Driver *
-       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} driver${avD.length!==1?'s':''} available</span>
+       <span style="font-size:10px;font-weight:400;color:var(--green)"> — ${avD.length} ${typeLabel}-type available${otherDrv.length?` · +${otherDrv.length} other-type below`:''}</span>
      </label>
        <select class="fs" id="asDrv" onchange="checkAssignConflict()">
          <option value="">-- Select Driver --</option>
-         ${driverOpts(avD)}
+         ${driverOptsGrouped()}
        </select>
        <div id="drvConflictWarn" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:11.5px;color:#92400e;margin-top:5px">
          ⚠ This driver already has a trip at that time. You can still assign — consider pooling both trips for efficiency.
        </div>
-     </div>
-         ${avD.length === 0 ? '<option disabled>No available drivers at this time</option>' : ''}
-       </select>
+       <button type="button" onclick="openAddRelieverModal('asDrv')" style="margin-top:6px;font-size:11px;color:var(--pri);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">
+         + Add reliever / temporary driver
+       </button>
      </div>
 
      <div class="fg"><label class="fl">Select Vehicle *
@@ -4014,50 +4475,72 @@ async function openAssignModal(id, ticketNo, vtype) {
      <div style="border-top:1px solid var(--border);margin:14px 0 12px"></div>
      <div style="display:flex;align-items:center;gap:8px;background:var(--amber-s);border:1px solid rgba(217,119,6,.2);border-radius:9px;padding:10px 13px">
        <input type="checkbox" id="lastResortToggle" style="width:15px;height:15px;accent-color:var(--amber)"
-         onchange="toggleLastResort('${id}','${ticketNo}','${vtype}',${JSON.stringify(avV_all)},${JSON.stringify(avD_all)})">
+         onchange="toggleLastResort('${id}','${ticketNo}','${vtype}')">
        <label for="lastResortToggle" style="font-size:12px;cursor:pointer">
          <span style="font-weight:700;color:var(--amber)">⚠ Last Resort</span>
-         <span style="color:var(--text2)"> — Show all available drivers and vehicles regardless of type</span>
+         <span style="color:var(--text2)"> — Show all vehicles regardless of type (drivers already all shown)</span>
        </label>
      </div>` : ''}`,
 
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
      <button class="btn btn-pri" id="asBtn" onclick="doAssign('${id}','${ticketNo}')">Assign & Notify Driver</button>`
   )
-  // Store full lists on window for last resort toggle
+  // Store full lists on window for last resort toggle (VEHICLES only now — drivers always grouped)
   window._asAllVehicles = avV_all
-  window._asAllDrivers  = avD_all
   window._asTypedVehicles = avV
-  window._asTypedDrivers  = avD
 }
 
-function toggleLastResort(id, ticketNo, vtype, allV, allD) {
+// Last Resort now only affects VEHICLES (all drivers are already shown grouped by type)
+function toggleLastResort(id, ticketNo, vtype) {
   const checked = document.getElementById('lastResortToggle')?.checked
   if (checked) {
-    if (!confirm('⚠ LAST RESORT MODE\n\nThis will show ALL available drivers and vehicles regardless of type assignment.\n\nThis is for emergency use only. The override will be recorded in the audit log.\n\nProceed?')) {
+    if (!confirm('⚠ LAST RESORT MODE\n\nThis shows ALL vehicles regardless of type.\n\nFor emergency use. The override is recorded in the audit log.\n\nProceed?')) {
       document.getElementById('lastResortToggle').checked = false
       return
     }
   }
-  const isAmb  = vtype === 'ambulance'
-  const isMoto = vtype === 'motorcycle'
-  const dSel = document.getElementById('asDrv')
   const vSel = document.getElementById('asVeh')
-  if (!dSel || !vSel) return
-
-  const dList = checked ? (window._asAllDrivers||[])  : (window._asTypedDrivers||[])
+  if (!vSel) return
   const vList = checked ? (window._asAllVehicles||[]) : (window._asTypedVehicles||[])
-
-  const driverOpts = dList.map(d => `<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.license_no||'—'}</option>`).join('')
   const vehicleOpts = vList.map(v => `<option value="${v.id}">${v.plate} — ${v.name||v.type} (${v.capacity||'—'} pax)</option>`).join('')
-
-  dSel.innerHTML = `<option value="">-- Select Driver --</option>${driverOpts}`
   vSel.innerHTML = `<option value="">-- Select Vehicle --</option>${vehicleOpts}`
-
-  const label = dSel.closest('.fg')?.querySelector('label span')
   const vlabel = vSel.closest('.fg')?.querySelector('label span')
-  if (label) label.textContent = ` — ${dList.length} available`
-  if (vlabel) vlabel.textContent = ` — ${vList.length} available`
+  if (vlabel) vlabel.textContent = ` — ${vList.length} available (all types)`
+}
+
+function togglePullRegularDriver(selectId) {
+  const checked = document.getElementById('asPullRegular')?.checked
+  const sel = document.getElementById(selectId)
+  if (!sel) return
+  const allDrivers   = window._asAllDrivers || []
+  const busyDrvLabel = window._asBusyDrvLabel || {}
+  const busyDrvIds   = window._asBusyDrvIdSet || new Set()
+
+  // Build ambulance-qualified drivers (always shown)
+  const ambDrivers = allDrivers.filter(d => {
+    if (d.status === 'off-duty') return false
+    const dt = d.driver_type || 'regular'
+    return dt === 'ambulance' || dt === 'both'
+  })
+
+  // Regular drivers (added when checkbox checked)
+  const regDrivers = allDrivers.filter(d => {
+    if (d.status === 'off-duty') return false
+    const dt = d.driver_type || 'regular'
+    return dt === 'regular'
+  })
+
+  const optHTML = (d, isPulled) => {
+    const busy = busyDrvIds.has(d.id)
+    const lbl  = busyDrvLabel[d.id]
+    return `<option value="${d.id}|${d.full_name}" ${busy?'style="color:var(--amber)"':''}>${isPulled?'🚙 ':''}${d.full_name} · ${d.license_no||'—'}${isPulled?' (Regular)':''}${busy&&lbl?' ⚠ '+lbl:''}</option>`
+  }
+
+  let html = '<option value="">-- Select Driver --</option>' + ambDrivers.map(d=>optHTML(d,false)).join('')
+  if (checked) {
+    html += '<option disabled>──── Regular Drivers (pulled) ────</option>' + regDrivers.map(d=>optHTML(d,true)).join('')
+  }
+  sel.innerHTML = html
 }
 
 function checkAssignConflict() {
@@ -4090,6 +4573,7 @@ async function doAssign(id, ticketNo) {
   const { data: tripData }  = await SB.from('trips').select('purpose,destination,stops,departure_at,department,vehicle_plate,requester_id').eq('id',id).single()
   const { data: driverRow } = await SB.from('drivers').select('phone,user_id').eq('id',driverId).single()
   const vehiclePlate = _vehicles.find(v => v.id === vv)?.plate || ''
+  const vehicleName  = _vehicles.find(v => v.id === vv)?.name  || vehiclePlate
   // Get driver's email via their linked user account (user_id on drivers table)
   let driverEmail = null
   if (driverRow?.user_id) {
@@ -4097,7 +4581,7 @@ async function doAssign(id, ticketNo) {
     driverEmail = du?.email || null
   }
   // SMS → driver only (time-critical: needs to know ASAP to prepare)
-  if (driverRow?.phone) await sendSMS([driverRow.phone], `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nUrgency: ${(tripData?.priority||'normal').toUpperCase()}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehiclePlate}\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
+  if (driverRow?.phone) await sendSMS([driverRow.phone], `[TDMH VTS] You have been assigned to ticket ${ticketNo}.\nPurpose: ${tripData?.purpose||''}\nUrgency: ${(tripData?.priority||'normal').toUpperCase()}\nDestination: ${tripData?.destination||''}\nVehicle: ${vehicleName||vehiclePlate} (${vehiclePlate})\nDeparture: ${fmtDT(tripData?.departure_at)}\nPlease report to the motor pool.`)
   // Email only → driver, requester, guard
   if (driverEmail) await sendEmail([driverEmail], 'driver_assigned', { ticket_no: ticketNo, department: tripData?.department||'', purpose: tripData?.purpose||'', destination: tripData?.destination||'', departure_at: fmtDT(tripData?.departure_at), vehicle_plate: vehiclePlate })
   const reqContacts = await getRequesterContacts(id)
@@ -4119,6 +4603,18 @@ function gateInBtn(el) {
 }
 
 async function openGateOutModal(id, ticketNo, purpose, driverName, plate, dest) {
+  // Block individual gate-out for pooled tickets — must use Pool Gate Out All
+  const { data: poolCheck } = await SB.from('trips').select('pool_id').eq('id',id).single()
+  if (poolCheck?.pool_id) {
+    openMO('🚌 Pooled Trip',
+      `<div class="info info-amber">
+        <strong>This ticket is part of a pool.</strong><br>
+        <span style="font-size:12px">Gate-out must be done together with all tickets in the pool.<br>Use the <strong>🚀 Gate Out All</strong> button on the pool card instead.</span>
+      </div>`,
+      `<button class="btn btn-pri" onclick="closeMO();openPoolGateOut('${poolCheck.pool_id}')">Go to Pool Gate Out →</button>`
+    )
+    return
+  }
   // Fetch trip stops + vehicle current odometer
   const [{ data: tripData }, { data: vehData }] = await Promise.all([
     SB.from('trips').select('stops,destination,vehicle_id').eq('id',id).single(),
@@ -4189,6 +4685,18 @@ async function doGateOut(id, ticketNo) {
 
 // GATE IN
 async function openGateInModal(id, ticketNo, dest, vehicleId, driverId) {
+  // Block individual gate-in for pooled tickets — must use Pool Gate In All
+  const { data: poolCheck } = await SB.from('trips').select('pool_id').eq('id',id).single()
+  if (poolCheck?.pool_id) {
+    openMO('🚌 Pooled Trip',
+      `<div class="info info-purple">
+        <strong>This ticket is part of a pool.</strong><br>
+        <span style="font-size:12px">Gate-in must be done together with all tickets in the pool.<br>Use the <strong>✅ Gate In All</strong> button on the pool card instead.</span>
+      </div>`,
+      `<button class="btn btn-purple" onclick="closeMO();openPoolGateIn('${poolCheck.pool_id}')">Go to Pool Gate In →</button>`
+    )
+    return
+  }
   // Open modal IMMEDIATELY — no waiting for DB fetch
   openMO(`Gate In — ${ticketNo}`,
     `<div class="info info-green">Vehicle returning from: <strong>${dest}</strong></div>
@@ -4265,6 +4773,23 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
     fuel_cost: fuelCost
   }).eq('id',id)
   if (error) { alert(error.message); btn.disabled=false; btn.textContent='Complete Trip'; return }
+
+  // If this ticket is in a pool, update the pool record too
+  const { data: tripData2 } = await SB.from('trips').select('pool_id,odometer_out').eq('id',id).single()
+  if (tripData2?.pool_id) {
+    // Check if all other tickets in the pool are also completed
+    const { data: poolTrips } = await SB.from('trips').select('status').eq('pool_id', tripData2.pool_id).neq('id', id)
+    const allDone = (poolTrips||[]).every(t => ['completed','cancelled'].includes(t.status))
+    if (allDone) {
+      // All tickets done — close the pool
+      await SB.from('trip_pools').update({
+        gate_in_at:   new Date().toISOString(),
+        odometer_in:  odo,
+        condition_in: document.getElementById('condIn')?.value || 'Good',
+        guard_in_id:  currentProfile?.id
+      }).eq('id', tripData2.pool_id)
+    }
+  }
   // Always update vehicle odometer on gate-in
   if (vehicleId && vehicleId !== 'null') await SB.from('vehicles').update({ odometer: odo }).eq('id', vehicleId).catch(() => {})
   // Log fuel if recorded
@@ -4278,7 +4803,7 @@ async function doGateIn(id, ticketNo, vehicleId, driverId) {
   const approverRole = trip?.vehicle_type_needed === 'ambulance' ? 'approver_amb' : 'approver_admin'
   const approverEmails = await getEmailsForRole(approverRole)
   const requester = await getRequesterContacts(id)
-  const tripPayload = { ticket_no: ticketNo, department: trip?.department||'', purpose: trip?.purpose||'', destination: trip?.destination||'', driver_name: trip?.driver_name||'', vehicle_plate: trip?.vehicle_plate||'', gate_out_at: trip?.gate_out_at||'', gate_in_at: trip?.gate_in_at||'', odometer_out: trip?.odometer_out, odometer_in: odo, distance_km: trip?.odometer_out ? odo - trip.odometer_out : null }
+  const tripPayload = { ticket_no: ticketNo, department: trip?.department||'', purpose: trip?.purpose||'', destination: trip?.destination||'', driver_name: trip?.driver_name||'', vehicle_plate: trip?.vehicle_plate||'', gate_out_at: trip?.gate_out_at||'', gate_in_at: trip?.gate_in_at||'', odometer_out: trip?.odometer_out, odometer_in: odo }
   await sendEmail(approverEmails, 'trip_completed_approver', tripPayload)
   await sendEmail(requester.emails, 'trip_completed_requester', tripPayload)
   if (driverId && driverId !== 'null') {
@@ -5408,6 +5933,16 @@ async function openTemplatesModal() {
 }
 
 async function openSaveTemplateModal() {
+  // Ensure drivers and vehicles are loaded
+  if (!_drivers.length || !_vehicles.length) {
+    const [{ data: drvs }, { data: vehs }] = await Promise.all([
+      SB.from('drivers').select('*').neq('status','off-duty').order('full_name'),
+      SB.from('vehicles').select('*').neq('status','maintenance').order('name')
+    ])
+    if (drvs) _drivers = drvs
+    if (vehs) _vehicles = vehs
+  }
+
   openMO('Save Trip Template',
     `<div class="fg"><label class="fl">Template Name *</label><input class="fi" id="tmplName" placeholder="e.g. Monthly DOH Report Delivery"></div>
      <div class="fr">
@@ -5440,6 +5975,27 @@ async function openSaveTemplateModal() {
        <button type="button" onclick="addTmplPax()" style="width:100%;padding:8px;border:1.5px dashed var(--border);border-radius:8px;background:transparent;color:var(--text3);cursor:pointer;font-size:12px;font-weight:700" onmouseover="this.style.borderColor='var(--pri)';this.style.color='var(--pri)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
          + Add Passenger
        </button>
+     </div>
+     <!-- Default Driver + Vehicle (optional, always visible) -->
+     <div style="border-top:1px solid var(--border);margin:14px 0 10px;padding-top:10px">
+       <div style="font-size:11.5px;font-weight:700;color:var(--text2);margin-bottom:10px">
+         Default Driver & Vehicle
+         <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:6px">— optional, approver can change per trip</span>
+       </div>
+       <div class="fr">
+         <div class="fg"><label class="fl">Default Driver</label>
+           <select class="fs" id="tmplDefaultDriver">
+             <option value="">-- No default (assign per trip) --</option>
+             ${(_drivers||[]).filter(d=>d.status!=='off-duty').map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.driver_type}</option>`).join('')}
+           </select>
+         </div>
+         <div class="fg"><label class="fl">Default Vehicle</label>
+           <select class="fs" id="tmplDefaultVehicle">
+             <option value="">-- No default (assign per trip) --</option>
+             ${(_vehicles||[]).filter(v=>v.status!=='maintenance').map(v=>`<option value="${v.id}|${v.plate}|${v.name||v.type}">${v.plate} — ${v.name||v.type}</option>`).join('')}
+           </select>
+         </div>
+       </div>
      </div>
      <div style="border-top:1px solid var(--border);margin:14px 0"></div>
      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -5482,27 +6038,6 @@ async function openSaveTemplateModal() {
          </div>
        </div>
 
-       <!-- Default Driver + Vehicle (optional, editable any time) -->
-       <div style="border-top:1px solid var(--border);margin:13px 0 10px;padding-top:10px">
-         <div style="font-size:11.5px;font-weight:700;color:var(--text2);margin-bottom:10px">
-           Default Driver & Vehicle
-           <span style="font-size:10px;font-weight:400;color:var(--text3);margin-left:6px">— optional, approver can change per trip</span>
-         </div>
-         <div class="fr">
-           <div class="fg"><label class="fl">Default Driver</label>
-             <select class="fs" id="tmplDefaultDriver">
-               <option value="">-- No default (assign per trip) --</option>
-               ${(_drivers||[]).filter(d=>d.status!=='off-duty').map(d=>`<option value="${d.id}|${d.full_name}">${d.full_name} · ${d.driver_type}</option>`).join('')}
-             </select>
-           </div>
-           <div class="fg"><label class="fl">Default Vehicle</label>
-             <select class="fs" id="tmplDefaultVehicle">
-               <option value="">-- No default (assign per trip) --</option>
-               ${(_vehicles||[]).filter(v=>v.status!=='maintenance').map(v=>`<option value="${v.id}|${v.plate}|${v.name||v.type}">${v.plate} — ${v.name||v.type}</option>`).join('')}
-             </select>
-           </div>
-         </div>
-       </div>
        <div class="fg"><label class="fl">End Date <span style="font-weight:400;font-size:10px;color:var(--text3)">(leave blank = indefinite)</span></label>
          <input class="fi" type="date" id="tmplRecurEnd">
        </div>
@@ -6184,7 +6719,7 @@ async function cancelMaint(id) {
 // TRIP TEMPLATES PAGE
 // ════════════════════════════════════════════════
 async function renderTemplates() {
-  const { data } = await SB.from('trip_templates').select('*').order('name')
+  const { data } = await SB.from('trip_templates').select('*').eq('is_active', true).order('name')
   const T = data || []
   const isAdmin = ['admin','approver_admin'].includes(currentProfile?.role)
 
@@ -6207,7 +6742,7 @@ async function renderTemplates() {
           <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">${t.name}</div>
           <div style="display:flex;gap:5px;flex-wrap:wrap">${typeBadge(t.vehicle_type)}${t.is_recurring?`<span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:var(--pri-s);color:var(--pri)">🔁 ${t.recur_type||'Recurring'}</span>`:''}</div>
         </div>
-        ${isAdmin ? `<button onclick="deleteTemplate('${t.id}','${t.name.replace(/'/g,"\\'")}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text3)'">✕</button>` : ''}
+        ${isAdmin ? `<button onclick="deleteTemplate('${t.id}','${t.name.replace(/'/g,"\\'")}', this)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text3)'">✕</button>` : ''}
       </div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">${t.purpose||'—'}</div>
       <div style="font-size:11.5px;color:var(--text3)">→ ${t.destination||'—'}</div>
@@ -6222,10 +6757,13 @@ async function renderTemplates() {
   `
 }
 
-async function deleteTemplate(id, name) {
-  if (!confirm(`Delete template "${name}"?`)) return
-  await SB.from('trip_templates').delete().eq('id', id)
-  renderTemplates()
+async function deleteTemplate(id, name, btnEl) {
+  if (!confirm(`Delete template "${name}"?\n\nExisting tickets generated from this template will not be affected. Future auto-generation will stop.`)) return
+  await guardBtn(btnEl, async () => {
+    // Soft delete — set is_active=false; preserves template_id on generated trips
+    await SB.from('trip_templates').update({ is_active: false, is_recurring: false }).eq('id', id)
+    renderTemplates()
+  }, '…')
 }
 
 function previewRecurring(id) {
@@ -6356,11 +6894,11 @@ async function renderDrivers() {
       <td><div style="display:flex;align-items:center;gap:7px">
         <div style="width:30px;height:30px;border-radius:50%;background:${d.driver_type==='ambulance'?'var(--red-s)':d.driver_type==='both'?'var(--purple-s)':'var(--green-s)'};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${d.driver_type==='ambulance'?'var(--red)':d.driver_type==='both'?'var(--purple)':'var(--green)'}">${ini(d.full_name)}</div>
         <div>
-          <div style="font-weight:700;font-size:12.5px">${d.full_name}</div>
+          <div style="font-weight:700;font-size:12.5px">${d.full_name}${d.is_reliever?'<span style="background:#fef9eb;color:#92400e;border:1px solid #fde68a;border-radius:20px;padding:1px 6px;font-size:9px;font-weight:700;margin-left:5px">RELIEVER</span>':''}</div>
           ${d.user&&d.user.department?`<div style="font-size:10px;color:var(--text3)">${d.user.department}</div>`:''}
         </div>
       </div></td>
-      <td>${d.user&&d.user.username?`<span style="font-family:monospace;font-size:11px;background:var(--bg);padding:2px 7px;border-radius:6px;color:var(--pri)">${d.user.username}</span>`:'<span style="color:var(--red);font-size:10px;font-weight:600">⚠ No account</span>'}</td>
+      <td>${d.user&&d.user.username?`<span style="font-family:monospace;font-size:11px;background:var(--bg);padding:2px 7px;border-radius:6px;color:var(--pri)">${d.user.username}</span>`:d.is_reliever?'<span style="color:var(--text3);font-size:10px">No account (reliever)</span>':'<span style="color:var(--red);font-size:10px;font-weight:600">⚠ No account</span>'}</td>
       <td>${d.license_no?chip(d.license_no):'<span style="color:var(--text3);font-size:11px">—</span>'}</td>
       <td style="font-size:11px">${d.license_type||'—'}</td>
       <td>${driverTypeBadge(d.driver_type||'regular')}</td>
@@ -6368,10 +6906,85 @@ async function renderDrivers() {
       <td style="font-size:11px">${d.shift||'—'}</td>
       <td style="font-size:11px">${d.phone||'—'}</td>
       <td>${badge(d.status||'available')}</td>
-      <td><button class="tbl-act" onclick="openEditDriver('${d.id}')">Edit</button></td>
+      <td>
+        <button class="tbl-act" onclick="openEditDriver('${d.id}')">Edit</button>
+        ${d.is_reliever?`<button class="tbl-act tbl-act-red" onclick="removeReliever('${d.id}','${d.full_name.replace(/'/g,"\\'")}', this)">Remove</button>`:''}
+      </td>
     </tr>`).join('')}
     </tbody></table>
   </div>`
+}
+
+function openAddRelieverModal(targetSelectId) {
+  openMO('+ Add Reliever / Temporary Driver',
+    `<div class="info info-blue" style="margin-bottom:12px;font-size:12px">
+       For temporary or reliever drivers who don't have a system account.<br>
+       They will appear in driver lists while their status is active.
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Full Name *</label><input class="fi" id="rlvName" placeholder="e.g. Juan dela Cruz"></div>
+       <div class="fg"><label class="fl">Driver Type *</label>
+         <select class="fs" id="rlvType">
+           <option value="regular">🚙 Regular</option>
+           <option value="ambulance">🚑 Ambulance</option>
+           <option value="both">⚡ All Types</option>
+         </select>
+       </div>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Phone</label><input class="fi" id="rlvPhone" placeholder="09XXXXXXXXX"></div>
+       <div class="fg"><label class="fl">License No.</label><input class="fi" id="rlvLic" placeholder="Optional"></div>
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="rlvBtn" onclick="doAddReliever('${targetSelectId}')">Add & Select Driver</button>`,
+    { confirmClose: true }
+  )
+}
+
+async function doAddReliever(targetSelectId) {
+  const name = document.getElementById('rlvName')?.value.trim()
+  if (!name) { alert('Full name is required.'); return }
+  const btn = document.getElementById('rlvBtn'); btn.disabled=true; btn.textContent='Adding...'
+  const driverType = document.getElementById('rlvType')?.value || 'regular'
+  const phone      = document.getElementById('rlvPhone')?.value.trim() || null
+  const licNo      = document.getElementById('rlvLic')?.value.trim() || null
+
+  const { data, error } = await SB.from('drivers').insert({
+    full_name:   name,
+    driver_type: driverType,
+    phone:       phone,
+    license_no:  licNo,
+    status:      'available',
+    is_reliever: true
+  }).select().single()
+
+  if (error) { alert('Error: ' + error.message); btn.disabled=false; btn.textContent='Add & Select Driver'; return }
+
+  // Add to the target select dropdown and auto-select
+  const sel = document.getElementById(targetSelectId)
+  if (sel) {
+    const opt = document.createElement('option')
+    opt.value = `${data.id}|${data.full_name}`
+    opt.text  = `${data.full_name} · ${driverType} (Reliever)`
+    opt.selected = true
+    sel.appendChild(opt)
+  }
+
+  // Refresh _drivers cache
+  const { data: drivers } = await SB.from('drivers').select('*').order('full_name')
+  _drivers = drivers || []
+
+  await addAudit(null, null, '👤 Reliever Driver Added', `${name} added as reliever driver by ${currentProfile?.full_name}`)
+  closeMO()
+  alert(`✅ ${name} added as reliever driver and selected.`)
+}
+
+async function removeReliever(id, name, btnEl) {
+  if (!confirm(`Remove reliever driver "${name}"?\n\nThis will permanently delete their profile. Any trips they were assigned to will retain their name for records.`)) return
+  await guardBtn(btnEl, async () => {
+    await SB.from('drivers').delete().eq('id', id).eq('is_reliever', true)
+    renderDrivers()
+  }, 'Removing…')
 }
 
 async function openAddDriver() {
@@ -6499,7 +7112,7 @@ async function openEditDriver(driverId) {
        <input class="fi" id="edPhone" value="${d.phone||''}" placeholder="+63 9XX XXX XXXX">
      </div>`,
     `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
-     <button class="btn btn-red btn-sm" onclick="doDeleteDriver('${d.id}','${(d.full_name||'').replace(/'/g,"\\'")}')">Delete</button>
+     <button class="btn btn-red btn-sm" onclick="doDeleteDriver('${d.id}','${(d.full_name||'').replace(/'/g,"\\'")}', this)">Delete</button>
      <button class="btn btn-pri" id="edDBtn" onclick="doEditDriver('${d.id}')">Save Changes</button>`
   , { confirmClose: true })
 }
@@ -6523,11 +7136,13 @@ async function doEditDriver(id) {
   closeMO(); renderDrivers()
 }
 
-async function doDeleteDriver(id, name) {
+async function doDeleteDriver(id, name, btnEl) {
   if (!confirm(`Delete driver "${name}"? This cannot be undone.`)) return
-  const { error } = await SB.from('drivers').delete().eq('id', id)
-  if (error) { alert(error.message); return }
-  closeMO(); renderDrivers()
+  await guardBtn(btnEl, async () => {
+    const { error } = await SB.from('drivers').delete().eq('id', id)
+    if (error) { alert(error.message); throw error }
+    closeMO(); renderDrivers()
+  }, 'Deleting…')
 }
 
 // ════════════════════════════════════════════════
@@ -6550,7 +7165,7 @@ function deptCard(d, i) {
 }
 
 async function renderDepts() {
-  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">Loading...</div>`
+  document.getElementById('CONTENT').innerHTML = `<div style="color:var(--text3);padding:40px;text-align:center;font-size:13px">${hourglass()}<div style="margin-top:10px">Loading...</div></div>`
   const { data } = await SB.from('departments').select('*').order('name')
   const depts = data || []
   const canEdit = ['admin'].includes(currentProfile?.role)
@@ -6727,7 +7342,7 @@ function rbar2(label, val, max, color, suffix='') {
 let _rptFrom = '', _rptTo = '', _rptTab = 'overview'
 
 async function renderReports() {
-  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center">Loading reports...</div>'
+  document.getElementById('CONTENT').innerHTML = '<div style="color:var(--text3);padding:40px;text-align:center">'+hourglass()+'<div style="margin-top:10px">Loading reports...</div></div>'
   // Default date range: last 30 days
   if (!_rptFrom) {
     const d = new Date(); d.setDate(d.getDate()-30)
@@ -6899,6 +7514,136 @@ async function renderReportContent() {
       </div>`:'<div style="color:var(--text3);font-size:12px">No SLA data in this period</div>'}
     </div>
   </div>`
+
+  // ── SMS COST REPORT TAB ────────────────────────────────────
+  let smsHTML = ''
+  if (_rptTab === 'sms') {
+    const smsFrom = _rptFrom ? _rptFrom + 'T00:00:00+08:00' : new Date(Date.now() - 30*86400000).toISOString()
+    const smsTo   = _rptTo   ? _rptTo   + 'T23:59:59+08:00' : new Date().toISOString()
+
+    const { data: smsLogs } = await SB.from('sms_logs')
+      .select('*')
+      .gte('sent_at', smsFrom)
+      .lte('sent_at', smsTo)
+      .order('sent_at', { ascending: false })
+
+    const logs = smsLogs || []
+    const totalSMS  = logs.reduce((s, l) => s + (l.sms_count||1), 0)
+    const totalCost = totalSMS * 0.50
+
+    // Group by day
+    const byDay = {}
+    logs.forEach(l => {
+      const day = new Date(l.sent_at).toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric',timeZone:'Asia/Manila'})
+      if (!byDay[day]) byDay[day] = { count: 0, cost: 0, logs: [] }
+      byDay[day].count += l.sms_count||1
+      byDay[day].cost  += (l.sms_count||1) * 0.50
+      byDay[day].logs.push(l)
+    })
+
+    // Group by week
+    const byWeek = {}
+    logs.forEach(l => {
+      const d = new Date(l.sent_at)
+      const day = d.getDay()
+      const monday = new Date(d)
+      monday.setDate(d.getDate() - (day===0?6:day-1))
+      monday.setHours(0,0,0,0)
+      const wk = monday.toLocaleDateString('en-PH',{month:'short',day:'numeric',timeZone:'Asia/Manila'})
+      if (!byWeek[wk]) byWeek[wk] = { count: 0, cost: 0 }
+      byWeek[wk].count += l.sms_count||1
+      byWeek[wk].cost  += (l.sms_count||1) * 0.50
+    })
+
+    // Group by event type
+    const byEvent = {}
+    logs.forEach(l => {
+      const ev = l.event_type||'general'
+      if (!byEvent[ev]) byEvent[ev] = { count: 0, cost: 0 }
+      byEvent[ev].count += l.sms_count||1
+      byEvent[ev].cost  += (l.sms_count||1) * 0.50
+    })
+
+    smsHTML = `
+    <!-- Summary cards -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+      <div class="card" style="text-align:center;padding:14px">
+        <div style="font-size:28px;font-weight:800;color:var(--pri)">${totalSMS}</div>
+        <div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:2px">Total SMS Sent</div>
+      </div>
+      <div class="card" style="text-align:center;padding:14px">
+        <div style="font-size:28px;font-weight:800;color:var(--green)">₱${totalCost.toFixed(2)}</div>
+        <div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:2px">Total Cost</div>
+        <div style="font-size:10px;color:var(--text3)">@ ₱0.50/SMS</div>
+      </div>
+      <div class="card" style="text-align:center;padding:14px">
+        <div style="font-size:28px;font-weight:800;color:var(--amber)">${Object.keys(byDay).length}</div>
+        <div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:2px">Days with SMS</div>
+      </div>
+      <div class="card" style="text-align:center;padding:14px">
+        <div style="font-size:28px;font-weight:800;color:#7c3aed">${Object.keys(byDay).length ? (totalSMS/Object.keys(byDay).length).toFixed(1) : '0'}</div>
+        <div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:2px">Avg SMS/Day</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+      <!-- By Event Type -->
+      <div class="card card-np" style="overflow:hidden">
+        <div class="card-hd" style="padding:12px 14px 10px"><div class="card-title" style="font-size:13px">📱 By Event Type</div></div>
+        <table class="tbl" style="font-size:12px">
+          <thead><tr><th>Event</th><th style="text-align:right">SMS</th><th style="text-align:right">Cost</th></tr></thead>
+          <tbody>
+            ${Object.entries(byEvent).sort((a,b)=>b[1].count-a[1].count).map(([ev,d])=>`
+            <tr>
+              <td style="font-size:11.5px">${ev}</td>
+              <td style="text-align:right;font-weight:700">${d.count}</td>
+              <td style="text-align:right;color:var(--green);font-weight:700">₱${d.cost.toFixed(2)}</td>
+            </tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:16px">No data</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- By Week -->
+      <div class="card card-np" style="overflow:hidden">
+        <div class="card-hd" style="padding:12px 14px 10px"><div class="card-title" style="font-size:13px">📅 By Week</div></div>
+        <table class="tbl" style="font-size:12px">
+          <thead><tr><th>Week of</th><th style="text-align:right">SMS</th><th style="text-align:right">Cost</th></tr></thead>
+          <tbody>
+            ${Object.entries(byWeek).map(([wk,d])=>`
+            <tr>
+              <td style="font-size:11.5px">${wk}</td>
+              <td style="text-align:right;font-weight:700">${d.count}</td>
+              <td style="text-align:right;color:var(--green);font-weight:700">₱${d.cost.toFixed(2)}</td>
+            </tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:16px">No data</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Daily breakdown -->
+    <div class="card card-np" style="overflow:hidden">
+      <div class="card-hd" style="padding:12px 16px 10px"><div class="card-title" style="font-size:13px">📆 Daily Breakdown</div></div>
+      <table class="tbl" style="font-size:12px">
+        <thead><tr><th>Date</th><th>SMS Sent</th><th>Cost (₱)</th><th>Events</th></tr></thead>
+        <tbody>
+          ${Object.entries(byDay).map(([day,d])=>`
+          <tr>
+            <td style="font-weight:600">${day}</td>
+            <td style="font-weight:700;color:var(--pri)">${d.count}</td>
+            <td style="font-weight:700;color:var(--green)">₱${d.cost.toFixed(2)}</td>
+            <td style="font-size:10.5px;color:var(--text3)">${[...new Set(d.logs.map(l=>l.event_type).filter(Boolean))].join(', ')||'—'}</td>
+          </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:24px">No SMS sent in this period</td></tr>'}
+        </tbody>
+        ${Object.keys(byDay).length > 0 ? `
+        <tfoot><tr style="background:var(--bg);font-weight:700;border-top:2px solid var(--border)">
+          <td>TOTAL</td>
+          <td style="color:var(--pri)">${totalSMS}</td>
+          <td style="color:var(--green)">₱${totalCost.toFixed(2)}</td>
+          <td></td>
+        </tr></tfoot>` : ''}
+      </table>
+    </div>`
+  }
 
   // ── FULL AUDIT TABLE TAB ────────────────────────────────
   const auditTableHTML = `
@@ -7193,7 +7938,8 @@ async function renderReportContent() {
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.2)" onclick="exportAllReports()">⬇ Export All (CSV)</button>
-      <button class="btn btn-ghost btn-sm" style="background:rgba(201,168,76,.15);color:#c9a84c;border-color:#c9a84c" onclick="printReport('full')">🖨 Print Report</button>
+      <button class="btn btn-ghost btn-sm" style="background:rgba(201,168,76,.15);color:#c9a84c;border-color:#c9a84c" onclick="printReport('full')">🖨 Print Audit</button>
+      <button class="btn btn-pri btn-sm" onclick="openTripPrintReport()">🖨 Print Trip Report</button>
     </div>
   </div>
 
@@ -7221,6 +7967,7 @@ async function renderReportContent() {
       ['drivers','👤 Drivers'],
       ['sla','⏱ SLA'],
       ['pool','🚌 Convoy'],
+      ['sms','💬 SMS Cost'],
       ['audit','📋 Full Audit'],
     ].map(([id,lbl])=>`<button style="${tabStyle(id)}" onclick="_rptTab='${id}';renderReportContent()">${lbl}</button>`).join('')}
   </div>
@@ -7230,7 +7977,8 @@ async function renderReportContent() {
   ${_rptTab==='fuel'     ? fuelHTML         : ''}
   ${_rptTab==='drivers'  ? drvPerfHTML      : ''}
   ${_rptTab==='sla'      ? slaHTML          : ''}
-  ${_rptTab==='pool'   ? poolHTML       : ''}
+  ${_rptTab==='pool'     ? poolHTML         : ''}
+  ${_rptTab==='sms'      ? smsHTML          : ''}
   ${_rptTab==='audit'    ? auditTableHTML   : ''}
 
   <style>
@@ -7395,6 +8143,104 @@ function printReport(section) {
   if (tabMap[section]) { _rptTab=tabMap[section]; renderReportContent().then(()=>setTimeout(()=>window.print(),400)) }
   else window.print()
 }
+
+async function openTripPrintReport() {
+  openMO('🖨 Print Trip Report',
+    `<div style="font-size:12px;color:var(--text2);margin-bottom:14px">Select filters to generate a printable landscape report.</div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Vehicle Type</label>
+         <select class="fs" id="prVtype">
+           <option value="">All Types</option>
+           <option value="ambulance">🚑 Ambulance only</option>
+           <option value="regular">🚙 Regular only</option>
+           <option value="motorcycle">🏍 Motorcycle only</option>
+         </select>
+       </div>
+       <div class="fg"><label class="fl">Status</label>
+         <select class="fs" id="prStatus">
+           <option value="">All Statuses</option>
+           <option value="completed">Completed</option>
+           <option value="cancelled">Cancelled</option>
+           <option value="on-trip">On Trip</option>
+           <option value="assigned">Assigned</option>
+           <option value="approved">Approved</option>
+           <option value="pending-approval">Pending Approval</option>
+         </select>
+       </div>
+     </div>
+     <div class="fr">
+       <div class="fg"><label class="fl">Date From</label>
+         <input class="fi" type="date" id="prFrom" value="${_rptFrom||''}">
+       </div>
+       <div class="fg"><label class="fl">Date To</label>
+         <input class="fi" type="date" id="prTo" value="${_rptTo||new Date().toISOString().slice(0,10)}">
+       </div>
+     </div>
+     <div class="fg"><label class="fl">Department (optional)</label>
+       <input class="fi" id="prDept" placeholder="Leave blank for all departments">
+     </div>`,
+    `<button class="btn btn-ghost" onclick="closeMO()">Cancel</button>
+     <button class="btn btn-pri" id="prBtn" onclick="doGeneratePrintReport()">🖨 Generate & Print</button>`
+  )
+}
+
+async function doGeneratePrintReport() {
+  const btn = document.getElementById('prBtn'); btn.disabled=true; btn.textContent='Loading...'
+  const vtype  = document.getElementById('prVtype')?.value  || ''
+  const status = document.getElementById('prStatus')?.value || ''
+  const from   = document.getElementById('prFrom')?.value   || ''
+  const to     = document.getElementById('prTo')?.value     || ''
+  const dept   = document.getElementById('prDept')?.value?.trim() || ''
+
+  let q = SB.from('trips').select('id,ticket_no,created_at,department,purpose,destination,stops,priority,vehicle_type_needed,status,requester_name,approval_remarks,approved_at,driver_name,vehicle_name,vehicle_plate,gate_out_at,gate_in_at,departure_at,odometer_out,odometer_in,distance_km,fuel_out,fuel_in,condition_out,condition_in,fuel_consumed_liters,fuel_cost,trip_duration_minutes,guard_out_remarks,guard_in_remarks').order('departure_at',{ascending:true})
+
+  if (vtype)  q = q.eq('vehicle_type_needed', vtype)
+  if (status) q = q.eq('status', status)
+  if (from)   q = q.gte('departure_at', from + 'T00:00:00+08:00')
+  if (to)     q = q.lte('departure_at', to   + 'T23:59:59+08:00')
+  if (dept)   q = q.ilike('department', '%'+dept+'%')
+
+  const { data: trips } = await q
+  const T = trips || []
+
+  btn.disabled=false; btn.textContent='🖨 Generate & Print'
+  closeMO()
+  if (!T.length) { alert('No trips found for the selected filters.'); return }
+
+  const filterLabel = [
+    vtype  ? 'Type: '+vtype.charAt(0).toUpperCase()+vtype.slice(1) : 'All Types',
+    status ? 'Status: '+status : 'All Statuses',
+    dept   ? 'Dept: '+dept : '',
+    from && to ? 'Period: '+from+' to '+to : from ? 'From: '+from : to ? 'To: '+to : 'All Dates'
+  ].filter(Boolean).join(' · ')
+
+  const totalCost = T.reduce((s,t)=>s+(parseFloat(t.fuel_cost)||0),0)
+  const totalDist = T.reduce((s,t)=>s+(t.distance_km||0),0)
+  const completed = T.filter(t=>t.status==='completed').length
+  const fmtDt = (v) => v ? new Date(v).toLocaleString('en-PH',{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}).replace(', ',' ') : '—'
+
+  const rows = T.map((t,i)=>{
+    const stops = (Array.isArray(t.stops)&&t.stops.length?t.stops:[t.destination]).filter(Boolean)
+    const dur = t.trip_duration_minutes ? Math.floor(t.trip_duration_minutes/60)+'h '+Math.round(t.trip_duration_minutes%60)+'m' : '—'
+    const bg = i%2===0?'#f9fafb':'#ffffff'
+    const pColor = t.priority==='emergency'?'#dc2626':t.priority==='urgent'?'#d97706':'#374151'
+    const sColor = t.status==='completed'?'#16a34a':t.status==='cancelled'?'#dc2626':'#374151'
+    const esc = (v) => (v==null||v==='')?'—':String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    return '<tr style="background:'+bg+';border-bottom:1px solid #e5e7eb"><td style="font-weight:700;color:#0C2340">'+esc(t.ticket_no)+'</td><td style="font-weight:600">'+esc(t.department)+'</td><td>'+esc(t.purpose)+'</td><td>'+esc(stops.join(' → '))+'</td><td style="color:'+pColor+';font-weight:700;text-transform:uppercase;font-size:6px">'+esc(t.priority)+'</td><td>'+esc(t.vehicle_type_needed)+'</td><td style="font-weight:700;color:'+sColor+'">'+esc(t.status)+'</td><td>'+esc(t.requester_name)+'</td><td>'+esc(t.driver_name)+'</td><td style="font-family:monospace">'+esc(t.vehicle_plate)+'</td><td>'+esc(t.vehicle_name)+'</td><td>'+fmtDt(t.gate_out_at)+'</td><td>'+fmtDt(t.gate_in_at)+'</td><td style="text-align:right">'+(t.distance_km!=null?t.distance_km+'km':'—')+'</td><td style="text-align:right">'+dur+'</td><td style="text-align:right">'+(t.fuel_consumed_liters!=null?parseFloat(t.fuel_consumed_liters).toFixed(1)+'L':'—')+'</td><td style="text-align:right;font-weight:700">'+(t.fuel_cost?'₱'+parseFloat(t.fuel_cost).toLocaleString('en-PH',{minimumFractionDigits:2}):'—')+'</td></tr>'
+  }).join('')
+
+  const printWin = window.open('','_blank','width=1400,height=900')
+  printWin.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>TDMH VTS — Trip Report</title><style>@page{size:A4 landscape;margin:6mm 5mm}*{box-sizing:border-box;margin:0;padding:0}html,body{width:100%}body{font-family:Arial,Helvetica,sans-serif;font-size:8px;color:#111;background:#fff}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;padding-bottom:5px;border-bottom:2px solid #0C2340}.hosp{font-size:13px;font-weight:800;color:#0C2340;line-height:1.1}.rpt-title{font-size:10px;font-weight:700;color:#0C2340;margin-top:1px}.filter-lbl{font-size:7px;color:#6b7280;margin-top:1px}.meta{text-align:right;font-size:7px;color:#6b7280;line-height:1.3}.summary{display:flex;gap:8px;margin-bottom:6px}.sum-item{background:#f3f4f6;border-radius:4px;padding:4px 9px;text-align:center}.sum-num{font-size:13px;font-weight:800;color:#0C2340;line-height:1.1}.sum-lbl{font-size:6px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.3px}table{width:100%;border-collapse:collapse;table-layout:fixed}thead tr{background:#0C2340;color:#fff}th{padding:3px 2px;text-align:left;font-size:6.2px;font-weight:700;text-transform:uppercase;letter-spacing:.2px;overflow:hidden;word-wrap:break-word}td{padding:2.5px 2px;font-size:7px;vertical-align:top;overflow:hidden;word-wrap:break-word;line-height:1.25}tfoot tr{background:#f3f4f6;font-weight:700;border-top:1.5px solid #0C2340}tfoot td{padding:3px 2px;font-size:7px}.footer{margin-top:7px;padding-top:4px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:6.5px;color:#9ca3af}col.c-tkt{width:5.0%}col.c-dept{width:6.5%}col.c-purp{width:8.5%}col.c-dest{width:9.0%}col.c-prio{width:4.5%}col.c-type{width:4.5%}col.c-stat{width:5.0%}col.c-req{width:6.5%}col.c-drv{width:7.0%}col.c-plate{width:4.5%}col.c-veh{width:7.0%}col.c-out{width:7.5%}col.c-in{width:7.5%}col.c-dist{width:4.5%}col.c-dur{width:4.5%}col.c-fuel{width:4.0%}col.c-cost{width:4.5%}@media print{.no-print{display:none!important}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}thead{display:table-header-group}tr{page-break-inside:avoid}}</style></head><body>')
+  printWin.document.write('<div class="no-print" style="text-align:right;margin-bottom:8px"><button onclick="window.print()" style="background:#0C2340;color:#fff;border:none;padding:6px 16px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">🖨 Print</button> <button onclick="window.close()" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">✕ Close</button></div>')
+  printWin.document.write('<div class="header"><div><div class="hosp">Taytay Doctors Multispecialty Hospital</div><div class="rpt-title">Vehicle Trip Report</div><div class="filter-lbl">'+filterLabel+'</div></div><div class="meta"><div style="font-weight:700;font-size:9px">Generated: '+new Date().toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Manila'})+'</div><div>By: '+(currentProfile?.full_name||'—')+' · '+T.length+' records</div></div></div>')
+  printWin.document.write('<div class="summary"><div class="sum-item"><div class="sum-num">'+T.length+'</div><div class="sum-lbl">Total Trips</div></div><div class="sum-item"><div class="sum-num">'+completed+'</div><div class="sum-lbl">Completed</div></div><div class="sum-item"><div class="sum-num">'+(T.length-completed)+'</div><div class="sum-lbl">Other Status</div></div><div class="sum-item"><div class="sum-num">'+totalDist.toLocaleString()+' km</div><div class="sum-lbl">Total Distance</div></div><div class="sum-item"><div class="sum-num">₱'+totalCost.toLocaleString('en-PH',{minimumFractionDigits:2})+'</div><div class="sum-lbl">Total Fuel Cost</div></div></div>')
+  printWin.document.write('<table><colgroup><col class="c-tkt"><col class="c-dept"><col class="c-purp"><col class="c-dest"><col class="c-prio"><col class="c-type"><col class="c-stat"><col class="c-req"><col class="c-drv"><col class="c-plate"><col class="c-veh"><col class="c-out"><col class="c-in"><col class="c-dist"><col class="c-dur"><col class="c-fuel"><col class="c-cost"></colgroup><thead><tr><th>Ticket</th><th>Department</th><th>Purpose</th><th>Destination</th><th>Priority</th><th>Type</th><th>Status</th><th>Requester</th><th>Driver</th><th>Plate</th><th>Vehicle</th><th>Gate Out</th><th>Gate In</th><th>Distance</th><th>Duration</th><th>Fuel L</th><th>Cost</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><td colspan="13" style="text-align:right;color:#6b7280">TOTALS →</td><td>'+totalDist.toLocaleString()+' km</td><td>—</td><td>'+T.reduce((s,t)=>s+(parseFloat(t.fuel_consumed_liters)||0),0).toFixed(1)+'L</td><td style="color:#16a34a">₱'+totalCost.toLocaleString('en-PH',{minimumFractionDigits:2})+'</td></tr></tfoot></table>')
+  printWin.document.write('<div class="footer"><div>TDMH Vehicle Ticketing System · Confidential · For internal use only</div><div>'+filterLabel+'</div></div>')
+  printWin.document.write('</body></html>')
+  printWin.document.close()
+  setTimeout(()=>printWin.print(),600)
+}
+
 
 function filterRawReport(q) { filterFullAuditTable(q) }
 
